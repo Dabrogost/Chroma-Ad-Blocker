@@ -135,8 +135,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'STAT_UPDATE') {
     // Accumulate stats from content scripts
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
-      stats.accelerated = (stats.accelerated || 0) + (msg.stats?.accelerated || 0);
-      stats.blocked = (stats.blocked || 0) + (msg.stats?.blocked || 0);
+      const accelerated = typeof msg.stats?.accelerated === 'number' ? msg.stats.accelerated : 0;
+      const blocked = typeof msg.stats?.blocked === 'number' ? msg.stats.blocked : 0;
+
+      stats.accelerated = (stats.accelerated || 0) + accelerated;
+      stats.blocked = (stats.blocked || 0) + blocked;
       chrome.storage.local.set({ stats });
     });
     return false;
@@ -158,8 +161,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'SET_CONFIG') {
     chrome.storage.local.get('config').then(async ({ config }) => {
-      const newConfig = { ...config, ...msg.config };
+      // Validate and extract only allowed properties
+      const allowed = ['acceleration', 'cosmetic', 'suppressWarnings', 'accelerationSpeed'];
+      const validatedConfig = {};
+
+      if (msg.config && typeof msg.config === 'object') {
+        for (const key of allowed) {
+          if (Object.prototype.hasOwnProperty.call(msg.config, key)) {
+            const val = msg.config[key];
+            if (key === 'accelerationSpeed') {
+              if (typeof val === 'number' && val > 0 && val <= 16) {
+                validatedConfig[key] = val;
+              }
+            } else if (typeof val === 'boolean') {
+              validatedConfig[key] = val;
+            }
+          }
+        }
+      }
+
+      const newConfig = { ...config, ...validatedConfig };
       await chrome.storage.local.set({ config: newConfig });
+
       // Broadcast to all YouTube tabs
       const tabs = await chrome.tabs.query({ url: ['*://youtube.com/*', '*://www.youtube.com/*'] });
       for (const tab of tabs) {
@@ -173,7 +196,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'ADD_DYNAMIC_RULE') {
     // Allow popup/user to inject new block rules at runtime
     chrome.storage.local.get('dynamicRules').then(async ({ dynamicRules = [] }) => {
-      const newRule = { id: Date.now() % 100000 + 2000, ...msg.rule };
+      const validatedRule = {};
+      const allowedProperties = ['priority', 'action', 'condition'];
+
+      if (msg.rule && typeof msg.rule === 'object') {
+        for (const prop of allowedProperties) {
+          if (Object.prototype.hasOwnProperty.call(msg.rule, prop)) {
+            validatedRule[prop] = msg.rule[prop];
+          }
+        }
+      }
+
+      // Basic validation for mandatory rule fields
+      if (!validatedRule.action || !validatedRule.condition) {
+        return sendResponse({ ok: false, error: 'Invalid rule structure' });
+      }
+
+      const newRule = { id: (Date.now() % 100000) + 2000, ...validatedRule };
       dynamicRules.push(newRule);
       await chrome.storage.local.set({ dynamicRules });
       await chrome.declarativeNetRequest.updateDynamicRules({ addRules: [newRule] });
