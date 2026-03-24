@@ -284,6 +284,16 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
+/**
+ * Helper to start observer, polling and initial warning suppression.
+ * Extracted to avoid duplication in init().
+ */
+function startExtensionServices() {
+  startObserver();
+  startPolling();
+  suppressAdblockWarnings();
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 function init() {
   // 1. Inject cosmetic CSS immediately at document_start
@@ -291,15 +301,9 @@ function init() {
 
   // 2. Once DOM is ready, start the observer and polling
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      startObserver();
-      startPolling();
-      suppressAdblockWarnings();
-    });
+    document.addEventListener('DOMContentLoaded', startExtensionServices);
   } else {
-    startObserver();
-    startPolling();
-    suppressAdblockWarnings();
+    startExtensionServices();
   }
 }
 
