@@ -135,17 +135,23 @@ function suppressAdblockWarnings(node) {
  * impression requirement without triggering the anti-adblock detection
  * that fires when a network request is blocked.
  */
+let cachedVideo = null;
 function handleAdAcceleration() {
   if (!CONFIG.acceleration) return;
 
-  const video = document.querySelector('video');
+  if (!cachedVideo || !document.contains(cachedVideo)) {
+    cachedVideo = document.querySelector('video');
+  }
+  const video = cachedVideo;
+
   if (!video) return;
 
   // Detect if we're in an ad by checking YouTube's own ad UI markers
+  // getElementsByClassName is significantly faster than querySelector
   const adShowing =
-    document.querySelector('.ad-showing') !== null ||
-    document.querySelector('.ytp-ad-player-overlay') !== null ||
-    document.querySelector('.ytp-ad-progress') !== null;
+    document.getElementsByClassName('ad-showing').length > 0 ||
+    document.getElementsByClassName('ytp-ad-player-overlay').length > 0 ||
+    document.getElementsByClassName('ytp-ad-progress').length > 0;
 
   if (adShowing) {
     // Mute and accelerate
