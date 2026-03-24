@@ -135,8 +135,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'STAT_UPDATE') {
     // Accumulate stats from content scripts
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
-      const accelerated = typeof msg.stats?.accelerated === 'number' ? msg.stats.accelerated : 0;
-      const blocked = typeof msg.stats?.blocked === 'number' ? msg.stats.blocked : 0;
+      const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
+      const blocked = Number.isInteger(msg.stats?.blocked) ? msg.stats.blocked : 0;
 
       stats.accelerated = (stats.accelerated || 0) + accelerated;
       stats.blocked = (stats.blocked || 0) + blocked;
