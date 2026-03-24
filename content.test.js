@@ -87,3 +87,100 @@ test('notifyBackground error handling', async (t) => {
     assert.strictEqual(called, true);
   });
 });
+
+test('injectCosmeticCSS functionality', async (t) => {
+  // Common setup function for creating the sandbox
+  const createSandbox = (setupDoc) => {
+    const sandbox = {
+      chrome: {
+        runtime: {
+          sendMessage: () => Promise.resolve(),
+          onMessage: { addListener: () => {} }
+        }
+      },
+      document: {
+        readyState: 'complete',
+        addEventListener: () => {},
+        querySelector: () => {},
+        querySelectorAll: () => [],
+        body: { style: { removeProperty: () => {} } }
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      console: console,
+      Object: Object,
+      Promise: Promise,
+      Error: Error
+    };
+
+    // Apply document overrides
+    setupDoc(sandbox.document);
+
+    vm.createContext(sandbox);
+    // Execute content.js which calls injectCosmeticCSS() during init()
+    vm.runInContext(contentJsCode, sandbox);
+    return sandbox;
+  };
+
+  await t.test('should append style element to document.head when present', () => {
+    let appendedChild = null;
+    let createdElement = null;
+
+    const sandbox = createSandbox((doc) => {
+      doc.createElement = (tag) => {
+        createdElement = { tag };
+        return createdElement;
+      };
+      doc.head = {
+        appendChild: (child) => {
+          appendedChild = child;
+        }
+      };
+      doc.documentElement = {
+        appendChild: () => {
+          throw new Error('Should not append to documentElement if head exists');
+        }
+      };
+    });
+
+    // We can call injectCosmeticCSS manually to test explicitly
+    sandbox.injectCosmeticCSS();
+
+    assert.ok(appendedChild, 'A child should have been appended');
+    assert.strictEqual(appendedChild, createdElement, 'Appended child should be the created element');
+    assert.strictEqual(appendedChild.tag, 'style', 'Created element should be a <style>');
+    assert.strictEqual(appendedChild.id, 'yt-shield-cosmetic', 'Should have correct ID');
+    assert.ok(appendedChild.textContent.includes('display: none !important'), 'Should contain display: none !important');
+    assert.ok(appendedChild.textContent.includes('visibility: hidden !important'), 'Should contain visibility: hidden !important');
+  });
+
+  await t.test('should fallback to appending to document.documentElement when head is missing', () => {
+    let appendedChild = null;
+    let createdElement = null;
+
+    const sandbox = createSandbox((doc) => {
+      doc.createElement = (tag) => {
+        createdElement = { tag };
+        return createdElement;
+      };
+      // Simulate document.head missing
+      doc.head = null;
+      doc.documentElement = {
+        appendChild: (child) => {
+          appendedChild = child;
+        }
+      };
+    });
+
+    sandbox.injectCosmeticCSS();
+
+    assert.ok(appendedChild, 'A child should have been appended to documentElement');
+    assert.strictEqual(appendedChild, createdElement, 'Appended child should be the created element');
+    assert.strictEqual(appendedChild.id, 'yt-shield-cosmetic', 'Should have correct ID');
+  });
+});
