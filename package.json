@@ -1,0 +1,21 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "",
+  "main": "background.js",
+  "scripts": {
+    "test": "node content.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dabrogost/YT-Chroma.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Dabrogost/YT-Chroma/issues"
+  },
+  "homepage": "https://github.com/Dabrogost/YT-Chroma#readme"
+}
