@@ -4,7 +4,7 @@
   "description": "",
   "main": "background.js",
   "scripts": {
-    "test": "node content.test.js"
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
