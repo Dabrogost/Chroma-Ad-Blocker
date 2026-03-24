@@ -194,10 +194,18 @@ function handleAdAcceleration() {
 function startObserver() {
   if (observer) observer.disconnect();
 
+  let pendingFrame = false;
+
   observer = new MutationObserver((mutations) => {
     if (mutations.some(m => m.addedNodes.length > 0)) {
-      suppressAdblockWarnings();
-      removeLeftoverAdContainers();
+      if (!pendingFrame) {
+        pendingFrame = true;
+        requestAnimationFrame(() => {
+          suppressAdblockWarnings();
+          removeLeftoverAdContainers();
+          pendingFrame = false;
+        });
+      }
     }
   });
 
