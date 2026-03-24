@@ -189,14 +189,7 @@ function startObserver() {
   if (observer) observer.disconnect();
 
   observer = new MutationObserver((mutations) => {
-    let shouldCheck = false;
-    for (const m of mutations) {
-      if (m.addedNodes.length > 0) {
-        shouldCheck = true;
-        break;
-      }
-    }
-    if (shouldCheck) {
+    if (mutations.some(m => m.addedNodes.length > 0)) {
       suppressAdblockWarnings();
       removeLeftoverAdContainers();
     }
