@@ -231,15 +231,12 @@ function removeLeftoverAdContainers() {
  */
 function onYTNavigate() {
   // Short delay to let YouTube render the new page's ad elements
-  setTimeout(() => {
-    suppressAdblockWarnings();
-    removeLeftoverAdContainers();
-  }, 500);
-
-  setTimeout(() => {
-    suppressAdblockWarnings();
-    removeLeftoverAdContainers();
-  }, 1500);
+  [500, 1500].forEach(delay => {
+    setTimeout(() => {
+      suppressAdblockWarnings();
+      removeLeftoverAdContainers();
+    }, delay);
+  });
 }
 
 document.addEventListener('yt-navigate-finish', onYTNavigate);
