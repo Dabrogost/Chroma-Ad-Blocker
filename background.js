@@ -197,18 +197,58 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     // Allow popup/user to inject new block rules at runtime
     chrome.storage.local.get('dynamicRules').then(async ({ dynamicRules = [] }) => {
       const validatedRule = {};
-      const allowedProperties = ['priority', 'action', 'condition'];
 
       if (msg.rule && typeof msg.rule === 'object') {
-        for (const prop of allowedProperties) {
-          if (Object.prototype.hasOwnProperty.call(msg.rule, prop)) {
-            validatedRule[prop] = msg.rule[prop];
+        if (typeof msg.rule.priority === 'number') {
+          validatedRule.priority = msg.rule.priority;
+        }
+
+        if (msg.rule.action && typeof msg.rule.action === 'object') {
+          const type = msg.rule.action.type;
+          if (type === 'block' || type === 'allow') {
+            validatedRule.action = { type };
           }
+        }
+
+        if (msg.rule.condition && typeof msg.rule.condition === 'object') {
+          const condition = {};
+          if (typeof msg.rule.condition.urlFilter === 'string') {
+            condition.urlFilter = msg.rule.condition.urlFilter;
+          }
+          if (typeof msg.rule.condition.regexFilter === 'string') {
+            condition.regexFilter = msg.rule.condition.regexFilter;
+          }
+          if (Array.isArray(msg.rule.condition.initiatorDomains)) {
+            condition.initiatorDomains = msg.rule.condition.initiatorDomains.filter(d => typeof d === 'string');
+          }
+          if (Array.isArray(msg.rule.condition.excludedInitiatorDomains)) {
+            condition.excludedInitiatorDomains = msg.rule.condition.excludedInitiatorDomains.filter(d => typeof d === 'string');
+          }
+          if (Array.isArray(msg.rule.condition.requestDomains)) {
+            condition.requestDomains = msg.rule.condition.requestDomains.filter(d => typeof d === 'string');
+          }
+          if (Array.isArray(msg.rule.condition.excludedRequestDomains)) {
+            condition.excludedRequestDomains = msg.rule.condition.excludedRequestDomains.filter(d => typeof d === 'string');
+          }
+          if (Array.isArray(msg.rule.condition.resourceTypes)) {
+            condition.resourceTypes = msg.rule.condition.resourceTypes.filter(r => typeof r === 'string');
+          }
+          if (Array.isArray(msg.rule.condition.excludedResourceTypes)) {
+            condition.excludedResourceTypes = msg.rule.condition.excludedResourceTypes.filter(r => typeof r === 'string');
+          }
+          if (Array.isArray(msg.rule.condition.requestMethods)) {
+            condition.requestMethods = msg.rule.condition.requestMethods.filter(m => typeof m === 'string');
+          }
+          if (Array.isArray(msg.rule.condition.excludedRequestMethods)) {
+            condition.excludedRequestMethods = msg.rule.condition.excludedRequestMethods.filter(m => typeof m === 'string');
+          }
+
+          validatedRule.condition = condition;
         }
       }
 
       // Basic validation for mandatory rule fields
-      if (!validatedRule.action || !validatedRule.condition) {
+      if (!validatedRule.action || !validatedRule.condition || Object.keys(validatedRule.condition).length === 0) {
         return sendResponse({ ok: false, error: 'Invalid rule structure' });
       }
 
