@@ -68,6 +68,8 @@ const WARNING_SELECTORS = [
   '.yt-playability-error-supported-renderers',
 ];
 
+const WARNING_SELECTOR_COMBINED = WARNING_SELECTORS.join(',');
+
 // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
 function injectCosmeticCSS() {
   const style = document.createElement('style');
@@ -103,13 +105,11 @@ function injectCosmeticCSS() {
 function suppressAdblockWarnings(node) {
   if (!CONFIG.suppressWarnings) return;
 
-  for (const sel of WARNING_SELECTORS) {
-    const els = (node || document).querySelectorAll(sel);
-    els.forEach(el => {
-      el.remove();
-      stats.blocked++;
-    });
-  }
+  const els = (node || document).querySelectorAll(WARNING_SELECTOR_COMBINED);
+  els.forEach(el => {
+    el.remove();
+    stats.blocked++;
+  });
 
   // If the page has been paused by YouTube's enforcement overlay,
   // try to unpause the video
