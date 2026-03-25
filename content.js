@@ -778,7 +778,7 @@ function initPopUnderProtection() {
 
   // Listen for messages from the MAIN world (main-world.js)
   window.addEventListener('message', (event) => {
-    if (event.source !== window || !event.data || event.data.source !== 'yt-chroma-main-world') return;
+    if (event.source !== window || event.origin !== window.location.origin || !event.data || event.data.source !== 'yt-chroma-main-world') return;
 
     if (event.data.type === 'WINDOW_OPEN_ATTEMPT') {
       const now = Date.now();
