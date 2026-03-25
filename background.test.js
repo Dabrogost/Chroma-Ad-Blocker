@@ -69,3 +69,57 @@ test('getDefaultDynamicRules', async (t) => {
     assert.strictEqual(ids.length, uniqueIds.size, 'Rule IDs must be unique');
   });
 });
+
+test('syncDynamicRules error handling', async (t) => {
+  const sandbox = {};
+  let consoleErrorCalled = false;
+  let errorLogged = null;
+
+  const chromeMock = {
+    runtime: {
+      onInstalled: { addListener: () => {} },
+      onStartup: { addListener: () => {} },
+      onMessage: { addListener: () => {} }
+    },
+    storage: {
+      local: {
+        get: () => Promise.resolve({ dynamicRules: [] }),
+        set: () => Promise.resolve()
+      },
+      onChanged: { addListener: () => {} }
+    },
+    declarativeNetRequest: {
+      getDynamicRules: () => Promise.resolve([]),
+      updateDynamicRules: () => Promise.reject(new Error('Simulated update error'))
+    },
+    tabs: {
+      query: () => Promise.resolve([]),
+      sendMessage: () => Promise.resolve(),
+      onCreated: { addListener: () => {} },
+      onRemoved: { addListener: () => {} }
+    }
+  };
+
+  sandbox.chrome = chromeMock;
+  sandbox.console = {
+    log: () => {},
+    error: (msg, err) => {
+      consoleErrorCalled = true;
+      errorLogged = err;
+    },
+    warn: () => {}
+  };
+  sandbox.setInterval = () => {};
+
+  vm.createContext(sandbox);
+  vm.runInContext(backgroundJsCode, sandbox);
+
+  await t.test('catches and logs error when updateDynamicRules fails', async () => {
+    // Calling the function from the sandbox
+    await sandbox.syncDynamicRules();
+
+    assert.strictEqual(consoleErrorCalled, true, 'console.error should have been called');
+    assert.ok(errorLogged instanceof Error, 'Logged error should be an Error instance');
+    assert.strictEqual(errorLogged.message, 'Simulated update error', 'Should log the correct error');
+  });
+});
