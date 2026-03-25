@@ -395,6 +395,188 @@ test('removeLeftoverAdContainers functionality', async (t) => {
   });
 });
 
+test('initAdOverlay functionality', async (t) => {
+  const createSandbox = (setupDoc) => {
+    const sandbox = {
+      chrome: {
+        runtime: {
+          sendMessage: () => Promise.resolve(),
+          onMessage: { addListener: () => {} }
+        }
+      },
+      document: {
+        readyState: 'complete',
+        createElement: (tag) => createMockElement(tag),
+        getElementById: () => null,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        head: createMockElement('head'),
+        body: createMockElement('body'),
+        documentElement: createMockElement('html'),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        getElementsByClassName: () => []
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      console: console,
+      Object: Object,
+      Array: Array,
+      Number: Number,
+      String: String,
+      Boolean: Boolean,
+      Math: Math,
+      Date: Date,
+      Promise: Promise,
+      Error: Error,
+      requestAnimationFrame: (cb) => {},
+      window: {
+        location: { hostname: 'www.youtube.com' },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        requestAnimationFrame: (cb) => {},
+        innerHeight: 1000,
+        innerWidth: 1000
+      },
+      location: { hostname: 'www.youtube.com' }
+    };
+
+    if (setupDoc) setupDoc(sandbox.document);
+
+    vm.createContext(sandbox);
+    vm.runInContext(contentJsCode, sandbox);
+    return sandbox;
+  };
+
+  await t.test('should create ad overlay and append child elements', () => {
+    let createdElements = [];
+    const sandbox = createSandbox((doc) => {
+      const origCreate = doc.createElement;
+      doc.createElement = (tag) => {
+        const el = origCreate(tag);
+        // Track appended children for this test
+        el.childrenArray = [];
+        el.appendChild = function(child) {
+          this.childrenArray.push(child);
+          return child;
+        };
+        createdElements.push(el);
+        return el;
+      };
+    });
+
+    // Evaluate inside sandbox
+    vm.runInContext(`
+      adOverlay = null;
+      initAdOverlay();
+    `, sandbox);
+
+    // Evaluate and retrieve the value of adOverlay back from the context
+    const overlay = vm.runInContext('adOverlay', sandbox);
+
+    assert.ok(overlay, 'adOverlay should be created');
+    assert.strictEqual(overlay.id, 'yt-chroma-overlay');
+
+    // Check children
+    const children = overlay.childrenArray || [];
+    assert.strictEqual(children.length, 3, 'Should append 3 children');
+
+    const spinner = children.find(c => c.className === 'chroma-spinner');
+    assert.ok(spinner, 'Should contain spinner');
+
+    const title = children.find(c => c.className === 'chroma-title');
+    assert.ok(title, 'Should contain title');
+    assert.strictEqual(title.textContent, 'Chroma Active');
+
+    const subtitle = children.find(c => c.className === 'chroma-subtitle');
+    assert.ok(subtitle, 'Should contain subtitle');
+    assert.strictEqual(subtitle.textContent, 'Accelerating Ad...');
+  });
+
+  await t.test('should not create ad overlay if it already exists', () => {
+    let createdElementsCount = 0;
+    const mockExistingOverlay = createMockElement('div');
+    const sandbox = createSandbox((doc) => {
+      doc.getElementById = (id) => {
+        if (id === 'yt-chroma-overlay') return mockExistingOverlay;
+        return null;
+      };
+      const origCreate = doc.createElement;
+      doc.createElement = (tag) => {
+        createdElementsCount++;
+        return origCreate(tag);
+      };
+    });
+
+    // Reset adOverlay to null, and make sure that we reset createdElementsCount
+    // in case createSandbox triggered any initialization.
+    createdElementsCount = 0;
+    vm.runInContext(`
+      adOverlay = null;
+      initAdOverlay();
+    `, sandbox);
+
+    assert.strictEqual(createdElementsCount, 0, 'Should not create any elements if overlay exists');
+  });
+
+  await t.test('should append overlay to .html5-video-player if it exists', () => {
+    let appendedChild = null;
+    const playerMock = createMockElement('div');
+    playerMock.className = 'html5-video-player';
+    playerMock.appendChild = (child) => {
+      appendedChild = child;
+    };
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => {
+        if (sel === '.html5-video-player' || sel === '#movie_player') {
+          return playerMock;
+        }
+        return null;
+      };
+    });
+
+    vm.runInContext(`
+      adOverlay = null;
+      initAdOverlay();
+    `, sandbox);
+
+    assert.ok(appendedChild, 'Overlay should be appended to the player container');
+    assert.strictEqual(appendedChild.id, 'yt-chroma-overlay', 'Appended child should be the overlay');
+  });
+
+  await t.test('should append overlay to #movie_player if .html5-video-player is absent', () => {
+    let appendedChild = null;
+    const playerMock = createMockElement('div');
+    playerMock.id = 'movie_player';
+    playerMock.appendChild = (child) => {
+      appendedChild = child;
+    };
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => {
+        if (sel === '#movie_player') {
+          return playerMock;
+        }
+        return null;
+      };
+    });
+
+    vm.runInContext(`
+      adOverlay = null;
+      initAdOverlay();
+    `, sandbox);
+
+    assert.ok(appendedChild, 'Overlay should be appended to the player container');
+    assert.strictEqual(appendedChild.id, 'yt-chroma-overlay', 'Appended child should be the overlay');
+  });
+});
+
 test('signalMainWorld functionality', async (t) => {
   const createSandbox = () => {
     const sandbox = {
