@@ -17,30 +17,31 @@ To get Chroma Ad-Blocker running in your Chrome browser:
 Chroma Ad-Blocker utilizes a decentralized architecture synchronized through a central storage hub. This design ensures that configuration changes and block statistics are consistently applied across various execution contexts (Service Worker, Isolated World, and Main World).
 
 ```mermaid
-graph TD
-    STORAGE[("chrome.storage.local<br/>(Central Hub)")]
-
+graph LR
     subgraph "Extension Components"
+        POP["popup.js<br/>(Extension UI)"]
         BS["background.js<br/>(Service Worker)"]
         CS["content.js<br/>(Isolated World)"]
-        POP["popup.js<br/>(Extension UI)"]
         DNR["Declarative Net Request<br/>(Network Rules)"]
     end
 
+    STORAGE[("chrome.storage.local<br/>(Central Hub)")]
+
     subgraph "Execution Contexts"
-        DOM["YouTube DOM<br/>(Video Element)"]
         MW["main-world.js<br/>(Main World Interceptor)"]
+        DOM["YouTube DOM<br/>(Video Element)"]
     end
 
     %% Storage Interactions
-    BS <-->|Config & Stats| STORAGE
-    CS <-->|Config & State| STORAGE
-    POP <-->|User Config & Stats| STORAGE
+    POP <-->|"User Config & Stats"| STORAGE
+    BS <-->|"Config & Stats"| STORAGE
+    CS <-->|"Config & State"| STORAGE
 
     %% Logic & Control Flow
     BS -- "Enables/Disables" --> DNR
-    CS -- "Accelerates/Hides" --> DOM
     CS -- "Configures" --> MW
+    CS -- "Accelerates/Hides" --> DOM
+    
     DNR -.->|"Blocks Requests"| DOM
     MW -.->|"Intercepts APIs"| DOM
 ```
