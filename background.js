@@ -283,9 +283,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       // Broadcast to all tabs
       const tabs = await chrome.tabs.query({});
-      for (const tab of tabs) {
-        chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATE', config: newConfig }).catch(() => {});
-      }
+      await Promise.all(tabs.map(tab =>
+        chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATE', config: newConfig }).catch(() => {})
+      ));
       sendResponse({ ok: true });
     });
     return true;
