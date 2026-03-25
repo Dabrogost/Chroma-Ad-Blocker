@@ -326,12 +326,14 @@ test('removeLeftoverAdContainers functionality', async (t) => {
 
   await t.test('should set display to none for matching ad containers', () => {
     const ad1 = createMockElement(); ad1.id = 'ad-container-1';
+    ad1.matches = (sel) => sel.includes('ad-container');
     const ad2 = createMockElement(); ad2.id = 'some_ad_container_2';
+    ad2.matches = (sel) => sel.includes('ad_container');
     const ad3 = createMockElement(); ad3.className = 'ad-slot-3'; // id will be empty string ''
 
     const sandbox = createSandbox((doc) => {
       doc.querySelectorAll = (selector) => {
-        if (selector === '[id*="ad-container"], [id*="ad_container"]') {
+        if (selector.includes('ad-container') || selector.includes('ad_container')) {
           return [ad1, ad2, ad3];
         }
         return [];
@@ -363,11 +365,13 @@ test('removeLeftoverAdContainers functionality', async (t) => {
 
   await t.test('should ignore elements with id "yt-chroma-cosmetic"', () => {
     const cosmeticStyleEl = createMockElement(); cosmeticStyleEl.id = 'yt-chroma-cosmetic';
+    cosmeticStyleEl.matches = (sel) => sel.includes('ad-container');
     const ad = createMockElement(); ad.id = 'ad-container';
+    ad.matches = (sel) => sel.includes('ad-container');
 
     const sandbox = createSandbox((doc) => {
       doc.querySelectorAll = (selector) => {
-        if (selector === '[id*="ad-container"], [id*="ad_container"]') {
+        if (selector.includes('ad-container') || selector.includes('ad_container')) {
           return [cosmeticStyleEl, ad];
         }
         return [];

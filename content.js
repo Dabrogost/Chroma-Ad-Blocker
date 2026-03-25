@@ -100,6 +100,21 @@ const WARNING_SELECTORS = [
 
 const WARNING_SELECTOR_COMBINED = WARNING_SELECTORS.join(',');
 
+// Optimized ID-based ad container patterns
+const AD_ID_PATTERNS = [
+  '[id*="ad-container"]',
+  '[id*="ad_container"]'
+];
+const AD_ID_SELECTOR_COMBINED = AD_ID_PATTERNS.join(',');
+
+// Optimized slot-based ad container patterns
+const AD_SLOT_SELECTORS = [
+  'ytd-ad-slot-renderer',
+  '.ytd-ad-slot-renderer',
+  '#ad-badge'
+];
+const AD_SLOT_SELECTOR_COMBINED = AD_SLOT_SELECTORS.join(',');
+
 // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
 function injectCosmeticCSS() {
   const style = document.createElement('style');
@@ -266,10 +281,18 @@ function updateCosmeticState() {
 }
 
 // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
-function suppressAdblockWarnings(node) {
+function suppressAdblockWarnings(root = document) {
   if (!CONFIG.enabled || !CONFIG.suppressWarnings) return;
 
-  const els = (node || document).querySelectorAll(WARNING_SELECTOR_COMBINED);
+  // 1. If the root itself is a target, remove it
+  if (root !== document && typeof root.matches === 'function' && root.matches(WARNING_SELECTOR_COMBINED)) {
+    root.remove();
+    stats.blocked++;
+    return;
+  }
+
+  // 2. Otherwise, check children
+  const els = root.querySelectorAll(WARNING_SELECTOR_COMBINED);
   const removedAny = els.length > 0;
 
   els.forEach(el => {
@@ -590,14 +613,32 @@ function startObserver() {
   if (observer) observer.disconnect();
 
   let pendingFrame = false;
+  let addedElements = new Set();
 
   observer = new MutationObserver((mutations) => {
-    if (mutations.some(m => m.addedNodes.length > 0)) {
+    let hasNewNodes = false;
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === 1) { // Node.ELEMENT_NODE
+          addedElements.add(node);
+          hasNewNodes = true;
+        }
+      }
+    }
+
+    if (hasNewNodes) {
       if (!pendingFrame) {
         pendingFrame = true;
         requestAnimationFrame(() => {
-          suppressAdblockWarnings();
-          removeLeftoverAdContainers();
+          // Process collected elements
+          addedElements.forEach(el => {
+            if (document.contains(el)) {
+              suppressAdblockWarnings(el);
+              removeLeftoverAdContainers(el);
+            }
+          });
+          addedElements.clear();
+
           // Also check for the player container if we haven't attached the overlay yet
           if (!document.getElementById('yt-chroma-overlay')) {
             initAdOverlay();
@@ -618,9 +659,17 @@ function startObserver() {
  * Remove any ad containers that slipped through the CSS hiding
  * (e.g., elements with inline styles or dynamic class injection)
  */
-function removeLeftoverAdContainers() {
+function removeLeftoverAdContainers(root = document) {
   // 1. Precise element-based removal for elements with 'ad' in their ID
-  const adIds = document.querySelectorAll('[id*="ad-container"], [id*="ad_container"]');
+  if (root !== document && typeof root.matches === 'function' && root.matches(AD_ID_SELECTOR_COMBINED)) {
+    if (root.id !== 'yt-chroma-cosmetic' && !root.id.includes('masthead')) {
+      root.style.display = 'none';
+      root.remove();
+      return;
+    }
+  }
+
+  const adIds = root.querySelectorAll(AD_ID_SELECTOR_COMBINED);
   adIds.forEach(el => {
     if (el.id !== 'yt-chroma-cosmetic' && !el.id.includes('masthead')) {
       el.style.display = 'none';
@@ -629,22 +678,32 @@ function removeLeftoverAdContainers() {
   });
 
   // 2. Parent-container removal for ad slots that the CSS engine might have missed
-  // This proactively hides the entire grid slot if an ad is found inside it.
-  // ONLY remove parents that are designated for a single ad/video slot (rich-grid).
-  const adSlots = document.querySelectorAll('ytd-ad-slot-renderer, .ytd-ad-slot-renderer, #ad-badge');
+  if (root !== document && typeof root.matches === 'function' && root.matches(AD_SLOT_SELECTOR_COMBINED)) {
+    handleAdSlotRemoval(root);
+    return;
+  }
+
+  const adSlots = root.querySelectorAll(AD_SLOT_SELECTOR_COMBINED);
   adSlots.forEach(slot => {
-    const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer');
-    if (parent) {
-      parent.style.display = 'none';
-      parent.remove();
-    } else {
-      // For sidebar or other sections, just hide the slot itself to preserve siblings
-      slot.style.display = 'none';
-      if (!slot.closest('#secondary')) { // Don't remove from sidebar, just hide
-         slot.remove();
-      }
-    }
+    handleAdSlotRemoval(slot);
   });
+}
+
+/**
+ * Helper to handle the specific removal logic for ad slot renderers
+ */
+function handleAdSlotRemoval(slot) {
+  const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer');
+  if (parent) {
+    parent.style.display = 'none';
+    parent.remove();
+  } else {
+    // For sidebar or other sections, just hide the slot itself to preserve siblings
+    slot.style.display = 'none';
+    if (!slot.closest('#secondary')) { // Don't remove from sidebar, just hide
+      slot.remove();
+    }
+  }
 }
 
 // ─── NAVIGATION HANDLING (SPA) ────────────────────────────────────────────────
