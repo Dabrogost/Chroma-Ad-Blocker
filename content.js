@@ -22,6 +22,15 @@ const CONFIG = {
   enabled: true,
 };
 
+// ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
+const MSG = {
+  CONFIG_UPDATE: 'CONFIG_UPDATE',
+  STATS_UPDATE: 'STATS_UPDATE',
+  STATS_GET: 'STATS_GET',
+  WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
+  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+};
+
 const isYouTube = window.location.hostname.includes('youtube.com');
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -221,7 +230,7 @@ function injectCosmeticCSS() {
     }
     @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
     
-    /* chroma-border and chroma-all-borders removed — driven by --chroma-color */
+   
 
     .chroma-checkmark {
       width: 48px; height: 48px;
@@ -243,7 +252,7 @@ function injectCosmeticCSS() {
       transition: border-color 0.15s linear;
     }
     
-    /* chroma-bg removed — driven by --chroma-color */
+   
 
     .chroma-title {
       font-size: 24px; font-weight: 600; margin-bottom: 8px;
@@ -454,7 +463,7 @@ function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
 
     if (playerContainer) {
       const playerText = playerContainer.textContent || '';
-      const parsedTextMatch = playerText.match(/(?:[^\d]|^)([1-9])\s*(?:of|de|sur|out of|von|di)\s*([2-9])(?:[^\d]|$)/i);
+      const parsedTextMatch = playerText.match(/(?:[^\d]|^)([0-9]+)\s*(?:of|de|sur|out of|von|di)\s*([0-9]+)(?:[^\d]|$)/i);
       if (parsedTextMatch) {
         const parsedCurrent = parseInt(parsedTextMatch[1], 10);
         const parsedTotal = parseInt(parsedTextMatch[2], 10);
@@ -601,6 +610,7 @@ function handleAdAcceleration() {
       console.log('[YT Chroma] Ad Session Detected');
       window.chromaAdSkipped = false; // Reset skip state for new session
       startFastAdWatcher(); // Start higher frequency loop during ads
+      startChromaClock(); // Restart the color clock loop
     }
     window.chromaAdSessionActive = true;
     window.lastAdDetectTime = Date.now();
@@ -661,7 +671,7 @@ function handleAdAcceleration() {
       // Increment stats ONLY once per unique ad to prevent spikes if YouTube fights the playback rate
       if (window.lastAcceleratedSrc !== video.src) {
         stats.accelerated++;
-        notifyBackground({ type: 'STAT_UPDATE', stats });
+        notifyBackground({ type: MSG.STATS_UPDATE, stats: { accelerated: 1 } });
         window.lastAcceleratedSrc = video.src;
       }
     }
@@ -901,7 +911,7 @@ function initPopUnderProtection() {
 
       // Notify background script about the attempt
       notifyBackground({
-        type: 'WINDOW_OPEN_NOTIFY',
+        type: MSG.WINDOW_OPEN_NOTIFY,
         url: event.data.url,
         isSuspicious,
         timeSinceGesture,
@@ -914,7 +924,7 @@ function initPopUnderProtection() {
     if (event.data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || event.data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
       console.log(`[YT Chroma] Blocked suspicious pop-under attempt (${event.data.type})`);
       notifyBackground({
-        type: 'SUSPICIOUS_ACTIVITY',
+        type: MSG.SUSPICIOUS_ACTIVITY,
         activity: event.data.type,
         context: event.data.context
       });
@@ -953,7 +963,7 @@ function notifyBackground(message) {
 
 // Listen for config updates from the popup
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'CONFIG_UPDATE') {
+  if (msg.type === MSG.CONFIG_UPDATE) {
     Object.assign(CONFIG, msg.config);
     
     // Immediately apply config changes
@@ -1003,7 +1013,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     updateOffersState();
     signalMainWorld();
   }
-  if (msg.type === 'GET_STATS') {
+  if (msg.type === MSG.STATS_GET) {
     sendResponse(stats);
     return true;
   }
@@ -1099,6 +1109,11 @@ function startChromaClock() {
   chromaClockRunning = true;
 
   function tick() {
+    if (!window.chromaAdSessionActive) {
+      chromaClockRunning = false;
+      return;
+    }
+
     const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS; // 0 → 1
     const segCount = CHROMA_PALETTE.length;
     const raw = t * segCount;

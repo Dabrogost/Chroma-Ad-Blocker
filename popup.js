@@ -2,6 +2,14 @@
 
 const $ = id => document.getElementById(id);
 
+// ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
+const MSG = {
+  CONFIG_GET: 'CONFIG_GET',
+  CONFIG_SET: 'CONFIG_SET',
+  STATS_GET: 'STATS_GET',
+  STATS_RESET: 'STATS_RESET'
+};
+
 async function sendBg(msg) {
   return chrome.runtime.sendMessage(msg).catch(err => {
     console.warn('[YT Chroma] Messaging error (Worker waking up?):', err);
@@ -11,7 +19,7 @@ async function sendBg(msg) {
 
 async function init() {
   // Load config
-  const config = await sendBg({ type: 'GET_CONFIG' }) || {
+  const config = await sendBg({ type: MSG.CONFIG_GET }) || {
     networkBlocking: true,
     acceleration: true,
     cosmetic: true,
@@ -39,7 +47,7 @@ async function init() {
   $('togglePush').checked = isEnabled ? (config.blockPushNotifications ?? true) : false;
 
   // Load stats
-  const stats = await sendBg({ type: 'GET_STATS' }) || { networkBlocked: 0, accelerated: 0 };
+  const stats = await sendBg({ type: MSG.STATS_GET }) || { networkBlocked: 0, accelerated: 0 };
   $('statAccelerated').textContent = stats.accelerated ?? 0;
   $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
 
@@ -59,19 +67,19 @@ async function init() {
   for (const [elId, key] of TOGGLES) {
     $(elId).addEventListener('change', async (e) => {
       const isChecked = e.target.checked;
-      await sendBg({ type: 'SET_CONFIG', config: { [key]: isChecked } });
+      await sendBg({ type: MSG.CONFIG_SET, config: { [key]: isChecked } });
       
       // If any individual toggle is turned on, ensure master is also on
       if (isChecked && !$('toggleEnabled').checked) {
         $('toggleEnabled').checked = true;
         updateStatusDot(true);
-        await sendBg({ type: 'SET_CONFIG', config: { enabled: true } });
+        await sendBg({ type: MSG.CONFIG_SET, config: { enabled: true } });
       } else if (!isChecked) {
         const anyOn = TOGGLES.some(([id]) => $(id).checked);
         if (!anyOn) {
           $('toggleEnabled').checked = false;
           updateStatusDot(false);
-          await sendBg({ type: 'SET_CONFIG', config: { enabled: false } });
+          await sendBg({ type: MSG.CONFIG_SET, config: { enabled: false } });
         }
       }
     });
@@ -84,7 +92,7 @@ async function init() {
     
     // We only update the 'enabled' flag in the background, 
     // NOT the individual feature flags. This lets us restore them.
-    await sendBg({ type: 'SET_CONFIG', config: { enabled: isEnabled } });
+    await sendBg({ type: MSG.CONFIG_SET, config: { enabled: isEnabled } });
 
     if (!isEnabled) {
       // Visually turn off all sub-toggles (but don't save to config)
@@ -93,7 +101,7 @@ async function init() {
       }
     } else {
       // Restore visual state from the actual (persistent) config
-      const config = await sendBg({ type: 'GET_CONFIG' });
+      const config = await sendBg({ type: MSG.CONFIG_GET });
       if (config) {
         $('toggleNetwork').checked = config.networkBlocking ?? true;
         $('toggleAcceleration').checked = config.acceleration ?? true;
@@ -120,7 +128,7 @@ async function init() {
 
   // Reset stats
   $('resetStats').addEventListener('click', async () => {
-    await sendBg({ type: 'RESET_STATS' });
+    await sendBg({ type: MSG.STATS_RESET });
     $('statAccelerated').textContent = '0';
     $('statNetworkBlocked').textContent = '0';
   });

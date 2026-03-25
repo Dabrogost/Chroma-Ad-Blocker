@@ -11,7 +11,8 @@
     "tabs"
   ],
   "host_permissions": [
-    "*://*.youtube.com/*"
+    "*://*.youtube.com/*",
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -91,11 +92,6 @@
         "id": "yt_ad_rules_part9",
         "enabled": true,
         "path": "rules_9.json"
-      },
-      {
-        "id": "yt_ad_rules_part10",
-        "enabled": true,
-        "path": "rules_10.json"
       }
     ]
   },

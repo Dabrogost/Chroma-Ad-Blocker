@@ -27,6 +27,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         enabled: true,
       },
       stats: { networkBlocked: 0, accelerated: 0 },
+      ruleCounter: 5000000,
+      lastHarvestTime: Date.now(),
     });
     console.log('[YT Chroma] Installed. Default config applied.');
   }
@@ -57,8 +59,7 @@ async function updateDNRState(isEnabled) {
     'yt_ad_rules_part6',
     'yt_ad_rules_part7',
     'yt_ad_rules_part8',
-    'yt_ad_rules_part9',
-    'yt_ad_rules_part10'
+    'yt_ad_rules_part9'
   ];
   try {
     if (isEnabled) {
@@ -198,6 +199,9 @@ chrome.storage.onChanged.addListener((changes) => {
 const popunderRequests = new Map(); // tabId -> { time: number, isSuspicious: boolean, createdTabIds: number[], ... }
 let lastGlobalRequest = null; // Fallback for when openerTabId is missing
 
+// RESOLVER SYNC: Track tabs waiting for a WINDOW_OPEN_NOTIFY from their opener
+const popunderResolvers = new Map(); // openerTabId -> [ (request) => void ]
+
 // PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
 setInterval(() => {
   const now = Date.now();
@@ -211,19 +215,41 @@ setInterval(() => {
   }
 }, 30000);
 
+// ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
+const MSG = {
+  // Config
+  CONFIG_GET: 'CONFIG_GET',
+  CONFIG_SET: 'CONFIG_SET',
+  CONFIG_UPDATE: 'CONFIG_UPDATE',
+  // Stats
+  STATS_GET: 'STATS_GET',        // was GET_STATS
+  STATS_RESET: 'STATS_RESET',    // was RESET_STATS
+  STATS_UPDATE: 'STATS_UPDATE',  // was STAT_UPDATE
+  // Other
+  DYNAMIC_RULE_ADD: 'DYNAMIC_RULE_ADD', // was ADD_DYNAMIC_RULE
+  WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
+  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+};
+
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // SECURITY: Restrict sensitive message types to internal extension pages (e.g. popup)
   // Content scripts always have a sender.tab property. Internal pages do not.
   const isFromInternal = !_sender.tab;
-  const SENSITIVE_TYPES = ['GET_STATS', 'GET_CONFIG', 'SET_CONFIG', 'ADD_DYNAMIC_RULE', 'RESET_STATS'];
+  const SENSITIVE_TYPES = [
+    MSG.STATS_GET,
+    MSG.CONFIG_GET,
+    MSG.CONFIG_SET,
+    MSG.DYNAMIC_RULE_ADD,
+    MSG.STATS_RESET
+  ];
 
   if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
     console.error(`[YT Chroma] Blocked unauthorized ${msg.type} attempt from tab ${_sender.tab.id}`);
     return false;
   }
 
-  if (msg.type === 'STAT_UPDATE') {
+  if (msg.type === MSG.STATS_UPDATE) {
     // Accumulate stats from content scripts
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
       const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
@@ -235,7 +261,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false;
   }
 
-  if (msg.type === 'WINDOW_OPEN_NOTIFY') {
+  if (msg.type === MSG.WINDOW_OPEN_NOTIFY) {
     const tabId = _sender.tab?.id;
     if (tabId) {
       const existing = popunderRequests.get(tabId) || { createdTabIds: [] };
@@ -251,12 +277,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       };
       popunderRequests.set(tabId, request);
       lastGlobalRequest = request; // Store as global fallback
+      
+      // RESOLVE PENDING: Notify any tabs created by this opener that were waiting for synchronization
+      const resolvers = popunderResolvers.get(tabId);
+      if (resolvers) {
+        resolvers.forEach(res => res(request));
+        popunderResolvers.delete(tabId);
+      }
+
       console.log(`[YT Chroma] Window open notification from tab ${tabId}:`, msg);
     }
     return false;
   }
 
-  if (msg.type === 'SUSPICIOUS_ACTIVITY') {
+  if (msg.type === MSG.SUSPICIOUS_ACTIVITY) {
     const tabId = _sender.tab?.id;
     if (tabId) {
       const existing = popunderRequests.get(tabId) || { time: Date.now(), createdTabIds: [] };
@@ -285,21 +319,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false;
   }
 
-  if (msg.type === 'GET_STATS') {
-    chrome.storage.local.get('stats').then(({ stats }) => {
-      sendResponse(stats || { networkBlocked: 0, accelerated: 0 });
+  if (msg.type === MSG.STATS_GET) {
+    // Attempt to harvest matches before returning stats
+    harvestNetworkStats().catch(() => {}).finally(() => {
+      chrome.storage.local.get('stats').then(({ stats }) => {
+        sendResponse(stats || { networkBlocked: 0, accelerated: 0 });
+      });
     });
     return true; // keep channel open for async response
   }
 
-  if (msg.type === 'GET_CONFIG') {
+  if (msg.type === MSG.CONFIG_GET) {
     chrome.storage.local.get('config').then(({ config }) => {
       sendResponse(config);
     });
     return true;
   }
 
-  if (msg.type === 'SET_CONFIG') {
+  if (msg.type === MSG.CONFIG_SET) {
     chrome.storage.local.get('config').then(async ({ config }) => {
       // Validate and extract only allowed properties
       const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
@@ -333,16 +370,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       // Broadcast to all tabs
       const tabs = await chrome.tabs.query({});
       await Promise.all(tabs.map(tab =>
-        chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATE', config: newConfig }).catch(() => {})
+        chrome.tabs.sendMessage(tab.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})
       ));
       sendResponse({ ok: true });
     });
     return true;
   }
 
-  if (msg.type === 'ADD_DYNAMIC_RULE') {
+  if (msg.type === MSG.DYNAMIC_RULE_ADD) {
     // Allow popup/user to inject new block rules at runtime
-    chrome.storage.local.get('dynamicRules').then(async ({ dynamicRules = [] }) => {
+    chrome.storage.local.get(['dynamicRules', 'ruleCounter']).then(async ({ dynamicRules = [], ruleCounter }) => {
+      // Force initialization for legacy users who didn't get it via onInstalled
+      if (!ruleCounter) {
+        ruleCounter = 5000000;
+      }
+
       const validatedRule = {};
 
       if (msg.rule && typeof msg.rule === 'object') {
@@ -399,16 +441,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return sendResponse({ ok: false, error: 'Invalid rule structure' });
       }
 
-      const newRule = { id: (Date.now() % 100000) + 2000, ...validatedRule };
+      const newRule = { id: ruleCounter++, ...validatedRule };
       dynamicRules.push(newRule);
-      await chrome.storage.local.set({ dynamicRules });
+      
+      await chrome.storage.local.set({ 
+        dynamicRules,
+        ruleCounter: ruleCounter
+      });
+      
       await chrome.declarativeNetRequest.updateDynamicRules({ addRules: [newRule] });
       sendResponse({ ok: true, ruleId: newRule.id });
     });
     return true;
   }
 
-  if (msg.type === 'RESET_STATS') {
+  if (msg.type === MSG.STATS_RESET) {
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
       stats.networkBlocked = 0;
       stats.accelerated = 0;
@@ -425,22 +472,37 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 
   // Give a small grace period for the WINDOW_OPEN_NOTIFY to arrive from content script
   // since postMessage -> runtime.sendMessage is slightly slower than tab creation.
-  let request = null;
-  const now = Date.now();
   const openerId = tab.openerTabId;
-
-  for (let i = 0; i < 5; i++) { // Retry up to 5 times (250ms total)
-    request = openerId ? popunderRequests.get(openerId) : null;
-    if (!request && lastGlobalRequest && (Date.now() - lastGlobalRequest.time < 2000)) {
-      request = lastGlobalRequest;
-    }
-    
-    if (request) break;
-    await new Promise(r => setTimeout(r, 50));
+  let request = openerId ? popunderRequests.get(openerId) : null;
+  
+  if (!request && lastGlobalRequest && (Date.now() - lastGlobalRequest.time < 2000)) {
+    request = lastGlobalRequest;
   }
 
-  if (!request) return;
+  // If no match yet, wait for the notification to arrive via promise resolution
+  if (!request && openerId) {
+    request = await new Promise(resolve => {
+      const resolvers = popunderResolvers.get(openerId) || [];
+      const timeout = setTimeout(() => {
+        const list = popunderResolvers.get(openerId);
+        if (list) {
+          const idx = list.indexOf(resolve);
+          if (idx !== -1) list.splice(idx, 1);
+          if (list.length === 0) popunderResolvers.delete(openerId);
+        }
+        resolve(null);
+      }, 1000); // 1s max wait for sync
 
+      resolvers.push((req) => {
+        clearTimeout(timeout);
+        resolve(req);
+      });
+      popunderResolvers.set(openerId, resolvers);
+    });
+  }
+
+  const now = Date.now();
+  if (!request) return;
   if (!request.createdTabIds) request.createdTabIds = [];
 
   const timeSinceNotify = now - request.time;
@@ -473,13 +535,12 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 });
 
 // ─── NETWORK BLOCK TRACKING (DNR) ───────────────────────────────────────────
+/**
+ * FAST-PATH: onRuleMatchedDebug ONLY works in Developer Mode (unpacked).
+ * It provides real-time updates which is great for the developer experience.
+ */
 if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
-    // Only track actual block rules (not allow rules or redirects unless desired)
-    // In our rules.json, most are block. 
-    // We can check the action type if available, but onRuleMatchedDebug info 
-    // often doesn't specify the action type easily without looking up the rule.
-    // However, for stats purposes, incrementing on every match is usually what users expect.
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
       stats.networkBlocked = (stats.networkBlocked || 0) + 1;
       chrome.storage.local.set({ stats });
@@ -487,7 +548,42 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   });
 }
 
-// Clean up map when a tab is closed
+/**
+ * PRODUCTION-PATH: In packed extensions, we must harvest stats manually.
+ * We use getMatchedRules with minTimeStamp for efficiency.
+ */
+async function harvestNetworkStats() {
+  try {
+    const { stats = {}, lastHarvestTime = 0 } = await chrome.storage.local.get(['stats', 'lastHarvestTime']);
+    
+    // Use the native minTimeStamp filter (requires declarativeNetRequestFeedback)
+    // We add +1 to avoid re-counting the exact same match at the boundary
+    const matchedRules = await chrome.declarativeNetRequest.getMatchedRules({
+      minTimeStamp: lastHarvestTime + 1
+    });
+    
+    const newMatches = matchedRules.rulesMatched || [];
+    
+    if (newMatches.length > 0) {
+      const latestMatchTime = Math.max(...newMatches.map(m => m.timeStamp));
+      stats.networkBlocked = (stats.networkBlocked || 0) + newMatches.length;
+      
+      await chrome.storage.local.set({ 
+        stats, 
+        lastHarvestTime: latestMatchTime 
+      });
+      console.log(`[YT Chroma] Harvested ${newMatches.length} network blocks. Total: ${stats.networkBlocked}`);
+    }
+  } catch (err) {
+    console.warn('[YT Chroma] Error harvesting network stats:', err);
+  }
+}
+
+// PERIODIC HARVEST: Every 2 minutes while active
+setInterval(harvestNetworkStats, 120000);
+
+// Clean up and final harvest
 chrome.tabs.onRemoved.addListener((tabId) => {
   popunderRequests.delete(tabId);
+  harvestNetworkStats().catch(() => {});
 });
