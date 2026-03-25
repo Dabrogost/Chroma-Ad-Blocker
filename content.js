@@ -322,6 +322,12 @@ function initAdOverlay() {
   adOverlay.appendChild(spinner);
   adOverlay.appendChild(title);
   adOverlay.appendChild(subtitle);
+
+  // Eagerly attach to the player container if available
+  const playerContainer = document.querySelector('.html5-video-player') || document.querySelector('#movie_player');
+  if (playerContainer && !playerContainer.contains(adOverlay)) {
+    playerContainer.appendChild(adOverlay);
+  }
 }
 
 function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
@@ -446,10 +452,25 @@ function handleAdAcceleration() {
 
   // Detect if we're in an ad by checking YouTube's own ad UI markers
   // getElementsByClassName is significantly faster than querySelector
-  const rawAdShowing =
+  let rawAdShowing =
     document.getElementsByClassName('ad-showing').length > 0 ||
     document.getElementsByClassName('ytp-ad-player-overlay').length > 0 ||
-    document.getElementsByClassName('ytp-ad-progress').length > 0;
+    document.getElementsByClassName('ytp-ad-progress').length > 0 ||
+    document.getElementsByClassName('ytp-ad-player-overlay-layout').length > 0 ||
+    document.getElementsByClassName('ytp-ad-player-overlay-skip-or-preview').length > 0 ||
+    document.querySelector('.html5-video-player.ad-showing') !== null ||
+    document.querySelector('[class*="ytp-ad-persistent-progress-bar"]') !== null ||
+    document.querySelector('.ytp-ad-module .ytp-ad-player-overlay') !== null ||
+    document.querySelector('div.video-ads.ytp-ad-module') !== null ||
+    (video && video.closest('.html5-video-player')?.classList?.contains('ad-showing'));
+
+  // Fallback: detect ad by YouTube's own ad UI text/badge elements
+  if (!rawAdShowing) {
+    const adText = document.querySelector(
+      '.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-visit-advertiser-button'
+    );
+    if (adText) rawAdShowing = true;
+  }
 
   if (typeof window.chromaAdSkipped === 'undefined') window.chromaAdSkipped = false;
   if (typeof window.chromaAdSessionActive === 'undefined') window.chromaAdSessionActive = false;
@@ -457,6 +478,7 @@ function handleAdAcceleration() {
   if (rawAdShowing) {
     if (!window.chromaAdSessionActive) {
       window.chromaAdSkipped = false; // Reset skip state for new session
+      startFastAdWatcher(); // Start higher frequency loop during ads
     }
     window.chromaAdSessionActive = true;
     window.lastAdDetectTime = Date.now();
@@ -573,6 +595,10 @@ function startObserver() {
         requestAnimationFrame(() => {
           suppressAdblockWarnings();
           removeLeftoverAdContainers();
+          // Also check for the player container if we haven't attached the overlay yet
+          if (!document.getElementById('yt-chroma-overlay')) {
+            initAdOverlay();
+          }
           pendingFrame = false;
         });
       }
@@ -796,6 +822,7 @@ function startExtensionServices() {
   signalMainWorld();
   startChromaClock();
   initSkipButtonListener();
+  initAdOverlay();
 }
 
 /**
@@ -832,6 +859,25 @@ function initSkipButtonListener() {
       console.warn('[YT Chroma] Error in skip button listener:', err);
     }
   }, true);
+}
+
+/**
+ * High-frequency watcher that runs only during active ad sessions
+ * to catch quick transitions or late-rendering ad elements.
+ */
+function startFastAdWatcher() {
+  if (window._chromaFastWatcher) return;
+  window._chromaFastWatcher = true;
+
+  function check() {
+    if (!window.chromaAdSessionActive) {
+      window._chromaFastWatcher = false;
+      return;
+    }
+    handleAdAcceleration();
+    requestAnimationFrame(check);
+  }
+  requestAnimationFrame(check);
 }
 
 // ─── CHROMA COLOR CLOCK ────────────────────────────────────────────────────────

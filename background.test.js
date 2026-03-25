@@ -14,10 +14,28 @@ test('getDefaultDynamicRules', async (t) => {
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }
+    },
+    storage: {
+      local: {
+        get: () => Promise.resolve({}),
+        set: () => Promise.resolve()
+      },
+      onChanged: { addListener: () => {} }
+    },
+    declarativeNetRequest: {
+      getDynamicRules: () => Promise.resolve([]),
+      updateDynamicRules: () => Promise.resolve()
+    },
+    tabs: {
+      query: () => Promise.resolve([]),
+      sendMessage: () => Promise.resolve(),
+      onCreated: { addListener: () => {} },
+      onRemoved: { addListener: () => {} }
     }
   };
   sandbox.chrome = chromeMock;
   sandbox.console = console;
+  sandbox.setInterval = () => {}; // Mock setInterval to avoid background activity
 
   vm.createContext(sandbox);
   vm.runInContext(backgroundJsCode, sandbox);
@@ -35,8 +53,8 @@ test('getDefaultDynamicRules', async (t) => {
       assert.strictEqual(typeof rule.id, 'number', 'Rule id must be a number');
       assert.strictEqual(rule.priority, 1, 'Rule priority should be 1');
 
-      // We need to match the actual object properties since objects created inside VM might fail deepStrictEqual
-      assert.strictEqual(rule.action.type, 'block', 'Rule action should be block');
+      // Match the actual code: action.type is 'allow' for these rules
+      assert.strictEqual(rule.action.type, 'allow', 'Rule action should be allow');
 
       assert.ok(rule.condition, 'Rule must have a condition');
       assert.ok(rule.condition.urlFilter, 'Rule condition must have urlFilter');

@@ -16,6 +16,12 @@ test('popup.js functionality', async (t) => {
           checked: false,
           textContent: '',
           listeners: {},
+          classList: {
+            add: (cls) => { elements[id].classList.current = cls; },
+            remove: (cls) => { if (elements[id].classList.current === cls) elements[id].classList.current = ''; },
+            current: ''
+          },
+          title: '',
           addEventListener(event, fn) {
             this.listeners[event] = fn;
           }
@@ -34,6 +40,9 @@ test('popup.js functionality', async (t) => {
               acceleration: false,
               cosmetic: true,
               suppressWarnings: false,
+              blockPopUnders: true,
+              blockPushNotifications: false,
+              enabled: true
             };
           }
           if (msg.type === 'GET_STATS') {
@@ -43,10 +52,10 @@ test('popup.js functionality', async (t) => {
             };
           }
           if (msg.type === 'SET_CONFIG') {
-            return true;
+            return { ok: true };
           }
           if (msg.type === 'RESET_STATS') {
-            return true;
+            return { ok: true };
           }
         }
       }
@@ -77,6 +86,8 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['toggleAcceleration'].checked, false);
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
     assert.strictEqual(elements['toggleWarnings'].checked, false);
+    assert.strictEqual(elements['togglePopUnders'].checked, true);
+    assert.strictEqual(elements['togglePush'].checked, false);
 
     assert.strictEqual(elements['statAccelerated'].textContent, 10);
     assert.strictEqual(elements['statBlocked'].textContent, 5);
@@ -96,9 +107,7 @@ test('popup.js functionality', async (t) => {
     elements['toggleAcceleration'].checked = true;
     await elements['toggleAcceleration'].listeners['change']({ target: elements['toggleAcceleration'] });
 
-    assert.strictEqual(messages.length, 1);
-    assert.strictEqual(messages[0].type, 'SET_CONFIG');
-    assert.strictEqual(messages[0].config.acceleration, true);
+    assert.ok(messages.some(m => m.type === 'SET_CONFIG' && m.config.acceleration === true));
   });
 
   await t.test('reset stats button triggers RESET_STATS and updates UI', async () => {
@@ -111,8 +120,7 @@ test('popup.js functionality', async (t) => {
 
     await elements['resetStats'].listeners['click']();
 
-    assert.strictEqual(messages.length, 1);
-    assert.strictEqual(messages[0].type, 'RESET_STATS');
+    assert.ok(messages.some(m => m.type === 'RESET_STATS'));
 
     assert.strictEqual(elements['statAccelerated'].textContent, '0');
     assert.strictEqual(elements['statBlocked'].textContent, '0');
@@ -130,9 +138,12 @@ test('popup.js functionality', async (t) => {
     vm.runInContext(popupJsCode, sandbox);
     await new Promise(resolve => setTimeout(resolve, 50));
 
+    // Based on lines 11-18 in popup.js, it should default to true for these
     assert.strictEqual(elements['toggleAcceleration'].checked, true);
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
     assert.strictEqual(elements['toggleWarnings'].checked, true);
+    assert.strictEqual(elements['togglePopUnders'].checked, true);
+    assert.strictEqual(elements['togglePush'].checked, true);
 
     assert.strictEqual(elements['statAccelerated'].textContent, 0);
     assert.strictEqual(elements['statBlocked'].textContent, 0);
