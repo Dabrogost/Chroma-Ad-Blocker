@@ -17,14 +17,15 @@ async function init() {
     enabled: true,
   };
 
-  $('toggleEnabled').checked = config.enabled ?? true;
-  updateStatusDot(config.enabled ?? true);
+  const isEnabled = config.enabled ?? true;
+  $('toggleEnabled').checked = isEnabled;
+  updateStatusDot(isEnabled);
 
-  $('toggleAcceleration').checked = config.acceleration ?? true;
-  $('toggleCosmetic').checked = config.cosmetic ?? true;
-  $('toggleWarnings').checked = config.suppressWarnings ?? true;
-  $('togglePopUnders').checked = config.blockPopUnders ?? true;
-  $('togglePush').checked = config.blockPushNotifications ?? true;
+  $('toggleAcceleration').checked = isEnabled ? (config.acceleration ?? true) : false;
+  $('toggleCosmetic').checked = isEnabled ? (config.cosmetic ?? true) : false;
+  $('toggleWarnings').checked = isEnabled ? (config.suppressWarnings ?? true) : false;
+  $('togglePopUnders').checked = isEnabled ? (config.blockPopUnders ?? true) : false;
+  $('togglePush').checked = isEnabled ? (config.blockPushNotifications ?? true) : false;
 
   // Load stats
   const stats = await sendBg({ type: 'GET_STATS' }) || { blocked: 0, accelerated: 0 };
@@ -45,11 +46,12 @@ async function init() {
       const isChecked = e.target.checked;
       await sendBg({ type: 'SET_CONFIG', config: { [key]: isChecked } });
       
-      if (isChecked) {
+      // If any individual toggle is turned on, ensure master is also on
+      if (isChecked && !$('toggleEnabled').checked) {
         $('toggleEnabled').checked = true;
         updateStatusDot(true);
         await sendBg({ type: 'SET_CONFIG', config: { enabled: true } });
-      } else {
+      } else if (!isChecked) {
         const anyOn = TOGGLES.some(([id]) => $(id).checked);
         if (!anyOn) {
           $('toggleEnabled').checked = false;
@@ -65,15 +67,26 @@ async function init() {
     const isEnabled = e.target.checked;
     updateStatusDot(isEnabled);
     
-    const configUpdate = { enabled: isEnabled };
+    // We only update the 'enabled' flag in the background, 
+    // NOT the individual feature flags. This lets us restore them.
+    await sendBg({ type: 'SET_CONFIG', config: { enabled: isEnabled } });
+
     if (!isEnabled) {
-      // Turn everything off if master is disabled
-      for (const [elId, key] of TOGGLES) {
+      // Visually turn off all sub-toggles (but don't save to config)
+      for (const [elId] of TOGGLES) {
         $(elId).checked = false;
-        configUpdate[key] = false;
+      }
+    } else {
+      // Restore visual state from the actual (persistent) config
+      const config = await sendBg({ type: 'GET_CONFIG' });
+      if (config) {
+        $('toggleAcceleration').checked = config.acceleration ?? true;
+        $('toggleCosmetic').checked = config.cosmetic ?? true;
+        $('toggleWarnings').checked = config.suppressWarnings ?? true;
+        $('togglePopUnders').checked = config.blockPopUnders ?? true;
+        $('togglePush').checked = config.blockPushNotifications ?? true;
       }
     }
-    await sendBg({ type: 'SET_CONFIG', config: configUpdate });
   });
 
   function updateStatusDot(active) {

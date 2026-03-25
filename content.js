@@ -267,7 +267,7 @@ function updateCosmeticState() {
 
 // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
 function suppressAdblockWarnings(node) {
-  if (!CONFIG.suppressWarnings) return;
+  if (!CONFIG.enabled || !CONFIG.suppressWarnings) return;
 
   const els = (node || document).querySelectorAll(WARNING_SELECTOR_COMBINED);
   const removedAny = els.length > 0;
@@ -432,7 +432,7 @@ function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
 
 let cachedVideo = null;
 function handleAdAcceleration() {
-  if (!CONFIG.acceleration) return;
+  if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
   // Auto-clicking of skip buttons has been removed per user request.
   // The buttons remain elevated via CSS to allow manual user skipping.
@@ -739,7 +739,7 @@ function initPopUnderProtection() {
  * should be active.
  */
 function signalMainWorld() {
-  if (CONFIG.blockPushNotifications) {
+  if (CONFIG.enabled && CONFIG.blockPushNotifications) {
     document.documentElement.dataset.ytChromaPushActive = 'true';
   } else {
     delete document.documentElement.dataset.ytChromaPushActive;
