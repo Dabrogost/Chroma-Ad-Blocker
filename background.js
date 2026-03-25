@@ -170,6 +170,15 @@ setInterval(() => {
 
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  // SECURITY: Restrict sensitive message types to internal extension pages (e.g. popup)
+  // Content scripts always have a sender.tab property. Internal pages do not.
+  const isFromInternal = !_sender.tab;
+  const SENSITIVE_TYPES = ['GET_STATS', 'GET_CONFIG', 'SET_CONFIG', 'ADD_DYNAMIC_RULE', 'RESET_STATS'];
+
+  if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
+    console.error(`[YT Chroma] Blocked unauthorized ${msg.type} attempt from tab ${_sender.tab.id}`);
+    return false;
+  }
 
   if (msg.type === 'STAT_UPDATE') {
     // Accumulate stats from content scripts
