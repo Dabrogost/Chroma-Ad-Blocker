@@ -3,12 +3,16 @@
 const $ = id => document.getElementById(id);
 
 async function sendBg(msg) {
-  return chrome.runtime.sendMessage(msg);
+  return chrome.runtime.sendMessage(msg).catch(err => {
+    console.warn('[YT Chroma] Messaging error (Worker waking up?):', err);
+    return null; 
+  });
 }
 
 async function init() {
   // Load config
   const config = await sendBg({ type: 'GET_CONFIG' }) || {
+    networkBlocking: true,
     acceleration: true,
     cosmetic: true,
     suppressWarnings: true,
@@ -21,6 +25,7 @@ async function init() {
   $('toggleEnabled').checked = isEnabled;
   updateStatusDot(isEnabled);
 
+  $('toggleNetwork').checked = isEnabled ? (config.networkBlocking ?? true) : false;
   $('toggleAcceleration').checked = isEnabled ? (config.acceleration ?? true) : false;
   $('toggleCosmetic').checked = isEnabled ? (config.cosmetic ?? true) : false;
   $('toggleWarnings').checked = isEnabled ? (config.suppressWarnings ?? true) : false;
@@ -34,6 +39,7 @@ async function init() {
 
   // Toggle handlers
   const TOGGLES = [
+    ['toggleNetwork',      'networkBlocking'],
     ['toggleAcceleration', 'acceleration'],
     ['toggleCosmetic',     'cosmetic'],
     ['toggleWarnings',     'suppressWarnings'],
@@ -80,6 +86,7 @@ async function init() {
       // Restore visual state from the actual (persistent) config
       const config = await sendBg({ type: 'GET_CONFIG' });
       if (config) {
+        $('toggleNetwork').checked = config.networkBlocking ?? true;
         $('toggleAcceleration').checked = config.acceleration ?? true;
         $('toggleCosmetic').checked = config.cosmetic ?? true;
         $('toggleWarnings').checked = config.suppressWarnings ?? true;

@@ -152,6 +152,9 @@
     input:checked + .slider { background: var(--accent); }
     input:checked + .slider::before { transform: translateX(16px); }
 
+    #toggleEnabled + .slider::before { width: 10px; height: 10px; left: 3px; bottom: 3px; }
+    #toggleEnabled:checked + .slider::before { transform: translateX(14px); }
+
     /* ── DIVIDER ── */
     .divider {
       height: 1px;
@@ -207,10 +210,6 @@
       <label class="switch" style="width: 30px; height: 16px;">
         <input type="checkbox" id="toggleEnabled" checked />
         <span class="slider" style="border-radius: 16px;"></span>
-        <style>
-          #toggleEnabled + .slider::before { width: 10px; height: 10px; left: 3px; bottom: 3px; }
-          #toggleEnabled:checked + .slider::before { transform: translateX(14px); }
-        </style>
       </label>
       <div class="status-dot" id="statusDot" title="Active"></div>
     </div>
@@ -231,7 +230,18 @@
 
   <div class="toggle-row">
     <div class="toggle-info">
-      <div class="name">Ad Acceleration <span class="badge">Primary</span></div>
+      <div class="name">Network Blocking <span class="badge">Primary</span></div>
+      <div class="desc">Blocks known ad and tracker requests</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="toggleNetwork" />
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="name">Ad Acceleration</div>
       <div class="desc">Mute + 16× speed — bypasses detection</div>
     </div>
     <label class="switch">

@@ -838,12 +838,35 @@ function notifyBackground(message) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'CONFIG_UPDATE') {
     Object.assign(CONFIG, msg.config);
+    
     // Immediately apply config changes
     if (!CONFIG.enabled || !CONFIG.acceleration) {
       if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
       }
+      
+      // NEW: Instantly snap the video back to normal if an ad is actively playing
+      if (targetAdVideo) {
+        if (targetAdVideo.playbackRate === CONFIG.accelerationSpeed) {
+          targetAdVideo.playbackRate = 1;
+        }
+        if (targetAdVideo.muted && targetAdVideo.dataset.ytChromaMuted === 'true') {
+          targetAdVideo.muted = false;
+          if (targetAdVideo.dataset.ytChromaVolume !== undefined) {
+            targetAdVideo.volume = parseFloat(targetAdVideo.dataset.ytChromaVolume) || 1;
+          }
+        }
+      }
+      
+      // Kill the active overlay
+      const overlay = document.getElementById('yt-chroma-overlay');
+      if (overlay) overlay.classList.remove('active');
+      
+      window.chromaAdSessionActive = false;
+      window._chromaFastWatcher = false;
+      cleanupVideoState();
+      
     } else {
       startPolling();
     }
@@ -980,23 +1003,29 @@ function startChromaClock() {
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 function init() {
-  // 0. Signal main world as early as possible
+  // 1. Inject CSS and default protections immediately to prevent a flash of ads
   signalMainWorld();
-
-  // 1. Inject cosmetic CSS immediately at document_start
   injectCosmeticCSS();
-
-  // 2. Start protection scripts immediately to catch early gestures
   initPopUnderProtection();
 
-  // 3. Once DOM is ready, start the observer and polling
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+  // 2. Fetch the true saved config before starting the heavy observers
+  chrome.runtime.sendMessage({ type: 'GET_CONFIG' }).then(savedConfig => {
+    if (savedConfig) {
+      Object.assign(CONFIG, savedConfig);
+      updateCosmeticState(); // Sync CSS with true config
+      signalMainWorld();     // Sync Push Blocker with true config
+    }
+    
+    // 3. Start services based on the correct state
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', startExtensionServices);
+    } else {
       startExtensionServices();
-    });
-  } else {
-    startExtensionServices();
-  }
+    }
+  }).catch(err => {
+    console.warn('[YT Chroma] Init config fetch failed, using defaults.', err);
+    startExtensionServices(); // Fallback
+  });
 }
 
 init();

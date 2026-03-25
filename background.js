@@ -14,6 +14,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     // Set default config on first install
     await chrome.storage.local.set({
       config: {
+        networkBlocking: true,
         acceleration: true,
         cosmetic: true,
         suppressWarnings: true,
@@ -28,14 +29,49 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   }
 
   // Load any saved dynamic rules on startup
-  await syncDynamicRules();
+  const { config: storedConfig } = await chrome.storage.local.get('config');
+  const isEnabled = storedConfig ? storedConfig.enabled : true;
+  const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
+  await updateDNRState(isEnabled && isNetworkBlocking);
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  await syncDynamicRules();
+  const { config: storedConfig } = await chrome.storage.local.get('config');
+  const isEnabled = storedConfig ? storedConfig.enabled : true;
+  const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
+  await updateDNRState(isEnabled && isNetworkBlocking);
 });
 
 // ─── DYNAMIC RULE UPDATES ─────────────────────────────────────────────────────
+async function updateDNRState(isEnabled) {
+  const ruleIds = [
+    'yt_original_rules',
+    'yt_ad_rules_part1',
+    'yt_ad_rules_part2',
+    'yt_ad_rules_part3',
+    'yt_ad_rules_part4',
+    'yt_ad_rules_part5',
+    'yt_ad_rules_part6',
+    'yt_ad_rules_part7',
+    'yt_ad_rules_part8',
+    'yt_ad_rules_part9',
+    'yt_ad_rules_part10'
+  ];
+  try {
+    if (isEnabled) {
+      await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds: ruleIds });
+      await syncDynamicRules();
+    } else {
+      await chrome.declarativeNetRequest.updateEnabledRulesets({ disableRulesetIds: ruleIds });
+      const existing = await chrome.declarativeNetRequest.getDynamicRules();
+      const removeIds = existing.map(r => r.id);
+      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
+    }
+  } catch (err) {
+    console.error('[YT Chroma] Error updating DNR state:', err);
+  }
+}
+
 /**
  * Dynamic rules let us update blocking patterns WITHOUT a Chrome Web Store
  * review cycle — critical because YouTube changes ad delivery domains rapidly.
@@ -135,6 +171,7 @@ function getDefaultDynamicRules() {
 // ─── CONFIGURATION STATE ──────────────────────────────────────────────────
 let config = { 
   enabled: true, 
+  networkBlocking: true,
   blockPopUnders: true, 
   blockPushNotifications: true 
 };
@@ -260,7 +297,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'SET_CONFIG') {
     chrome.storage.local.get('config').then(async ({ config }) => {
       // Validate and extract only allowed properties
-      const allowed = ['acceleration', 'cosmetic', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
+      const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
       const validatedConfig = {};
 
       if (msg.config && typeof msg.config === 'object') {
@@ -280,6 +317,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       const newConfig = { ...config, ...validatedConfig };
       await chrome.storage.local.set({ config: newConfig });
+      
+      const wasDNRActive = config.enabled !== false && config.networkBlocking !== false;
+      const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
+
+      if (isDNRActive !== wasDNRActive) {
+        await updateDNRState(isDNRActive);
+      }
 
       // Broadcast to all tabs
       const tabs = await chrome.tabs.query({});
