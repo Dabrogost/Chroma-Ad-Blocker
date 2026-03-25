@@ -9,15 +9,25 @@ const vm = require('vm');
  * Creates a robust mock DOM element for the sandbox
  */
 function createMockElement(tag = 'div') {
+  const classes = new Set();
+  const children = [];
   const el = {
     tagName: tag.toUpperCase(),
     id: '',
     className: '',
     classList: {
-      add: () => {},
-      remove: () => {},
-      contains: () => false,
-      toggle: () => {}
+      add: (c) => classes.add(c),
+      remove: (c) => classes.delete(c),
+      contains: (c) => classes.has(c),
+      toggle: (c) => {
+        if (classes.has(c)) {
+          classes.delete(c);
+          return false;
+        } else {
+          classes.add(c);
+          return true;
+        }
+      }
     },
     style: {
       setProperty: () => {},
@@ -27,13 +37,17 @@ function createMockElement(tag = 'div') {
       height: ''
     },
     dataset: {},
-    appendChild: (child) => child,
+    appendChild: (child) => {
+      children.push(child);
+      child.parentElement = el;
+      return child;
+    },
     remove: () => {},
     closest: (selector) => null,
-    contains: (other) => false,
+    contains: (other) => children.includes(other),
     textContent: '',
     innerHTML: '',
-    querySelector: () => null,
+    querySelector: (selector) => null,
     querySelectorAll: () => [],
     parentElement: null,
     getAttribute: () => null,
@@ -42,9 +56,18 @@ function createMockElement(tag = 'div') {
     removeEventListener: () => {},
     dataset: {}
   };
-  el.classList.add = () => {};
-  el.classList.remove = () => {};
-  el.classList.contains = () => false;
+
+  // Getter/setter for className to sync with classList
+  Object.defineProperty(el, 'className', {
+    get: () => Array.from(classes).join(' '),
+    set: (val) => {
+      classes.clear();
+      if (val) {
+        val.split(/\s+/).forEach(c => classes.add(c));
+      }
+    }
+  });
+
   return el;
 }
 
@@ -491,5 +514,172 @@ test('signalMainWorld functionality', async (t) => {
       signalMainWorld();
     `, sandbox);
     assert.strictEqual(sandbox.document.documentElement.dataset.ytChromaPushActive, undefined);
+  });
+});
+
+test('updateAdOverlay functionality', async (t) => {
+  const createSandbox = () => {
+    const sandbox = {
+      CONFIG: {
+        acceleration: true,
+        enabled: true
+      },
+      chrome: {
+        runtime: {
+          sendMessage: () => Promise.resolve(),
+          onMessage: { addListener: () => {} }
+        }
+      },
+      document: {
+        readyState: 'complete',
+        createElement: (tag) => createMockElement(tag),
+        getElementById: () => null,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        head: createMockElement('head'),
+        body: createMockElement('body'),
+        documentElement: createMockElement('html'),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        getElementsByClassName: () => []
+      },
+      window: {
+        location: { hostname: 'www.youtube.com' },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        requestAnimationFrame: (cb) => {},
+        innerHeight: 1000,
+        innerWidth: 1000
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      requestAnimationFrame: (cb) => {},
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      console: { log: () => {}, warn: () => {}, error: () => {} },
+      Object, Array, Number, String, Boolean, Math, Date, Promise, Error, parseInt,
+      location: { hostname: 'www.youtube.com' }
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(contentJsCode, sandbox);
+    return sandbox;
+  };
+
+  await t.test('exits early and resets state when effectiveAdShowing is false', () => {
+    const sandbox = createSandbox();
+    const adOverlayObj = createMockElement();
+    adOverlayObj.classList.add('active');
+
+    sandbox.adOverlayObj = adOverlayObj;
+
+    // Set up existing state
+    vm.runInContext(`
+      adOverlay = adOverlayObj;
+      window.cachedCurrentAd = 5;
+      window.cachedTotalAds = 5;
+      window.lastVideoDuration = 100;
+      updateAdOverlay({}, false, false);
+    `, sandbox);
+
+    assert.strictEqual(adOverlayObj.classList.contains('active'), false);
+    assert.strictEqual(sandbox.window.cachedCurrentAd, 1);
+    assert.strictEqual(sandbox.window.cachedTotalAds, 1);
+    assert.strictEqual(sandbox.window.lastVideoDuration, 0);
+  });
+
+  await t.test('initializes adOverlay if it does not exist', () => {
+    const sandbox = createSandbox();
+    const playerContainer = createMockElement();
+    const videoObj = createMockElement('video');
+    videoObj.closest = (sel) => sel === '.html5-video-player' ? playerContainer : null;
+
+    // Mock document.querySelector to return playerContainer for initAdOverlay
+    sandbox.document.querySelector = (sel) => {
+      if (sel === '.html5-video-player' || sel === '#movie_player') return playerContainer;
+      return null;
+    };
+    sandbox.videoObj = videoObj;
+
+    vm.runInContext(`
+      adOverlay = null; // Ensure null initially
+      // Need to mock getElementById to return null so initAdOverlay runs
+      document.getElementById = () => null;
+      updateAdOverlay(videoObj, true, true);
+
+      // Because adOverlay is defined in content.js without 'var' or 'let' at the top scope
+      // in VM context sometimes it isn't properly exported to sandbox root unless explicitly assigned.
+      // But actually, adOverlay is declared with 'let adOverlay = null;' in content.js
+      // We need to fetch it explicitly.
+      this.exportedAdOverlay = adOverlay;
+    `, sandbox);
+
+    assert.ok(sandbox.exportedAdOverlay);
+    assert.strictEqual(sandbox.exportedAdOverlay.id, 'yt-chroma-overlay');
+    assert.strictEqual(playerContainer.contains(sandbox.exportedAdOverlay), true);
+    assert.strictEqual(sandbox.exportedAdOverlay.classList.contains('active'), true);
+  });
+
+  await t.test('updates trackers when rawAdShowing is true and parses player text', () => {
+    const sandbox = createSandbox();
+    const playerContainer = createMockElement();
+    playerContainer.textContent = 'Ad 1 of 2';
+
+    const videoObj = createMockElement('video');
+    videoObj.closest = () => playerContainer;
+    videoObj.duration = 15;
+    videoObj.currentTime = 5;
+    sandbox.videoObj = videoObj;
+
+    vm.runInContext(`
+      adOverlay = document.createElement('div');
+      adOverlay.querySelector = () => document.createElement('div');
+      window.cachedCurrentAd = 1;
+      window.cachedTotalAds = 1;
+      window.lastVideoDuration = 0;
+
+      updateAdOverlay(videoObj, true, true);
+    `, sandbox);
+
+    assert.strictEqual(sandbox.window.cachedCurrentAd, 1);
+    assert.strictEqual(sandbox.window.cachedTotalAds, 2);
+    assert.strictEqual(sandbox.window.lastVideoDuration, 15);
+  });
+
+  await t.test('morphs spinner to checkmark when ad finishes', () => {
+    const sandbox = createSandbox();
+    const playerContainer = createMockElement();
+    const videoObj = createMockElement('video');
+    videoObj.closest = () => playerContainer;
+    videoObj.duration = 30;
+    videoObj.currentTime = 29.8; // < 0.5 difference => isAdMediaFinished = true
+
+    const adOverlayObj = createMockElement();
+    const spinner = createMockElement();
+    spinner.className = 'chroma-spinner';
+    const title = createMockElement();
+    title.className = 'chroma-title';
+
+    adOverlayObj.querySelector = (sel) => {
+      if (sel === '.chroma-spinner, .chroma-checkmark') return spinner;
+      if (sel === '.chroma-title') return title;
+      return null;
+    };
+
+    sandbox.adOverlayObj = adOverlayObj;
+    sandbox.videoObj = videoObj;
+
+    vm.runInContext(`
+      adOverlay = adOverlayObj;
+      window.cachedCurrentAd = 2;
+      window.cachedTotalAds = 2; // isOnFinalAd = true
+
+      updateAdOverlay(videoObj, true, false); // rawAdShowing is false
+    `, sandbox);
+
+    assert.strictEqual(spinner.className, 'chroma-checkmark');
+    assert.strictEqual(title.textContent, 'Ads Cleared');
   });
 });
