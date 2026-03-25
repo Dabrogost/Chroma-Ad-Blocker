@@ -3,7 +3,7 @@
     "id": 1,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "googleads.g.doubleclick.net",
@@ -20,7 +20,7 @@
     "id": 2,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "pubads.g.doubleclick.net",
@@ -37,7 +37,7 @@
     "id": 3,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "imasdk.googleapis.com/js/sdkloader/ima3.js",
@@ -50,7 +50,7 @@
     "id": 4,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "imasdk.googleapis.com/js/sdkloader/ima3_dai.js",
@@ -63,7 +63,7 @@
     "id": 5,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "||static.doubleclick.net^",
@@ -78,7 +78,7 @@
     "id": 6,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "||pagead2.googlesyndication.com^",
@@ -93,7 +93,7 @@
     "id": 7,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "||adservice.google.com^",
@@ -107,7 +107,7 @@
     "id": 8,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "||adservice.google.co.*^",
@@ -121,7 +121,7 @@
     "id": 9,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "||yt3.ggpht.com/ytads^",
@@ -135,7 +135,7 @@
     "id": 10,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "/ad_simple_compiled",
@@ -152,7 +152,7 @@
     "id": 11,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "/pagead/adview",
@@ -169,7 +169,7 @@
     "id": 12,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "/pagead/interaction",
@@ -187,7 +187,7 @@
     "id": 13,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "||securepubads.g.doubleclick.net^",
@@ -202,7 +202,7 @@
     "id": 14,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "||ads.youtube.com^",
@@ -244,7 +244,7 @@
     "id": 17,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "*_ad_",
@@ -252,8 +252,9 @@
         "media"
       ],
       "domainType": "thirdParty",
-      "initiatorDomains": [
-        "youtube.com"
+      "excludedInitiatorDomains": [
+        "youtube.com",
+        "www.youtube.com"
       ]
     }
   },
@@ -261,15 +262,16 @@
     "id": 18,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "googlevideo.com/initplayback?source=youtube&*c=TVHTML5&*oad=",
       "resourceTypes": [
         "xmlhttprequest"
       ],
-      "initiatorDomains": [
-        "youtube.com"
+      "excludedInitiatorDomains": [
+        "youtube.com",
+        "www.youtube.com"
       ]
     }
   },
@@ -277,7 +279,7 @@
     "id": 19,
     "priority": 2,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "doubleclick.net*",
@@ -296,7 +298,7 @@
     "id": 20,
     "priority": 2,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "googlesyndication.com*",
@@ -309,7 +311,7 @@
     "id": 21,
     "priority": 2,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "googleads.g.doubleclick.net*",
@@ -322,7 +324,7 @@
     "id": 22,
     "priority": 2,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "pubads.g.doubleclick.net*",
@@ -335,7 +337,7 @@
     "id": 23,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "securepubads.g.doubleclick.net*",
@@ -348,7 +350,7 @@
     "id": 24,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "adservice.google.com*",
@@ -362,7 +364,7 @@
     "id": 25,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "pagead2.googlesyndication.com*",
@@ -377,7 +379,7 @@
     "id": 26,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "ad.doubleclick.net*",
@@ -393,7 +395,7 @@
     "id": 27,
     "priority": 1,
     "action": {
-      "type": "block"
+      "type": "allow"
     },
     "condition": {
       "urlFilter": "cm.g.doubleclick.net*",

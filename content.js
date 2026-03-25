@@ -25,18 +25,6 @@ let observer = null;
 // ─── COSMETIC SELECTORS ──────────────────────────────────────────────────────
 // Elements to hide: ad containers, sponsored slots, survey overlays
 const HIDE_SELECTORS = [
-  // In-video overlay ads
-  '.ytp-ad-overlay-container',
-  '.ytp-ad-overlay-slot',
-  '.ytp-ad-text-overlay',
-  '.ytp-ad-image-overlay',
-  // Static / Empty Ad Containers
-  '.ad-container',
-  '.ad-div',
-  '.video-ads.ytp-ad-module',
-  // Bottom banner ads during video
-  '.ytp-ad-progress',
-  '.ytp-ad-progress-list',
   // "Ad" label pill on thumbnail
   '.ytd-display-ad-renderer',
   'ytd-display-ad-renderer',
@@ -54,6 +42,15 @@ const HIDE_SELECTORS = [
   'ytd-search-pyv-renderer',
   'ytd-ad-slot-renderer',
   'ytd-in-feed-ad-layout-renderer',
+  'ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
+  'ytd-rich-item-renderer:has(.ytd-ad-slot-renderer)',
+  'ytd-rich-section-renderer:has(ytd-ad-slot-renderer)',
+  'ytd-rich-section-renderer:has(.ytd-ad-slot-renderer)',
+  'ytd-rich-item-renderer:has(#ad-badge)',
+  'ytd-rich-section-renderer:has(#ad-badge)',
+  'ytd-item-section-renderer:has(ytd-ad-slot-renderer)',
+  'ytd-statement-banner-renderer',
+  'ytd-video-masthead-ad-v3-renderer',
   // Shorts ads
   'ytd-reel-shelf-renderer[is-ad]',
   // Survey / research panels
@@ -98,20 +95,64 @@ function injectCosmeticCSS() {
     #player-theater-container, #player-container-id {
       max-width: unset !important;
     }
-    /* Remove "skip ad" button flicker – handled by acceleration */
-    .ytp-ad-skip-button-container {
-      display: none !important;
+    /* Elevate native "skip ad" buttons and their parent stacking wrappers above our Chroma overlay */
+    .ytp-ad-player-overlay,
+    .ytp-ad-player-overlay-instream-info,
+    .ytp-ad-skip-button-container, 
+    .ytp-ad-skip-button-slot,
+    .ytp-skip-ad-button, 
+    .videoAdUiSkipButton,
+    [id^="skip-button:"] {
+      z-index: 9999999 !important;
     }
-    /* Hide "Visit advertiser" hover elements */
-    .ytp-ad-visit-advertiser-button {
-      display: none !important;
+    
+    /* Allow user to access video controls (fullscreen, etc) through the overlay */
+    .ytp-chrome-bottom {
+      z-index: 9999999 !important;
     }
+    
+    /* Force the control bar to stay visible even if the mouse stops moving */
+    body.chroma-session-active .html5-video-player.ytp-autohide .ytp-chrome-bottom,
+    body.chroma-session-active .html5-video-player .ytp-chrome-bottom {
+      opacity: 1 !important;
+      visibility: visible !important;
+    }
+    
+    /* Completely hide YouTube's native ad progress indicators during our sequence */
+    body.chroma-session-active .ytp-play-progress,
+    body.chroma-session-active .ytp-load-progress,
+    body.chroma-session-active .ytp-ad-progress-list,
+    body.chroma-session-active .ytp-hover-progress {
+      opacity: 0 !important;
+      visibility: hidden !important;
+    }
+
+    /* Our custom replacement progress bar injected into the native control bar */
+    .chroma-native-progress {
+      display: none;
+      position: absolute;
+      bottom: 0; left: 0; height: 3px;
+      z-index: 50;
+      background: #ff0055;
+      transition: width 0.1s linear, height 0.1s ease;
+      animation: chroma-bg 8s linear infinite;
+      pointer-events: none;
+    }
+    .ytp-chrome-bottom:hover .chroma-native-progress,
+    .ytp-progress-bar-container:hover .chroma-native-progress {
+      height: 5px;
+    }
+    body.chroma-session-active .chroma-native-progress {
+      display: block;
+    }
+    
+
 
     /* Ad Acceleration Overlay */
     #yt-chroma-overlay {
       position: absolute;
       top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(10, 10, 12, 0.85); /* deep dark base */
+      background: rgba(15, 15, 18, 0.8); /* base */
       backdrop-filter: blur(12px);
       z-index: 999999;
       display: flex;
@@ -131,29 +172,71 @@ function injectCosmeticCSS() {
     .chroma-spinner {
       width: 48px; height: 48px;
       border: 4px solid rgba(255,255,255,0.1);
-      border-top-color: #ff0000;
+      border-top-color: #ff0055;
       border-radius: 50%;
-      animation: chroma-spin 1s linear infinite;
+      animation: chroma-spin 1s linear infinite, chroma-border 8s linear infinite;
       margin-bottom: 20px;
     }
     @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
+    
+    @keyframes chroma-border { 
+      0%, 100% { border-top-color: #ff0055; }
+      16% { border-top-color: #9900ff; }
+      33% { border-top-color: #0088ff; }
+      50% { border-top-color: #00ff88; }
+      66% { border-top-color: #ccff00; }
+      83% { border-top-color: #ff5500; }
+    }
+    
+    @keyframes chroma-all-borders { 
+      0%, 100% { border-color: #ff0055; }
+      16% { border-color: #9900ff; }
+      33% { border-color: #0088ff; }
+      50% { border-color: #00ff88; }
+      66% { border-color: #ccff00; }
+      83% { border-color: #ff5500; }
+    }
+
+    .chroma-checkmark {
+      width: 48px; height: 48px;
+      border: 4px solid #ff0055;
+      border-radius: 50%;
+      margin-bottom: 20px;
+      z-index: 2;
+      animation: chroma-all-borders 8s linear infinite;
+      position: relative;
+    }
+    .chroma-checkmark::after {
+      content: '';
+      position: absolute;
+      top: 6px; left: 16px;
+      width: 10px; height: 20px;
+      border: solid #ff0055;
+      border-width: 0 4px 4px 0;
+      transform: rotate(45deg);
+      animation: chroma-all-borders 8s linear infinite;
+    }
+    
+    @keyframes chroma-bg { 
+      0%, 100% { background: #ff0055; }
+      16% { background: #9900ff; }
+      33% { background: #0088ff; }
+      50% { background: #00ff88; }
+      66% { background: #ccff00; }
+      83% { background: #ff5500; }
+    }
+
     .chroma-title {
       font-size: 24px; font-weight: 600; margin-bottom: 8px;
-      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+      z-index: 2;
     }
     .chroma-subtitle {
-      font-size: 14px; color: #aaa; margin-bottom: 30px;
-    }
-    .chroma-progress-container {
-      width: 60%; max-width: 400px; height: 6px;
-      background: rgba(255,255,255,0.1);
-      border-radius: 3px; overflow: hidden;
-    }
-    .chroma-progress-bar {
-      height: 100%; width: 0%;
-      background: #ff0000;
-      transition: width 0.1s linear;
-      box-shadow: 0 0 10px #ff0000;
+      font-size: 15px; color: #eee;
+      position: absolute;
+      bottom: 18%;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+      z-index: 2;
     }
   `;
   (document.head || document.documentElement).appendChild(style);
@@ -195,7 +278,6 @@ function suppressAdblockWarnings(node) {
  * that fires when a network request is blocked.
  */
 let adOverlay = null;
-let progressBar = null;
 
 function initAdOverlay() {
   if (document.getElementById('yt-chroma-overlay')) return;
@@ -214,23 +296,18 @@ function initAdOverlay() {
   subtitle.className = 'chroma-subtitle';
   subtitle.textContent = 'Accelerating Ad...';
   
-  const progressContainer = document.createElement('div');
-  progressContainer.className = 'chroma-progress-container';
-  
-  progressBar = document.createElement('div');
-  progressBar.className = 'chroma-progress-bar';
-  
-  progressContainer.appendChild(progressBar);
   adOverlay.appendChild(spinner);
   adOverlay.appendChild(title);
   adOverlay.appendChild(subtitle);
-  adOverlay.appendChild(progressContainer);
 }
 
-function updateAdOverlay(video, adShowing) {
-  if (!CONFIG.acceleration || !adShowing) {
+function updateAdOverlay(video, effectiveAdShowing, rawAdShowing, nativeSkipButton) {
+  if (!CONFIG.acceleration || !effectiveAdShowing) {
     if (adOverlay && adOverlay.classList.contains('active')) {
       adOverlay.classList.remove('active');
+      window.cachedCurrentAd = 1;
+      window.cachedTotalAds = 1;
+      window.lastVideoDuration = 0;
     }
     return;
   }
@@ -245,16 +322,87 @@ function updateAdOverlay(video, adShowing) {
     playerContainer.appendChild(adOverlay);
   }
   
-  // Show it
   if (!adOverlay.classList.contains('active')) {
     adOverlay.classList.add('active');
   }
   
-  // Update progress
-  if (video && video.duration > 0) {
-    const progressPercent = (video.currentTime / video.duration) * 100;
-    if (progressBar) {
-      progressBar.style.width = `${progressPercent}%`;
+  if (typeof window.cachedCurrentAd === 'undefined') {
+    window.cachedCurrentAd = 1;
+    window.cachedTotalAds = 1;
+    window.lastVideoDuration = 0;
+  }
+
+  // We only parse DOM and increment trackers if an ad is actively showing
+  if (rawAdShowing) {
+    if (video && video.duration > 0) {
+      if (window.lastVideoDuration > 0 && Math.abs(video.duration - window.lastVideoDuration) > 1) {
+        if (window.cachedCurrentAd < window.cachedTotalAds) {
+          window.cachedCurrentAd++;
+        }
+      }
+      window.lastVideoDuration = video.duration;
+    }
+
+    if (playerContainer) {
+      const playerText = playerContainer.textContent || '';
+      const parsedTextMatch = playerText.match(/(?:[^\d]|^)([1-9])\s*(?:of|de|sur|out of|von|di)\s*([2-9])(?:[^\d]|$)/i);
+      if (parsedTextMatch) {
+        const parsedCurrent = parseInt(parsedTextMatch[1], 10);
+        const parsedTotal = parseInt(parsedTextMatch[2], 10);
+        if (parsedTotal > 1 && parsedCurrent <= parsedTotal) {
+          window.cachedCurrentAd = Math.max(window.cachedCurrentAd, parsedCurrent);
+          window.cachedTotalAds = Math.max(window.cachedTotalAds, parsedTotal);
+        }
+      }
+    }
+  }
+
+  const isOnFinalAd = window.cachedCurrentAd >= window.cachedTotalAds;
+  // YouTube often hangs at the absolute end of the ad (currentTime === duration) for a network timeout
+  // before switching rawAdShowing to false. We detect this to show the 'Ads Cleared' checkmark earlier.
+  const isAdMediaFinished = video && video.duration > 0 && (video.duration - video.currentTime < 0.5);
+  
+  const isAdsDone = isOnFinalAd && (!rawAdShowing || isAdMediaFinished);
+  
+  const spinner = adOverlay.querySelector('.chroma-spinner, .chroma-checkmark');
+  const titleEl = adOverlay.querySelector('.chroma-title');
+  const subtitleEl = adOverlay.querySelector('.chroma-subtitle');
+
+  if (isAdsDone) {
+    // Morph spinner cleanly into an animated checkmark when ad payload is defeated
+    if (spinner && spinner.className !== 'chroma-checkmark') spinner.className = 'chroma-checkmark';
+    if (titleEl) titleEl.textContent = 'Ads Cleared';
+    if (subtitleEl) subtitleEl.textContent = 'Loading Video...';
+    
+    // Snap bottom bar to 100% cleanly
+    const nativeProgressBar = document.querySelector('.chroma-native-progress');
+    if (nativeProgressBar) nativeProgressBar.style.width = '100%';
+  } else {
+    if (spinner && spinner.className !== 'chroma-spinner') spinner.className = 'chroma-spinner';
+    if (titleEl) titleEl.textContent = 'Chroma Active';
+    
+    if (subtitleEl) {
+      if (window.cachedTotalAds > 1) {
+        subtitleEl.textContent = `Accelerating Ad (${window.cachedCurrentAd} of ${window.cachedTotalAds})...`;
+      } else {
+        subtitleEl.textContent = 'Accelerating Ad...';
+      }
+    }
+
+    // Update dynamically calculated progress mapping only while ad is live
+    if (video && video.duration > 0 && rawAdShowing) {
+      let videoPercent = (video.currentTime / video.duration) * 100;
+      if (videoPercent > 100) videoPercent = 100;
+      
+      let totalPercent = videoPercent;
+      if (window.cachedTotalAds > 1 && window.cachedCurrentAd <= window.cachedTotalAds) {
+        const segmentSize = 100 / window.cachedTotalAds;
+        const basePercent = (window.cachedCurrentAd - 1) * segmentSize;
+        totalPercent = basePercent + (videoPercent / window.cachedTotalAds);
+      }
+      
+      const nativeProgressBar = document.querySelector('.chroma-native-progress');
+      if (nativeProgressBar) nativeProgressBar.style.width = `${totalPercent}%`;
     }
   }
 }
@@ -263,17 +411,9 @@ let cachedVideo = null;
 function handleAdAcceleration() {
   if (!CONFIG.acceleration) return;
 
-  // 1. Look for ANYTHING that looks like a skip or close button
-  const skipButtons = document.querySelectorAll(
-    '[class*="skip-button"], [class*="SkipButton"], .ytp-ad-overlay-close-button, .videoAdUiSkipButton'
-  );
-
-  skipButtons.forEach(btn => {
-    // Only click if it's actually visible in the DOM
-    if (btn.offsetParent !== null) { 
-        btn.click();
-    }
-  });
+  const skipButtons = Array.from(document.querySelectorAll(
+    '[class*="skip-button"], [class*="SkipButton"], .ytp-ad-overlay-close-button, .videoAdUiSkipButton, .ytp-skip-ad-button'
+  )).filter(btn => btn.offsetParent !== null);
 
   if (!cachedVideo || !document.contains(cachedVideo)) {
     cachedVideo = document.querySelector('video');
@@ -284,26 +424,98 @@ function handleAdAcceleration() {
 
   // Detect if we're in an ad by checking YouTube's own ad UI markers
   // getElementsByClassName is significantly faster than querySelector
-  const adShowing =
+  const rawAdShowing =
     document.getElementsByClassName('ad-showing').length > 0 ||
     document.getElementsByClassName('ytp-ad-player-overlay').length > 0 ||
     document.getElementsByClassName('ytp-ad-progress').length > 0;
 
-  updateAdOverlay(video, adShowing);
+  if (typeof window.chromaAdSessionActive === 'undefined') window.chromaAdSessionActive = false;
+  
+  if (rawAdShowing) {
+    window.chromaAdSessionActive = true;
+    window.lastAdDetectTime = Date.now();
+  }
 
-  if (adShowing) {
-    // Mute first, then accelerate on the next poll/tick to prevent audio bleeding
-    if (!video.muted) {
-      video.muted = true;
-    } else if (video.playbackRate !== CONFIG.accelerationSpeed) {
-      video.playbackRate = CONFIG.accelerationSpeed;
-      stats.accelerated++;
-      notifyBackground({ type: 'STAT_UPDATE', stats });
+  // The overlay definitively ends when the real video stream successfully buffers to level 3 (HAVE_FUTURE_DATA)
+  if (!rawAdShowing) {
+    const timeSinceAd = Date.now() - window.lastAdDetectTime;
+    if (timeSinceAd > 500) {
+      const isMainVideoReady = video && video.readyState >= 3 && !video.paused && video.currentTime > 0;
+      if (isMainVideoReady || timeSinceAd > 5000) {
+        window.chromaAdSessionActive = false; // Graceful handoff to the actual stream
+      }
+    }
+  }
+  
+  if (window.chromaAdSessionActive) {
+    document.body.classList.add('chroma-session-active');
+    // Inject the replacement native scrub bar into the real control bar
+    let nativeProgressBar = document.querySelector('.chroma-native-progress');
+    if (!nativeProgressBar) {
+      const ytpProgressBar = document.querySelector('.ytp-progress-bar');
+      if (ytpProgressBar) {
+        nativeProgressBar = document.createElement('div');
+        nativeProgressBar.className = 'chroma-native-progress';
+        ytpProgressBar.appendChild(nativeProgressBar);
+      }
     }
   } else {
-    // Restore normal playback when ad ends
+    document.body.classList.remove('chroma-session-active');
+  }
+
+  updateAdOverlay(video, window.chromaAdSessionActive, rawAdShowing, skipButtons[0] || null);
+
+  // Instantly attach fast event listeners if we haven't already
+  if (!video.dataset.chromaListenersAdded) {
+    video.dataset.chromaListenersAdded = 'true';
+    const enforceMuteHandler = () => {
+      if (window.chromaAdSessionActive) {
+        if (!video.muted) {
+          video.muted = true;
+        }
+        if (video.volume > 0) {
+          video.volume = 0;
+        }
+      }
+    };
+    // Intercept spontaneous unmuting by YouTube between our poll intervals
+    video.addEventListener('volumechange', enforceMuteHandler);
+    video.addEventListener('play', enforceMuteHandler);
+  }
+
+  // Tie muting directly to the overlay's overarching active session
+  if (window.chromaAdSessionActive) {
+    if (!video.muted) {
+      video.muted = true;
+    }
+    if (video.volume > 0) {
+      if (!video.dataset.ytChromaVolume) {
+        video.dataset.ytChromaVolume = video.volume;
+      }
+      video.volume = 0;
+    }
+    
+    // Perform actual acceleration only if an ad is actively playing
+    if (rawAdShowing && video.playbackRate !== CONFIG.accelerationSpeed) {
+      video.playbackRate = CONFIG.accelerationSpeed;
+      // Increment stats ONLY once per unique ad to prevent spikes if YouTube fights the playback rate
+      if (window.lastAcceleratedSrc !== video.src) {
+        stats.accelerated++;
+        notifyBackground({ type: 'STAT_UPDATE', stats });
+        window.lastAcceleratedSrc = video.src;
+      }
+    }
+  } else if (!window.chromaAdSessionActive) {
+    // Restore normal playback only if the entire ad break and overlay session are TRULY over
     if (video.muted && video.dataset.ytChromaMuted === 'true') {
       video.muted = false;
+    }
+    if (video.dataset.ytChromaVolume !== undefined) {
+      const restoredVol = parseFloat(video.dataset.ytChromaVolume);
+      if (restoredVol > 0) {
+        video.volume = restoredVol;
+      }
+      delete video.dataset.ytChromaVolume;
     }
     if (video.playbackRate === CONFIG.accelerationSpeed) {
       video.playbackRate = 1;
@@ -311,9 +523,9 @@ function handleAdAcceleration() {
   }
 
   // Tag the video element so we can restore mute state correctly
-  if (adShowing) {
+  if (window.chromaAdSessionActive) {
     video.dataset.ytChromaMuted = 'true';
-  } else {
+  } else if (!window.chromaAdSessionActive) {
     delete video.dataset.ytChromaMuted;
   }
 }
@@ -352,13 +564,26 @@ function startObserver() {
  * (e.g., elements with inline styles or dynamic class injection)
  */
 function removeLeftoverAdContainers() {
-  // Catch elements that have 'ad' in their ID but aren't in our static list
-  const adElements = document.querySelectorAll(
-    '[id*="ad-container"], [id*="ad_container"], [class*="ad-slot"]'
-  );
-  adElements.forEach(el => {
+  // 1. Precise element-based removal for elements with 'ad' in their ID
+  const adIds = document.querySelectorAll('[id*="ad-container"], [id*="ad_container"]');
+  adIds.forEach(el => {
     if (el.id !== 'yt-chroma-cosmetic' && !el.id.includes('masthead')) {
       el.style.display = 'none';
+      el.remove(); // Safely remove to collapse grid
+    }
+  });
+
+  // 2. Parent-container removal for ad slots that the CSS engine might have missed
+  // This proactively hides the entire grid slot if an ad is found inside it.
+  const adSlots = document.querySelectorAll('ytd-ad-slot-renderer, .ytd-ad-slot-renderer, #ad-badge');
+  adSlots.forEach(slot => {
+    const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer, ytd-item-section-renderer, ytd-shelf-renderer');
+    if (parent) {
+      parent.style.display = 'none';
+      parent.remove();
+    } else {
+      slot.style.display = 'none';
+      slot.remove();
     }
   });
 }

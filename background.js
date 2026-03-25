@@ -69,7 +69,7 @@ function getDefaultDynamicRules() {
     {
       id: 1001,
       priority: 1,
-      action: { type: 'block' },
+      action: { type: 'allow' },
       condition: {
         urlFilter: '/api/stats/ads',
         initiatorDomains: ['youtube.com', 'www.youtube.com'],
@@ -79,7 +79,7 @@ function getDefaultDynamicRules() {
     {
       id: 1002,
       priority: 1,
-      action: { type: 'block' },
+      action: { type: 'allow' },
       condition: {
         urlFilter: '/pagead/viewthroughconversion',
         resourceTypes: ['image', 'xmlhttprequest', 'ping'],
@@ -89,7 +89,7 @@ function getDefaultDynamicRules() {
     {
       id: 1003,
       priority: 1,
-      action: { type: 'block' },
+      action: { type: 'allow' },
       condition: {
         urlFilter: '/get_video_info?*adformat',
         initiatorDomains: ['youtube.com', 'www.youtube.com'],
@@ -100,7 +100,7 @@ function getDefaultDynamicRules() {
     {
       id: 1004,
       priority: 1,
-      action: { type: 'block' },
+      action: { type: 'allow' },
       condition: {
         urlFilter: '||cm.g.doubleclick.net^',
         resourceTypes: ['image', 'ping', 'xmlhttprequest'],
@@ -109,7 +109,7 @@ function getDefaultDynamicRules() {
     {
       id: 1005,
       priority: 1,
-      action: { type: 'block' },
+      action: { type: 'allow' },
       condition: {
         urlFilter: '||ad.doubleclick.net^',
         resourceTypes: ['image', 'ping', 'xmlhttprequest', 'script'],
@@ -119,7 +119,7 @@ function getDefaultDynamicRules() {
     {
       id: 1006,
       priority: 1,
-      action: { type: 'block' },
+      action: { type: 'allow' },
       condition: {
         urlFilter: '/youtubei/v1/log_event',
         initiatorDomains: ['youtube.com', 'www.youtube.com'],
