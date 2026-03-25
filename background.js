@@ -152,7 +152,7 @@ chrome.storage.onChanged.addListener((changes) => {
 
 // ─── POP-UNDER DETECTION STATE ───────────────────────────────────────────────
 // Keep track of window.open attempts per tab to prevent cross-tab interference
-let popunderRequests = new Map(); // tabId -> { time: number, isSuspicious: boolean, createdTabIds: number[], ... }
+const popunderRequests = new Map(); // tabId -> { time: number, isSuspicious: boolean, createdTabIds: number[], ... }
 let lastGlobalRequest = null; // Fallback for when openerTabId is missing
 
 // PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
