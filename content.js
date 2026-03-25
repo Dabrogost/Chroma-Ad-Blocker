@@ -22,7 +22,7 @@ const CONFIG = {
 const isYouTube = window.location.hostname.includes('youtube.com');
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-const stats = { blocked: 0, accelerated: 0 };
+let stats = { blocked: 0, accelerated: 0 };
 let lastUserGestureTime = 0;
 let lastUserGestureType = '';
 let popupCountInGesture = 0;
@@ -99,21 +99,6 @@ const WARNING_SELECTORS = [
 ];
 
 const WARNING_SELECTOR_COMBINED = WARNING_SELECTORS.join(',');
-
-// Optimized ID-based ad container patterns
-const AD_ID_PATTERNS = [
-  '[id*="ad-container"]',
-  '[id*="ad_container"]'
-];
-const AD_ID_SELECTOR_COMBINED = AD_ID_PATTERNS.join(',');
-
-// Optimized slot-based ad container patterns
-const AD_SLOT_SELECTORS = [
-  'ytd-ad-slot-renderer',
-  '.ytd-ad-slot-renderer',
-  '#ad-badge'
-];
-const AD_SLOT_SELECTOR_COMBINED = AD_SLOT_SELECTORS.join(',');
 
 // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
 function injectCosmeticCSS() {
@@ -281,18 +266,10 @@ function updateCosmeticState() {
 }
 
 // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
-function suppressAdblockWarnings(root = document) {
+function suppressAdblockWarnings(node) {
   if (!CONFIG.enabled || !CONFIG.suppressWarnings) return;
 
-  // 1. If the root itself is a target, remove it
-  if (root !== document && typeof root.matches === 'function' && root.matches(WARNING_SELECTOR_COMBINED)) {
-    root.remove();
-    stats.blocked++;
-    return;
-  }
-
-  // 2. Otherwise, check children
-  const els = root.querySelectorAll(WARNING_SELECTOR_COMBINED);
+  const els = (node || document).querySelectorAll(WARNING_SELECTOR_COMBINED);
   const removedAny = els.length > 0;
 
   els.forEach(el => {
@@ -459,70 +436,81 @@ function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
   }
 }
 
-let cachedVideo = null;
-let _cachedPlayer = null;
+let targetAdVideo = null;
 
-const AD_SELECTORS = [
-  '.ad-showing',
-  '.ad-interrupting',
-  '.ytp-ad-player-overlay',
-  '.ytp-ad-skip-button-container',
-  '[class*="ytp-ad-persistent-progress-bar"]'
-].join(',');
+/**
+ * Common handler to enforce muting and zero volume during an ad session.
+ * Extracted to a higher scope to allow for reliable removeEventListener cleanup.
+ */
+const enforceMuteHandler = () => {
+  if (window.chromaAdSessionActive && targetAdVideo) {
+    if (!targetAdVideo.muted) {
+      targetAdVideo.muted = true;
+    }
+    if (targetAdVideo.volume > 0) {
+      targetAdVideo.volume = 0;
+    }
+  }
+};
+
+/**
+ * Robust garbage collection routine for YouTube's SPA navigation.
+ * Detaches listeners and clears state references to prevent memory leaks.
+ */
+function cleanupVideoState() {
+  if (!targetAdVideo) return;
+
+  try {
+    targetAdVideo.removeEventListener('volumechange', enforceMuteHandler);
+    targetAdVideo.removeEventListener('play', enforceMuteHandler);
+
+    delete targetAdVideo.dataset.chromaListenersAdded;
+    delete targetAdVideo.dataset.ytChromaMuted;
+    delete targetAdVideo.dataset.ytChromaVolume;
+
+    targetAdVideo = null;
+    console.log('[YT Chroma] Video state cleaned and reference released.');
+  } catch (err) {
+    console.warn('[YT Chroma] Error during video cleanup:', err);
+  }
+}
 
 function handleAdAcceleration() {
   if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
-  // Auto-clicking of skip buttons has been removed per user request.
-  // The buttons remain elevated via CSS to allow manual user skipping.
+  // 1. Precise DOM Selectors to locate the actual ad video stream
+  let currentAdVideo = document.querySelector('.video-ads video, .ytp-ad-module video');
 
-  if (!cachedVideo || !document.contains(cachedVideo)) {
-    cachedVideo = document.querySelector('video');
+  // 2. If not found in a specific container, check if the main player is explicitly in an ad state
+  if (!currentAdVideo) {
+    const adPlayer = document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
+    if (adPlayer) {
+      currentAdVideo = adPlayer.querySelector('video');
+    }
   }
-  const video = cachedVideo;
 
+  let rawAdShowing = !!currentAdVideo;
+
+  // 3. Fallback: Check for YouTube's specific ad UI markers (sometimes YT repurposes the main video without clear container classes instantly)
+  if (!rawAdShowing) {
+    const hasAdUI = document.querySelector(
+      '.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-visit-advertiser-button'
+    );
+    if (hasAdUI) {
+      currentAdVideo = document.querySelector('#movie_player video, .html5-main-video');
+      rawAdShowing = !!currentAdVideo;
+    }
+  }
+
+  // Determine which video to operate on:
+  // If an ad is actively showing, we must manipulate the ad video.
+  // If the ad has ended, we need a reference to the main video (or the previously accelerated video) to safely disengage and clean up tracking.
+  const video = currentAdVideo || targetAdVideo || document.querySelector('#movie_player video, .html5-main-video');
   if (!video) return;
 
-  // Try caching the root player container
-  if (!_cachedPlayer || !document.contains(_cachedPlayer)) {
-    _cachedPlayer = video.closest('.html5-video-player');
-  }
-
-  // Detect if we're in an ad by checking YouTube's own ad UI markers
-  // Only detect elements if they are actually active or visible, 
-  // to avoid false positives on cached overlay nodes from previous ads.
-  let rawAdShowing = false;
-
-  // 1. Primary explicit markers on player containers
-  if (_cachedPlayer && (_cachedPlayer.classList.contains('ad-showing') || _cachedPlayer.classList.contains('ad-interrupting'))) {
-    rawAdShowing = true;
-  } else if (
-    document.body.classList.contains('ad-showing') || 
-    document.body.classList.contains('ad-interrupting') ||
-    document.getElementsByClassName('ad-showing').length > 0 ||
-    document.getElementsByClassName('ad-interrupting').length > 0
-  ) {
-    rawAdShowing = true;
-  } else {
-    // 2. Check for visible ad overlays (YouTube sometimes hides them rather than removing them)
-    const adClassNames = [
-      'ytp-ad-player-overlay', 
-      'ytp-ad-skip-button-container', 
-      'ytp-ad-progress', 
-      'ytp-ad-simple-ad-badge',
-      'ytp-ad-duration-remaining'
-    ];
-    
-    for (const className of adClassNames) {
-      if (rawAdShowing) break;
-      const els = document.getElementsByClassName(className);
-      for (let i = 0; i < els.length; i++) {
-        if (els[i].offsetParent !== null) {
-          rawAdShowing = true;
-          break;
-        }
-      }
-    }
+  // Cache the tracked video so we can clean it up later when the ad finishes
+  if (rawAdShowing && currentAdVideo) {
+    targetAdVideo = currentAdVideo;
   }
 
   if (typeof window.chromaAdSkipped === 'undefined') window.chromaAdSkipped = false;
@@ -570,16 +558,6 @@ function handleAdAcceleration() {
   // Instantly attach fast event listeners if we haven't already
   if (!video.dataset.chromaListenersAdded) {
     video.dataset.chromaListenersAdded = 'true';
-    const enforceMuteHandler = () => {
-      if (window.chromaAdSessionActive) {
-        if (!video.muted) {
-          video.muted = true;
-        }
-        if (video.volume > 0) {
-          video.volume = 0;
-        }
-      }
-    };
     // Intercept spontaneous unmuting by YouTube between our poll intervals
     video.addEventListener('volumechange', enforceMuteHandler);
     video.addEventListener('play', enforceMuteHandler);
@@ -641,32 +619,14 @@ function startObserver() {
   if (observer) observer.disconnect();
 
   let pendingFrame = false;
-  const addedElements = new Set();
 
   observer = new MutationObserver((mutations) => {
-    let hasNewNodes = false;
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType === 1) { // Node.ELEMENT_NODE
-          addedElements.add(node);
-          hasNewNodes = true;
-        }
-      }
-    }
-
-    if (hasNewNodes) {
+    if (mutations.some(m => m.addedNodes.length > 0)) {
       if (!pendingFrame) {
         pendingFrame = true;
         requestAnimationFrame(() => {
-          // Process collected elements
-          addedElements.forEach(el => {
-            if (document.contains(el)) {
-              suppressAdblockWarnings(el);
-              removeLeftoverAdContainers(el);
-            }
-          });
-          addedElements.clear();
-
+          suppressAdblockWarnings();
+          removeLeftoverAdContainers();
           // Also check for the player container if we haven't attached the overlay yet
           if (!document.getElementById('yt-chroma-overlay')) {
             initAdOverlay();
@@ -687,17 +647,9 @@ function startObserver() {
  * Remove any ad containers that slipped through the CSS hiding
  * (e.g., elements with inline styles or dynamic class injection)
  */
-function removeLeftoverAdContainers(root = document) {
+function removeLeftoverAdContainers() {
   // 1. Precise element-based removal for elements with 'ad' in their ID
-  if (root !== document && typeof root.matches === 'function' && root.matches(AD_ID_SELECTOR_COMBINED)) {
-    if (root.id !== 'yt-chroma-cosmetic' && !root.id.includes('masthead')) {
-      root.style.display = 'none';
-      root.remove();
-      return;
-    }
-  }
-
-  const adIds = root.querySelectorAll(AD_ID_SELECTOR_COMBINED);
+  const adIds = document.querySelectorAll('[id*="ad-container"], [id*="ad_container"]');
   adIds.forEach(el => {
     if (el.id !== 'yt-chroma-cosmetic' && !el.id.includes('masthead')) {
       el.style.display = 'none';
@@ -706,32 +658,22 @@ function removeLeftoverAdContainers(root = document) {
   });
 
   // 2. Parent-container removal for ad slots that the CSS engine might have missed
-  if (root !== document && typeof root.matches === 'function' && root.matches(AD_SLOT_SELECTOR_COMBINED)) {
-    handleAdSlotRemoval(root);
-    return;
-  }
-
-  const adSlots = root.querySelectorAll(AD_SLOT_SELECTOR_COMBINED);
+  // This proactively hides the entire grid slot if an ad is found inside it.
+  // ONLY remove parents that are designated for a single ad/video slot (rich-grid).
+  const adSlots = document.querySelectorAll('ytd-ad-slot-renderer, .ytd-ad-slot-renderer, #ad-badge');
   adSlots.forEach(slot => {
-    handleAdSlotRemoval(slot);
-  });
-}
-
-/**
- * Helper to handle the specific removal logic for ad slot renderers
- */
-function handleAdSlotRemoval(slot) {
-  const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer');
-  if (parent) {
-    parent.style.display = 'none';
-    parent.remove();
-  } else {
-    // For sidebar or other sections, just hide the slot itself to preserve siblings
-    slot.style.display = 'none';
-    if (!slot.closest('#secondary')) { // Don't remove from sidebar, just hide
-      slot.remove();
+    const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer');
+    if (parent) {
+      parent.style.display = 'none';
+      parent.remove();
+    } else {
+      // For sidebar or other sections, just hide the slot itself to preserve siblings
+      slot.style.display = 'none';
+      if (!slot.closest('#secondary')) { // Don't remove from sidebar, just hide
+         slot.remove();
+      }
     }
-  }
+  });
 }
 
 // ─── NAVIGATION HANDLING (SPA) ────────────────────────────────────────────────
@@ -740,6 +682,19 @@ function handleAdSlotRemoval(slot) {
  * navigation event (yt-navigate-finish fires on each page transition).
  */
 function onYTNavigate() {
+  // 1. Mandatory Cleanup: Flush old video references and listeners before initializing new context
+  cleanupVideoState();
+
+  // Reset cached video element — YouTube replaces it on SPA navigation
+  window.chromaAdSessionActive = false;
+  window.chromaAdSkipped = false;
+  window.lastAdDetectTime = 0;
+  window.cachedCurrentAd = 1;
+  window.cachedTotalAds = 1;
+
+  // Restart polling in case it died during the previous page
+  startPolling();
+
   // Short delay to let YouTube render the new page's ad elements
   [500, 1500].forEach(delay => {
     setTimeout(() => {
@@ -766,6 +721,16 @@ function startPolling() {
   if (pollingInterval) clearInterval(pollingInterval);
   pollingInterval = setInterval(handleAdAcceleration, CONFIG.checkIntervalMs);
 }
+
+// Watchdog: if the polling interval dies for any reason (SPA nav, config race,
+// etc.), restart it every 5 seconds. This is the self-healing safety net.
+setInterval(() => {
+  if (!isYouTube || !CONFIG.enabled || !CONFIG.acceleration) return;
+  if (!pollingInterval) {
+    console.log("[YT Chroma] Watchdog restarting polling interval.");
+    startPolling();
+  }
+}, 5000);
 
 // ─── POP-UNDER PROTECTION ──────────────────────────────────────────────────
 /**
@@ -806,7 +771,7 @@ function initPopUnderProtection() {
 
   // Listen for messages from the MAIN world (main-world.js)
   window.addEventListener('message', (event) => {
-    if (event.source !== window || event.origin !== window.location.origin || !event.data || event.data.source !== 'yt-chroma-main-world') return;
+    if (event.source !== window || !event.data || event.data.source !== 'yt-chroma-main-world') return;
 
     if (event.data.type === 'WINDOW_OPEN_ATTEMPT') {
       const now = Date.now();
@@ -940,9 +905,9 @@ function initSkipButtonListener() {
       if (skipButton) {
         window.chromaAdSkipped = true;
         // Force an immediate UI update if we have the video element
-        if (cachedVideo) {
+        if (targetAdVideo) {
           const rawAdShowing = document.getElementsByClassName('ad-showing').length > 0;
-          updateAdOverlay(cachedVideo, true, rawAdShowing);
+          updateAdOverlay(targetAdVideo, true, rawAdShowing);
         }
       }
     } catch (err) {
