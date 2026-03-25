@@ -70,6 +70,91 @@ test('getDefaultDynamicRules', async (t) => {
   });
 });
 
+test('syncDynamicRules successful syncing', async (t) => {
+  const sandbox = {};
+  let updateDynamicRulesArgs = null;
+  let getDynamicRulesCalled = false;
+
+  const mockExistingRules = [{ id: 101 }, { id: 102 }];
+  const mockStoredRules = [{ id: 999, action: { type: 'block' } }];
+
+  const chromeMock = {
+    runtime: {
+      onInstalled: { addListener: () => {} },
+      onStartup: { addListener: () => {} },
+      onMessage: { addListener: () => {} }
+    },
+    storage: {
+      local: {
+        get: async (key) => {
+          if (key === 'dynamicRules') {
+            return { dynamicRules: sandbox.mockStorageRules };
+          }
+          return {};
+        },
+        set: () => Promise.resolve()
+      },
+      onChanged: { addListener: () => {} }
+    },
+    declarativeNetRequest: {
+      getDynamicRules: async () => {
+        getDynamicRulesCalled = true;
+        return mockExistingRules;
+      },
+      updateDynamicRules: async (args) => {
+        updateDynamicRulesArgs = args;
+        return Promise.resolve();
+      }
+    },
+    tabs: {
+      query: () => Promise.resolve([]),
+      sendMessage: () => Promise.resolve(),
+      onCreated: { addListener: () => {} },
+      onRemoved: { addListener: () => {} }
+    }
+  };
+
+  sandbox.chrome = chromeMock;
+  sandbox.console = {
+    log: () => {},
+    error: () => {},
+    warn: () => {}
+  };
+  sandbox.setInterval = () => {};
+
+  vm.createContext(sandbox);
+  vm.runInContext(backgroundJsCode, sandbox);
+
+  await t.test('uses stored rules and removes existing ones', async () => {
+    sandbox.mockStorageRules = mockStoredRules;
+    updateDynamicRulesArgs = null;
+    getDynamicRulesCalled = false;
+
+    await sandbox.syncDynamicRules();
+
+    assert.strictEqual(getDynamicRulesCalled, true, 'getDynamicRules should have been called');
+    assert.ok(updateDynamicRulesArgs, 'updateDynamicRules should have been called');
+    assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [101, 102], 'Should remove existing rules');
+    assert.deepStrictEqual(updateDynamicRulesArgs.addRules, mockStoredRules, 'Should add stored rules');
+  });
+
+  await t.test('falls back to default rules when none are stored', async () => {
+    sandbox.mockStorageRules = undefined;
+    updateDynamicRulesArgs = null;
+    getDynamicRulesCalled = false;
+
+    await sandbox.syncDynamicRules();
+
+    assert.strictEqual(getDynamicRulesCalled, true, 'getDynamicRules should have been called');
+    assert.ok(updateDynamicRulesArgs, 'updateDynamicRules should have been called');
+    assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [101, 102], 'Should remove existing rules');
+
+    // Add rules should match the default rules
+    const defaultRules = sandbox.getDefaultDynamicRules();
+    assert.deepStrictEqual(updateDynamicRulesArgs.addRules, defaultRules, 'Should add default rules');
+  });
+});
+
 test('syncDynamicRules error handling', async (t) => {
   const sandbox = {};
   let consoleErrorCalled = false;
