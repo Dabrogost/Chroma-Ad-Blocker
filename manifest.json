@@ -11,7 +11,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "*://*.youtube.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -20,7 +20,7 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "*://*.youtube.com/*"
       ],
       "js": [
         "content.js"
@@ -30,7 +30,7 @@
     },
     {
       "matches": [
-        "<all_urls>"
+        "*://*.youtube.com/*"
       ],
       "js": [
         "main-world.js"
