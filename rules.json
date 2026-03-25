@@ -417,5 +417,184 @@
       ],
       "domainType": "firstParty"
     }
+  },
+  {
+    "id": 29,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/pagead.js",
+      "initiatorDomains": [
+        "adblock.turtlecute.org"
+      ],
+      "resourceTypes": [
+        "script"
+      ]
+    }
+  },
+  {
+    "id": 30,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "/widget/ads.",
+      "resourceTypes": [
+        "script",
+        "xmlhttprequest",
+        "image",
+        "media",
+        "sub_frame",
+        "ping",
+        "other"
+      ]
+    }
+  },
+  {
+    "id": 31,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||google-analytics.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 32,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||script.hotjar.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 33,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||surveys.hotjar.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 34,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||sessions.bugsnag.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 35,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||browser.sentry-cdn.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 36,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||trk.pinterest.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 37,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||ads.tiktok.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 38,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||udcm.yahoo.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 39,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||auction.unityads.unity3d.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 40,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||webview.unityads.unity3d.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 41,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||config.unityads.unity3d.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 42,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||adserver.unityads.unity3d.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 43,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||tracking.rus.miui.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 44,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||weather-analytics-events.apple.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 45,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||samsungads.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 46,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||smetrics.samsung.com^",
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
   }
 ]

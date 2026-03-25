@@ -16,6 +16,8 @@ const CONFIG = {
   suppressWarnings: true,
 };
 
+const isYouTube = window.location.hostname.includes('youtube.com');
+
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let stats = { blocked: 0, accelerated: 0 };
 let observer = null;
@@ -28,6 +30,10 @@ const HIDE_SELECTORS = [
   '.ytp-ad-overlay-slot',
   '.ytp-ad-text-overlay',
   '.ytp-ad-image-overlay',
+  // Static / Empty Ad Containers
+  '.ad-container',
+  '.ad-div',
+  '.video-ads.ytp-ad-module',
   // Bottom banner ads during video
   '.ytp-ad-progress',
   '.ytp-ad-progress-list',
@@ -55,6 +61,9 @@ const HIDE_SELECTORS = [
   'ytd-mealbar-promo-renderer',
   // Info cards that are ads
   '.ytp-suggested-action',
+  // turtlecute test rules
+  '.adbox.banner_ads.adsbox',
+  '.textads',
 ];
 
 // Anti-adblock warning dialog selectors
@@ -97,6 +106,55 @@ function injectCosmeticCSS() {
     .ytp-ad-visit-advertiser-button {
       display: none !important;
     }
+
+    /* Ad Acceleration Overlay */
+    #yt-chroma-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10, 10, 12, 0.85); /* deep dark base */
+      backdrop-filter: blur(12px);
+      z-index: 999999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-family: 'YouTube Noto', Roboto, Arial, sans-serif;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    #yt-chroma-overlay.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+    .chroma-spinner {
+      width: 48px; height: 48px;
+      border: 4px solid rgba(255,255,255,0.1);
+      border-top-color: #ff0000;
+      border-radius: 50%;
+      animation: chroma-spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
+    .chroma-title {
+      font-size: 24px; font-weight: 600; margin-bottom: 8px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .chroma-subtitle {
+      font-size: 14px; color: #aaa; margin-bottom: 30px;
+    }
+    .chroma-progress-container {
+      width: 60%; max-width: 400px; height: 6px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px; overflow: hidden;
+    }
+    .chroma-progress-bar {
+      height: 100%; width: 0%;
+      background: #ff0000;
+      transition: width 0.1s linear;
+      box-shadow: 0 0 10px #ff0000;
+    }
   `;
   (document.head || document.documentElement).appendChild(style);
 }
@@ -106,6 +164,8 @@ function suppressAdblockWarnings(node) {
   if (!CONFIG.suppressWarnings) return;
 
   const els = (node || document).querySelectorAll(WARNING_SELECTOR_COMBINED);
+  const removedAny = els.length > 0;
+
   els.forEach(el => {
     el.remove();
     stats.blocked++;
@@ -115,9 +175,8 @@ function suppressAdblockWarnings(node) {
   // try to unpause the video
   const video = document.querySelector('video');
   if (video && video.paused) {
-    // Only resume if we find an enforcement overlay was present
-    const hasEnforcement = document.querySelector('ytd-enforcement-message-view-model');
-    if (!hasEnforcement) {
+    // Only resume if we actually removed a warning overlay right now
+    if (removedAny) {
       video.play().catch(() => {});
     }
   }
@@ -135,9 +194,86 @@ function suppressAdblockWarnings(node) {
  * impression requirement without triggering the anti-adblock detection
  * that fires when a network request is blocked.
  */
+let adOverlay = null;
+let progressBar = null;
+
+function initAdOverlay() {
+  if (document.getElementById('yt-chroma-overlay')) return;
+  
+  adOverlay = document.createElement('div');
+  adOverlay.id = 'yt-chroma-overlay';
+  
+  const spinner = document.createElement('div');
+  spinner.className = 'chroma-spinner';
+  
+  const title = document.createElement('div');
+  title.className = 'chroma-title';
+  title.textContent = 'Chroma Active';
+  
+  const subtitle = document.createElement('div');
+  subtitle.className = 'chroma-subtitle';
+  subtitle.textContent = 'Accelerating Ad...';
+  
+  const progressContainer = document.createElement('div');
+  progressContainer.className = 'chroma-progress-container';
+  
+  progressBar = document.createElement('div');
+  progressBar.className = 'chroma-progress-bar';
+  
+  progressContainer.appendChild(progressBar);
+  adOverlay.appendChild(spinner);
+  adOverlay.appendChild(title);
+  adOverlay.appendChild(subtitle);
+  adOverlay.appendChild(progressContainer);
+}
+
+function updateAdOverlay(video, adShowing) {
+  if (!CONFIG.acceleration || !adShowing) {
+    if (adOverlay && adOverlay.classList.contains('active')) {
+      adOverlay.classList.remove('active');
+    }
+    return;
+  }
+  
+  if (!adOverlay) {
+    initAdOverlay();
+  }
+
+  // Ensure it's attached to the video's parent container
+  const playerContainer = video.closest('.html5-video-player') || video.parentElement;
+  if (playerContainer && !playerContainer.contains(adOverlay)) {
+    playerContainer.appendChild(adOverlay);
+  }
+  
+  // Show it
+  if (!adOverlay.classList.contains('active')) {
+    adOverlay.classList.add('active');
+  }
+  
+  // Update progress
+  if (video && video.duration > 0) {
+    const progressPercent = (video.currentTime / video.duration) * 100;
+    if (progressBar) {
+      progressBar.style.width = `${progressPercent}%`;
+    }
+  }
+}
+
 let cachedVideo = null;
 function handleAdAcceleration() {
   if (!CONFIG.acceleration) return;
+
+  // 1. Look for ANYTHING that looks like a skip or close button
+  const skipButtons = document.querySelectorAll(
+    '[class*="skip-button"], [class*="SkipButton"], .ytp-ad-overlay-close-button, .videoAdUiSkipButton'
+  );
+
+  skipButtons.forEach(btn => {
+    // Only click if it's actually visible in the DOM
+    if (btn.offsetParent !== null) { 
+        btn.click();
+    }
+  });
 
   if (!cachedVideo || !document.contains(cachedVideo)) {
     cachedVideo = document.querySelector('video');
@@ -153,21 +289,17 @@ function handleAdAcceleration() {
     document.getElementsByClassName('ytp-ad-player-overlay').length > 0 ||
     document.getElementsByClassName('ytp-ad-progress').length > 0;
 
+  updateAdOverlay(video, adShowing);
+
   if (adShowing) {
-    // Mute and accelerate
-    if (!video.muted) video.muted = true;
-    if (video.playbackRate !== CONFIG.accelerationSpeed) {
+    // Mute first, then accelerate on the next poll/tick to prevent audio bleeding
+    if (!video.muted) {
+      video.muted = true;
+    } else if (video.playbackRate !== CONFIG.accelerationSpeed) {
       video.playbackRate = CONFIG.accelerationSpeed;
       stats.accelerated++;
       notifyBackground({ type: 'STAT_UPDATE', stats });
     }
-
-    // Also try clicking the skip button if available (belt-and-suspenders)
-    const skipBtn =
-      document.querySelector('.ytp-skip-ad-button') ||
-      document.querySelector('.ytp-ad-skip-button');
-    if (skipBtn) skipBtn.click();
-
   } else {
     // Restore normal playback when ad ends
     if (video.muted && video.dataset.ytChromaMuted === 'true') {
@@ -246,8 +378,10 @@ function onYTNavigate() {
   });
 }
 
-document.addEventListener('yt-navigate-finish', onYTNavigate);
-document.addEventListener('yt-page-data-updated', onYTNavigate);
+if (isYouTube) {
+  document.addEventListener('yt-navigate-finish', onYTNavigate);
+  document.addEventListener('yt-page-data-updated', onYTNavigate);
+}
 
 // ─── POLLING LOOP ─────────────────────────────────────────────────────────────
 /**
@@ -257,6 +391,7 @@ document.addEventListener('yt-page-data-updated', onYTNavigate);
 let pollingInterval = null;
 
 function startPolling() {
+  if (!isYouTube) return;
   if (pollingInterval) clearInterval(pollingInterval);
   pollingInterval = setInterval(handleAdAcceleration, CONFIG.checkIntervalMs);
 }

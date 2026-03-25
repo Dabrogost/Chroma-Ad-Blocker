@@ -11,11 +11,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://www.youtube.com/*",
-    "https://youtube.com/*",
-    "https://googleads.g.doubleclick.net/*",
-    "https://pubads.g.doubleclick.net/*",
-    "https://imasdk.googleapis.com/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js",
@@ -23,8 +19,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }
@@ -32,9 +32,59 @@
   "declarative_net_request": {
     "rule_resources": [
       {
-        "id": "yt_ad_rules",
+        "id": "yt_original_rules",
         "enabled": true,
         "path": "rules.json"
+      },
+      {
+        "id": "yt_ad_rules_part1",
+        "enabled": true,
+        "path": "rules_1.json"
+      },
+      {
+        "id": "yt_ad_rules_part2",
+        "enabled": true,
+        "path": "rules_2.json"
+      },
+      {
+        "id": "yt_ad_rules_part3",
+        "enabled": true,
+        "path": "rules_3.json"
+      },
+      {
+        "id": "yt_ad_rules_part4",
+        "enabled": true,
+        "path": "rules_4.json"
+      },
+      {
+        "id": "yt_ad_rules_part5",
+        "enabled": true,
+        "path": "rules_5.json"
+      },
+      {
+        "id": "yt_ad_rules_part6",
+        "enabled": true,
+        "path": "rules_6.json"
+      },
+      {
+        "id": "yt_ad_rules_part7",
+        "enabled": true,
+        "path": "rules_7.json"
+      },
+      {
+        "id": "yt_ad_rules_part8",
+        "enabled": true,
+        "path": "rules_8.json"
+      },
+      {
+        "id": "yt_ad_rules_part9",
+        "enabled": true,
+        "path": "rules_9.json"
+      },
+      {
+        "id": "yt_ad_rules_part10",
+        "enabled": true,
+        "path": "rules_10.json"
       }
     ]
   },

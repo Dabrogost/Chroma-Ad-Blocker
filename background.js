@@ -183,8 +183,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const newConfig = { ...config, ...validatedConfig };
       await chrome.storage.local.set({ config: newConfig });
 
-      // Broadcast to all YouTube tabs
-      const tabs = await chrome.tabs.query({ url: ['*://youtube.com/*', '*://www.youtube.com/*'] });
+      // Broadcast to all tabs
+      const tabs = await chrome.tabs.query({});
       for (const tab of tabs) {
         chrome.tabs.sendMessage(tab.id, { type: 'CONFIG_UPDATE', config: newConfig }).catch(() => {});
       }
