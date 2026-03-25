@@ -14,12 +14,18 @@ const CONFIG = {
   cosmetic: true,
   acceleration: true,
   suppressWarnings: true,
+  blockPopUnders: true, // Default to true
+  blockPushNotifications: true,
+  enabled: true,
 };
 
 const isYouTube = window.location.hostname.includes('youtube.com');
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let stats = { blocked: 0, accelerated: 0 };
+let lastUserGestureTime = 0;
+let lastUserGestureType = '';
+let popupCountInGesture = 0;
 let observer = null;
 
 // ─── COSMETIC SELECTORS ──────────────────────────────────────────────────────
@@ -48,7 +54,6 @@ const HIDE_SELECTORS = [
   'ytd-rich-section-renderer:has(.ytd-ad-slot-renderer)',
   'ytd-rich-item-renderer:has(#ad-badge)',
   'ytd-rich-section-renderer:has(#ad-badge)',
-  'ytd-item-section-renderer:has(ytd-ad-slot-renderer)',
   'ytd-statement-banner-renderer',
   'ytd-video-masthead-ad-v3-renderer',
   // Shorts ads
@@ -61,6 +66,25 @@ const HIDE_SELECTORS = [
   // turtlecute test rules
   '.adbox.banner_ads.adsbox',
   '.textads',
+  // Common ad-block test selectors
+  '.ad_unit',
+  '.ad-server',
+  '.ad-wrapper',
+  '#ad-test',
+  '.ad-test',
+  '.advertisement',
+  'img[src*="/ad/gif.gif"]',
+  'img[src*="/ad/static.png"]',
+  'img[src*="advmaker"]',
+  'div[class*="advmaker"]',
+  'a[href*="advmaker"]',
+  '.advmaker',
+  '#advmaker',
+  '.ad-slot',
+  '.ad-container',
+  '.ads-by-google',
+  '[id^="ad-"]',
+  '[class^="ad-"]',
 ];
 
 // Anti-adblock warning dialog selectors
@@ -105,6 +129,20 @@ function injectCosmeticCSS() {
     [id^="skip-button:"] {
       z-index: 9999999 !important;
     }
+
+    /* Chroma glow on skip-ad buttons during an active ad session */
+    body.chroma-session-active .ytp-ad-skip-button-container,
+    body.chroma-session-active .ytp-ad-skip-button-slot,
+    body.chroma-session-active .ytp-skip-ad-button,
+    body.chroma-session-active .videoAdUiSkipButton,
+    body.chroma-session-active [id^="skip-button:"] {
+      border: 1.5px solid var(--chroma-color, #ff0055) !important;
+      border-radius: 24px !important;
+      box-shadow: 0 0 15px var(--chroma-color-alpha, rgba(255,0,85,0.4)), 
+                  inset 0 0 6px var(--chroma-color-alpha, rgba(255,0,85,0.2)) !important;
+      transition: border-color 0.15s linear, box-shadow 0.15s linear !important;
+      overflow: hidden !important;
+    }
     
     /* Allow user to access video controls (fullscreen, etc) through the overlay */
     .ytp-chrome-bottom {
@@ -133,9 +171,8 @@ function injectCosmeticCSS() {
       position: absolute;
       bottom: 0; left: 0; height: 3px;
       z-index: 50;
-      background: #ff0055;
-      transition: width 0.1s linear, height 0.1s ease;
-      animation: chroma-bg 8s linear infinite;
+      background: var(--chroma-color, #ff0055);
+      transition: width 0.1s linear, height 0.1s ease, background 0.15s linear;
       pointer-events: none;
     }
     .ytp-chrome-bottom:hover .chroma-native-progress,
@@ -172,38 +209,23 @@ function injectCosmeticCSS() {
     .chroma-spinner {
       width: 48px; height: 48px;
       border: 4px solid rgba(255,255,255,0.1);
-      border-top-color: #ff0055;
+      border-top-color: var(--chroma-color, #ff0055);
       border-radius: 50%;
-      animation: chroma-spin 1s linear infinite, chroma-border 8s linear infinite;
+      animation: chroma-spin 1s linear infinite;
+      transition: border-top-color 0.15s linear;
       margin-bottom: 20px;
     }
     @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
     
-    @keyframes chroma-border { 
-      0%, 100% { border-top-color: #ff0055; }
-      16% { border-top-color: #9900ff; }
-      33% { border-top-color: #0088ff; }
-      50% { border-top-color: #00ff88; }
-      66% { border-top-color: #ccff00; }
-      83% { border-top-color: #ff5500; }
-    }
-    
-    @keyframes chroma-all-borders { 
-      0%, 100% { border-color: #ff0055; }
-      16% { border-color: #9900ff; }
-      33% { border-color: #0088ff; }
-      50% { border-color: #00ff88; }
-      66% { border-color: #ccff00; }
-      83% { border-color: #ff5500; }
-    }
+    /* chroma-border and chroma-all-borders removed — driven by --chroma-color */
 
     .chroma-checkmark {
       width: 48px; height: 48px;
-      border: 4px solid #ff0055;
+      border: 4px solid var(--chroma-color, #ff0055);
       border-radius: 50%;
       margin-bottom: 20px;
       z-index: 2;
-      animation: chroma-all-borders 8s linear infinite;
+      transition: border-color 0.15s linear;
       position: relative;
     }
     .chroma-checkmark::after {
@@ -211,20 +233,13 @@ function injectCosmeticCSS() {
       position: absolute;
       top: 6px; left: 16px;
       width: 10px; height: 20px;
-      border: solid #ff0055;
+      border: solid var(--chroma-color, #ff0055);
       border-width: 0 4px 4px 0;
       transform: rotate(45deg);
-      animation: chroma-all-borders 8s linear infinite;
+      transition: border-color 0.15s linear;
     }
     
-    @keyframes chroma-bg { 
-      0%, 100% { background: #ff0055; }
-      16% { background: #9900ff; }
-      33% { background: #0088ff; }
-      50% { background: #00ff88; }
-      66% { background: #ccff00; }
-      83% { background: #ff5500; }
-    }
+    /* chroma-bg removed — driven by --chroma-color */
 
     .chroma-title {
       font-size: 24px; font-weight: 600; margin-bottom: 8px;
@@ -240,6 +255,14 @@ function injectCosmeticCSS() {
     }
   `;
   (document.head || document.documentElement).appendChild(style);
+  updateCosmeticState();
+}
+
+function updateCosmeticState() {
+  const style = document.getElementById('yt-chroma-cosmetic');
+  if (style) {
+    style.disabled = !(CONFIG.enabled && CONFIG.cosmetic);
+  }
 }
 
 // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
@@ -301,7 +324,7 @@ function initAdOverlay() {
   adOverlay.appendChild(subtitle);
 }
 
-function updateAdOverlay(video, effectiveAdShowing, rawAdShowing, nativeSkipButton) {
+function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
   if (!CONFIG.acceleration || !effectiveAdShowing) {
     if (adOverlay && adOverlay.classList.contains('active')) {
       adOverlay.classList.remove('active');
@@ -411,9 +434,8 @@ let cachedVideo = null;
 function handleAdAcceleration() {
   if (!CONFIG.acceleration) return;
 
-  const skipButtons = Array.from(document.querySelectorAll(
-    '[class*="skip-button"], [class*="SkipButton"], .ytp-ad-overlay-close-button, .videoAdUiSkipButton, .ytp-skip-ad-button'
-  )).filter(btn => btn.offsetParent !== null);
+  // Auto-clicking of skip buttons has been removed per user request.
+  // The buttons remain elevated via CSS to allow manual user skipping.
 
   if (!cachedVideo || !document.contains(cachedVideo)) {
     cachedVideo = document.querySelector('video');
@@ -463,7 +485,7 @@ function handleAdAcceleration() {
     document.body.classList.remove('chroma-session-active');
   }
 
-  updateAdOverlay(video, window.chromaAdSessionActive, rawAdShowing, skipButtons[0] || null);
+  updateAdOverlay(video, window.chromaAdSessionActive, rawAdShowing);
 
   // Instantly attach fast event listeners if we haven't already
   if (!video.dataset.chromaListenersAdded) {
@@ -575,15 +597,19 @@ function removeLeftoverAdContainers() {
 
   // 2. Parent-container removal for ad slots that the CSS engine might have missed
   // This proactively hides the entire grid slot if an ad is found inside it.
+  // ONLY remove parents that are designated for a single ad/video slot (rich-grid).
   const adSlots = document.querySelectorAll('ytd-ad-slot-renderer, .ytd-ad-slot-renderer, #ad-badge');
   adSlots.forEach(slot => {
-    const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer, ytd-item-section-renderer, ytd-shelf-renderer');
+    const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer');
     if (parent) {
       parent.style.display = 'none';
       parent.remove();
     } else {
+      // For sidebar or other sections, just hide the slot itself to preserve siblings
       slot.style.display = 'none';
-      slot.remove();
+      if (!slot.closest('#secondary')) { // Don't remove from sidebar, just hide
+         slot.remove();
+      }
     }
   });
 }
@@ -621,6 +647,101 @@ function startPolling() {
   pollingInterval = setInterval(handleAdAcceleration, CONFIG.checkIntervalMs);
 }
 
+// ─── POP-UNDER PROTECTION ──────────────────────────────────────────────────
+/**
+ * Monitor user gestures (clicks) to distinguish between legitimate
+ * user-initiated popups and automated pop-under ads.
+ */
+function initPopUnderProtection() {
+  // Track last click/interaction time with broader event coverage
+  const updateGesture = (e) => {
+    const now = Date.now();
+    // If this is a new gesture (more than 300ms since last), reset popup count
+    if (now - lastUserGestureTime > 300) {
+      popupCountInGesture = 0;
+    }
+    lastUserGestureTime = now;
+    lastUserGestureType = e.type;
+  };
+  
+  ['mousedown', 'mouseup', 'keydown', 'touchstart', 'touchend', 'click'].forEach(evt => {
+    document.addEventListener(evt, updateGesture, { capture: true, passive: true });
+    window.addEventListener(evt, updateGesture, { capture: true, passive: true });
+  });
+
+  // Intercept link clicks that might open new windows
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('a');
+    if (link && (link.target === '_blank' || e.ctrlKey || e.shiftKey || e.metaKey)) {
+      // If it's a suspicious link (e.g., hidden, overlay-like), we could flag it
+      const rect = link.getBoundingClientRect();
+      const isTiny = rect.width < 5 || rect.height < 5;
+      const isOverlay = rect.width > window.innerWidth * 0.9 && rect.height > window.innerHeight * 0.9;
+      
+      if (isTiny || isOverlay) {
+        console.warn('[YT Chroma] Suspicious link click detected:', link.href);
+      }
+    }
+  }, { capture: true, passive: true });
+
+  // Listen for messages from the MAIN world (main-world.js)
+  window.addEventListener('message', (event) => {
+    if (event.source !== window || !event.data || event.data.source !== 'yt-chroma-main-world') return;
+
+    if (event.data.type === 'WINDOW_OPEN_ATTEMPT') {
+      const now = Date.now();
+      const timeSinceGesture = now - lastUserGestureTime;
+      
+      // A popup is suspicious if:
+      // 1. It's too long after a gesture (> 300ms)
+      // 2. It's the 2nd or further popup in a single gesture
+      // 3. The gesture was a mousemove or something non-specific (though we only track specific ones)
+      
+      popupCountInGesture++;
+      
+      const isSuspicious = timeSinceGesture > 300 || popupCountInGesture > 1;
+
+      // Notify background script about the attempt
+      notifyBackground({
+        type: 'WINDOW_OPEN_NOTIFY',
+        url: event.data.url,
+        isSuspicious,
+        timeSinceGesture,
+        popupCount: popupCountInGesture,
+        gestureType: lastUserGestureType,
+        stack: event.data.stack
+      });
+    }
+
+    if (event.data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || event.data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
+      console.log(`[YT Chroma] Blocked suspicious pop-under attempt (${event.data.type})`);
+      notifyBackground({
+        type: 'SUSPICIOUS_ACTIVITY',
+        activity: event.data.type,
+        context: event.data.context
+      });
+    }
+
+    if (event.data.type === 'NOTIFICATION_ATTEMPT') {
+      // Handle notification attempts (stat tracking)
+      stats.blocked++;
+      notifyBackground({ type: 'STAT_UPDATE', stats });
+    }
+  });
+}
+
+/**
+ * Signals the main-world.js script whether push notification blocking
+ * should be active.
+ */
+function signalMainWorld() {
+  if (CONFIG.blockPushNotifications) {
+    document.documentElement.dataset.ytChromaPushActive = 'true';
+  } else {
+    delete document.documentElement.dataset.ytChromaPushActive;
+  }
+}
+
 // ─── BACKGROUND COMMUNICATION ─────────────────────────────────────────────────
 function notifyBackground(message) {
   try {
@@ -629,18 +750,34 @@ function notifyBackground(message) {
 }
 
 // Listen for config updates from the popup
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'CONFIG_UPDATE') {
     Object.assign(CONFIG, msg.config);
-    // Immediately apply acceleration config changes
-    if (!CONFIG.acceleration) {
-      clearInterval(pollingInterval);
+    // Immediately apply config changes
+    if (!CONFIG.enabled || !CONFIG.acceleration) {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
     } else {
       startPolling();
     }
+
+    if (!CONFIG.enabled) {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    } else {
+      startObserver();
+    }
+
+    updateCosmeticState();
+    signalMainWorld();
   }
   if (msg.type === 'GET_STATS') {
-    return Promise.resolve(stats);
+    sendResponse(stats);
+    return true;
   }
 });
 
@@ -652,16 +789,69 @@ function startExtensionServices() {
   startObserver();
   startPolling();
   suppressAdblockWarnings();
+  signalMainWorld();
+  startChromaClock();
+}
+
+// ─── CHROMA COLOR CLOCK ────────────────────────────────────────────────────────
+/**
+ * Drives a single --chroma-color CSS variable from a global time base
+ * so every chroma element (spinner, checkmark, progress bar, skip glow)
+ * is perfectly phase-locked.
+ */
+const CHROMA_PALETTE = [
+  [255,   0,  85],  // #ff0055
+  [153,   0, 255],  // #9900ff
+  [  0, 136, 255],  // #0088ff
+  [  0, 255, 136],  // #00ff88
+  [204, 255,   0],  // #ccff00
+  [255,  85,   0],  // #ff5500
+];
+const CHROMA_CYCLE_MS = 8000;
+let chromaClockRunning = false;
+
+function startChromaClock() {
+  if (chromaClockRunning) return;
+  chromaClockRunning = true;
+
+  function tick() {
+    const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS; // 0 → 1
+    const segCount = CHROMA_PALETTE.length;
+    const raw = t * segCount;
+    const idx = Math.floor(raw) % segCount;
+    const frac = raw - Math.floor(raw);
+    const next = (idx + 1) % segCount;
+
+    const r = Math.round(CHROMA_PALETTE[idx][0] + (CHROMA_PALETTE[next][0] - CHROMA_PALETTE[idx][0]) * frac);
+    const g = Math.round(CHROMA_PALETTE[idx][1] + (CHROMA_PALETTE[next][1] - CHROMA_PALETTE[idx][1]) * frac);
+    const b = Math.round(CHROMA_PALETTE[idx][2] + (CHROMA_PALETTE[next][2] - CHROMA_PALETTE[idx][2]) * frac);
+
+    const root = document.documentElement;
+    root.style.setProperty('--chroma-color', `rgb(${r},${g},${b})`);
+    root.style.setProperty('--chroma-color-alpha', `rgba(${r},${g},${b},0.3)`);
+
+    requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 function init() {
+  // 0. Signal main world as early as possible
+  signalMainWorld();
+
   // 1. Inject cosmetic CSS immediately at document_start
   injectCosmeticCSS();
 
-  // 2. Once DOM is ready, start the observer and polling
+  // 2. Start protection scripts immediately to catch early gestures
+  initPopUnderProtection();
+
+  // 3. Once DOM is ready, start the observer and polling
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startExtensionServices);
+    document.addEventListener('DOMContentLoaded', () => {
+      startExtensionServices();
+    });
   } else {
     startExtensionServices();
   }

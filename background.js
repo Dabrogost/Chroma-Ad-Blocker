@@ -18,6 +18,9 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         cosmetic: true,
         suppressWarnings: true,
         accelerationSpeed: 16,
+        blockPopUnders: true,
+        blockPushNotifications: true,
+        enabled: true,
       },
       stats: { blocked: 0, accelerated: 0 },
     });
@@ -129,6 +132,42 @@ function getDefaultDynamicRules() {
   ];
 }
 
+// ─── CONFIGURATION STATE ──────────────────────────────────────────────────
+let config = { 
+  enabled: true, 
+  blockPopUnders: true, 
+  blockPushNotifications: true 
+};
+
+// Initial load and listen for updates
+chrome.storage.local.get('config').then(({ config: storedConfig }) => {
+  if (storedConfig) config = { ...config, ...storedConfig };
+});
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.config) {
+    config = { ...config, ...changes.config.newValue };
+  }
+});
+
+// ─── POP-UNDER DETECTION STATE ───────────────────────────────────────────────
+// Keep track of window.open attempts per tab to prevent cross-tab interference
+let popunderRequests = new Map(); // tabId -> { time: number, isSuspicious: boolean, createdTabIds: number[], ... }
+let lastGlobalRequest = null; // Fallback for when openerTabId is missing
+
+// PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [tabId, data] of popunderRequests.entries()) {
+    if (now - data.time > 15000) { // Keep for 15s
+      popunderRequests.delete(tabId);
+    }
+  }
+  if (lastGlobalRequest && now - lastGlobalRequest.time > 15000) {
+    lastGlobalRequest = null;
+  }
+}, 30000);
+
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
@@ -142,6 +181,56 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       stats.blocked = (stats.blocked || 0) + blocked;
       chrome.storage.local.set({ stats });
     });
+    return false;
+  }
+
+  if (msg.type === 'WINDOW_OPEN_NOTIFY') {
+    const tabId = _sender.tab?.id;
+    if (tabId) {
+      const existing = popunderRequests.get(tabId) || { createdTabIds: [] };
+      const request = {
+        ...existing,
+        tabId,
+        time: Date.now(),
+        isSuspicious: msg.isSuspicious,
+        url: msg.url,
+        popupCount: msg.popupCount,
+        gestureType: msg.gestureType,
+        stack: msg.stack
+      };
+      popunderRequests.set(tabId, request);
+      lastGlobalRequest = request; // Store as global fallback
+      console.log(`[YT Chroma] Window open notification from tab ${tabId}:`, msg);
+    }
+    return false;
+  }
+
+  if (msg.type === 'SUSPICIOUS_ACTIVITY') {
+    const tabId = _sender.tab?.id;
+    if (tabId) {
+      const existing = popunderRequests.get(tabId) || { time: Date.now(), createdTabIds: [] };
+      existing.isSuspicious = true;
+      existing.activity = msg.activity;
+      popunderRequests.set(tabId, existing);
+
+      // RETROACTIVE CLOSING: If any tabs were just opened from this opener, close them now
+      if (existing.createdTabIds && existing.createdTabIds.length > 0) {
+        console.log(`[YT Chroma] Successfully blocked ${existing.createdTabIds.length} pop-under(s) (Retroactive: ${msg.activity})`);
+        existing.createdTabIds.forEach(id => {
+          chrome.tabs.remove(id).catch(() => {});
+        });
+        
+        // Update stats
+        chrome.storage.local.get('stats').then(({ stats = {} }) => {
+          stats.blocked = (stats.blocked || 0) + existing.createdTabIds.length;
+          chrome.storage.local.set({ stats });
+        });
+        
+        existing.createdTabIds = [];
+      }
+      
+      console.log(`[YT Chroma] Suspicious activity notification from tab ${tabId}:`, msg);
+    }
     return false;
   }
 
@@ -162,7 +251,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'SET_CONFIG') {
     chrome.storage.local.get('config').then(async ({ config }) => {
       // Validate and extract only allowed properties
-      const allowed = ['acceleration', 'cosmetic', 'suppressWarnings', 'accelerationSpeed'];
+      const allowed = ['acceleration', 'cosmetic', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
       const validatedConfig = {};
 
       if (msg.config && typeof msg.config === 'object') {
@@ -262,8 +351,70 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === 'RESET_STATS') {
-    chrome.storage.local.set({ stats: { blocked: 0, accelerated: 0 } })
-      .then(() => sendResponse({ ok: true }));
+    chrome.storage.local.get('stats').then(({ stats = {} }) => {
+      stats.blocked = 0;
+      stats.accelerated = 0;
+      chrome.storage.local.set({ stats })
+        .then(() => sendResponse({ ok: true }));
+    });
     return true;
   }
+});
+
+// ─── TAB MONITORING (Pop-Under Blocker) ───────────────────────────────────────
+chrome.tabs.onCreated.addListener(async (tab) => {
+  if (!config?.enabled || !config?.blockPopUnders) return;
+
+  // Give a small grace period for the WINDOW_OPEN_NOTIFY to arrive from content script
+  // since postMessage -> runtime.sendMessage is slightly slower than tab creation.
+  let request = null;
+  const now = Date.now();
+  const openerId = tab.openerTabId;
+
+  for (let i = 0; i < 5; i++) { // Retry up to 5 times (250ms total)
+    request = openerId ? popunderRequests.get(openerId) : null;
+    if (!request && lastGlobalRequest && (Date.now() - lastGlobalRequest.time < 2000)) {
+      request = lastGlobalRequest;
+    }
+    
+    if (request) break;
+    await new Promise(r => setTimeout(r, 50));
+  }
+
+  if (!request) return;
+
+  if (!request.createdTabIds) request.createdTabIds = [];
+
+  const timeSinceNotify = now - request.time;
+  
+  const stackLower = (request.stack || '').toLowerCase();
+  const isAdScript = stackLower.includes('pop') || 
+                      stackLower.includes('ad') || 
+                      stackLower.includes('promo') || 
+                      stackLower.includes('test') || 
+                      stackLower.includes('click');
+
+  if ((request.isSuspicious || request.popupCount > 1 || isAdScript) && timeSinceNotify < 3000) {
+    console.warn(`[YT Chroma] Blocking suspicious pop-under: ${tab.pendingUrl || tab.url || 'unknown'}`);
+    
+    // Close the tab
+    chrome.tabs.remove(tab.id).catch(() => {});
+    
+    // Increment stats
+    chrome.storage.local.get('stats').then(({ stats = {} }) => {
+      stats.blocked = (stats.blocked || 0) + 1;
+      chrome.storage.local.set({ stats });
+    });
+
+    if (openerId) popunderRequests.delete(openerId);
+    if (request === lastGlobalRequest) lastGlobalRequest = null;
+  } else {
+    // If it's not immediately suspicious, store the tabId for potential retroactive closing
+    request.createdTabIds.push(tab.id);
+  }
+});
+
+// Clean up map when a tab is closed
+chrome.tabs.onRemoved.addListener((tabId) => {
+  popunderRequests.delete(tabId);
 });

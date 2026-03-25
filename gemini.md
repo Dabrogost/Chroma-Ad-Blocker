@@ -8,9 +8,7 @@ YT Chroma is a personal YouTube-specific ad blocker built for **Manifest V3 (MV3
 1. **Layer 1 — Ad Acceleration (`content.js`)**
    - **Mechanism:** The primary, most detection-resistant method.
    - Watches for the `.ad-showing` CSS class.
-   - Mutes the player (`video.muted = true`) and fast-forwards ads at 16x speed (`video.playbackRate = 16`). A 30s ad takes ~2s.
-   - Clicks `.ytp-skip-ad-button` if available.
-   - **Why:** Blocking network requests triggers YouTube's anti-adblock detection. Accelerating the video fulfills YouTube's impression requirement invisibly to the user.
+   - Accelerating the video fulfills YouTube's impression requirement invisibly to the user. Skip buttons remain available for manual use.
 
 2. **Layer 2 — DNR Network Blocking (`rules.json` & `background.js`)**
    - **Static Rules:** 16 rules targeting known ad domains like `doubleclick.net`, `imasdk.googleapis.com`, and `ads.youtube.com`. Explicitly allows `/api/` and `/youtubei/` to prevent breaking the site.

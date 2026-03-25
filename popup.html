@@ -53,12 +53,18 @@
     }
 
     .status-dot {
-      margin-left: auto;
+      margin-left: 8px;
       width: 8px; height: 8px;
       border-radius: 50%;
       background: var(--green);
       box-shadow: 0 0 6px var(--green);
       flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+
+    .status-dot.off {
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
     }
 
     /* ── STATS ── */
@@ -198,7 +204,17 @@
       <h1>YT Chroma</h1>
       <span>YouTube Ad Blocker</span>
     </div>
-    <div class="status-dot" id="statusDot" title="Active"></div>
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+      <label class="switch" style="width: 30px; height: 16px;">
+        <input type="checkbox" id="toggleEnabled" checked />
+        <span class="slider" style="border-radius: 16px;"></span>
+        <style>
+          #toggleEnabled + .slider::before { width: 10px; height: 10px; left: 3px; bottom: 3px; }
+          #toggleEnabled:checked + .slider::before { transform: translateX(14px); }
+        </style>
+      </label>
+      <div class="status-dot" id="statusDot" title="Active"></div>
+    </div>
   </header>
 
   <div class="stats-row">
@@ -243,6 +259,28 @@
     </div>
     <label class="switch">
       <input type="checkbox" id="toggleWarnings" />
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="name">Pop-Under Protection</div>
+      <div class="desc">Prevents automated background popups</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="togglePopUnders" />
+      <span class="slider"></span>
+    </label>
+  </div>
+  
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="name">Push Notifications</div>
+      <div class="desc">Blocks ad-related push notification requests</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="togglePush" />
       <span class="slider"></span>
     </label>
   </div>
