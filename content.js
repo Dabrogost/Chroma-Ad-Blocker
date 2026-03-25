@@ -278,12 +278,21 @@ function injectShortsCSS() {
   const style = document.createElement('style');
   style.id = 'yt-chroma-shorts';
   style.textContent = `
-    ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
-    ytd-rich-shelf-renderer[is-shorts],
+    /* Home page shelf containers */
+    ytd-rich-section-renderer:has(ytd-reel-item-renderer),
+    ytd-rich-shelf-renderer:has(ytd-reel-item-renderer),
+    
+    /* Dedicated Shorts shelves */
     ytd-reel-shelf-renderer,
-    ytd-guide-entry-renderer:has([title^="Shorts"]),
+    
+    /* Navigation items */
+    ytd-guide-entry-renderer:has(a[title="Shorts"]),
+    ytd-guide-entry-renderer:has(yt-icon[icon="youtube-shorts"]),
     ytd-mini-guide-entry-renderer[aria-label="Shorts"],
-    ytd-bottom-pivot-link-renderer:has([title="Shorts"]),
+    ytd-mini-guide-entry-renderer:has(yt-icon[icon="youtube-shorts"]),
+    ytd-bottom-pivot-link-renderer:has(yt-icon[icon="youtube-shorts"]),
+    
+    /* Filter chips */
     yt-chip-cloud-chip-renderer:has([title="Shorts"]) {
       display: none !important;
     }
@@ -678,11 +687,22 @@ function removeLeftoverAdContainers() {
   // 1. Precise element-based removal for elements with 'ad' in their ID
   const adIds = document.querySelectorAll('[id*="ad-container"], [id*="ad_container"]');
   adIds.forEach(el => {
-    if (el.id !== 'yt-chroma-cosmetic' && !el.id.includes('masthead')) {
+    if (el.id !== 'yt-chroma-cosmetic' && el.id !== 'yt-chroma-shorts' && !el.id.includes('masthead')) {
       el.style.display = 'none';
       el.remove(); // Safely remove to collapse grid
     }
   });
+
+  // Active Shorts DOM cleanup to collapse grid gaps properly
+  if (CONFIG.enabled && CONFIG.hideShorts) {
+    const shortsElements = document.querySelectorAll('ytd-rich-section-renderer:has(ytd-reel-item-renderer), ytd-rich-shelf-renderer:has(ytd-reel-item-renderer), ytd-reel-shelf-renderer');
+    shortsElements.forEach(el => {
+      el.style.display = 'none';
+      if (!el.closest('#secondary')) {
+        el.remove();
+      }
+    });
+  }
 
   // 2. Parent-container removal for ad slots that the CSS engine might have missed
   // This proactively hides the entire grid slot if an ad is found inside it.
@@ -1038,7 +1058,7 @@ function init() {
   initPopUnderProtection();
 
   // 2. Fetch the true saved config before starting the heavy observers
-  chrome.runtime.sendMessage({ type: 'GET_CONFIG' }).then(savedConfig => {
+  chrome.storage.local.get('config').then(({ config: savedConfig }) => {
     if (savedConfig) {
       Object.assign(CONFIG, savedConfig);
       updateCosmeticState(); // Sync CSS with true config
