@@ -59,6 +59,12 @@ test('notifyBackground error handling', async (t) => {
       onMessage: {
         addListener: () => {}
       }
+    },
+    storage: {
+      local: {
+        get: () => Promise.resolve({}),
+        set: () => Promise.resolve()
+      }
     }
   };
 
@@ -158,6 +164,12 @@ test('injectCosmeticCSS functionality', async (t) => {
         runtime: {
           sendMessage: () => Promise.resolve(),
           onMessage: { addListener: () => {} }
+        },
+        storage: {
+          local: {
+            get: () => Promise.resolve({}),
+            set: () => Promise.resolve()
+          }
         }
       },
       document: {
@@ -273,6 +285,12 @@ test('removeLeftoverAdContainers functionality', async (t) => {
         runtime: {
           sendMessage: () => Promise.resolve(),
           onMessage: { addListener: () => {} }
+        },
+        storage: {
+          local: {
+            get: () => Promise.resolve({}),
+            set: () => Promise.resolve()
+          }
         }
       },
       document: {
@@ -402,6 +420,12 @@ test('initAdOverlay functionality', async (t) => {
         runtime: {
           sendMessage: () => Promise.resolve(),
           onMessage: { addListener: () => {} }
+        },
+        storage: {
+          local: {
+            get: () => Promise.resolve({}),
+            set: () => Promise.resolve()
+          }
         }
       },
       document: {
@@ -584,6 +608,12 @@ test('signalMainWorld functionality', async (t) => {
         runtime: {
           sendMessage: () => Promise.resolve(),
           onMessage: { addListener: () => {} }
+        },
+        storage: {
+          local: {
+            get: () => Promise.resolve({}),
+            set: () => Promise.resolve()
+          }
         }
       },
       document: {
@@ -683,6 +713,12 @@ test('suppressAdblockWarnings functionality', async (t) => {
         runtime: {
           sendMessage: () => Promise.resolve(),
           onMessage: { addListener: () => {} }
+        },
+        storage: {
+          local: {
+            get: () => Promise.resolve({}),
+            set: () => Promise.resolve()
+          }
         }
       },
       document: {

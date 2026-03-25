@@ -25,7 +25,7 @@ const CONFIG = {
 const isYouTube = window.location.hostname.includes('youtube.com');
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let stats = { blocked: 0, accelerated: 0 };
+let stats = { accelerated: 0 };
 let lastUserGestureTime = 0;
 let lastUserGestureType = '';
 let popupCountInGesture = 0;
@@ -343,12 +343,18 @@ function injectOffersCSS() {
 function suppressAdblockWarnings(node) {
   if (!CONFIG.enabled || !CONFIG.suppressWarnings) return;
 
+  // 1. Check if the node itself is a warning element
+  if (node && typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
+    node.remove();
+    // We no longer track cosmetic blocks in the global stats per user request
+    // We still proceed to check children in case this was a container
+  }
+
   const els = (node || document).querySelectorAll(WARNING_SELECTOR_COMBINED);
   const removedAny = els.length > 0;
 
   els.forEach(el => {
     el.remove();
-    stats.blocked++;
   });
 
   // If the page has been paused by YouTube's enforcement overlay,
@@ -915,9 +921,7 @@ function initPopUnderProtection() {
     }
 
     if (event.data.type === 'NOTIFICATION_ATTEMPT') {
-      // Handle notification attempts (stat tracking)
-      stats.blocked++;
-      notifyBackground({ type: 'STAT_UPDATE', stats });
+      // Handle notification attempts (stat tracking) - No longer globally tracked
     }
   });
 }
@@ -931,6 +935,12 @@ function signalMainWorld() {
     document.documentElement.dataset.ytChromaPushActive = 'true';
   } else {
     delete document.documentElement.dataset.ytChromaPushActive;
+  }
+
+  if (CONFIG.enabled && CONFIG.blockPopUnders) {
+    document.documentElement.dataset.ytChromaPopActive = 'true';
+  } else {
+    delete document.documentElement.dataset.ytChromaPopActive;
   }
 }
 
@@ -1010,7 +1020,6 @@ function startExtensionServices() {
   signalMainWorld();
   startChromaClock();
   initSkipButtonListener();
-  initAdOverlay();
 }
 
 /**
@@ -1114,7 +1123,6 @@ function startChromaClock() {
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 function init() {
   // 1. Inject CSS and default protections immediately to prevent a flash of ads
-  signalMainWorld();
   injectCosmeticCSS();
   injectShortsCSS();
   injectMerchCSS();
@@ -1129,7 +1137,6 @@ function init() {
       updateShortsState();
       updateMerchState();
       updateOffersState();
-      signalMainWorld();     // Sync Push Blocker with true config
     }
     
     // 3. Start services based on the correct state

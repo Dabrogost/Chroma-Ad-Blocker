@@ -26,7 +26,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         blockPushNotifications: true,
         enabled: true,
       },
-      stats: { blocked: 0, accelerated: 0 },
+      stats: { networkBlocked: 0, accelerated: 0 },
     });
     console.log('[YT Chroma] Installed. Default config applied.');
   }
@@ -107,7 +107,7 @@ async function syncDynamicRules() {
  */
 function getDefaultDynamicRules() {
   return [
-    // Block YouTube's ad measurement ping endpoints
+    // Allow YouTube's ad measurement ping endpoints (Exemption)
     {
       id: 1001,
       priority: 1,
@@ -127,7 +127,7 @@ function getDefaultDynamicRules() {
         resourceTypes: ['image', 'xmlhttprequest', 'ping'],
       },
     },
-    // Block ad companion banners fetched via XHR
+    // Allow ad companion banners fetched via XHR (Exemption)
     {
       id: 1003,
       priority: 1,
@@ -138,7 +138,7 @@ function getDefaultDynamicRules() {
         resourceTypes: ['xmlhttprequest'],
       },
     },
-    // Block DoubleClick pixel tracking
+    // Allow DoubleClick pixel tracking (Exemption)
     {
       id: 1004,
       priority: 1,
@@ -157,7 +157,7 @@ function getDefaultDynamicRules() {
         resourceTypes: ['image', 'ping', 'xmlhttprequest', 'script'],
       },
     },
-    // Block YouTube's "Engagement Panel" ad calls
+    // Allow YouTube's "Engagement Panel" ad calls (Exemption)
     {
       id: 1006,
       priority: 1,
@@ -227,10 +227,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     // Accumulate stats from content scripts
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
       const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
-      const blocked = Number.isInteger(msg.stats?.blocked) ? msg.stats.blocked : 0;
-
+      // We no longer track 'blocked' (cosmetic) in the main stats row per user request
+      
       stats.accelerated = (stats.accelerated || 0) + accelerated;
-      stats.blocked = (stats.blocked || 0) + blocked;
       chrome.storage.local.set({ stats });
     });
     return false;
@@ -272,9 +271,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           chrome.tabs.remove(id).catch(() => {});
         });
         
-        // Update stats
+        // Update stats (Network/Pop-under blocks)
         chrome.storage.local.get('stats').then(({ stats = {} }) => {
-          stats.blocked = (stats.blocked || 0) + existing.createdTabIds.length;
+          stats.networkBlocked = (stats.networkBlocked || 0) + existing.createdTabIds.length;
           chrome.storage.local.set({ stats });
         });
         
@@ -288,7 +287,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'GET_STATS') {
     chrome.storage.local.get('stats').then(({ stats }) => {
-      sendResponse(stats || { blocked: 0, accelerated: 0 });
+      sendResponse(stats || { networkBlocked: 0, accelerated: 0 });
     });
     return true; // keep channel open for async response
   }
@@ -411,7 +410,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'RESET_STATS') {
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
-      stats.blocked = 0;
+      stats.networkBlocked = 0;
       stats.accelerated = 0;
       chrome.storage.local.set({ stats })
         .then(() => sendResponse({ ok: true }));
@@ -461,7 +460,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     
     // Increment stats
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
-      stats.blocked = (stats.blocked || 0) + 1;
+      stats.networkBlocked = (stats.networkBlocked || 0) + 1;
       chrome.storage.local.set({ stats });
     });
 
@@ -472,6 +471,21 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     request.createdTabIds.push(tab.id);
   }
 });
+
+// ─── NETWORK BLOCK TRACKING (DNR) ───────────────────────────────────────────
+if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
+  chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
+    // Only track actual block rules (not allow rules or redirects unless desired)
+    // In our rules.json, most are block. 
+    // We can check the action type if available, but onRuleMatchedDebug info 
+    // often doesn't specify the action type easily without looking up the rule.
+    // However, for stats purposes, incrementing on every match is usually what users expect.
+    chrome.storage.local.get('stats').then(({ stats = {} }) => {
+      stats.networkBlocked = (stats.networkBlocked || 0) + 1;
+      chrome.storage.local.set({ stats });
+    });
+  });
+}
 
 // Clean up map when a tab is closed
 chrome.tabs.onRemoved.addListener((tabId) => {

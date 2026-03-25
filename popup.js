@@ -39,9 +39,9 @@ async function init() {
   $('togglePush').checked = isEnabled ? (config.blockPushNotifications ?? true) : false;
 
   // Load stats
-  const stats = await sendBg({ type: 'GET_STATS' }) || { blocked: 0, accelerated: 0 };
+  const stats = await sendBg({ type: 'GET_STATS' }) || { networkBlocked: 0, accelerated: 0 };
   $('statAccelerated').textContent = stats.accelerated ?? 0;
-  $('statBlocked').textContent = stats.blocked ?? 0;
+  $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
 
   // Toggle handlers
   const TOGGLES = [
@@ -122,7 +122,7 @@ async function init() {
   $('resetStats').addEventListener('click', async () => {
     await sendBg({ type: 'RESET_STATS' });
     $('statAccelerated').textContent = '0';
-    $('statBlocked').textContent = '0';
+    $('statNetworkBlocked').textContent = '0';
   });
 }
 

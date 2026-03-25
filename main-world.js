@@ -13,26 +13,30 @@
 
   let lastOpenTime = 0;
 
+  const checkPopUnderBlocking = () => document.documentElement.dataset.ytChromaPopActive === 'true';
+
   window.open = function(url, name, specs) {
-    // Capture the stack trace to help identify the caller script in content script/background
-    let stack = '';
-    try {
-      throw new Error();
-    } catch (e) {
-      stack = e.stack || '';
+    if (checkPopUnderBlocking()) {
+      // Capture the stack trace to help identify the caller script in content script/background
+      let stack = '';
+      try {
+        throw new Error();
+      } catch (e) {
+        stack = e.stack || '';
+      }
+
+      // Notify the isolated content script about the window.open call
+      window.postMessage({
+        source: 'yt-chroma-main-world',
+        type: 'WINDOW_OPEN_ATTEMPT',
+        url: String(url || 'about:blank'),
+        name: String(name || ''),
+        specs: String(specs || ''),
+        stack: stack
+      }, '*');
+
+      lastOpenTime = Date.now();
     }
-
-    // Notify the isolated content script about the window.open call
-    window.postMessage({
-      source: 'yt-chroma-main-world',
-      type: 'WINDOW_OPEN_ATTEMPT',
-      url: String(url || 'about:blank'),
-      name: String(name || ''),
-      specs: String(specs || ''),
-      stack: stack
-    }, '*');
-
-    lastOpenTime = Date.now();
     
     // Proceed with the original open call.
     return originalOpen.apply(this, arguments);
@@ -40,7 +44,7 @@
 
   // Detect suspicious focus/blur patterns right after a window.open
   window.focus = function() {
-    if (Date.now() - lastOpenTime < 1000) {
+    if (checkPopUnderBlocking() && Date.now() - lastOpenTime < 1000) {
       window.postMessage({
         source: 'yt-chroma-main-world',
         type: 'SUSPICIOUS_FOCUS_ATTEMPT',
@@ -51,7 +55,7 @@
   };
 
   window.blur = function() {
-    if (Date.now() - lastOpenTime < 1000) {
+    if (checkPopUnderBlocking() && Date.now() - lastOpenTime < 1000) {
       window.postMessage({
         source: 'yt-chroma-main-world',
         type: 'SUSPICIOUS_BLUR_ATTEMPT',
