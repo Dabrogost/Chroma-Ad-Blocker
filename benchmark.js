@@ -24,7 +24,7 @@ let CONFIG = {
   suppressWarnings: true
 };
 
-let stats = { blocked: 0 };
+const stats = { blocked: 0 };
 
 // Mock DOM setup (simplified)
 const mockNode = {
