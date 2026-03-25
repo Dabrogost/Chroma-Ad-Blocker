@@ -117,17 +117,6 @@ function injectCosmeticCSS() {
       overflow: hidden !important;
     }
     
-    /* Hide Shorts when configured */
-    html.yt-chroma-hide-shorts ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
-    html.yt-chroma-hide-shorts ytd-rich-shelf-renderer[is-shorts],
-    html.yt-chroma-hide-shorts ytd-reel-shelf-renderer,
-    html.yt-chroma-hide-shorts ytd-guide-entry-renderer:has([title^="Shorts"]),
-    html.yt-chroma-hide-shorts ytd-mini-guide-entry-renderer[aria-label="Shorts"],
-    html.yt-chroma-hide-shorts ytd-bottom-pivot-link-renderer:has([title="Shorts"]),
-    html.yt-chroma-hide-shorts yt-chip-cloud-chip-renderer:has([title="Shorts"]) {
-      display: none !important;
-    }
-    
     /* Ensure video player fills gap when sidebar ads are removed */
     #player-theater-container, #player-container-id {
       max-width: unset !important;
@@ -279,11 +268,28 @@ function updateCosmeticState() {
 }
 
 function updateShortsState() {
-  if (CONFIG.enabled && CONFIG.hideShorts) {
-    document.documentElement.classList.add('yt-chroma-hide-shorts');
-  } else {
-    document.documentElement.classList.remove('yt-chroma-hide-shorts');
+  const style = document.getElementById('yt-chroma-shorts');
+  if (style) {
+    style.disabled = !(CONFIG.enabled && CONFIG.hideShorts);
   }
+}
+
+function injectShortsCSS() {
+  const style = document.createElement('style');
+  style.id = 'yt-chroma-shorts';
+  style.textContent = `
+    ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
+    ytd-rich-shelf-renderer[is-shorts],
+    ytd-reel-shelf-renderer,
+    ytd-guide-entry-renderer:has([title^="Shorts"]),
+    ytd-mini-guide-entry-renderer[aria-label="Shorts"],
+    ytd-bottom-pivot-link-renderer:has([title="Shorts"]),
+    yt-chip-cloud-chip-renderer:has([title="Shorts"]) {
+      display: none !important;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(style);
+  updateShortsState();
 }
 
 // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
@@ -1028,6 +1034,7 @@ function init() {
   // 1. Inject CSS and default protections immediately to prevent a flash of ads
   signalMainWorld();
   injectCosmeticCSS();
+  injectShortsCSS();
   initPopUnderProtection();
 
   // 2. Fetch the true saved config before starting the heavy observers
