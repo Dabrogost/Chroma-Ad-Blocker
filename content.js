@@ -12,6 +12,7 @@ const CONFIG = {
   accelerationSpeed: 16,
   checkIntervalMs: 300,
   cosmetic: true,
+  hideShorts: false,
   acceleration: true,
   suppressWarnings: true,
   blockPopUnders: true, // Default to true
@@ -115,6 +116,18 @@ function injectCosmeticCSS() {
       min-height: 0 !important;
       overflow: hidden !important;
     }
+    
+    /* Hide Shorts when configured */
+    html.yt-chroma-hide-shorts ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
+    html.yt-chroma-hide-shorts ytd-rich-shelf-renderer[is-shorts],
+    html.yt-chroma-hide-shorts ytd-reel-shelf-renderer,
+    html.yt-chroma-hide-shorts ytd-guide-entry-renderer:has([title^="Shorts"]),
+    html.yt-chroma-hide-shorts ytd-mini-guide-entry-renderer[aria-label="Shorts"],
+    html.yt-chroma-hide-shorts ytd-bottom-pivot-link-renderer:has([title="Shorts"]),
+    html.yt-chroma-hide-shorts yt-chip-cloud-chip-renderer:has([title="Shorts"]) {
+      display: none !important;
+    }
+    
     /* Ensure video player fills gap when sidebar ads are removed */
     #player-theater-container, #player-container-id {
       max-width: unset !important;
@@ -262,6 +275,14 @@ function updateCosmeticState() {
   const style = document.getElementById('yt-chroma-cosmetic');
   if (style) {
     style.disabled = !(CONFIG.enabled && CONFIG.cosmetic);
+  }
+}
+
+function updateShortsState() {
+  if (CONFIG.enabled && CONFIG.hideShorts) {
+    document.documentElement.classList.add('yt-chroma-hide-shorts');
+  } else {
+    document.documentElement.classList.remove('yt-chroma-hide-shorts');
   }
 }
 
@@ -881,6 +902,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     updateCosmeticState();
+    updateShortsState();
     signalMainWorld();
   }
   if (msg.type === 'GET_STATS') {
@@ -1013,6 +1035,7 @@ function init() {
     if (savedConfig) {
       Object.assign(CONFIG, savedConfig);
       updateCosmeticState(); // Sync CSS with true config
+      updateShortsState();
       signalMainWorld();     // Sync Push Blocker with true config
     }
     

@@ -17,6 +17,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         networkBlocking: true,
         acceleration: true,
         cosmetic: true,
+        hideShorts: false,
         suppressWarnings: true,
         accelerationSpeed: 16,
         blockPopUnders: true,
@@ -172,6 +173,7 @@ function getDefaultDynamicRules() {
 let config = { 
   enabled: true, 
   networkBlocking: true,
+  hideShorts: false,
   blockPopUnders: true, 
   blockPushNotifications: true 
 };
@@ -297,7 +299,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'SET_CONFIG') {
     chrome.storage.local.get('config').then(async ({ config }) => {
       // Validate and extract only allowed properties
-      const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
+      const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
       const validatedConfig = {};
 
       if (msg.config && typeof msg.config === 'object') {

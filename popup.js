@@ -15,6 +15,7 @@ async function init() {
     networkBlocking: true,
     acceleration: true,
     cosmetic: true,
+    hideShorts: false,
     suppressWarnings: true,
     blockPopUnders: true,
     blockPushNotifications: true,
@@ -28,6 +29,7 @@ async function init() {
   $('toggleNetwork').checked = isEnabled ? (config.networkBlocking ?? true) : false;
   $('toggleAcceleration').checked = isEnabled ? (config.acceleration ?? true) : false;
   $('toggleCosmetic').checked = isEnabled ? (config.cosmetic ?? true) : false;
+  $('toggleShorts').checked = isEnabled ? (config.hideShorts ?? false) : false;
   $('toggleWarnings').checked = isEnabled ? (config.suppressWarnings ?? true) : false;
   $('togglePopUnders').checked = isEnabled ? (config.blockPopUnders ?? true) : false;
   $('togglePush').checked = isEnabled ? (config.blockPushNotifications ?? true) : false;
@@ -42,6 +44,7 @@ async function init() {
     ['toggleNetwork',      'networkBlocking'],
     ['toggleAcceleration', 'acceleration'],
     ['toggleCosmetic',     'cosmetic'],
+    ['toggleShorts',       'hideShorts'],
     ['toggleWarnings',     'suppressWarnings'],
     ['togglePopUnders',    'blockPopUnders'],
     ['togglePush',         'blockPushNotifications'],
@@ -89,6 +92,7 @@ async function init() {
         $('toggleNetwork').checked = config.networkBlocking ?? true;
         $('toggleAcceleration').checked = config.acceleration ?? true;
         $('toggleCosmetic').checked = config.cosmetic ?? true;
+        $('toggleShorts').checked = config.hideShorts ?? false;
         $('toggleWarnings').checked = config.suppressWarnings ?? true;
         $('togglePopUnders').checked = config.blockPopUnders ?? true;
         $('togglePush').checked = config.blockPushNotifications ?? true;
