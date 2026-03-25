@@ -13,6 +13,8 @@ const CONFIG = {
   checkIntervalMs: 300,
   cosmetic: true,
   hideShorts: false,
+  hideMerch: false,
+  hideOffers: false,
   acceleration: true,
   suppressWarnings: true,
   blockPopUnders: true, // Default to true
@@ -278,27 +280,63 @@ function injectShortsCSS() {
   const style = document.createElement('style');
   style.id = 'yt-chroma-shorts';
   style.textContent = `
-    /* Home page shelf containers */
-    ytd-rich-section-renderer:has(ytd-reel-item-renderer),
-    ytd-rich-shelf-renderer:has(ytd-reel-item-renderer),
-    
-    /* Dedicated Shorts shelves */
+    ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
+    ytd-rich-shelf-renderer[is-shorts],
     ytd-reel-shelf-renderer,
-    
-    /* Navigation items */
-    ytd-guide-entry-renderer:has(a[title="Shorts"]),
-    ytd-guide-entry-renderer:has(yt-icon[icon="youtube-shorts"]),
+    ytd-guide-entry-renderer:has([title^="Shorts"]),
     ytd-mini-guide-entry-renderer[aria-label="Shorts"],
-    ytd-mini-guide-entry-renderer:has(yt-icon[icon="youtube-shorts"]),
-    ytd-bottom-pivot-link-renderer:has(yt-icon[icon="youtube-shorts"]),
-    
-    /* Filter chips */
+    ytd-bottom-pivot-link-renderer:has([title="Shorts"]),
     yt-chip-cloud-chip-renderer:has([title="Shorts"]) {
       display: none !important;
     }
   `;
   (document.head || document.documentElement).appendChild(style);
   updateShortsState();
+}
+
+function updateMerchState() {
+  const style = document.getElementById('yt-chroma-merch');
+  if (style) {
+    style.disabled = !(CONFIG.enabled && CONFIG.hideMerch);
+  }
+}
+
+function injectMerchCSS() {
+  const style = document.createElement('style');
+  style.id = 'yt-chroma-merch';
+  style.textContent = `
+    ytd-merch-shelf-renderer,
+    ytd-companion-slot-renderer,
+    ytd-shopping-panel-renderer,
+    ytd-horizontal-card-list-renderer:has(ytd-shopping-carousel-item-renderer) {
+      display: none !important;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(style);
+  updateMerchState();
+}
+
+function updateOffersState() {
+  const style = document.getElementById('yt-chroma-offers');
+  if (style) {
+    style.disabled = !(CONFIG.enabled && CONFIG.hideOffers);
+  }
+}
+
+function injectOffersCSS() {
+  const style = document.createElement('style');
+  style.id = 'yt-chroma-offers';
+  style.textContent = `
+    ytd-tvfilm-offer-module-renderer,
+    ytd-movie-offer-module-renderer,
+    ytd-offer-module-renderer,
+    ytd-compact-movie-renderer,
+    ytd-compact-tvfilm-renderer {
+      display: none !important;
+    }
+  `;
+  (document.head || document.documentElement).appendChild(style);
+  updateOffersState();
 }
 
 // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
@@ -687,7 +725,7 @@ function removeLeftoverAdContainers() {
   // 1. Precise element-based removal for elements with 'ad' in their ID
   const adIds = document.querySelectorAll('[id*="ad-container"], [id*="ad_container"]');
   adIds.forEach(el => {
-    if (el.id !== 'yt-chroma-cosmetic' && el.id !== 'yt-chroma-shorts' && !el.id.includes('masthead')) {
+    if (el.id !== 'yt-chroma-cosmetic' && el.id !== 'yt-chroma-shorts' && el.id !== 'yt-chroma-merch' && el.id !== 'yt-chroma-offers' && !el.id.includes('masthead')) {
       el.style.display = 'none';
       el.remove(); // Safely remove to collapse grid
     }
@@ -695,8 +733,30 @@ function removeLeftoverAdContainers() {
 
   // Active Shorts DOM cleanup to collapse grid gaps properly
   if (CONFIG.enabled && CONFIG.hideShorts) {
-    const shortsElements = document.querySelectorAll('ytd-rich-section-renderer:has(ytd-reel-item-renderer), ytd-rich-shelf-renderer:has(ytd-reel-item-renderer), ytd-reel-shelf-renderer');
+    const shortsElements = document.querySelectorAll('ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]), ytd-rich-shelf-renderer[is-shorts], ytd-reel-shelf-renderer');
     shortsElements.forEach(el => {
+      el.style.display = 'none';
+      if (!el.closest('#secondary')) {
+        el.remove();
+      }
+    });
+  }
+
+  // Active Merch DOM cleanup
+  if (CONFIG.enabled && CONFIG.hideMerch) {
+    const merchElements = document.querySelectorAll('ytd-merch-shelf-renderer, ytd-companion-slot-renderer, ytd-shopping-panel-renderer, ytd-horizontal-card-list-renderer:has(ytd-shopping-carousel-item-renderer)');
+    merchElements.forEach(el => {
+      el.style.display = 'none';
+      if (!el.closest('#secondary')) {
+        el.remove();
+      }
+    });
+  }
+
+  // Active Offers DOM cleanup
+  if (CONFIG.enabled && CONFIG.hideOffers) {
+    const offerElements = document.querySelectorAll('ytd-tvfilm-offer-module-renderer, ytd-movie-offer-module-renderer, ytd-offer-module-renderer, ytd-compact-movie-renderer, ytd-compact-tvfilm-renderer');
+    offerElements.forEach(el => {
       el.style.display = 'none';
       if (!el.closest('#secondary')) {
         el.remove();
@@ -929,6 +989,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     updateCosmeticState();
     updateShortsState();
+    updateMerchState();
+    updateOffersState();
     signalMainWorld();
   }
   if (msg.type === 'GET_STATS') {
@@ -1055,6 +1117,8 @@ function init() {
   signalMainWorld();
   injectCosmeticCSS();
   injectShortsCSS();
+  injectMerchCSS();
+  injectOffersCSS();
   initPopUnderProtection();
 
   // 2. Fetch the true saved config before starting the heavy observers
@@ -1063,6 +1127,8 @@ function init() {
       Object.assign(CONFIG, savedConfig);
       updateCosmeticState(); // Sync CSS with true config
       updateShortsState();
+      updateMerchState();
+      updateOffersState();
       signalMainWorld();     // Sync Push Blocker with true config
     }
     

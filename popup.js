@@ -16,6 +16,8 @@ async function init() {
     acceleration: true,
     cosmetic: true,
     hideShorts: false,
+    hideMerch: false,
+    hideOffers: false,
     suppressWarnings: true,
     blockPopUnders: true,
     blockPushNotifications: true,
@@ -30,6 +32,8 @@ async function init() {
   $('toggleAcceleration').checked = isEnabled ? (config.acceleration ?? true) : false;
   $('toggleCosmetic').checked = isEnabled ? (config.cosmetic ?? true) : false;
   $('toggleShorts').checked = isEnabled ? (config.hideShorts ?? false) : false;
+  $('toggleMerch').checked = isEnabled ? (config.hideMerch ?? false) : false;
+  $('toggleOffers').checked = isEnabled ? (config.hideOffers ?? false) : false;
   $('toggleWarnings').checked = isEnabled ? (config.suppressWarnings ?? true) : false;
   $('togglePopUnders').checked = isEnabled ? (config.blockPopUnders ?? true) : false;
   $('togglePush').checked = isEnabled ? (config.blockPushNotifications ?? true) : false;
@@ -45,6 +49,8 @@ async function init() {
     ['toggleAcceleration', 'acceleration'],
     ['toggleCosmetic',     'cosmetic'],
     ['toggleShorts',       'hideShorts'],
+    ['toggleMerch',        'hideMerch'],
+    ['toggleOffers',       'hideOffers'],
     ['toggleWarnings',     'suppressWarnings'],
     ['togglePopUnders',    'blockPopUnders'],
     ['togglePush',         'blockPushNotifications'],
@@ -93,6 +99,8 @@ async function init() {
         $('toggleAcceleration').checked = config.acceleration ?? true;
         $('toggleCosmetic').checked = config.cosmetic ?? true;
         $('toggleShorts').checked = config.hideShorts ?? false;
+        $('toggleMerch').checked = config.hideMerch ?? false;
+        $('toggleOffers').checked = config.hideOffers ?? false;
         $('toggleWarnings').checked = config.suppressWarnings ?? true;
         $('togglePopUnders').checked = config.blockPopUnders ?? true;
         $('togglePush').checked = config.blockPushNotifications ?? true;
