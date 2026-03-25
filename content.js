@@ -463,14 +463,11 @@ let cachedVideo = null;
 let _cachedPlayer = null;
 
 const AD_SELECTORS = [
-  '.html5-video-player.ad-showing',
-  '[class*="ytp-ad-persistent-progress-bar"]',
-  '.ytp-ad-module .ytp-ad-player-overlay',
-  'div.video-ads.ytp-ad-module',
-  '.ytp-ad-skip-button, .ytp-ad-skip-button-container, .ytp-ad-skip-button-slot, .ytp-ad-skip-button-modern',
-  '.ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-simple-ad-badge, .ytp-ad-badge-label',
-  '.ytp-ad-duration-remaining',
-  '.ytp-ad-visit-advertiser-button'
+  '.ad-showing',
+  '.ad-interrupting',
+  '.ytp-ad-player-overlay',
+  '.ytp-ad-skip-button-container',
+  '[class*="ytp-ad-persistent-progress-bar"]'
 ].join(',');
 
 function handleAdAcceleration() {
@@ -492,25 +489,39 @@ function handleAdAcceleration() {
   }
 
   // Detect if we're in an ad by checking YouTube's own ad UI markers
-  // getElementsByClassName is significantly faster than querySelector
+  // Only detect elements if they are actually active or visible, 
+  // to avoid false positives on cached overlay nodes from previous ads.
   let rawAdShowing = false;
 
-  if (_cachedPlayer && _cachedPlayer.classList.contains('ad-showing')) {
+  // 1. Primary explicit markers on player containers
+  if (_cachedPlayer && (_cachedPlayer.classList.contains('ad-showing') || _cachedPlayer.classList.contains('ad-interrupting'))) {
     rawAdShowing = true;
   } else if (
+    document.body.classList.contains('ad-showing') || 
+    document.body.classList.contains('ad-interrupting') ||
     document.getElementsByClassName('ad-showing').length > 0 ||
-    document.getElementsByClassName('ytp-ad-player-overlay').length > 0 ||
-    document.getElementsByClassName('ytp-ad-progress').length > 0 ||
-    document.getElementsByClassName('ytp-ad-player-overlay-layout').length > 0 ||
-    document.getElementsByClassName('ytp-ad-player-overlay-skip-or-preview').length > 0
+    document.getElementsByClassName('ad-interrupting').length > 0
   ) {
     rawAdShowing = true;
   } else {
-    // Scoped query inside the cached player is vastly faster than querying the entire document
-    if (_cachedPlayer) {
-      rawAdShowing = _cachedPlayer.querySelector(AD_SELECTORS) !== null;
-    } else {
-      rawAdShowing = document.querySelector(AD_SELECTORS) !== null;
+    // 2. Check for visible ad overlays (YouTube sometimes hides them rather than removing them)
+    const adClassNames = [
+      'ytp-ad-player-overlay', 
+      'ytp-ad-skip-button-container', 
+      'ytp-ad-progress', 
+      'ytp-ad-simple-ad-badge',
+      'ytp-ad-duration-remaining'
+    ];
+    
+    for (const className of adClassNames) {
+      if (rawAdShowing) break;
+      const els = document.getElementsByClassName(className);
+      for (let i = 0; i < els.length; i++) {
+        if (els[i].offsetParent !== null) {
+          rawAdShowing = true;
+          break;
+        }
+      }
     }
   }
 
