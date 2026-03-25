@@ -22,7 +22,7 @@ const CONFIG = {
 const isYouTube = window.location.hostname.includes('youtube.com');
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
-let stats = { blocked: 0, accelerated: 0 };
+const stats = { blocked: 0, accelerated: 0 };
 let lastUserGestureTime = 0;
 let lastUserGestureType = '';
 let popupCountInGesture = 0;
@@ -613,7 +613,7 @@ function startObserver() {
   if (observer) observer.disconnect();
 
   let pendingFrame = false;
-  let addedElements = new Set();
+  const addedElements = new Set();
 
   observer = new MutationObserver((mutations) => {
     let hasNewNodes = false;
