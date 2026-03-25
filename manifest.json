@@ -46,52 +46,52 @@
       {
         "id": "yt_original_rules",
         "enabled": true,
-        "path": "rules.json"
+        "path": "rules/rules.json"
       },
       {
         "id": "yt_ad_rules_part1",
         "enabled": true,
-        "path": "rules_1.json"
+        "path": "rules/rules_1.json"
       },
       {
         "id": "yt_ad_rules_part2",
         "enabled": true,
-        "path": "rules_2.json"
+        "path": "rules/rules_2.json"
       },
       {
         "id": "yt_ad_rules_part3",
         "enabled": true,
-        "path": "rules_3.json"
+        "path": "rules/rules_3.json"
       },
       {
         "id": "yt_ad_rules_part4",
         "enabled": true,
-        "path": "rules_4.json"
+        "path": "rules/rules_4.json"
       },
       {
         "id": "yt_ad_rules_part5",
         "enabled": true,
-        "path": "rules_5.json"
+        "path": "rules/rules_5.json"
       },
       {
         "id": "yt_ad_rules_part6",
         "enabled": true,
-        "path": "rules_6.json"
+        "path": "rules/rules_6.json"
       },
       {
         "id": "yt_ad_rules_part7",
         "enabled": true,
-        "path": "rules_7.json"
+        "path": "rules/rules_7.json"
       },
       {
         "id": "yt_ad_rules_part8",
         "enabled": true,
-        "path": "rules_8.json"
+        "path": "rules/rules_8.json"
       },
       {
         "id": "yt_ad_rules_part9",
         "enabled": true,
-        "path": "rules_9.json"
+        "path": "rules/rules_9.json"
       }
     ]
   },

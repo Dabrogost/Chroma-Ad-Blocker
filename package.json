@@ -18,6 +18,7 @@
     "url": "https://github.com/Dabrogost/YT-Chroma/issues"
   },
   "homepage": "https://github.com/Dabrogost/YT-Chroma#readme",
+  "devDependencies": {
     "jsdom": "^29.0.1"
   }
 }
