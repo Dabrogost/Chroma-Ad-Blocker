@@ -13,8 +13,8 @@ const CONFIG = {
   checkIntervalMs: 300,
   cosmetic: true,
   hideShorts: false,
-  hideMerch: false,
-  hideOffers: false,
+  hideMerch: true,
+  hideOffers: true,
   acceleration: true,
   suppressWarnings: true,
   blockPopUnders: true, // Default to true

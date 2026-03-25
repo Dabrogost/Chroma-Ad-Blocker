@@ -18,8 +18,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         acceleration: true,
         cosmetic: true,
         hideShorts: false,
-        hideMerch: false,
-        hideOffers: false,
+        hideMerch: true,
+        hideOffers: true,
         suppressWarnings: true,
         accelerationSpeed: 16,
         blockPopUnders: true,
@@ -176,8 +176,8 @@ let config = {
   enabled: true, 
   networkBlocking: true,
   hideShorts: false,
-  hideMerch: false,
-  hideOffers: false,
+  hideMerch: true,
+  hideOffers: true,
   blockPopUnders: true, 
   blockPushNotifications: true 
 };
