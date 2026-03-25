@@ -493,3 +493,100 @@ test('signalMainWorld functionality', async (t) => {
     assert.strictEqual(sandbox.document.documentElement.dataset.ytChromaPushActive, undefined);
   });
 });
+
+test('startExtensionServices functionality', async (t) => {
+  const createSandbox = () => {
+    const sandbox = {
+      chrome: {
+        runtime: {
+          sendMessage: () => Promise.resolve(),
+          onMessage: { addListener: () => {} }
+        }
+      },
+      document: {
+        readyState: 'complete',
+        createElement: (tag) => createMockElement(tag),
+        getElementById: () => null,
+        querySelector: () => createMockElement(),
+        querySelectorAll: () => [],
+        head: createMockElement('head'),
+        body: createMockElement('body'),
+        documentElement: {
+          dataset: {}
+        },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        getElementsByClassName: () => []
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      requestAnimationFrame: (cb) => {},
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      console: console,
+      Object: Object,
+      Array: Array,
+      Number: Number,
+      String: String,
+      Boolean: Boolean,
+      Math: Math,
+      Date: Date,
+      Promise: Promise,
+      Error: Error,
+      window: {
+        location: { hostname: 'www.youtube.com' },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        requestAnimationFrame: (cb) => {},
+        innerHeight: 1000,
+        innerWidth: 1000
+      },
+      location: { hostname: 'www.youtube.com' }
+    };
+
+    vm.createContext(sandbox);
+    vm.runInContext(contentJsCode, sandbox);
+    return sandbox;
+  };
+
+  await t.test('should call all required startup functions', () => {
+    const sandbox = createSandbox();
+
+    // Setup tracking for all the functions that should be called
+    vm.runInContext(`
+      calls = {
+        startObserver: false,
+        startPolling: false,
+        suppressAdblockWarnings: false,
+        signalMainWorld: false,
+        startChromaClock: false,
+        initSkipButtonListener: false,
+        initAdOverlay: false
+      };
+
+      // Mock the functions to track calls
+      startObserver = () => calls.startObserver = true;
+      startPolling = () => calls.startPolling = true;
+      suppressAdblockWarnings = () => calls.suppressAdblockWarnings = true;
+      signalMainWorld = () => calls.signalMainWorld = true;
+      startChromaClock = () => calls.startChromaClock = true;
+      initSkipButtonListener = () => calls.initSkipButtonListener = true;
+      initAdOverlay = () => calls.initAdOverlay = true;
+
+      // Call the function under test
+      startExtensionServices();
+    `, sandbox);
+
+    // Verify all functions were called
+    assert.strictEqual(sandbox.calls.startObserver, true, 'startObserver should be called');
+    assert.strictEqual(sandbox.calls.startPolling, true, 'startPolling should be called');
+    assert.strictEqual(sandbox.calls.suppressAdblockWarnings, true, 'suppressAdblockWarnings should be called');
+    assert.strictEqual(sandbox.calls.signalMainWorld, true, 'signalMainWorld should be called');
+    assert.strictEqual(sandbox.calls.startChromaClock, true, 'startChromaClock should be called');
+    assert.strictEqual(sandbox.calls.initSkipButtonListener, true, 'initSkipButtonListener should be called');
+    assert.strictEqual(sandbox.calls.initAdOverlay, true, 'initAdOverlay should be called');
+  });
+});
