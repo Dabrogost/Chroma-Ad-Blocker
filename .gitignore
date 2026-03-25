@@ -1,6 +1,8 @@
 node_modules/
 .idea/
 _metadata/
+gemini.md
+tests/
 *.log
 .DS_Store
 Thumbs.db
