@@ -184,3 +184,89 @@ test('injectCosmeticCSS functionality', async (t) => {
     assert.strictEqual(appendedChild.id, 'yt-shield-cosmetic', 'Should have correct ID');
   });
 });
+
+test('removeLeftoverAdContainers functionality', async (t) => {
+  const createSandbox = (setupDoc) => {
+    const sandbox = {
+      chrome: {
+        runtime: {
+          sendMessage: () => Promise.resolve(),
+          onMessage: { addListener: () => {} }
+        }
+      },
+      document: {
+        readyState: 'complete',
+        addEventListener: () => {},
+        querySelector: () => {},
+        querySelectorAll: () => [],
+        body: { style: { removeProperty: () => {} } },
+        createElement: () => ({ style: {}, appendChild: () => {} }),
+        head: { appendChild: () => {} },
+        documentElement: { appendChild: () => {} }
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      console: console,
+      Object: Object,
+      Promise: Promise,
+      Error: Error,
+      requestAnimationFrame: (cb) => cb()
+    };
+
+    if (setupDoc) setupDoc(sandbox.document);
+
+    vm.createContext(sandbox);
+    vm.runInContext(contentJsCode, sandbox);
+    return sandbox;
+  };
+
+  await t.test('should set display to none for matching ad containers', () => {
+    let queriedSelector = null;
+    const ad1 = { id: 'ad-container-1', style: {}, remove: () => {} };
+    const ad2 = { id: 'some_ad_container_2', style: {}, remove: () => {} };
+    const ad3 = { className: 'ad-slot-3', style: {}, remove: () => {} };
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelectorAll = (selector) => {
+        queriedSelector = selector;
+        return [ad1, ad2, ad3];
+      };
+    });
+
+    sandbox.removeLeftoverAdContainers();
+
+    assert.strictEqual(queriedSelector, '[id*="ad-container"], [id*="ad_container"], [class*="ad-slot"]');
+    assert.strictEqual(ad1.style.display, 'none');
+    assert.strictEqual(ad2.style.display, 'none');
+    assert.strictEqual(ad3.style.display, 'none');
+  });
+
+  await t.test('should ignore elements with id "yt-shield-cosmetic"', () => {
+    const cosmeticStyleEl = { id: 'yt-shield-cosmetic', style: {}, remove: () => {} };
+    const ad = { id: 'ad-container', style: {}, remove: () => {} };
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelectorAll = () => [cosmeticStyleEl, ad];
+    });
+
+    sandbox.removeLeftoverAdContainers();
+
+    assert.strictEqual(cosmeticStyleEl.style.display, undefined);
+    assert.strictEqual(ad.style.display, 'none');
+  });
+
+  await t.test('should not throw error if no elements are found', () => {
+    const sandbox = createSandbox((doc) => {
+      doc.querySelectorAll = () => [];
+    });
+
+    assert.doesNotThrow(() => {
+      sandbox.removeLeftoverAdContainers();
+    });
+  });
+});
