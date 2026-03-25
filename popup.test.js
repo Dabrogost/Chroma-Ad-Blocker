@@ -148,4 +148,58 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['statAccelerated'].textContent, 0);
     assert.strictEqual(elements['statBlocked'].textContent, 0);
   });
+
+  await t.test('sendBg wrapper function - passes message correctly', async () => {
+    const { sandbox, messages } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(popupJsCode, sandbox);
+
+    // Wait for initial init() calls to finish
+    await new Promise(resolve => setTimeout(resolve, 50));
+    messages.length = 0;
+
+    const testMsg = { type: 'TEST_PING', data: 123 };
+    await sandbox.sendBg(testMsg);
+
+    assert.strictEqual(messages.length, 1);
+    assert.deepStrictEqual(messages[0], testMsg);
+  });
+
+  await t.test('sendBg wrapper function - returns response correctly', async () => {
+    const { sandbox, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(popupJsCode, sandbox);
+
+    // Wait for initial init() calls to finish
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const mockResponse = { success: true, data: { status: 'ok' } };
+    chromeMock.runtime.sendMessage = async () => mockResponse;
+
+    const result = await sandbox.sendBg({ type: 'TEST_REPLY' });
+    assert.deepStrictEqual(result, mockResponse);
+  });
+
+  await t.test('sendBg wrapper function - propagates errors correctly', async () => {
+    const { sandbox, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(popupJsCode, sandbox);
+
+    // Wait for initial init() calls to finish
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const testError = new Error('Background script failed');
+    const originalSendMessage = chromeMock.runtime.sendMessage;
+    chromeMock.runtime.sendMessage = async (msg) => {
+      if (msg.type === 'TEST_ERROR') {
+        throw testError;
+      }
+      return originalSendMessage(msg);
+    };
+
+    await assert.rejects(
+      async () => { await sandbox.sendBg({ type: 'TEST_ERROR' }); },
+      { message: 'Background script failed' }
+    );
+  });
 });
