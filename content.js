@@ -27,6 +27,7 @@ let lastUserGestureTime = 0;
 let lastUserGestureType = '';
 let popupCountInGesture = 0;
 let observer = null;
+let chromaAdSkipped = false;
 
 // ─── COSMETIC SELECTORS ──────────────────────────────────────────────────────
 // Elements to hide: ad containers, sponsored slots, survey overlays
@@ -385,7 +386,7 @@ function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
   // before switching rawAdShowing to false. We detect this to show the 'Ads Cleared' checkmark earlier.
   const isAdMediaFinished = video && video.duration > 0 && (video.duration - video.currentTime < 0.5);
   
-  const isAdsDone = isOnFinalAd && (!rawAdShowing || isAdMediaFinished);
+  const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || chromaAdSkipped;
   
   const spinner = adOverlay.querySelector('.chroma-spinner, .chroma-checkmark');
   const titleEl = adOverlay.querySelector('.chroma-title');
@@ -454,6 +455,9 @@ function handleAdAcceleration() {
   if (typeof window.chromaAdSessionActive === 'undefined') window.chromaAdSessionActive = false;
   
   if (rawAdShowing) {
+    if (!window.chromaAdSessionActive) {
+      chromaAdSkipped = false; // Reset skip state for new session
+    }
     window.chromaAdSessionActive = true;
     window.lastAdDetectTime = Date.now();
   }
@@ -791,6 +795,35 @@ function startExtensionServices() {
   suppressAdblockWarnings();
   signalMainWorld();
   startChromaClock();
+  initSkipButtonListener();
+}
+
+/**
+ * Delegated listener for the "Skip Ad" button to update our overlay state
+ * immediately when the user interacts with it.
+ */
+function initSkipButtonListener() {
+  document.addEventListener('click', (e) => {
+    if (!window.chromaAdSessionActive) return;
+    
+    // Check if the click target or its ancestors match YouTube's skip button selectors
+    const skipButton = e.target.closest([
+      '.ytp-ad-skip-button-container',
+      '.ytp-ad-skip-button-slot',
+      '.ytp-skip-ad-button',
+      '.videoAdUiSkipButton',
+      '[id^="skip-button:"]'
+    ].join(','));
+
+    if (skipButton) {
+      chromaAdSkipped = true;
+      // Force an immediate UI update
+      if (cachedVideo) {
+        const rawAdShowing = document.getElementsByClassName('ad-showing').length > 0;
+        updateAdOverlay(cachedVideo, true, rawAdShowing);
+      }
+    }
+  }, true); // Use capture phase to ensure we catch it before YouTube's own listeners might stop propagation
 }
 
 // ─── CHROMA COLOR CLOCK ────────────────────────────────────────────────────────
