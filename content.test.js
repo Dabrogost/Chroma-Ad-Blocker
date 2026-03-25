@@ -38,6 +38,8 @@ function createMockElement(tag = 'div') {
     parentElement: null,
     getAttribute: () => null,
     setAttribute: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
     dataset: {}
   };
   el.classList.add = () => {};
@@ -341,6 +343,22 @@ test('removeLeftoverAdContainers functionality', async (t) => {
     assert.strictEqual(ad1.style.display, 'none');
     assert.strictEqual(ad2.style.display, 'none');
     assert.strictEqual(ad3.style.display, 'none');
+  });
+
+  await t.test('should trigger ad session when skip button is present', () => {
+    const skipBtn = createMockElement();
+    skipBtn.className = 'ytp-ad-skip-button';
+    
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => {
+        if (sel.includes('ytp-ad-skip-button')) return skipBtn;
+        if (sel === 'video') return createMockElement('video');
+        return null;
+      };
+    });
+
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(sandbox.window.chromaAdSessionActive, true, 'Session should be active when skip button is found');
   });
 
   await t.test('should ignore elements with id "yt-chroma-cosmetic"', () => {

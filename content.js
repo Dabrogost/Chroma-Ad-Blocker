@@ -462,6 +462,8 @@ function handleAdAcceleration() {
     document.querySelector('[class*="ytp-ad-persistent-progress-bar"]') !== null ||
     document.querySelector('.ytp-ad-module .ytp-ad-player-overlay') !== null ||
     document.querySelector('div.video-ads.ytp-ad-module') !== null ||
+    document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-container, .ytp-ad-skip-button-slot, .ytp-ad-skip-button-modern') !== null ||
+    document.querySelector('.ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-simple-ad-badge, .ytp-ad-badge-label') !== null ||
     (video && video.closest('.html5-video-player')?.classList?.contains('ad-showing'));
 
   // Fallback: detect ad by YouTube's own ad UI text/badge elements
@@ -477,6 +479,7 @@ function handleAdAcceleration() {
   
   if (rawAdShowing) {
     if (!window.chromaAdSessionActive) {
+      console.log('[YT Chroma] Ad Session Detected');
       window.chromaAdSkipped = false; // Reset skip state for new session
       startFastAdWatcher(); // Start higher frequency loop during ads
     }
