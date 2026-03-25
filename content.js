@@ -460,6 +460,19 @@ function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
 }
 
 let cachedVideo = null;
+let _cachedPlayer = null;
+
+const AD_SELECTORS = [
+  '.html5-video-player.ad-showing',
+  '[class*="ytp-ad-persistent-progress-bar"]',
+  '.ytp-ad-module .ytp-ad-player-overlay',
+  'div.video-ads.ytp-ad-module',
+  '.ytp-ad-skip-button, .ytp-ad-skip-button-container, .ytp-ad-skip-button-slot, .ytp-ad-skip-button-modern',
+  '.ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-simple-ad-badge, .ytp-ad-badge-label',
+  '.ytp-ad-duration-remaining',
+  '.ytp-ad-visit-advertiser-button'
+].join(',');
+
 function handleAdAcceleration() {
   if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
@@ -473,28 +486,32 @@ function handleAdAcceleration() {
 
   if (!video) return;
 
+  // Try caching the root player container
+  if (!_cachedPlayer || !document.contains(_cachedPlayer)) {
+    _cachedPlayer = video.closest('.html5-video-player');
+  }
+
   // Detect if we're in an ad by checking YouTube's own ad UI markers
   // getElementsByClassName is significantly faster than querySelector
-  let rawAdShowing =
+  let rawAdShowing = false;
+
+  if (_cachedPlayer && _cachedPlayer.classList.contains('ad-showing')) {
+    rawAdShowing = true;
+  } else if (
     document.getElementsByClassName('ad-showing').length > 0 ||
     document.getElementsByClassName('ytp-ad-player-overlay').length > 0 ||
     document.getElementsByClassName('ytp-ad-progress').length > 0 ||
     document.getElementsByClassName('ytp-ad-player-overlay-layout').length > 0 ||
-    document.getElementsByClassName('ytp-ad-player-overlay-skip-or-preview').length > 0 ||
-    document.querySelector('.html5-video-player.ad-showing') !== null ||
-    document.querySelector('[class*="ytp-ad-persistent-progress-bar"]') !== null ||
-    document.querySelector('.ytp-ad-module .ytp-ad-player-overlay') !== null ||
-    document.querySelector('div.video-ads.ytp-ad-module') !== null ||
-    document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-container, .ytp-ad-skip-button-slot, .ytp-ad-skip-button-modern') !== null ||
-    document.querySelector('.ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-simple-ad-badge, .ytp-ad-badge-label') !== null ||
-    (video && video.closest('.html5-video-player')?.classList?.contains('ad-showing'));
-
-  // Fallback: detect ad by YouTube's own ad UI text/badge elements
-  if (!rawAdShowing) {
-    const adText = document.querySelector(
-      '.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-visit-advertiser-button'
-    );
-    if (adText) rawAdShowing = true;
+    document.getElementsByClassName('ytp-ad-player-overlay-skip-or-preview').length > 0
+  ) {
+    rawAdShowing = true;
+  } else {
+    // Scoped query inside the cached player is vastly faster than querying the entire document
+    if (_cachedPlayer) {
+      rawAdShowing = _cachedPlayer.querySelector(AD_SELECTORS) !== null;
+    } else {
+      rawAdShowing = document.querySelector(AD_SELECTORS) !== null;
+    }
   }
 
   if (typeof window.chromaAdSkipped === 'undefined') window.chromaAdSkipped = false;
