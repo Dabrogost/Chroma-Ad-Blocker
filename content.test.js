@@ -493,3 +493,220 @@ test('signalMainWorld functionality', async (t) => {
     assert.strictEqual(sandbox.document.documentElement.dataset.ytChromaPushActive, undefined);
   });
 });
+
+test('suppressAdblockWarnings functionality', async (t) => {
+  const createSandbox = (setupDoc) => {
+    const sandbox = {
+      chrome: {
+        runtime: {
+          sendMessage: () => Promise.resolve(),
+          onMessage: { addListener: () => {} }
+        }
+      },
+      document: {
+        readyState: 'complete',
+        createElement: (tag) => createMockElement(tag),
+        getElementById: () => null,
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        head: createMockElement('head'),
+        body: createMockElement('body'),
+        documentElement: createMockElement('html'),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        getElementsByClassName: () => []
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      console: console,
+      Object: Object,
+      Array: Array,
+      Number: Number,
+      String: String,
+      Boolean: Boolean,
+      Math: Math,
+      Date: Date,
+      Promise: Promise,
+      Error: Error,
+      requestAnimationFrame: (cb) => {},
+      window: {
+        location: { hostname: 'www.youtube.com' },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        requestAnimationFrame: (cb) => {},
+        innerHeight: 1000,
+        innerWidth: 1000
+      },
+      location: { hostname: 'www.youtube.com' }
+    };
+
+    if (setupDoc) setupDoc(sandbox.document);
+
+    vm.createContext(sandbox);
+    vm.runInContext(contentJsCode, sandbox);
+    return sandbox;
+  };
+
+  await t.test('should do nothing if disabled', () => {
+    const sandbox = createSandbox();
+    let removedCount = 0;
+
+    const root = createMockElement();
+    root.matches = (sel) => {
+        if(sel === sandbox.WARNING_SELECTOR_COMBINED) return true;
+        return false;
+    };
+    root.remove = () => { removedCount++; };
+
+    sandbox.root = root;
+
+    vm.runInContext(`
+      CONFIG.enabled = false;
+      suppressAdblockWarnings(root);
+    `, sandbox);
+
+    assert.strictEqual(removedCount, 0);
+
+    vm.runInContext(`
+      CONFIG.enabled = true;
+      CONFIG.suppressWarnings = false;
+      suppressAdblockWarnings(root);
+    `, sandbox);
+
+    assert.strictEqual(removedCount, 0);
+  });
+
+  await t.test('should remove root if root matches WARNING_SELECTOR_COMBINED', () => {
+    const sandbox = createSandbox();
+    let removedCount = 0;
+
+    const root = createMockElement();
+    root.matches = () => true;
+    root.remove = () => { removedCount++; };
+
+    sandbox.root = root;
+
+    vm.runInContext(`
+      CONFIG.enabled = true;
+      CONFIG.suppressWarnings = true;
+      suppressAdblockWarnings(root);
+    `, sandbox);
+
+    assert.strictEqual(removedCount, 1);
+    const blockedCount = vm.runInContext('stats.blocked', sandbox);
+    assert.ok(blockedCount > 0, 'stats.blocked should be incremented');
+  });
+
+  await t.test('should remove matching children elements and increment stats', () => {
+    const sandbox = createSandbox();
+    let removedCount = 0;
+
+    const el1 = createMockElement(); el1.remove = () => { removedCount++; };
+    const el2 = createMockElement(); el2.remove = () => { removedCount++; };
+
+    const root = createMockElement();
+    root.querySelectorAll = () => [el1, el2];
+    root.matches = () => false;
+
+    sandbox.root = root;
+
+    vm.runInContext(`
+      CONFIG.enabled = true;
+      CONFIG.suppressWarnings = true;
+      let initialBlocked = stats.blocked;
+      suppressAdblockWarnings(root);
+      var incremented = stats.blocked - initialBlocked;
+    `, sandbox);
+
+    assert.strictEqual(removedCount, 2);
+    assert.strictEqual(sandbox.incremented, 2);
+  });
+
+  await t.test('should attempt to play video if it is paused and warnings were removed', () => {
+    let playCalled = false;
+    const video = createMockElement('video');
+    video.paused = true;
+    video.play = () => {
+      playCalled = true;
+      return Promise.resolve();
+    };
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => {
+        if (sel === 'video') return video;
+        return null;
+      };
+    });
+
+    const el1 = createMockElement();
+    const root = createMockElement();
+    root.querySelectorAll = () => [el1];
+    root.matches = () => false;
+
+    sandbox.root = root;
+
+    vm.runInContext(`
+      CONFIG.enabled = true;
+      CONFIG.suppressWarnings = true;
+      suppressAdblockWarnings(root);
+    `, sandbox);
+
+    assert.strictEqual(playCalled, true);
+  });
+
+  await t.test('should not attempt to play video if it is paused and NO warnings were removed', () => {
+    let playCalled = false;
+    const video = createMockElement('video');
+    video.paused = true;
+    video.play = () => {
+      playCalled = true;
+      return Promise.resolve();
+    };
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => {
+        if (sel === 'video') return video;
+        return null;
+      };
+    });
+
+    const root = createMockElement();
+    root.querySelectorAll = () => []; // No warnings
+    root.matches = () => false;
+
+    sandbox.root = root;
+
+    vm.runInContext(`
+      CONFIG.enabled = true;
+      CONFIG.suppressWarnings = true;
+      suppressAdblockWarnings(root);
+    `, sandbox);
+
+    assert.strictEqual(playCalled, false);
+  });
+
+  await t.test('should remove overflow style from document.body', () => {
+    let removedProperty = '';
+
+    const sandbox = createSandbox((doc) => {
+      doc.body.style = {
+        removeProperty: (prop) => {
+          removedProperty = prop;
+        }
+      };
+    });
+
+    vm.runInContext(`
+      CONFIG.enabled = true;
+      CONFIG.suppressWarnings = true;
+      suppressAdblockWarnings();
+    `, sandbox);
+
+    assert.strictEqual(removedProperty, 'overflow');
+  });
+});
