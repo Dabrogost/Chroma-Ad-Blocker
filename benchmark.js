@@ -70,7 +70,7 @@ function removeLeftoverAdContainers() {
     '[id*="ad-container"], [id*="ad_container"], [class*="ad-slot"]'
   );
   adElements.forEach(el => {
-    if (el.id !== 'yt-shield-cosmetic') {
+    if (el.id !== 'yt-chroma-cosmetic') {
       el.style = { display: 'none' };
     }
   });

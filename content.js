@@ -1,5 +1,5 @@
 /**
- * YT Shield - Content Script
+ * YT Chroma - Content Script
  * Strategy 1: Ad-Acceleration (16x speed + mute) — detection-resistant
  * Strategy 2: Cosmetic Filtering — hides ad containers and sponsored slots
  * Strategy 3: Anti-Adblock Warning Suppression — removes overlay dialogs
@@ -73,7 +73,7 @@ const WARNING_SELECTOR_COMBINED = WARNING_SELECTORS.join(',');
 // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
 function injectCosmeticCSS() {
   const style = document.createElement('style');
-  style.id = 'yt-shield-cosmetic';
+  style.id = 'yt-chroma-cosmetic';
   style.textContent = `
     ${HIDE_SELECTORS.join(',\n    ')} {
       display: none !important;
@@ -170,7 +170,7 @@ function handleAdAcceleration() {
 
   } else {
     // Restore normal playback when ad ends
-    if (video.muted && video.dataset.ytShieldMuted === 'true') {
+    if (video.muted && video.dataset.ytChromaMuted === 'true') {
       video.muted = false;
     }
     if (video.playbackRate === CONFIG.accelerationSpeed) {
@@ -180,9 +180,9 @@ function handleAdAcceleration() {
 
   // Tag the video element so we can restore mute state correctly
   if (adShowing) {
-    video.dataset.ytShieldMuted = 'true';
+    video.dataset.ytChromaMuted = 'true';
   } else {
-    delete video.dataset.ytShieldMuted;
+    delete video.dataset.ytChromaMuted;
   }
 }
 
@@ -225,7 +225,7 @@ function removeLeftoverAdContainers() {
     '[id*="ad-container"], [id*="ad_container"], [class*="ad-slot"]'
   );
   adElements.forEach(el => {
-    if (el.id !== 'yt-shield-cosmetic') {
+    if (el.id !== 'yt-chroma-cosmetic' && !el.id.includes('masthead')) {
       el.style.display = 'none';
     }
   });

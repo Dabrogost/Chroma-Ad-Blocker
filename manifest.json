@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "YT Shield – YouTube Ad Blocker",
+  "name": "YT Chroma – YouTube Ad Blocker",
   "version": "1.0.0",
   "description": "Multi-layered YouTube ad blocker using ad-acceleration, network blocking, and cosmetic filtering.",
   "permissions": [

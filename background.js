@@ -1,5 +1,5 @@
 /**
- * YT Shield - Service Worker (MV3 Background)
+ * YT Chroma - Service Worker (MV3 Background)
  * Handles: dynamic rule updates, stat tracking, config persistence
  *
  * MV3 NOTE: This service worker is ephemeral — it shuts down after
@@ -21,7 +21,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       },
       stats: { blocked: 0, accelerated: 0 },
     });
-    console.log('[YT Shield] Installed. Default config applied.');
+    console.log('[YT Chroma] Installed. Default config applied.');
   }
 
   // Load any saved dynamic rules on startup
@@ -52,9 +52,9 @@ async function syncDynamicRules() {
       addRules: rules,
     });
 
-    console.log(`[YT Shield] Synced ${rules.length} dynamic rules.`);
+    console.log(`[YT Chroma] Synced ${rules.length} dynamic rules.`);
   } catch (err) {
-    console.error('[YT Shield] Dynamic rule sync failed:', err);
+    console.error('[YT Chroma] Dynamic rule sync failed:', err);
   }
 }
 

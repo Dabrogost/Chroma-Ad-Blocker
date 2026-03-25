@@ -154,7 +154,7 @@ test('injectCosmeticCSS functionality', async (t) => {
     assert.ok(appendedChild, 'A child should have been appended');
     assert.strictEqual(appendedChild, createdElement, 'Appended child should be the created element');
     assert.strictEqual(appendedChild.tag, 'style', 'Created element should be a <style>');
-    assert.strictEqual(appendedChild.id, 'yt-shield-cosmetic', 'Should have correct ID');
+    assert.strictEqual(appendedChild.id, 'yt-chroma-cosmetic', 'Should have correct ID');
     assert.ok(appendedChild.textContent.includes('display: none !important'), 'Should contain display: none !important');
     assert.ok(appendedChild.textContent.includes('visibility: hidden !important'), 'Should contain visibility: hidden !important');
   });
@@ -181,7 +181,7 @@ test('injectCosmeticCSS functionality', async (t) => {
 
     assert.ok(appendedChild, 'A child should have been appended to documentElement');
     assert.strictEqual(appendedChild, createdElement, 'Appended child should be the created element');
-    assert.strictEqual(appendedChild.id, 'yt-shield-cosmetic', 'Should have correct ID');
+    assert.strictEqual(appendedChild.id, 'yt-chroma-cosmetic', 'Should have correct ID');
   });
 });
 
@@ -246,8 +246,8 @@ test('removeLeftoverAdContainers functionality', async (t) => {
     assert.strictEqual(ad3.style.display, 'none');
   });
 
-  await t.test('should ignore elements with id "yt-shield-cosmetic"', () => {
-    const cosmeticStyleEl = { id: 'yt-shield-cosmetic', style: {}, remove: () => {} };
+  await t.test('should ignore elements with id "yt-chroma-cosmetic"', () => {
+    const cosmeticStyleEl = { id: 'yt-chroma-cosmetic', style: {}, remove: () => {} };
     const ad = { id: 'ad-container', style: {}, remove: () => {} };
 
     const sandbox = createSandbox((doc) => {
