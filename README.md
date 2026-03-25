@@ -14,35 +14,43 @@ To get Chroma Ad-Blocker running in your Chrome browser:
 5. The extension will now be active on all `youtube.com` tabs.
 
 ## Architecture Overview
-Chroma Ad-Blocker employs a three-layer defense strategy to ensure ads are either blocked at the network level or bypassed at the playback level, while simultaneously suppressing anti-adblock detection notices.
+Chroma Ad-Blocker utilizes a decentralized architecture synchronized through a central storage hub. This design ensures that configuration changes and block statistics are consistently applied across various execution contexts (Service Worker, Isolated World, and Main World).
 
 ```mermaid
 graph TD
-    subgraph "Browser (youtube.com)"
-        DOM["DOM & Video Element"]
-        API["Web APIs (window.open, Notification)"]
+    STORAGE[("chrome.storage.local<br/>(Central Hub)")]
+
+    subgraph "Extension Components"
+        BS["background.js<br/>(Service Worker)"]
+        CS["content.js<br/>(Isolated World)"]
+        POP["popup.js<br/>(Extension UI)"]
+        DNR["Declarative Net Request<br/>(Network Rules)"]
     end
 
-    subgraph "Chroma Ad-Blocker Extension"
-        CS["content.js (Isolated World)"]
-        MW["main-world.js (Main World)"]
-        BS["background.js (Service Worker)"]
-        DNR["Declarative Net Request (Rules)"]
+    subgraph "Execution Contexts"
+        DOM["YouTube DOM<br/>(Video Element)"]
+        MW["main-world.js<br/>(Main World Interceptor)"]
     end
 
-    DNR -- "Blocks Ad Requests" --> DOM
-    CS -- "Ad Acceleration & Cosmetic Filtering" --> DOM
-    MW -- "Shadows APIs / Intercepts Popups" --> API
-    MW -- "postMessage" --> CS
-    CS -- "sendMessage" --> BS
-    BS -- "State Management & Stats" --> BS
-    BS -- "Updates DNR State" --> DNR
+    %% Storage Interactions
+    BS <-->|Config & Stats| STORAGE
+    CS <-->|Config & State| STORAGE
+    POP <-->|User Config & Stats| STORAGE
+
+    %% Logic & Control Flow
+    BS -- "Enables/Disables" --> DNR
+    CS -- "Accelerates/Hides" --> DOM
+    CS -- "Configures" --> MW
+    DNR -.->|"Blocks Requests"| DOM
+    MW -.->|"Intercepts APIs"| DOM
 ```
 
-### The Three-Layer Strategy
-1. **Layer 1: Ad Acceleration (`content.js`)**: Monitors for the `.ad-showing` class and accelerates the video playback speed (up to 16x) to fulfill impression requirements invisibly.
-2. **Layer 2: Network Blocking (`rules/` & `background.js`)**: Uses `chrome.declarativeNetRequest` to block known ad domains and tracking endpoints before they even load. Supports both static rulesets and runtime dynamic rules.
-3. **Layer 3: Cosmetic & Warning Suppression (`content.js`)**: Injects CSS to hide ad slots and implements a `MutationObserver` to remove YouTube's anti-adblock modals (`ytd-enforcement-message-view-model`).
+### System Layers
+1. **The Data Hub (`chrome.storage.local`)**: The single source of truth for the system. It persists user preferences (acceleration speed, toggle states) and aggregates block statistics, allowing the ephemeral Service Worker to maintain state across restarts.
+2. **Layer 1: Ad Acceleration (`content.js`)**: Monitors for the `.ad-showing` class and accelerates playback speed (up to 16x) to fulfill impression requirements invisibly.
+3. **Layer 2: Network Blocking (`rules/` & `background.js`)**: Leverages `chrome.declarativeNetRequest` to intercept and block ad-related network requests. The Service Worker dynamically enables or disables these rulesets based on the central hub's configuration.
+4. **Layer 3: Cosmetic & Warning Suppression (`content.js`)**: Injects CSS and utilizes a `MutationObserver` to hide ad slots and remove YouTube's anti-adblock modals (`ytd-enforcement-message-view-model`).
+5. **Main World Interceptor (`main-world.js`)**: Shadowing sensitive APIs like `window.open` at the page level to prevent pop-under and notification-based advertisements.
 
 ## Key Concepts
 - **Ad Acceleration**: The primary fallback mechanism. Instead of blocking the video stream (which YouTube's server-side logic can detect), the extension speeds up the ad so it completes in milliseconds.
