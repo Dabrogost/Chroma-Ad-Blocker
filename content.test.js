@@ -394,3 +394,102 @@ test('removeLeftoverAdContainers functionality', async (t) => {
     });
   });
 });
+
+test('signalMainWorld functionality', async (t) => {
+  const createSandbox = () => {
+    const sandbox = {
+      chrome: {
+        runtime: {
+          sendMessage: () => Promise.resolve(),
+          onMessage: { addListener: () => {} }
+        }
+      },
+      document: {
+        readyState: 'complete',
+        createElement: (tag) => createMockElement(tag),
+        getElementById: () => null,
+        querySelector: () => createMockElement(),
+        querySelectorAll: () => [],
+        head: createMockElement('head'),
+        body: createMockElement('body'),
+        documentElement: {
+          dataset: {}
+        },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        getElementsByClassName: () => []
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      requestAnimationFrame: (cb) => {},
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      console: console,
+      Object: Object,
+      Array: Array,
+      Number: Number,
+      String: String,
+      Boolean: Boolean,
+      Math: Math,
+      Date: Date,
+      Promise: Promise,
+      Error: Error,
+      window: {
+        location: { hostname: 'www.youtube.com' },
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        requestAnimationFrame: (cb) => {},
+        innerHeight: 1000,
+        innerWidth: 1000
+      },
+      location: { hostname: 'www.youtube.com' }
+    };
+
+    vm.createContext(sandbox);
+    vm.runInContext(contentJsCode, sandbox);
+    return sandbox;
+  };
+
+  await t.test('should set dataset.ytChromaPushActive to "true" when enabled and blockPushNotifications is true', () => {
+    const sandbox = createSandbox();
+    vm.runInContext(`
+      CONFIG.enabled = true;
+      CONFIG.blockPushNotifications = true;
+      signalMainWorld();
+    `, sandbox);
+    assert.strictEqual(sandbox.document.documentElement.dataset.ytChromaPushActive, 'true');
+  });
+
+  await t.test('should delete dataset.ytChromaPushActive when enabled is false', () => {
+    const sandbox = createSandbox();
+    vm.runInContext(`
+      // Setup initial state
+      CONFIG.enabled = true;
+      CONFIG.blockPushNotifications = true;
+      signalMainWorld();
+
+      // Test the false condition
+      CONFIG.enabled = false;
+      signalMainWorld();
+    `, sandbox);
+    assert.strictEqual(sandbox.document.documentElement.dataset.ytChromaPushActive, undefined);
+  });
+
+  await t.test('should delete dataset.ytChromaPushActive when blockPushNotifications is false', () => {
+    const sandbox = createSandbox();
+    vm.runInContext(`
+      // Setup initial state
+      CONFIG.enabled = true;
+      CONFIG.blockPushNotifications = true;
+      signalMainWorld();
+
+      // Test the false condition
+      CONFIG.blockPushNotifications = false;
+      signalMainWorld();
+    `, sandbox);
+    assert.strictEqual(sandbox.document.documentElement.dataset.ytChromaPushActive, undefined);
+  });
+});
