@@ -1,1 +1,7 @@
 node_modules/
+.idea/
+_metadata/
+*.log
+.DS_Store
+Thumbs.db
+*.local
