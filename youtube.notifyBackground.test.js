@@ -8,6 +8,8 @@ describe('youtube.js notifyBackground integration', () => {
   let mockContext;
 
   before(async () => {
+    const messagingPath = path.resolve(__dirname, 'messaging.js');
+    let messagingContent = fs.readFileSync(messagingPath, 'utf8');
     const scriptPath = path.resolve(__dirname, 'youtube.js');
     let scriptContent = fs.readFileSync(scriptPath, 'utf8');
 
@@ -35,8 +37,20 @@ describe('youtube.js notifyBackground integration', () => {
         head: { appendChild: () => {} },
         body: { classList: { add: () => {}, remove: () => {} }, style: { removeProperty: () => {} } }
       },
+      location: { hostname: 'youtube.com', protocol: 'https:' },
       window: {
-        location: { hostname: 'youtube.com' }
+        location: { hostname: 'youtube.com', protocol: 'https:' }
+      },
+      MSG: {
+        CONFIG_GET: 'CONFIG_GET',
+        CONFIG_SET: 'CONFIG_SET',
+        CONFIG_UPDATE: 'CONFIG_UPDATE',
+        STATS_GET: 'STATS_GET',
+        STATS_RESET: 'STATS_RESET',
+        STATS_UPDATE: 'STATS_UPDATE',
+        DYNAMIC_RULE_ADD: 'DYNAMIC_RULE_ADD',
+        WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
+        SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
       },
       chrome: {
         runtime: {
@@ -54,7 +68,9 @@ describe('youtube.js notifyBackground integration', () => {
       MutationObserver: class { observe() {} disconnect() {} }
     };
     mockContext.globalThis = mockContext;
+    mockContext.window = mockContext;
     vm.createContext(mockContext);
+    vm.runInContext(messagingContent, mockContext);
     vm.runInContext(scriptContent, mockContext);
   });
 
