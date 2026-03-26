@@ -1,5 +1,24 @@
 # Chroma Ad-Blocker
-**Description:** A multi-layered YouTube-specific ad blocker built for Manifest V3, utilizing ad acceleration, declarative network requests, and cosmetic filtering to bypass modern anti-adblock systems.
+**Description:** Chroma Ad-Blocker is a powerful, low-resource extension designed for the modern web. Built specifically for Manifest V3, it employs a sophisticated three-layer strategy to ensure a clean, uninterrupted browsing experience, especially on YouTube.
+
+Layer 1: Ad Acceleration The ultimate defense against server-side ad detection. Instead of simply blocking the video stream—which can trigger "Ad blockers are not allowed" warnings—Chroma detects ads and accelerates them to 16x speed. This fulfills impression requirements in milliseconds, effectively "skipping" the ad invisibly.
+
+Layer 2: Network-Level Blocking (DNR) Powered by Chrome’s Declarative Net Request (DNR) API, Chroma utilizes thousands of optimized rules to intercept and block ads before they even reach your browser. This targets trackers, analytics pings, and traditional banner ads from known ad networks.
+
+Layer 3: Cosmetic Filtering & Warning Suppression Say goodbye to empty white spaces and annoying pop-ups:
+
+Auto-Hide: Removes ad placeholders, sidebars, and overlays from the page layout.
+Anti-Adblock Bypass: Proactively identifies and deletes enforcement modals (like YouTube's strict warnings), restoring site functionality and scroll-locks automatically.
+Global Pop-Under & Notification Protection Chroma includes a dedicated "Main World" interceptor that works on every site to:
+
+Block Pop-Unders: Prevents malicious windows from opening in the background.
+Suppress Push Requests: Automatically silences intrusive "Show notifications" prompts from websites.
+Privacy-First Design
+
+No Data Collection: Your browsing history and statistics never leave your device.
+Local Storage: All preferences are stored locally using Chrome's secure storage.
+High Performance: Designed to be lightweight and fast, minimizing CPU and memory impact.
+Experience the web as it was meant to be—fast, clean, and private.
 
 ## Quick Start
 To get Chroma Ad-Blocker running in your Chrome browser:
