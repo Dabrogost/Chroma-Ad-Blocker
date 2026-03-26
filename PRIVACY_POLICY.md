@@ -1,6 +1,6 @@
 # Privacy Policy for Chroma Ad-Blocker
 
-**Effective Date:** March 25, 2026
+**Effective Date:** March 26, 2026
 
 ## Overview
 Chroma Ad-Blocker ("we," "our," or "the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information in connection with your use of the Extension. **Our core principle is that your data stays on your device.**
@@ -27,7 +27,7 @@ The Extension requires specific permissions to function effectively. Below is a 
 We do not share any data with third parties. There are no analytics, tracking, or telemetry scripts included in the Extension that communicate with external servers.
 
 ## 4. Third-Party Websites
-The Extension interacts with websites you visit (such as YouTube) to provide ad-blocking services. This interaction is limited to modifying the site's code locally to hide ads or accelerate video playback. We do not have access to your accounts or private data on those websites.
+The Extension interacts with websites you visit to provide ad-blocking services. This interaction is limited to modifying the site's code locally to hide ads or accelerate video playback. We do not have access to your accounts or private data on those websites.
 
 ## 5. Changes to This Policy
 We may update this Privacy Policy from time to time. Any changes will be reflected in the "Effective Date" at the top of this document.
