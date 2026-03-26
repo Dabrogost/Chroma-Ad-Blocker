@@ -33,4 +33,4 @@ The Extension interacts with websites you visit to provide ad-blocking services.
 We may update this Privacy Policy from time to time. Any changes will be reflected in the "Effective Date" at the top of this document.
 
 ## 6. Contact
-If you have any questions about this Privacy Policy, please contact the developer via the official Chrome Web Store support channel.
+If you have any questions about this Privacy Policy, please contact the developer via email @ dabrogost@gmail.com.
