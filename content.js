@@ -22,64 +22,9 @@
   // ─── STATE ────────────────────────────────────────────────────────────────────
   let observer = null;
 
-  // ─── COSMETIC SELECTORS ──────────────────────────────────────────────────────
-  const HIDE_SELECTORS = [
-    '.ytd-display-ad-renderer',
-    'ytd-display-ad-renderer',
-    '#masthead-ad',
-    'ytd-banner-promo-renderer',
-    '#banner-ad',
-    '#player-ads',
-    '.ytd-promoted-sparkles-web-renderer',
-    'ytd-promoted-sparkles-web-renderer',
-    '.ytd-promoted-video-renderer',
-    'ytd-promoted-video-renderer',
-    'ytd-search-pyv-renderer',
-    'ytd-ad-slot-renderer',
-    'ytd-in-feed-ad-layout-renderer',
-    'ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
-    'ytd-rich-item-renderer:has(.ytd-ad-slot-renderer)',
-    'ytd-rich-section-renderer:has(ytd-ad-slot-renderer)',
-    'ytd-rich-section-renderer:has(.ytd-ad-slot-renderer)',
-    'ytd-rich-item-renderer:has(#ad-badge)',
-    'ytd-rich-section-renderer:has(#ad-badge)',
-    'ytd-statement-banner-renderer',
-    'ytd-video-masthead-ad-v3-renderer',
-    'ytd-reel-shelf-renderer[is-ad]',
-    '.ytd-mealbar-promo-renderer',
-    'ytd-mealbar-promo-renderer',
-    '.ytp-suggested-action',
-    '.adbox.banner_ads.adsbox',
-    '.textads',
-    '.ad_unit',
-    '.ad-server',
-    '.ad-wrapper',
-    '#ad-test',
-    '.ad-test',
-    '.advertisement',
-    'img[src*="/ad/gif.gif"]',
-    'img[src*="/ad/static.png"]',
-    'img[src*="advmaker"]',
-    'div[class*="advmaker"]',
-    'a[href*="advmaker"]',
-    '.advmaker',
-    '#advmaker',
-    '.ad-slot',
-    '.ad-container',
-    '.ads-by-google',
-    '[id^="ad-"]',
-    '[class^="ad-"]',
-  ];
-
-  const WARNING_SELECTORS = [
-    'tp-yt-iron-overlay-backdrop',
-    'ytd-enforcement-message-view-model',
-    '.ytd-enforcement-message-view-model',
-    '#header-ad-container',
-    '.yt-playability-error-supported-renderers',
-  ];
-
-  const WARNING_SELECTOR_COMBINED = WARNING_SELECTORS.join(',');
+  // ─── COSMETIC SELECTORS (Extracted to utils/selectors.js) ──────────────────
+  const HIDE_SELECTORS = window.HIDE_SELECTORS || [];
+  const WARNING_SELECTOR_COMBINED = window.WARNING_SELECTOR_COMBINED || '';
 
   // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
   function injectAllCSS() {
