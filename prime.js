@@ -31,10 +31,12 @@ const AD_SELECTORS = [
 ];
 
 let targetVideo = null;
+let isAdActive = false;
 let lastAcceleratedSrc = null;
 let adOverlay = null;
 let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
+let savedVolume = 1;
 
 const CHROMA_CYCLE_MS = 8000;
 let chromaClockRunning = false;
@@ -179,13 +181,13 @@ function startChromaClock() {
   chromaClockRunning = true;
 
   function tick() {
-    if (!window._primeAdSessionActive) {
+    if (!isAdActive) {
       chromaClockRunning = false;
       return;
     }
 
     const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS;
-    const [r, g, b] = window.calculateChromaColor(t);
+    const [r, g, b] = window.calculateChromaColor ? window.calculateChromaColor(t) : [0, 168, 225];
 
     const root = document.documentElement;
     root.style.setProperty('--chroma-color', `rgb(${r},${g},${b})`);
@@ -252,7 +254,7 @@ function injectChromaCSS() {
     .chroma-spinner {
       width: 50px !important; height: 50px !important;
       border: 4px solid rgba(255,255,255,0.08) !important;
-      border-top-color: var(--chroma-color, #ff0055) !important;
+      border-top-color: var(--chroma-color, #00A8E1) !important;
       border-radius: 50% !important;
       animation: chroma-spin 1s linear infinite !important;
       margin: 0 0 20px 0 !important;
@@ -289,7 +291,7 @@ function injectChromaCSS() {
     .chroma-progress-bar {
       width: 0%;
       height: 100% !important;
-      background: var(--chroma-color, #ff0055) !important;
+      background: var(--chroma-color, #00A8E1) !important;
       transition: width 0.1s linear, background 0.3s linear !important;
     }
     
@@ -298,8 +300,8 @@ function injectChromaCSS() {
     body.chroma-prime-session .adSkipButton,
     body.chroma-prime-session [class*="skip-button"],
     body.chroma-prime-session [class*="ad-skip"] {
-      border: 2px solid var(--chroma-color, #ff0055) !important;
-      box-shadow: 0 0 25px var(--chroma-color-alpha, rgba(255,0,85,0.5)) !important;
+      border: 2px solid var(--chroma-color, #00A8E1) !important;
+      box-shadow: 0 0 25px var(--chroma-color-alpha, rgba(0, 168, 225, 0.5)) !important;
       transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
     }
   `;
@@ -356,17 +358,19 @@ function handlePrimeAdAcceleration() {
     if (!video) return;
     targetVideo = video;
 
-    if (typeof window._primeAdSessionActive === 'undefined') window._primeAdSessionActive = false;
-
     if (rawAdShowing) {
-      if (!window._primeAdSessionActive) {
-        window._primeAdSessionActive = true;
+      if (!isAdActive) {
+        isAdActive = true;
         document.body.classList.add('chroma-prime-session');
         startChromaClock();
       }
       
       // Apply acceleration
       if (video.playbackRate !== CONFIG.accelerationSpeed) {
+        // Save the user's current volume before muting
+        if (!video.muted && video.volume > 0) {
+          savedVolume = video.volume;
+        }
         video.playbackRate = CONFIG.accelerationSpeed;
         video.muted = true;
         video.volume = 0;
@@ -386,10 +390,11 @@ function handlePrimeAdAcceleration() {
       }
     } else {
       // Restore normal playback
-      if (window._primeAdSessionActive) {
+      if (isAdActive) {
         video.playbackRate = 1;
+        video.volume = savedVolume;
         video.muted = false;
-        window._primeAdSessionActive = false;
+        isAdActive = false;
         document.body.classList.remove('chroma-prime-session');
         lastAcceleratedSrc = null;
         currentAdRemainingStart = 0;
@@ -397,7 +402,7 @@ function handlePrimeAdAcceleration() {
       }
     }
 
-    updateAdOverlay(video, window._primeAdSessionActive);
+    updateAdOverlay(video, isAdActive);
   } catch (err) {
     console.error('[Chroma] Error in Prime loop:', err);
   }
@@ -435,11 +440,12 @@ chrome.runtime.onMessage.addListener((msg) => {
         clearInterval(pollingInterval);
         pollingInterval = null;
       }
-      if (targetVideo && window._primeAdSessionActive) {
+      if (targetVideo && isAdActive) {
         targetVideo.playbackRate = 1;
+        targetVideo.volume = savedVolume;
         targetVideo.muted = false;
       }
-      window._primeAdSessionActive = false;
+      isAdActive = false;
       document.body.classList.remove('chroma-prime-session');
       if (adOverlay) adOverlay.classList.remove('active');
     } else {
@@ -457,4 +463,6 @@ if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
   globalThis.isAdShowing = isAdShowing;
   globalThis.findActiveVideo = findActiveVideo;
+  globalThis.setIsAdActive = (val) => { isAdActive = val; };
+  globalThis.getIsAdActive = () => isAdActive;
 }

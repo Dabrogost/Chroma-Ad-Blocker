@@ -143,11 +143,27 @@ const enforceMuteHandler = () => {
 function isTwitchAdShowing() {
   const labels = document.querySelectorAll(AD_SELECTORS.join(','));
   for (const el of labels) {
-    // Only check text content and basic DOM presence
     const text = el.textContent.trim();
-    if (text.length > 0 && el.offsetParent !== null) {
-      return true;
+    if (!text) continue;
+
+    // Check for ad indicators: "Ad", "Commercial", "Sponsored", or time pattern like "0:30"
+    const isAdText = /ad|commercial|sponsored|promo/i.test(text) || /\d+:\d+/.test(text);
+    if (!isAdText) continue;
+
+    // Quick check for basic visibility
+    if (el.offsetParent === null) continue;
+
+    // Deeper check for hidden elements
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) {
+        continue;
+      }
+    } catch (e) {
+      continue;
     }
+
+    return true;
   }
   return false;
 }
@@ -162,19 +178,24 @@ function handleTwitchAdAcceleration() {
 
     // ALWAYS force-hide the overlay if no ad is detected
     if (!rawAdShowing) {
-      // Restore video state
       if (isAdActive) {
         console.log('[Chroma Twitch] Ad ended — cleaning up overlay');
-        if (video) {
-          video.playbackRate = 1;
-          video.muted = false;
-        }
         isAdActive = false;
         lastAcceleratedSrc = null;
       }
-      // Force hide overlay regardless of isAdActive state
+
+      // Force restore video speed/mute if they are still in ad-mode
+      if (video && video.playbackRate > 1) {
+        console.log('[Chroma Twitch] Restoring video state');
+        video.playbackRate = 1;
+        video.muted = false;
+      }
+
+      // Force hide overlay
       const overlay = document.getElementById('twitch-chroma-overlay');
-      if (overlay) overlay.classList.remove('active');
+      if (overlay && overlay.classList.contains('active')) {
+        overlay.classList.remove('active');
+      }
       return;
     }
 
