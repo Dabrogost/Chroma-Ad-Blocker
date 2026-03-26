@@ -16,7 +16,9 @@ Suppress Push Requests: Automatically silences intrusive "Show notifications" pr
 Privacy-First Design
 
 No Data Collection: Your browsing history and statistics never leave your device.
+
 Local Storage: All preferences are stored locally using Chrome's secure storage.
+
 High Performance: Designed to be lightweight and fast, minimizing CPU and memory impact.
 Experience the web as it was meant to be—fast, clean, and private.
 
