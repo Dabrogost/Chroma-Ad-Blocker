@@ -50,9 +50,25 @@
     {
       "matches": [
         "*://*.amazon.com/gp/video/*",
+        "*://*.amazon.com/video/*",
+        "*://*.amazon.com/v/*",
         "*://*.amazon.de/gp/video/*",
+        "*://*.amazon.de/video/*",
+        "*://*.amazon.de/v/*",
         "*://*.amazon.co.uk/gp/video/*",
+        "*://*.amazon.co.uk/video/*",
+        "*://*.amazon.co.uk/v/*",
         "*://*.amazon.co.jp/gp/video/*",
+        "*://*.amazon.co.jp/video/*",
+        "*://*.amazon.co.jp/v/*",
+        "*://*.amazon.ca/video/*",
+        "*://*.amazon.ca/v/*",
+        "*://*.amazon.fr/video/*",
+        "*://*.amazon.fr/v/*",
+        "*://*.amazon.it/video/*",
+        "*://*.amazon.it/v/*",
+        "*://*.amazon.es/video/*",
+        "*://*.amazon.es/v/*",
         "*://*.primevideo.com/*"
       ],
       "js": [
