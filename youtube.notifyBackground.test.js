@@ -8,8 +8,9 @@ describe('youtube.js notifyBackground integration', () => {
   let mockContext;
 
   before(async () => {
+    const messagingPath = path.resolve(__dirname, 'messaging.js');
     const scriptPath = path.resolve(__dirname, 'youtube.js');
-    let scriptContent = fs.readFileSync(scriptPath, 'utf8');
+    let scriptContent = fs.readFileSync(messagingPath, 'utf8') + '\n' + fs.readFileSync(scriptPath, 'utf8');
 
     mockContext = {
       __TESTING__: true,
@@ -18,6 +19,9 @@ describe('youtube.js notifyBackground integration', () => {
       setInterval: () => {},
       clearInterval: () => {},
       requestAnimationFrame: () => {},
+      window: {
+        location: { hostname: 'youtube.com' },
+      },
       document: {
         getElementById: () => null,
         createElement: () => ({
@@ -37,6 +41,17 @@ describe('youtube.js notifyBackground integration', () => {
       window: {
         location: { hostname: 'youtube.com' }
       },
+      MSG: {
+        CONFIG_GET: 'CONFIG_GET',
+        CONFIG_SET: 'CONFIG_SET',
+        CONFIG_UPDATE: 'CONFIG_UPDATE',
+        STATS_GET: 'STATS_GET',
+        STATS_RESET: 'STATS_RESET',
+        STATS_UPDATE: 'STATS_UPDATE',
+        DYNAMIC_RULE_ADD: 'DYNAMIC_RULE_ADD',
+        WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
+        SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+      },
       chrome: {
         runtime: {
           sendMessage: () => Promise.resolve(),
@@ -53,6 +68,8 @@ describe('youtube.js notifyBackground integration', () => {
       MutationObserver: class { observe() {} disconnect() {} }
     };
     mockContext.globalThis = mockContext;
+    mockContext.window = mockContext;
+    mockContext.window.location = { hostname: 'youtube.com' };
     vm.createContext(mockContext);
     vm.runInContext(scriptContent, mockContext);
   });

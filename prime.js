@@ -44,6 +44,15 @@ const CHROMA_CYCLE_MS = 8000;
 let chromaClockRunning = false;
 
 /**
+ * Checks if an element is visible on the screen.
+ * @param {Element} element
+ * @returns {boolean}
+ */
+function isVisible(element) {
+  return element && (element.offsetParent !== null || element.getClientRects().length > 0);
+}
+
+/**
  * Initializes the visual overlay for Prime Video.
  */
 function initAdOverlay(video) {
@@ -324,7 +333,7 @@ function injectChromaCSS() {
 function isAdShowing() {
   // 1. Check CSS Selectors
   const adElement = document.querySelector(AD_SELECTORS.join(','));
-  if (adElement && (adElement.offsetParent !== null || adElement.getClientRects().length > 0)) return true;
+  if (isVisible(adElement)) return true;
 
   // 2. Text-based detection in common overlay containers
   const overlayContainers = document.querySelectorAll('.atvwebplayersdk-overlays-container, .webPlayerUIContainer');
@@ -335,7 +344,7 @@ function isAdShowing() {
     const text = container.textContent || '';
     if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
       // Check if it's visible
-      if (container.offsetParent !== null || container.getClientRects().length > 0) {
+      if (isVisible(container)) {
          return true;
       }
     }
@@ -352,7 +361,7 @@ function findActiveVideo() {
   if (videos.length === 0) return null;
   
   // Prefer visible videos with source
-  const visibleVideos = videos.filter(v => (v.offsetParent !== null || v.getClientRects().length > 0) && (v.src || v.querySelector('source')));
+  const visibleVideos = videos.filter(v => isVisible(v) && (v.src || v.querySelector('source')));
   if (visibleVideos.length > 0) return visibleVideos[0];
 
   return videos[0];
@@ -393,7 +402,7 @@ function handlePrimeAdAcceleration() {
       
       // Auto-click skip button if it appears
       const skipButton = document.querySelector('.adSkipButton, .skippable, [class*="skip-button"], .atvwebplayersdk-ad-skip-button');
-      if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) {
+      if (isVisible(skipButton)) {
         skipButton.click();
       }
     } else {
