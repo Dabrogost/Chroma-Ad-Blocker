@@ -104,3 +104,4 @@ All settings are stored in `chrome.storage.local` and can be toggled via the ext
 | `blockPopUnders` | boolean | `true` | Intercepts and closes suspicious new windows. |
 | `blockPushNotifications` | boolean | `true` | Blocks web-push notification permission requests. |
 
+Copyright (c) 2026 Dabrogost
