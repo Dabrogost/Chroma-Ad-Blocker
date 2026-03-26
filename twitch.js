@@ -20,6 +20,7 @@ const MSG = {
 
 const AD_SELECTORS = [
   '[data-a-target="video-ad-label"]',
+  '[data-a-target="ad-video-countdown"]',
   '.video-ad-label',
   '.tw-strong.tw-upcase.video-ad-label',
   '.video-ad-label--countdown'
@@ -87,16 +88,9 @@ function initAdOverlay() {
   subtitle.className = 'chroma-subtitle';
   subtitle.textContent = 'Accelerating Ad...';
 
-  const progressContainer = document.createElement('div');
-  progressContainer.className = 'chroma-progress-container';
-  const progressBar = document.createElement('div');
-  progressBar.className = 'chroma-progress-bar';
-  progressContainer.appendChild(progressBar);
-  
   contentBox.appendChild(spinner);
   contentBox.appendChild(title);
   contentBox.appendChild(subtitle);
-  contentBox.appendChild(progressContainer);
   
   adOverlay.appendChild(contentBox);
 
@@ -107,40 +101,43 @@ function initAdOverlay() {
 }
 
 function updateAdOverlay(video, effectiveAdShowing) {
-  if (!CONFIG.acceleration || !effectiveAdShowing) {
-    if (adOverlay && adOverlay.classList.contains('active')) {
-      adOverlay.classList.remove('active');
+  try {
+    const existingOverlay = document.getElementById('twitch-chroma-overlay');
+    
+    if (!CONFIG.acceleration || !effectiveAdShowing) {
+      if (existingOverlay) existingOverlay.classList.remove('active');
+      return;
     }
-    return;
-  }
-  
-  if (!adOverlay) {
-    initAdOverlay();
-  }
+    
+    adOverlay = existingOverlay;
+    if (!adOverlay) {
+      initAdOverlay();
+      adOverlay = document.getElementById('twitch-chroma-overlay');
+    }
+    if (!adOverlay) return;
 
-  const playerContainer = video.closest('.video-player__container') || video.closest('.highwind-video-player') || video.parentElement;
-  if (playerContainer && !playerContainer.contains(adOverlay)) {
-    playerContainer.appendChild(adOverlay);
-  }
-  
-  if (!adOverlay.classList.contains('active')) {
+    const container = video?.closest('.video-player__container') || 
+                    video?.closest('.highwind-video-player') || 
+                    document.querySelector('.video-player__container') || 
+                    document.querySelector('.highwind-video-player');
+
+    if (container && !container.contains(adOverlay)) {
+      container.appendChild(adOverlay);
+    }
+    
     adOverlay.classList.add('active');
-  }
 
-  const adLabel = document.querySelector(AD_SELECTORS.join(','));
-  const subtitleEl = adOverlay.querySelector('.chroma-subtitle');
-  if (subtitleEl && adLabel) {
-    const labelText = adLabel.textContent.trim();
-    if (labelText) {
-      // Twitch labels often look like "Ad 1 of 2" or "Commercial Break"
-      subtitleEl.textContent = labelText.includes('Ad') ? `Accelerating ${labelText}...` : 'Accelerating Ad...';
+    // Update subtitle
+    const adLabel = document.querySelector(AD_SELECTORS.join(','));
+    const subtitleEl = adOverlay.querySelector('.chroma-subtitle');
+    if (subtitleEl && adLabel) {
+      const labelText = adLabel.textContent.trim();
+      if (labelText) {
+        subtitleEl.textContent = labelText.includes('Ad') ? `Accelerating ${labelText}...` : 'Accelerating Ad...';
+      }
     }
-  }
-
-  const progressBar = adOverlay.querySelector('.chroma-progress-bar');
-  if (progressBar && video && video.duration > 0) {
-    const percent = Math.min((video.currentTime / video.duration) * 100, 100);
-    progressBar.style.width = `${percent}%`;
+  } catch (e) {
+    console.warn('[Chroma Twitch] updateAdOverlay error:', e);
   }
 }
 
@@ -155,79 +152,92 @@ function notifyBackground(message) {
  */
 const enforceMuteHandler = () => {
   if (isAdActive && targetVideo) {
-    if (!targetVideo.muted) {
-      targetVideo.muted = true;
-    }
-    if (targetVideo.volume > 0) {
-      targetVideo.volume = 0;
-    }
-    // Twitch often pauses the video when it detects acceleration or buffer lag
-    if (targetVideo.paused) {
-      targetVideo.play().catch(() => {});
-    }
+    if (!targetVideo.muted) targetVideo.muted = true;
+    if (targetVideo.volume > 0) targetVideo.volume = 0;
+    if (targetVideo.paused) targetVideo.play().catch(() => {});
   }
 };
 
+/**
+ * Checks if a Twitch ad is currently showing.
+ * Simple approach: just check if any ad label element exists with text content.
+ * No getComputedStyle / getBoundingClientRect to avoid exceptions on detached nodes.
+ */
+function isTwitchAdShowing() {
+  const labels = document.querySelectorAll(AD_SELECTORS.join(','));
+  for (const el of labels) {
+    // Only check text content and basic DOM presence
+    const text = el.textContent.trim();
+    if (text.length > 0 && el.offsetParent !== null) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function handleTwitchAdAcceleration() {
-  if (!CONFIG.enabled) return;
 
-  // 1. Detect if an ad is showing based on UI labels
-  const adLabel = document.querySelector(AD_SELECTORS.join(','));
-  const rawAdShowing = !!adLabel;
+  try {
+    if (!CONFIG.enabled) return;
 
-  // 2. Find the video element
-  const video = document.querySelector('video');
-  if (!video) return;
+    const rawAdShowing = isTwitchAdShowing();
+    const video = document.querySelector('video');
 
-  targetVideo = video;
+    // ALWAYS force-hide the overlay if no ad is detected
+    if (!rawAdShowing) {
+      // Restore video state
+      if (isAdActive) {
+        console.log('[Chroma Twitch] Ad ended — cleaning up overlay');
+        if (video) {
+          video.playbackRate = 1;
+          video.muted = false;
+        }
+        isAdActive = false;
+        lastAcceleratedSrc = null;
+      }
+      // Force hide overlay regardless of isAdActive state
+      const overlay = document.getElementById('twitch-chroma-overlay');
+      if (overlay) overlay.classList.remove('active');
+      return;
+    }
 
-  if (rawAdShowing) {
+    // Ad is showing — accelerate
     if (!isAdActive) {
+      console.log('[Chroma Twitch] Ad detected — activating overlay');
       isAdActive = true;
       startChromaClock();
     }
 
-    // Attach listeners if not already present
-    if (!video.dataset.chromaListenersAdded) {
-      video.dataset.chromaListenersAdded = 'true';
-      video.addEventListener('volumechange', enforceMuteHandler);
-      video.addEventListener('play', enforceMuteHandler);
-      video.addEventListener('pause', enforceMuteHandler);
-    }
+    if (video) {
+      targetVideo = video;
+      if (!video.dataset.chromaListenersAdded) {
+        video.dataset.chromaListenersAdded = 'true';
+        video.addEventListener('volumechange', enforceMuteHandler);
+        video.addEventListener('play', enforceMuteHandler);
+        video.addEventListener('pause', enforceMuteHandler);
+      }
+      if (video.paused) video.play().catch(() => {});
+      if (!video.muted) video.muted = true;
+      if (video.volume > 0) video.volume = 0;
 
-    // Ensure it's playing and muted
-    if (video.paused) {
-      video.play().catch(() => {});
-    }
-    if (!video.muted) {
-      video.muted = true;
-    }
-    if (video.volume > 0) {
-      video.volume = 0;
-    }
-
-    // Apply acceleration
-    if (video.playbackRate !== CONFIG.accelerationSpeed) {
-      video.playbackRate = CONFIG.accelerationSpeed;
-
-      // Increment stats (once per unique ad source if possible)
-      const currentSrc = video.src || 'twitch-ad';
-      if (lastAcceleratedSrc !== currentSrc) {
-        notifyBackground({ type: MSG.STATS_UPDATE, stats: { accelerated: 1 } });
-        lastAcceleratedSrc = currentSrc;
+      if (video.playbackRate !== CONFIG.accelerationSpeed) {
+        video.playbackRate = CONFIG.accelerationSpeed;
+        const currentSrc = video.src || 'twitch-ad';
+        if (lastAcceleratedSrc !== currentSrc) {
+          notifyBackground({ type: MSG.STATS_UPDATE, stats: { accelerated: 1 } });
+          lastAcceleratedSrc = currentSrc;
+        }
       }
     }
-  } else {
-    // Restore normal playback if we were previously accelerating
-    if (isAdActive) {
-      video.playbackRate = 1;
-      video.muted = false;
-      isAdActive = false;
-      lastAcceleratedSrc = null;
-    }
-  }
 
-  updateAdOverlay(video, isAdActive);
+    updateAdOverlay(video, isAdActive);
+  } catch (err) {
+    console.error('[Chroma Twitch] Error in acceleration loop:', err);
+    // If anything crashes, force-hide the overlay as a safety net
+    const overlay = document.getElementById('twitch-chroma-overlay');
+    if (overlay) overlay.classList.remove('active');
+    isAdActive = false;
+  }
 }
 
 function injectChromaCSS() {
@@ -306,24 +316,10 @@ function injectChromaCSS() {
     }
     .chroma-subtitle {
       font-size: 15px !important; color: rgba(255, 255, 255, 0.6) !important;
-      margin: 0 0 20px 0 !important;
+      margin: 0 !important;
       text-align: center !important;
       line-height: 1.4 !important;
       text-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
-    }
-    .chroma-progress-container {
-      width: 100% !important;
-      height: 4px !important;
-      background: rgba(255,255,255,0.1) !important;
-      border-radius: 2px !important;
-      overflow: hidden !important;
-      display: block !important;
-    }
-    .chroma-progress-bar {
-      width: 0%;
-      height: 100% !important;
-      background: var(--chroma-color, #ff0055) !important;
-      transition: width 0.1s linear, background 0.3s linear !important;
     }
 
     /* Target Twitch ad labels to highlight them */
