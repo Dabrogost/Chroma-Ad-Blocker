@@ -585,5 +585,6 @@
     globalThis.handleAdAcceleration = handleAdAcceleration;
     globalThis.updateAdOverlay = updateAdOverlay;
     globalThis.cleanupVideoState = cleanupVideoState;
+    globalThis.notifyBackground = notifyBackground;
   }
 })();
