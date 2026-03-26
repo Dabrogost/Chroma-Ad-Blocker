@@ -13,6 +13,7 @@ describe('youtube.js notifyBackground integration', () => {
 
     mockContext = {
       __TESTING__: true,
+      MSG: {},
       console: console,
       setTimeout: setTimeout,
       setInterval: () => {},

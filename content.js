@@ -182,29 +182,38 @@
   }
 
   // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
-  function suppressAdblockWarnings(node) {
+  function suppressAdblockWarnings(nodes) {
     if (!CONFIG.enabled || !CONFIG.suppressWarnings) return;
 
-    if (node && typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
-      node.remove();
-    }
+    const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes || document];
+    let removedAny = false;
 
-    const els = (node || document).querySelectorAll(WARNING_SELECTOR_COMBINED);
-    const removedAny = els.length > 0;
+    for (const node of nodesToProcess) {
+      if (!node) continue;
 
-    els.forEach(el => {
-      el.remove();
-    });
+      if (typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
+        node.remove();
+        removedAny = true;
+        continue;
+      }
 
-    const video = document.querySelector('video');
-    if (video && video.paused) {
-      if (removedAny) {
-        video.play().catch(() => {});
+      if (typeof node.querySelectorAll === 'function') {
+        const els = node.querySelectorAll(WARNING_SELECTOR_COMBINED);
+        if (els.length > 0) {
+          removedAny = true;
+          els.forEach(el => el.remove());
+        }
       }
     }
 
-    if (document.body) {
-      document.body.style.removeProperty('overflow');
+    if (removedAny) {
+      const video = document.querySelector('video');
+      if (video && video.paused) {
+        video.play().catch(() => {});
+      }
+      if (document.body) {
+        document.body.style.removeProperty('overflow');
+      }
     }
   }
 
@@ -212,18 +221,30 @@
   function startObserver() {
     if (observer) observer.disconnect();
 
+    let pendingNodes = new Set();
     let pendingFrame = false;
 
     observer = new MutationObserver((mutations) => {
-      if (mutations.some(m => m.addedNodes.length > 0)) {
-        if (!pendingFrame) {
-          pendingFrame = true;
-          requestAnimationFrame(() => {
-            suppressAdblockWarnings();
-            removeLeftoverAdContainers();
-            pendingFrame = false;
-          });
+      let hasNewNodes = false;
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) {
+            pendingNodes.add(node);
+            hasNewNodes = true;
+          }
         }
+      }
+
+      if (hasNewNodes && !pendingFrame) {
+        pendingFrame = true;
+        requestAnimationFrame(() => {
+          const nodesToProcess = Array.from(pendingNodes);
+          pendingNodes.clear();
+
+          suppressAdblockWarnings(nodesToProcess);
+          removeLeftoverAdContainers(nodesToProcess);
+          pendingFrame = false;
+        });
       }
     });
 
@@ -233,58 +254,99 @@
     });
   }
 
-  function removeLeftoverAdContainers() {
-    const adIds = document.querySelectorAll('[id*="ad-container"], [id*="ad_container"]');
-    adIds.forEach(el => {
-      if (el.id !== 'yt-chroma-cosmetic' && el.id !== 'yt-chroma-shorts' && el.id !== 'yt-chroma-merch' && el.id !== 'yt-chroma-offers' && !el.id.includes('masthead')) {
-        el.style.display = 'none';
-        el.remove();
+  function removeLeftoverAdContainers(nodes) {
+    const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes || document];
+
+    for (const node of nodesToProcess) {
+      if (!node) continue;
+
+      const isElement = node.nodeType === Node.ELEMENT_NODE;
+
+      // Handle ad-containers
+      const processAdContainer = (el) => {
+        if (el.id && el.id !== 'yt-chroma-cosmetic' && el.id !== 'yt-chroma-shorts' && el.id !== 'yt-chroma-merch' && el.id !== 'yt-chroma-offers' && !el.id.includes('masthead')) {
+          el.style.display = 'none';
+          el.remove();
+        }
+      };
+
+      if (isElement && node.id && (node.id.includes('ad-container') || node.id.includes('ad_container'))) {
+        processAdContainer(node);
       }
-    });
+      if (typeof node.querySelectorAll === 'function') {
+        node.querySelectorAll('[id*="ad-container"], [id*="ad_container"]').forEach(processAdContainer);
+      }
 
-    if (CONFIG.enabled && CONFIG.hideShorts) {
-      const shortsElements = document.querySelectorAll('ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]), ytd-rich-shelf-renderer[is-shorts], ytd-reel-shelf-renderer');
-      shortsElements.forEach(el => {
-        el.style.display = 'none';
-        if (!el.closest('#secondary')) {
-          el.remove();
+      // Handle Shorts
+      if (CONFIG.enabled && CONFIG.hideShorts) {
+        const shortsSelector = 'ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]), ytd-rich-shelf-renderer[is-shorts], ytd-reel-shelf-renderer';
+        const processShorts = (el) => {
+          el.style.display = 'none';
+          if (!el.closest('#secondary')) el.remove();
+        };
+
+        if (isElement && typeof node.matches === 'function' && node.matches(shortsSelector)) {
+          processShorts(node);
         }
-      });
-    }
-
-    if (CONFIG.enabled && CONFIG.hideMerch) {
-      const merchElements = document.querySelectorAll('ytd-merch-shelf-renderer, ytd-companion-slot-renderer, ytd-shopping-panel-renderer, ytd-horizontal-card-list-renderer:has(ytd-shopping-carousel-item-renderer)');
-      merchElements.forEach(el => {
-        el.style.display = 'none';
-        if (!el.closest('#secondary')) {
-          el.remove();
-        }
-      });
-    }
-
-    if (CONFIG.enabled && CONFIG.hideOffers) {
-      const offerElements = document.querySelectorAll('ytd-tvfilm-offer-module-renderer, ytd-movie-offer-module-renderer, ytd-offer-module-renderer, ytd-compact-movie-renderer, ytd-compact-tvfilm-renderer');
-      offerElements.forEach(el => {
-        el.style.display = 'none';
-        if (!el.closest('#secondary')) {
-          el.remove();
-        }
-      });
-    }
-
-    const adSlots = document.querySelectorAll('ytd-ad-slot-renderer, .ytd-ad-slot-renderer, #ad-badge');
-    adSlots.forEach(slot => {
-      const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer');
-      if (parent) {
-        parent.style.display = 'none';
-        parent.remove();
-      } else {
-        slot.style.display = 'none';
-        if (!slot.closest('#secondary')) {
-           slot.remove();
+        if (typeof node.querySelectorAll === 'function') {
+          node.querySelectorAll(shortsSelector).forEach(processShorts);
         }
       }
-    });
+
+      // Handle Merch
+      if (CONFIG.enabled && CONFIG.hideMerch) {
+        const merchSelector = 'ytd-merch-shelf-renderer, ytd-companion-slot-renderer, ytd-shopping-panel-renderer, ytd-horizontal-card-list-renderer:has(ytd-shopping-carousel-item-renderer)';
+        const processMerch = (el) => {
+          el.style.display = 'none';
+          if (!el.closest('#secondary')) el.remove();
+        };
+
+        if (isElement && typeof node.matches === 'function' && node.matches(merchSelector)) {
+          processMerch(node);
+        }
+        if (typeof node.querySelectorAll === 'function') {
+          node.querySelectorAll(merchSelector).forEach(processMerch);
+        }
+      }
+
+      // Handle Offers
+      if (CONFIG.enabled && CONFIG.hideOffers) {
+        const offersSelector = 'ytd-tvfilm-offer-module-renderer, ytd-movie-offer-module-renderer, ytd-offer-module-renderer, ytd-compact-movie-renderer, ytd-compact-tvfilm-renderer';
+        const processOffers = (el) => {
+          el.style.display = 'none';
+          if (!el.closest('#secondary')) el.remove();
+        };
+
+        if (isElement && typeof node.matches === 'function' && node.matches(offersSelector)) {
+          processOffers(node);
+        }
+        if (typeof node.querySelectorAll === 'function') {
+          node.querySelectorAll(offersSelector).forEach(processOffers);
+        }
+      }
+
+      // Handle Ad Slots
+      const adSlotSelector = 'ytd-ad-slot-renderer, .ytd-ad-slot-renderer, #ad-badge';
+      const processAdSlot = (slot) => {
+        const parent = slot.closest('ytd-rich-item-renderer, ytd-rich-section-renderer');
+        if (parent) {
+          parent.style.display = 'none';
+          parent.remove();
+        } else {
+          slot.style.display = 'none';
+          if (!slot.closest('#secondary')) {
+            slot.remove();
+          }
+        }
+      };
+
+      if (isElement && typeof node.matches === 'function' && node.matches(adSlotSelector)) {
+        processAdSlot(node);
+      }
+      if (typeof node.querySelectorAll === 'function') {
+        node.querySelectorAll(adSlotSelector).forEach(processAdSlot);
+      }
+    }
   }
 
   // ─── NAVIGATION HANDLING (SPA) ────────────────────────────────────────────────

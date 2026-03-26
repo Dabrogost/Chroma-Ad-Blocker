@@ -1,7 +1,7 @@
 {
   "name": "app",
   "version": "1.0.0",
-  "description": "",
+  "description": "**Description:** Chroma Ad-Blocker is a powerful, low-resource extension designed for the modern web. Built specifically for Manifest V3, it employs a sophisticated three-layer strategy to ensure a clean, uninterrupted browsing experience.",
   "main": "background.js",
   "scripts": {
     "test": "node --test"
