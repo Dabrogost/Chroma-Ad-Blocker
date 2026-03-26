@@ -30,7 +30,33 @@
         "*://*.youtube.com/*"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "youtube.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+
+    {
+      "matches": [
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "twitch.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.amazon.com/gp/video/*",
+        "*://*.amazon.de/gp/video/*",
+        "*://*.amazon.co.uk/gp/video/*",
+        "*://*.amazon.co.jp/gp/video/*",
+        "*://*.primevideo.com/*"
+      ],
+      "js": [
+        "prime.js"
       ],
       "run_at": "document_start",
       "all_frames": true

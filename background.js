@@ -50,25 +50,26 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 // ─── DYNAMIC RULE UPDATES ─────────────────────────────────────────────────────
+const STATIC_RULESETS = [
+  'yt_original_rules',
+  'yt_ad_rules_part1',
+  'yt_ad_rules_part2',
+  'yt_ad_rules_part3',
+  'yt_ad_rules_part4',
+  'yt_ad_rules_part5',
+  'yt_ad_rules_part6',
+  'yt_ad_rules_part7',
+  'yt_ad_rules_part8',
+  'yt_ad_rules_part9'
+];
+
 async function updateDNRState(isEnabled) {
-  const ruleIds = [
-    'yt_original_rules',
-    'yt_ad_rules_part1',
-    'yt_ad_rules_part2',
-    'yt_ad_rules_part3',
-    'yt_ad_rules_part4',
-    'yt_ad_rules_part5',
-    'yt_ad_rules_part6',
-    'yt_ad_rules_part7',
-    'yt_ad_rules_part8',
-    'yt_ad_rules_part9'
-  ];
   try {
     if (isEnabled) {
-      await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds: ruleIds });
+      await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds: STATIC_RULESETS });
       await syncDynamicRules();
     } else {
-      await chrome.declarativeNetRequest.updateEnabledRulesets({ disableRulesetIds: ruleIds });
+      await chrome.declarativeNetRequest.updateEnabledRulesets({ disableRulesetIds: STATIC_RULESETS });
       const existing = await chrome.declarativeNetRequest.getDynamicRules();
       const removeIds = existing.map(r => r.id);
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
@@ -219,16 +220,13 @@ setInterval(() => {
 
 // ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
 const MSG = {
-  // Config
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
-  // Stats
-  STATS_GET: 'STATS_GET',        // was GET_STATS
-  STATS_RESET: 'STATS_RESET',    // was RESET_STATS
-  STATS_UPDATE: 'STATS_UPDATE',  // was STAT_UPDATE
-  // Other
-  DYNAMIC_RULE_ADD: 'DYNAMIC_RULE_ADD', // was ADD_DYNAMIC_RULE
+  STATS_GET: 'STATS_GET',
+  STATS_RESET: 'STATS_RESET',
+  STATS_UPDATE: 'STATS_UPDATE',
+  DYNAMIC_RULE_ADD: 'DYNAMIC_RULE_ADD',
   WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
   SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
 };
@@ -593,3 +591,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   popunderRequests.delete(tabId);
   harvestNetworkStats().catch(() => {});
 });
+
+// ─── TESTING EXPORTS ────────────────────────────────────────────────────────
+if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
+  globalThis.CONFIG = config;
+  globalThis.MSG = MSG;
+  globalThis.updateDNRState = updateDNRState;
+  globalThis.syncDynamicRules = syncDynamicRules;
+  globalThis.harvestNetworkStats = harvestNetworkStats;
+}

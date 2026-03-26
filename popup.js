@@ -6,8 +6,10 @@ const $ = id => document.getElementById(id);
 const MSG = {
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',
+  CONFIG_UPDATE: 'CONFIG_UPDATE',
   STATS_GET: 'STATS_GET',
-  STATS_RESET: 'STATS_RESET'
+  STATS_RESET: 'STATS_RESET',
+  STATS_UPDATE: 'STATS_UPDATE'
 };
 
 async function sendBg(msg) {
