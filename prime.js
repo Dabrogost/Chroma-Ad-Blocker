@@ -78,8 +78,12 @@ function initAdOverlay(video) {
   
   adOverlay.appendChild(contentBox);
 
+  // Target the best container: the SDK player container or the UI container
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
-  if (container && !container.contains(adOverlay)) {
+  if (container) {
+    if (window.getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative'; 
+    }
     container.appendChild(adOverlay);
   }
 }
@@ -87,8 +91,8 @@ function initAdOverlay(video) {
 /**
  * Updates the visual overlay state.
  */
-function updateAdOverlay(video, isAdActive) {
-  if (!CONFIG.acceleration || !isAdActive) {
+function updateAdOverlay(video, isActive) {
+  if (!CONFIG.acceleration || !isActive) {
     if (adOverlay && adOverlay.classList.contains('active')) {
       adOverlay.classList.remove('active');
     }
@@ -99,6 +103,7 @@ function updateAdOverlay(video, isAdActive) {
     initAdOverlay(video);
   }
 
+  // Ensure it's in the right place
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
   if (container && adOverlay && !container.contains(adOverlay)) {
     container.appendChild(adOverlay);
@@ -312,24 +317,33 @@ function injectChromaCSS() {
  * Checks for ad indicators using both CSS selectors and text-based heuristics.
  */
 function isAdShowing() {
-  // 1. Check CSS Selectors
+  // 1. Check CSS Selectors First (fastest)
   const adElement = document.querySelector(AD_SELECTORS.join(','));
   if (adElement && (adElement.offsetParent !== null || adElement.getClientRects().length > 0)) return true;
 
-  // 2. Text-based detection in common overlay containers
-  const overlayContainers = document.querySelectorAll('.atvwebplayersdk-overlays-container, .webPlayerUIContainer');
-  for (const container of overlayContainers) {
-    // Avoid detecting our own overlay text
-    if (container.id === 'prime-chroma-overlay' || container.querySelector('#prime-chroma-overlay')) continue;
-
-    const text = container.textContent || '';
-    if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
-      // Check if it's visible
-      if (container.offsetParent !== null || container.getClientRects().length > 0) {
-         return true;
+  // 2. Text-based detection using "Invisible Overlay" strategy
+  const playerContainer = document.querySelector('.atvwebplayersdk-player-container, .webPlayerUIContainer');
+  if (playerContainer && (playerContainer.offsetParent !== null || playerContainer.getClientRects().length > 0)) {
+    // Hide our overlay text before checking innerText to prevent feedback loops
+    const overlay = document.getElementById('prime-chroma-overlay');
+    const originalVisibility = overlay ? overlay.style.visibility : null;
+    if (overlay) overlay.style.visibility = 'hidden';
+    
+    try {
+      const text = playerContainer.innerText || '';
+      // Simplified word-boundary regex to catch "Ad", "Sponsored", "Ad 0:15", etc.
+      if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
+        return true;
       }
+    } finally {
+      // Always restore visibility
+      if (overlay) overlay.style.visibility = originalVisibility || 'visible';
     }
   }
+
+  // 3. Last resort: specific skippable elements
+  const skipButton = document.querySelector('.adSkipButton, .skippable, .atvwebplayersdk-ad-skip-button');
+  if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) return true;
 
   return false;
 }
@@ -341,8 +355,19 @@ function findActiveVideo() {
   const videos = Array.from(document.querySelectorAll('video'));
   if (videos.length === 0) return null;
   
-  // Prefer visible videos with source
-  const visibleVideos = videos.filter(v => (v.offsetParent !== null || v.getClientRects().length > 0) && (v.src || v.querySelector('source')));
+  // 1. Prefer videos that are actually playing or ready
+  const activeVideos = videos.filter(v => 
+    v.readyState > 0 && 
+    !v.paused && 
+    (v.offsetParent !== null || v.getClientRects().length > 0)
+  );
+  if (activeVideos.length > 0) return activeVideos[0];
+
+  // 2. Fallback to visible videos with source
+  const visibleVideos = videos.filter(v => 
+    (v.offsetParent !== null || v.getClientRects().length > 0) && 
+    (v.src || v.querySelector('source'))
+  );
   if (visibleVideos.length > 0) return visibleVideos[0];
 
   return videos[0];
@@ -416,18 +441,32 @@ function startPolling() {
   pollingInterval = setInterval(handlePrimeAdAcceleration, CONFIG.checkIntervalMs);
 }
 
+function resetSession() {
+  isAdActive = false;
+  lastAcceleratedSrc = null;
+  document.body.classList.remove('chroma-prime-session');
+  if (adOverlay) adOverlay.classList.remove('active');
+}
+
 function init() {
   chrome.storage.local.get('config').then(({ config: savedConfig }) => {
     if (savedConfig) {
       Object.assign(CONFIG, savedConfig);
     }
-    if (CONFIG.enabled) {
-      injectChromaCSS();
-      startPolling();
-    }
+    injectChromaCSS(); // Always inject CSS, even if disabled, for consistent behavior
+    startPolling(); // Always start polling, it will exit early if CONFIG.enabled is false
+    
+    // Handle SPA transitions
+    window.addEventListener('popstate', resetSession);
+    window.addEventListener('hashchange', resetSession);
+    document.addEventListener('atv-navigation-complete', resetSession);
   }).catch(() => {
+    // Fallback if storage access fails
     injectChromaCSS();
     startPolling();
+    window.addEventListener('popstate', resetSession);
+    window.addEventListener('hashchange', resetSession);
+    document.addEventListener('atv-navigation-complete', resetSession);
   });
 }
 
