@@ -167,6 +167,29 @@ const MSG = {
   SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
 };
 
+// ─── CONFIGURATION VALIDATION ───────────────────────────────────────────────
+function validateConfig(inputConfig) {
+  const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
+  const validatedConfig = {};
+
+  if (inputConfig && typeof inputConfig === 'object') {
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(inputConfig, key)) {
+        const val = inputConfig[key];
+        if (key === 'accelerationSpeed') {
+          if (typeof val === 'number' && val > 0 && val <= 16) {
+            validatedConfig[key] = val;
+          }
+        } else if (typeof val === 'boolean') {
+          validatedConfig[key] = val;
+        }
+      }
+    }
+  }
+
+  return validatedConfig;
+}
+
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // SECURITY: Restrict sensitive message types to internal extension pages (e.g. popup)
@@ -277,25 +300,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === MSG.CONFIG_SET) {
     chrome.storage.local.get('config').then(async ({ config }) => {
-      // Validate and extract only allowed properties
-      const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
-      const validatedConfig = {};
-
-      if (msg.config && typeof msg.config === 'object') {
-        for (const key of allowed) {
-          if (Object.prototype.hasOwnProperty.call(msg.config, key)) {
-            const val = msg.config[key];
-            if (key === 'accelerationSpeed') {
-              if (typeof val === 'number' && val > 0 && val <= 16) {
-                validatedConfig[key] = val;
-              }
-            } else if (typeof val === 'boolean') {
-              validatedConfig[key] = val;
-            }
-          }
-        }
-      }
-
+      const validatedConfig = validateConfig(msg.config);
       const newConfig = { ...config, ...validatedConfig };
       await chrome.storage.local.set({ config: newConfig });
       
