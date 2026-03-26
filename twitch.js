@@ -26,10 +26,6 @@ let isAdActive = false;
 let lastAcceleratedSrc = null;
 let adOverlay = null;
 
-const CHROMA_PALETTE = [
-  [255,   0,  85], [153,   0, 255], [  0, 136, 255], 
-  [  0, 255, 136], [204, 255,   0], [255,  85,   0]
-];
 const CHROMA_CYCLE_MS = 8000;
 let chromaClockRunning = false;
 
@@ -44,15 +40,7 @@ function startChromaClock() {
     }
 
     const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS;
-    const segCount = CHROMA_PALETTE.length;
-    const raw = t * segCount;
-    const idx = Math.floor(raw) % segCount;
-    const frac = raw - Math.floor(raw);
-    const next = (idx + 1) % segCount;
-
-    const r = Math.round(CHROMA_PALETTE[idx][0] + (CHROMA_PALETTE[next][0] - CHROMA_PALETTE[idx][0]) * frac);
-    const g = Math.round(CHROMA_PALETTE[idx][1] + (CHROMA_PALETTE[next][1] - CHROMA_PALETTE[idx][1]) * frac);
-    const b = Math.round(CHROMA_PALETTE[idx][2] + (CHROMA_PALETTE[next][2] - CHROMA_PALETTE[idx][2]) * frac);
+    const [r, g, b] = window.calculateChromaColor(t);
 
     const root = document.documentElement;
     root.style.setProperty('--chroma-color', `rgb(${r},${g},${b})`);
