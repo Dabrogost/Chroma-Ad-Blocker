@@ -4,14 +4,11 @@
 ## Quick Start
 To get Chroma Ad-Blocker running in your Chrome browser:
 
-1. Clone the repository to your local machine:
-   ```bash
-   git clone https://github.com/Dabrogost/YT-Chroma.git
-   ```
+1. Clone the repository from GitHub or download a .zip of the files.
 2. Open Chrome and navigate to `chrome://extensions/`.
 3. Enable **Developer mode** using the toggle in the top right corner.
 4. Click **Load unpacked** and select the root directory of the cloned repository.
-5. The extension will now be active on all `youtube.com` tabs.
+5. The extension will now be active on all tabs.
 
 ## Architecture Overview
 Chroma Ad-Blocker utilizes a decentralized architecture synchronized through a central storage hub. This design ensures that configuration changes and block statistics are consistently applied across various execution contexts (Service Worker, Isolated World, and Main World).
