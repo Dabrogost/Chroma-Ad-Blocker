@@ -9,6 +9,18 @@
 (function() {
   const DEBUG = false;
 
+  // Generate a unique session token to secure cross-world communication
+  const secretToken = (function() {
+    try {
+      const buffer = new Uint8Array(16);
+      crypto.getRandomValues(buffer);
+      return Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+      // Fallback for environments where crypto is not fully available
+      return Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+    }
+  })();
+
   const CONFIG = {
     blockPopUnders: true,
     blockPushNotifications: true,
@@ -66,6 +78,12 @@
     window.addEventListener('message', (event) => {
       if (event.source !== window || !event.data || event.data.source !== 'chroma-interceptor') return;
 
+      // SECURITY: Validate session token to prevent DOM-based message forgery
+      if (event.data.token !== secretToken) {
+        if (DEBUG) console.warn('[Chroma Ad-Blocker] Rejected message with invalid or missing session token.');
+        return;
+      }
+
       if (event.data.type === 'WINDOW_OPEN_ATTEMPT') {
         const now = Date.now();
         const timeSinceGesture = now - lastUserGestureTime;
@@ -109,6 +127,13 @@
       document.documentElement.dataset.chromaPopActive = 'true';
     } else {
       delete document.documentElement.dataset.chromaPopActive;
+    }
+
+    // Pass the session token to the MAIN world interceptor
+    if (CONFIG.enabled) {
+      document.documentElement.dataset.chromaToken = secretToken;
+    } else {
+      delete document.documentElement.dataset.chromaToken;
     }
   }
 
