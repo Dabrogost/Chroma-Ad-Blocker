@@ -15,12 +15,6 @@
     enabled: true
   };
 
-  const MSG = {
-    CONFIG_UPDATE: 'CONFIG_UPDATE',
-    WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
-    SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
-  };
-
   let lastUserGestureTime = 0;
   let lastUserGestureType = '';
   let popupCountInGesture = 0;
@@ -73,7 +67,7 @@
         
         const isSuspicious = timeSinceGesture > 300 || popupCountInGesture > 1;
 
-        chrome.runtime.sendMessage({
+        notifyBackground({
           type: MSG.WINDOW_OPEN_NOTIFY,
           url: event.data.url,
           isSuspicious,
@@ -81,16 +75,16 @@
           popupCount: popupCountInGesture,
           gestureType: lastUserGestureType,
           stack: event.data.stack
-        }).catch(() => {});
+        });
       }
 
       if (event.data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || event.data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
         if (DEBUG) console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${event.data.type})`);
-        chrome.runtime.sendMessage({
+        notifyBackground({
           type: MSG.SUSPICIOUS_ACTIVITY,
           activity: event.data.type,
           context: event.data.context
-        }).catch(() => {});
+        });
       }
     });
   }

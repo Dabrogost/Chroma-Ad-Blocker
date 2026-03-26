@@ -219,6 +219,11 @@ setInterval(() => {
 }, 30000);
 
 // ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
+/**
+ * NOTE: This constant must be kept in sync with messaging.js.
+ * Since background.js is a module in MV3, it doesn't share the same
+ * global scope as content scripts.
+ */
 const MSG = {
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',

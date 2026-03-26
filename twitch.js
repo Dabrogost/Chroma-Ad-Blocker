@@ -13,11 +13,6 @@ const CONFIG = {
   checkIntervalMs: 300,
 };
 
-const MSG = {
-  CONFIG_UPDATE: 'CONFIG_UPDATE',
-  STATS_UPDATE: 'STATS_UPDATE'
-};
-
 const AD_SELECTORS = [
   '[data-a-target="video-ad-label"]',
   '[data-a-target="ad-video-countdown"]',
@@ -139,12 +134,6 @@ function updateAdOverlay(video, effectiveAdShowing) {
   } catch (e) {
     console.warn('[Chroma Twitch] updateAdOverlay error:', e);
   }
-}
-
-function notifyBackground(message) {
-  try {
-    chrome.runtime.sendMessage(message).catch(() => {});
-  } catch (_) {}
 }
 
 /**
