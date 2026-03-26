@@ -38,6 +38,8 @@ const AD_SELECTORS = [
 let targetVideo = null;
 let lastAcceleratedSrc = null;
 let adOverlay = null;
+let currentAdRemainingStart = 0;
+let lastAdTimerText = null;
 
 const CHROMA_PALETTE = [
   [255,   0,  85], [153,   0, 255], [  0, 136, 255], 
@@ -61,6 +63,9 @@ function initAdOverlay(video) {
   adOverlay = document.createElement('div');
   adOverlay.id = 'prime-chroma-overlay';
   
+  const contentBox = document.createElement('div');
+  contentBox.className = 'chroma-content-box';
+  
   const spinner = document.createElement('div');
   spinner.className = 'chroma-spinner';
   
@@ -79,10 +84,12 @@ function initAdOverlay(video) {
   progressBar.className = 'chroma-progress-bar';
   progressContainer.appendChild(progressBar);
   
-  adOverlay.appendChild(spinner);
-  adOverlay.appendChild(title);
-  adOverlay.appendChild(subtitle);
-  adOverlay.appendChild(progressContainer);
+  contentBox.appendChild(spinner);
+  contentBox.appendChild(title);
+  contentBox.appendChild(subtitle);
+  contentBox.appendChild(progressContainer);
+  
+  adOverlay.appendChild(contentBox);
 
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
   if (container && !container.contains(adOverlay)) {
@@ -115,11 +122,66 @@ function updateAdOverlay(video, isAdActive) {
   }
 
   // Update progress bar
-  if (adOverlay && video && video.duration > 0) {
+  if (adOverlay && video) {
     const progressBar = adOverlay.querySelector('.chroma-progress-bar');
     if (progressBar) {
-      const percent = (video.currentTime / video.duration) * 100;
-      progressBar.style.width = `${Math.min(100, percent)}%`;
+      let percent = 0;
+      
+      // 1. Try to find native ad timer/progress
+      const adTimer = document.querySelector('.atvwebplayersdk-ad-time-remaining, .atvwebplayersdk-ad-timer, [data-testid="ad-indicator"]');
+      const nativeProgress = document.querySelector('.atvwebplayersdk-ad-progress-bar, [class*="ad-progress"]');
+      
+      if (nativeProgress) {
+        // Try to mirror native progress bar width or aria-valuenow
+        const width = nativeProgress.style.width || nativeProgress.getAttribute('aria-valuenow');
+        if (width) {
+          percent = parseFloat(width);
+        }
+      } 
+      
+      if (percent <= 0) {
+        // 2. Fallback to video elements if duration is sane (e.g. < 10 mins)
+        const duration = video.duration;
+        const currentTime = video.currentTime;
+        
+        if (duration > 0 && duration < 600 && isFinite(duration) && isFinite(currentTime)) {
+          percent = (currentTime / duration) * 100;
+          currentAdRemainingStart = 0; // Reset estimation
+        } else if (adTimer) {
+          // 3. Last resort: Try to parse timer text and estimate progress
+          const text = adTimer.textContent || '';
+          const match = text.match(/(\d+):(\d+)/);
+          if (match) {
+            const remaining = parseInt(match[1]) * 60 + parseInt(match[2]);
+            
+            // If timer changed (new ad), reset estimation
+            if (text !== lastAdTimerText) {
+              if (remaining > currentAdRemainingStart) {
+                currentAdRemainingStart = remaining;
+              }
+              lastAdTimerText = text;
+            }
+
+            if (currentAdRemainingStart > 0) {
+              // Estimate: (Total - Remaining) / Total
+              // We caps the progress at 99% until it finishes
+              const estimated = ((currentAdRemainingStart - remaining) / currentAdRemainingStart) * 100;
+              percent = Math.min(99, Math.max(5, estimated));
+            } else {
+              percent = 10; // Initial placeholder
+            }
+          } else {
+            // Indeterminate progress (pulsating)
+            percent = (Date.now() % 2000) / 20; 
+          }
+        }
+      }
+      
+      if (isFinite(percent) && percent > 0) {
+        progressBar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+      } else {
+        progressBar.style.width = '0%';
+      }
     }
   }
 }
@@ -169,19 +231,17 @@ function injectChromaCSS() {
       position: absolute !important;
       top: 0 !important; left: 0 !important; 
       width: 100% !important; height: 100% !important;
-      background: rgba(10, 10, 12, 0.9) !important;
-      backdrop-filter: blur(20px) !important;
+      background: rgba(0, 0, 0, 0.7) !important;
+      backdrop-filter: blur(12px) !important;
       z-index: 2147483647 !important;
       display: flex !important;
-      flex-direction: column !important;
       align-items: center !important;
       justify-content: center !important;
       color: white !important;
       font-family: 'Amazon Ember', Arial, sans-serif !important;
       opacity: 0 !important;
-      transition: opacity 0.4s ease !important;
+      transition: opacity 0.5s ease-out !important;
       pointer-events: none !important;
-      text-align: center !important;
       margin: 0 !important;
       padding: 0 !important;
     }
@@ -189,57 +249,71 @@ function injectChromaCSS() {
       opacity: 1 !important;
       pointer-events: all !important;
     }
+    .chroma-content-box {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      background: rgba(20, 20, 25, 0.85) !important;
+      padding: 40px !important;
+      border-radius: 20px !important;
+      border: 1px solid rgba(255, 255, 255, 0.1) !important;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.8) !important;
+      max-width: 90% !important;
+      width: 380px !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: 90% !important;
+      transform: translateY(0) !important;
+      transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      flex-grow: 0 !important;
+      flex-shrink: 0 !important;
+    }
+    #prime-chroma-overlay.active .chroma-content-box {
+      transform: translateY(-8px) !important;
+    }
     .chroma-spinner {
-      width: 60px !important; height: 60px !important;
-      min-width: 60px !important; min-height: 60px !important;
-      max-width: 60px !important; max-height: 60px !important;
-      border: 5px solid rgba(255,255,255,0.1) !important;
+      width: 50px !important; height: 50px !important;
+      border: 4px solid rgba(255,255,255,0.08) !important;
       border-top-color: var(--chroma-color, #ff0055) !important;
       border-radius: 50% !important;
-      animation: chroma-spin 1.2s linear infinite !important;
-      margin: 0 0 30px 0 !important;
-      padding: 0 !important;
+      animation: chroma-spin 1s linear infinite !important;
+      margin: 0 0 20px 0 !important;
+      flex-shrink: 0 !important;
       box-sizing: border-box !important;
       display: block !important;
-      flex-shrink: 0 !important;
     }
     @keyframes chroma-spin { 
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); } 
     }
     .chroma-title {
-      font-size: 28px !important; font-weight: 800 !important; 
-      margin: 0 0 12px 0 !important;
-      padding: 0 !important;
-      text-shadow: 0 4px 20px rgba(0,0,0,0.6) !important;
-      display: block !important;
-      line-height: normal !important;
+      font-size: 24px !important; font-weight: 800 !important; 
+      margin: 0 0 8px 0 !important;
+      color: #fff !important;
+      letter-spacing: -0.02em !important;
+      text-align: center !important;
+      line-height: 1.2 !important;
     }
     .chroma-subtitle {
-      font-size: 17px !important; color: #ddd !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      text-shadow: 0 2px 10px rgba(0,0,0,0.4) !important;
-      display: block !important;
-      line-height: normal !important;
+      font-size: 15px !important; color: rgba(255, 255, 255, 0.6) !important;
+      margin: 0 0 20px 0 !important;
+      text-align: center !important;
+      line-height: 1.4 !important;
     }
-    
     .chroma-progress-container {
-      width: 70% !important;
-      height: 6px !important;
+      width: 100% !important;
+      height: 4px !important;
       background: rgba(255,255,255,0.1) !important;
-      border-radius: 10px !important;
-      margin-top: 30px !important;
+      border-radius: 2px !important;
       overflow: hidden !important;
       display: block !important;
-      max-width: 400px !important;
     }
     .chroma-progress-bar {
       width: 0%;
       height: 100% !important;
       background: var(--chroma-color, #ff0055) !important;
-      transition: width 0.3s linear, background 0.3s linear !important;
-      border-radius: 10px !important;
+      transition: width 0.1s linear, background 0.3s linear !important;
     }
     
     /* Highlight Prime's skip buttons with high specificity */
@@ -264,8 +338,11 @@ function isAdShowing() {
   if (adElement && (adElement.offsetParent !== null || adElement.getClientRects().length > 0)) return true;
 
   // 2. Text-based detection in common overlay containers
-  const overlayContainers = document.querySelectorAll('.atvwebplayersdk-overlays-container, .webPlayerUIContainer, .atvwebplayersdk-player-container');
+  const overlayContainers = document.querySelectorAll('.atvwebplayersdk-overlays-container, .webPlayerUIContainer');
   for (const container of overlayContainers) {
+    // Avoid detecting our own overlay text
+    if (container.id === 'prime-chroma-overlay' || container.querySelector('#prime-chroma-overlay')) continue;
+
     const text = container.textContent || '';
     if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
       // Check if it's visible
@@ -293,54 +370,60 @@ function findActiveVideo() {
 }
 
 function handlePrimeAdAcceleration() {
-  if (!CONFIG.enabled || !CONFIG.acceleration) return;
+  try {
+    if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
-  const rawAdShowing = isAdShowing();
-  const video = findActiveVideo();
-  
-  if (!video) return;
-  targetVideo = video;
-
-  if (typeof window._primeAdSessionActive === 'undefined') window._primeAdSessionActive = false;
-
-  if (rawAdShowing) {
-    if (!window._primeAdSessionActive) {
-      window._primeAdSessionActive = true;
-      document.body.classList.add('chroma-prime-session');
-      startChromaClock();
-    }
+    const rawAdShowing = isAdShowing();
+    const video = findActiveVideo();
     
-    // Apply acceleration
-    if (video.playbackRate !== CONFIG.accelerationSpeed) {
-      video.playbackRate = CONFIG.accelerationSpeed;
-      video.muted = true;
-      video.volume = 0;
+    if (!video) return;
+    targetVideo = video;
 
-      // Increment stats
-      const currentSrc = video.src || 'prime-ad';
-      if (lastAcceleratedSrc !== currentSrc) {
-        notifyBackground({ type: MSG.STATS_UPDATE, stats: { accelerated: 1 } });
-        lastAcceleratedSrc = currentSrc;
+    if (typeof window._primeAdSessionActive === 'undefined') window._primeAdSessionActive = false;
+
+    if (rawAdShowing) {
+      if (!window._primeAdSessionActive) {
+        window._primeAdSessionActive = true;
+        document.body.classList.add('chroma-prime-session');
+        startChromaClock();
+      }
+      
+      // Apply acceleration
+      if (video.playbackRate !== CONFIG.accelerationSpeed) {
+        video.playbackRate = CONFIG.accelerationSpeed;
+        video.muted = true;
+        video.volume = 0;
+
+        // Increment stats
+        const currentSrc = video.src || 'prime-ad';
+        if (lastAcceleratedSrc !== currentSrc) {
+          notifyBackground({ type: MSG.STATS_UPDATE, stats: { accelerated: 1 } });
+          lastAcceleratedSrc = currentSrc;
+        }
+      }
+      
+      // Auto-click skip button if it appears
+      const skipButton = document.querySelector('.adSkipButton, .skippable, [class*="skip-button"], .atvwebplayersdk-ad-skip-button');
+      if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) {
+        skipButton.click();
+      }
+    } else {
+      // Restore normal playback
+      if (window._primeAdSessionActive) {
+        video.playbackRate = 1;
+        video.muted = false;
+        window._primeAdSessionActive = false;
+        document.body.classList.remove('chroma-prime-session');
+        lastAcceleratedSrc = null;
+        currentAdRemainingStart = 0;
+        lastAdTimerText = null;
       }
     }
-    
-    // Auto-click skip button if it appears
-    const skipButton = document.querySelector('.adSkipButton, .skippable, [class*="skip-button"], .atvwebplayersdk-ad-skip-button');
-    if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) {
-      skipButton.click();
-    }
-  } else {
-    // Restore normal playback
-    if (window._primeAdSessionActive) {
-      video.playbackRate = 1;
-      video.muted = false;
-      window._primeAdSessionActive = false;
-      document.body.classList.remove('chroma-prime-session');
-      lastAcceleratedSrc = null;
-    }
-  }
 
-  updateAdOverlay(video, window._primeAdSessionActive);
+    updateAdOverlay(video, window._primeAdSessionActive);
+  } catch (err) {
+    console.error('[Chroma] Error in Prime loop:', err);
+  }
 }
 
 // ─── POLLING & INITIALIZATION ────────────────────────────────────────────────
