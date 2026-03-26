@@ -1,5 +1,5 @@
 # Chroma Ad-Blocker
-**Description:** Chroma Ad-Blocker is a powerful, low-resource extension designed for the modern web. Built specifically for Manifest V3, it employs a sophisticated three-layer strategy to ensure a clean, uninterrupted browsing experience, especially on YouTube.
+**Description:** Chroma Ad-Blocker is a powerful, low-resource extension designed for the modern web. Built specifically for Manifest V3, it employs a sophisticated three-layer strategy to ensure a clean, uninterrupted browsing experience.
 
 Layer 1: Ad Acceleration The ultimate defense against server-side ad detection. Instead of simply blocking the video stream—which can trigger "Ad blockers are not allowed" warnings—Chroma detects ads and accelerates them to 16x speed. This fulfills impression requirements in milliseconds, effectively "skipping" the ad invisibly.
 
