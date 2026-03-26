@@ -190,6 +190,62 @@ function validateConfig(inputConfig) {
   return validatedConfig;
 }
 
+
+function validateDynamicRule(rule) {
+  const validatedRule = {};
+
+  if (!rule || typeof rule !== 'object') {
+    return null;
+  }
+
+  if (typeof rule.priority === 'number') {
+    validatedRule.priority = rule.priority;
+  }
+
+  if (rule.action && typeof rule.action === 'object') {
+    const type = rule.action.type;
+    if (type === 'block' || type === 'allow') {
+      validatedRule.action = { type };
+    }
+  }
+
+  if (rule.condition && typeof rule.condition === 'object') {
+    const condition = {};
+    if (typeof rule.condition.urlFilter === 'string') {
+      condition.urlFilter = rule.condition.urlFilter;
+    }
+    if (typeof rule.condition.regexFilter === 'string') {
+      condition.regexFilter = rule.condition.regexFilter;
+    }
+
+    const arrayProps = [
+      'initiatorDomains',
+      'excludedInitiatorDomains',
+      'requestDomains',
+      'excludedRequestDomains',
+      'resourceTypes',
+      'excludedResourceTypes',
+      'requestMethods',
+      'excludedRequestMethods'
+    ];
+
+    for (const prop of arrayProps) {
+      if (Array.isArray(rule.condition[prop])) {
+        condition[prop] = rule.condition[prop].filter(item => typeof item === 'string');
+      }
+    }
+
+    validatedRule.condition = condition;
+  }
+
+  // Basic validation for mandatory rule fields
+  if (!validatedRule.action || !validatedRule.condition || Object.keys(validatedRule.condition).length === 0) {
+    return null;
+  }
+
+  return validatedRule;
+}
+
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // SECURITY: Restrict sensitive message types to internal extension pages (e.g. popup)
@@ -329,59 +385,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         ruleCounter = 5000000;
       }
 
-      const validatedRule = {};
+      const validatedRule = validateDynamicRule(msg.rule);
 
-      if (msg.rule && typeof msg.rule === 'object') {
-        if (typeof msg.rule.priority === 'number') {
-          validatedRule.priority = msg.rule.priority;
-        }
-
-        if (msg.rule.action && typeof msg.rule.action === 'object') {
-          const type = msg.rule.action.type;
-          if (type === 'block' || type === 'allow') {
-            validatedRule.action = { type };
-          }
-        }
-
-        if (msg.rule.condition && typeof msg.rule.condition === 'object') {
-          const condition = {};
-          if (typeof msg.rule.condition.urlFilter === 'string') {
-            condition.urlFilter = msg.rule.condition.urlFilter;
-          }
-          if (typeof msg.rule.condition.regexFilter === 'string') {
-            condition.regexFilter = msg.rule.condition.regexFilter;
-          }
-          if (Array.isArray(msg.rule.condition.initiatorDomains)) {
-            condition.initiatorDomains = msg.rule.condition.initiatorDomains.filter(d => typeof d === 'string');
-          }
-          if (Array.isArray(msg.rule.condition.excludedInitiatorDomains)) {
-            condition.excludedInitiatorDomains = msg.rule.condition.excludedInitiatorDomains.filter(d => typeof d === 'string');
-          }
-          if (Array.isArray(msg.rule.condition.requestDomains)) {
-            condition.requestDomains = msg.rule.condition.requestDomains.filter(d => typeof d === 'string');
-          }
-          if (Array.isArray(msg.rule.condition.excludedRequestDomains)) {
-            condition.excludedRequestDomains = msg.rule.condition.excludedRequestDomains.filter(d => typeof d === 'string');
-          }
-          if (Array.isArray(msg.rule.condition.resourceTypes)) {
-            condition.resourceTypes = msg.rule.condition.resourceTypes.filter(r => typeof r === 'string');
-          }
-          if (Array.isArray(msg.rule.condition.excludedResourceTypes)) {
-            condition.excludedResourceTypes = msg.rule.condition.excludedResourceTypes.filter(r => typeof r === 'string');
-          }
-          if (Array.isArray(msg.rule.condition.requestMethods)) {
-            condition.requestMethods = msg.rule.condition.requestMethods.filter(m => typeof m === 'string');
-          }
-          if (Array.isArray(msg.rule.condition.excludedRequestMethods)) {
-            condition.excludedRequestMethods = msg.rule.condition.excludedRequestMethods.filter(m => typeof m === 'string');
-          }
-
-          validatedRule.condition = condition;
-        }
-      }
-
-      // Basic validation for mandatory rule fields
-      if (!validatedRule.action || !validatedRule.condition || Object.keys(validatedRule.condition).length === 0) {
+      if (!validatedRule) {
         return sendResponse({ ok: false, error: 'Invalid rule structure' });
       }
 
@@ -540,4 +546,5 @@ if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   globalThis.updateDNRState = updateDNRState;
   globalThis.syncDynamicRules = syncDynamicRules;
   globalThis.harvestNetworkStats = harvestNetworkStats;
+  globalThis.validateDynamicRule = validateDynamicRule;
 }
