@@ -185,23 +185,33 @@
   function suppressAdblockWarnings(nodes) {
     if (!CONFIG.enabled || !CONFIG.suppressWarnings) return;
 
-    const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes || document];
     let removedAny = false;
 
-    for (const node of nodesToProcess) {
-      if (!node) continue;
-
-      if (typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
-        node.remove();
+    if (!nodes) {
+      // Fallback for full document checks (e.g. init, navigation)
+      const els = document.querySelectorAll(WARNING_SELECTOR_COMBINED);
+      if (els.length > 0) {
         removedAny = true;
-        continue;
+        els.forEach(el => el.remove());
       }
+    } else {
+      // Fast path for MutationObserver: process only added nodes
+      const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes];
+      for (const node of nodesToProcess) {
+        if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
 
-      if (typeof node.querySelectorAll === 'function') {
-        const els = node.querySelectorAll(WARNING_SELECTOR_COMBINED);
-        if (els.length > 0) {
+        if (typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
+          node.remove();
           removedAny = true;
-          els.forEach(el => el.remove());
+          continue;
+        }
+
+        if (node.firstElementChild && typeof node.querySelectorAll === 'function') {
+          const els = node.querySelectorAll(WARNING_SELECTOR_COMBINED);
+          if (els.length > 0) {
+            removedAny = true;
+            els.forEach(el => el.remove());
+          }
         }
       }
     }
@@ -241,8 +251,10 @@
           const nodesToProcess = Array.from(pendingNodes);
           pendingNodes.clear();
 
-          suppressAdblockWarnings(nodesToProcess);
-          removeLeftoverAdContainers(nodesToProcess);
+          if (nodesToProcess.length > 0) {
+            suppressAdblockWarnings(nodesToProcess);
+            removeLeftoverAdContainers(nodesToProcess);
+          }
           pendingFrame = false;
         });
       }
