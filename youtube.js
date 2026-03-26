@@ -11,22 +11,10 @@
     checkIntervalMs: 300,
   };
 
-  const MSG = {
-    CONFIG_UPDATE: 'CONFIG_UPDATE',
-    STATS_UPDATE: 'STATS_UPDATE',
-  };
-
   // ─── STATE ────────────────────────────────────────────────────────────────────
   let stats = { accelerated: 0 };
   let targetAdVideo = null;
   let adOverlay = null;
-
-  // ─── BACKGROUND COMMUNICATION ─────────────────────────────────────────────────
-  function notifyBackground(message) {
-    try {
-      chrome.runtime.sendMessage(message).catch(() => {});
-    } catch (_) {}
-  }
 
   // ─── AD ACCELERATION ─────────────────────────────────────────────────────────
   function initAdOverlay() {

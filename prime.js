@@ -13,11 +13,6 @@ const CONFIG = {
   checkIntervalMs: 400,
 };
 
-const MSG = {
-  CONFIG_UPDATE: 'CONFIG_UPDATE',
-  STATS_UPDATE: 'STATS_UPDATE'
-};
-
 const AD_SELECTORS = [
   '.atvwebplayersdk-ad-container',
   '.atvwebplayersdk-ad-time-remaining',
@@ -47,12 +42,6 @@ const CHROMA_PALETTE = [
 ];
 const CHROMA_CYCLE_MS = 8000;
 let chromaClockRunning = false;
-
-function notifyBackground(message) {
-  try {
-    chrome.runtime.sendMessage(message).catch(() => {});
-  } catch (_) {}
-}
 
 /**
  * Initializes the visual overlay for Prime Video.

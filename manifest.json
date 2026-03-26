@@ -30,6 +30,7 @@
         "*://*.youtube.com/*"
       ],
       "js": [
+        "messaging.js",
         "content.js",
         "youtube.js"
       ],
@@ -42,6 +43,7 @@
         "*://*.twitch.tv/*"
       ],
       "js": [
+        "messaging.js",
         "twitch.js"
       ],
       "run_at": "document_start",
@@ -72,6 +74,7 @@
         "*://*.primevideo.com/*"
       ],
       "js": [
+        "messaging.js",
         "prime.js"
       ],
       "run_at": "document_start",
@@ -83,6 +86,7 @@
         "<all_urls>"
       ],
       "js": [
+        "messaging.js",
         "protection.js"
       ],
       "run_at": "document_start",

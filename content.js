@@ -17,14 +17,6 @@
     checkIntervalMs: 300,
   };
 
-  const MSG = {
-    CONFIG_UPDATE: 'CONFIG_UPDATE',
-    STATS_UPDATE: 'STATS_UPDATE',
-    STATS_GET: 'STATS_GET',
-    WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
-    SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
-  };
-
   const isYouTube = window.location.hostname.includes('youtube.com');
 
   // ─── STATE ────────────────────────────────────────────────────────────────────
