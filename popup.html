@@ -6,35 +6,37 @@
   <title>Chroma Ad-Blocker</title>
   <style>
     :root {
-      --bg: #0f0f0f;
-      --surface: #1a1a1a;
-      --border: #2e2e2e;
-      --accent: #ff0055;
-      --accent-dim: #cc0044;
-      --text: #f1f1f1;
-      --text-dim: #aaaaaa;
-      --green: #2ecc71;
-      --radius: 8px;
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --accent: #a855f7;
+      --accent-dim: #7e22ce;
+      --text: #fafafa;
+      --text-dim: #a1a1aa;
+      --green: #10b981;
+      --radius: 10px;
+      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      width: 300px;
+      width: 320px;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 13px;
+      -webkit-font-smoothing: antialiased;
     }
 
     /* ── HEADER ── */
     header {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 14px 16px;
+      gap: 12px;
+      padding: 16px;
       border-bottom: 1px solid var(--border);
-      background: var(--surface);
+      background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
     }
 
     .logo {
@@ -56,14 +58,14 @@
       width: 8px; height: 8px;
       border-radius: 50%;
       background: var(--green);
-      box-shadow: 0 0 6px var(--green);
+      box-shadow: 0 0 8px var(--green);
       flex-shrink: 0;
-      transition: background 0.3s, box-shadow 0.3s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .status-dot.off {
       background: var(--accent);
-      box-shadow: 0 0 6px var(--accent);
+      box-shadow: 0 0 8px var(--accent);
     }
 
     /* ── STATS ── */
@@ -73,6 +75,7 @@
       gap: 1px;
       background: var(--border);
       border-bottom: 1px solid var(--border);
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
     }
 
     .stat-card {
@@ -82,11 +85,12 @@
     }
 
     .stat-value {
-      font-size: 22px;
-      font-weight: 700;
+      font-size: 24px;
+      font-weight: 800;
       color: var(--accent);
       line-height: 1;
-      margin-bottom: 3px;
+      margin-bottom: 4px;
+      text-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
     }
 
     .stat-label {
@@ -115,7 +119,13 @@
       transition: background 0.15s;
     }
 
-    .toggle-row:hover { background: var(--surface); }
+    .toggle-row:hover { 
+      background: rgba(168, 85, 247, 0.04);
+    }
+    
+    .toggle-row:active {
+      background: rgba(168, 85, 247, 0.08);
+    }
 
     .toggle-info { flex: 1; }
     .toggle-info .name { font-size: 13px; font-weight: 500; }
@@ -133,9 +143,9 @@
     .slider {
       position: absolute;
       inset: 0;
-      background: #444;
+      background: #3f3f46;
       border-radius: 20px;
-      transition: background 0.2s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       cursor: pointer;
     }
 
@@ -146,10 +156,14 @@
       left: 3px; bottom: 3px;
       background: white;
       border-radius: 50%;
-      transition: transform 0.2s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
     }
 
-    input:checked + .slider { background: var(--accent); }
+    input:checked + .slider { 
+      background: var(--accent); 
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+    }
     input:checked + .slider::before { transform: translateX(16px); }
 
     #toggleEnabled + .slider::before { width: 10px; height: 10px; left: 3px; bottom: 3px; }
@@ -182,7 +196,11 @@
       transition: color 0.2s, border-color 0.2s;
     }
 
-    .reset-btn:hover { color: var(--text); border-color: #555; }
+    .reset-btn:hover { 
+      color: var(--text); 
+      border-color: var(--accent);
+      background: rgba(168, 85, 247, 0.05);
+    }
 
     .version { font-size: 11px; color: var(--text-dim); }
 
@@ -192,9 +210,10 @@
       padding: 1px 6px;
       border-radius: 4px;
       font-weight: 600;
-      background: rgba(46, 204, 113, 0.15);
+      background: rgba(16, 185, 129, 0.1);
       color: var(--green);
       margin-left: 6px;
+      border: 1px solid rgba(16, 185, 129, 0.2);
     }
   </style>
 </head>
