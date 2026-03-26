@@ -71,10 +71,18 @@ function initAdOverlay(video) {
   const subtitle = document.createElement('div');
   subtitle.className = 'chroma-subtitle';
   subtitle.textContent = 'Accelerating Prime Ad...';
+
+  const progressContainer = document.createElement('div');
+  progressContainer.className = 'chroma-progress-container';
+  
+  const progressBar = document.createElement('div');
+  progressBar.className = 'chroma-progress-bar';
+  progressContainer.appendChild(progressBar);
   
   adOverlay.appendChild(spinner);
   adOverlay.appendChild(title);
   adOverlay.appendChild(subtitle);
+  adOverlay.appendChild(progressContainer);
 
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
   if (container && !container.contains(adOverlay)) {
@@ -104,6 +112,15 @@ function updateAdOverlay(video, isAdActive) {
   
   if (adOverlay && !adOverlay.classList.contains('active')) {
     adOverlay.classList.add('active');
+  }
+
+  // Update progress bar
+  if (adOverlay && video && video.duration > 0) {
+    const progressBar = adOverlay.querySelector('.chroma-progress-bar');
+    if (progressBar) {
+      const percent = (video.currentTime / video.duration) * 100;
+      progressBar.style.width = `${Math.min(100, percent)}%`;
+    }
   }
 }
 
@@ -149,50 +166,90 @@ function injectChromaCSS() {
   style.id = 'prime-chroma-styles';
   style.textContent = `
     #prime-chroma-overlay {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(10, 10, 12, 0.85);
-      backdrop-filter: blur(15px);
-      z-index: 2147483647;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-family: 'Amazon Ember', Arial, sans-serif;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-      pointer-events: none;
+      position: absolute !important;
+      top: 0 !important; left: 0 !important; 
+      width: 100% !important; height: 100% !important;
+      background: rgba(10, 10, 12, 0.9) !important;
+      backdrop-filter: blur(20px) !important;
+      z-index: 2147483647 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      color: white !important;
+      font-family: 'Amazon Ember', Arial, sans-serif !important;
+      opacity: 0 !important;
+      transition: opacity 0.4s ease !important;
+      pointer-events: none !important;
+      text-align: center !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
     #prime-chroma-overlay.active {
-      opacity: 1;
-      pointer-events: all;
+      opacity: 1 !important;
+      pointer-events: all !important;
     }
     .chroma-spinner {
-      width: 50px; height: 50px;
-      border: 4px solid rgba(255,255,255,0.1);
-      border-top-color: var(--chroma-color, #ff0055);
-      border-radius: 50%;
-      animation: chroma-spin 1s linear infinite;
-      margin-bottom: 25px;
+      width: 60px !important; height: 60px !important;
+      min-width: 60px !important; min-height: 60px !important;
+      max-width: 60px !important; max-height: 60px !important;
+      border: 5px solid rgba(255,255,255,0.1) !important;
+      border-top-color: var(--chroma-color, #ff0055) !important;
+      border-radius: 50% !important;
+      animation: chroma-spin 1.2s linear infinite !important;
+      margin: 0 0 30px 0 !important;
+      padding: 0 !important;
+      box-sizing: border-box !important;
+      display: block !important;
+      flex-shrink: 0 !important;
     }
-    @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
+    @keyframes chroma-spin { 
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); } 
+    }
     .chroma-title {
-      font-size: 26px; font-weight: 700; margin-bottom: 10px;
-      text-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      font-size: 28px !important; font-weight: 800 !important; 
+      margin: 0 0 12px 0 !important;
+      padding: 0 !important;
+      text-shadow: 0 4px 20px rgba(0,0,0,0.6) !important;
+      display: block !important;
+      line-height: normal !important;
     }
     .chroma-subtitle {
-      font-size: 16px; color: #ccc;
-      text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      font-size: 17px !important; color: #ddd !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.4) !important;
+      display: block !important;
+      line-height: normal !important;
     }
     
-    /* Highlight Prime's skip buttons */
+    .chroma-progress-container {
+      width: 70% !important;
+      height: 6px !important;
+      background: rgba(255,255,255,0.1) !important;
+      border-radius: 10px !important;
+      margin-top: 30px !important;
+      overflow: hidden !important;
+      display: block !important;
+      max-width: 400px !important;
+    }
+    .chroma-progress-bar {
+      width: 0%;
+      height: 100% !important;
+      background: var(--chroma-color, #ff0055) !important;
+      transition: width 0.3s linear, background 0.3s linear !important;
+      border-radius: 10px !important;
+    }
+    
+    /* Highlight Prime's skip buttons with high specificity */
     body.chroma-prime-session .atvwebplayersdk-ad-skip-button,
     body.chroma-prime-session .adSkipButton,
-    body.chroma-prime-session [class*="skip-button"] {
+    body.chroma-prime-session [class*="skip-button"],
+    body.chroma-prime-session [class*="ad-skip"] {
       border: 2px solid var(--chroma-color, #ff0055) !important;
-      box-shadow: 0 0 20px var(--chroma-color-alpha, rgba(255,0,85,0.4)) !important;
-      transition: border-color 0.2s, box-shadow 0.2s !important;
+      box-shadow: 0 0 25px var(--chroma-color-alpha, rgba(255,0,85,0.5)) !important;
+      transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
     }
   `;
   (document.head || document.documentElement).appendChild(style);
