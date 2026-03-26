@@ -73,6 +73,9 @@ function initAdOverlay() {
   adOverlay = document.createElement('div');
   adOverlay.id = 'twitch-chroma-overlay';
   
+  const contentBox = document.createElement('div');
+  contentBox.className = 'chroma-content-box';
+  
   const spinner = document.createElement('div');
   spinner.className = 'chroma-spinner';
   
@@ -83,17 +86,19 @@ function initAdOverlay() {
   const subtitle = document.createElement('div');
   subtitle.className = 'chroma-subtitle';
   subtitle.textContent = 'Accelerating Ad...';
-  
-  adOverlay.appendChild(spinner);
-  adOverlay.appendChild(title);
-  adOverlay.appendChild(subtitle);
 
   const progressContainer = document.createElement('div');
   progressContainer.className = 'chroma-progress-container';
   const progressBar = document.createElement('div');
   progressBar.className = 'chroma-progress-bar';
   progressContainer.appendChild(progressBar);
-  adOverlay.appendChild(progressContainer);
+  
+  contentBox.appendChild(spinner);
+  contentBox.appendChild(title);
+  contentBox.appendChild(subtitle);
+  contentBox.appendChild(progressContainer);
+  
+  adOverlay.appendChild(contentBox);
 
   const playerContainer = document.querySelector('.video-player__container') || document.querySelector('.highwind-video-player');
   if (playerContainer && !playerContainer.contains(adOverlay)) {
@@ -231,57 +236,94 @@ function injectChromaCSS() {
   style.id = 'twitch-chroma-acceleration';
   style.textContent = `
     #twitch-chroma-overlay {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(15, 15, 18, 0.85);
-      backdrop-filter: blur(12px);
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      color: white;
-      font-family: Inter, Roboto, Arial, sans-serif;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-      pointer-events: none;
+      position: absolute !important;
+      top: 0 !important; left: 0 !important; 
+      width: 100% !important; height: 100% !important;
+      background: rgba(0, 0, 0, 0.7) !important;
+      backdrop-filter: blur(12px) !important;
+      z-index: 2147483647 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      color: white !important;
+      font-family: Inter, Roboto, Arial, sans-serif !important;
+      opacity: 0 !important;
+      transition: opacity 0.5s ease-out !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
     #twitch-chroma-overlay.active {
-      opacity: 1;
-      pointer-events: all;
+      opacity: 1 !important;
+      pointer-events: all !important;
+    }
+    .chroma-content-box {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      background: rgba(20, 20, 25, 0.85) !important;
+      padding: 40px !important;
+      border-radius: 20px !important;
+      border: 1px solid rgba(255, 255, 255, 0.1) !important;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.8) !important;
+      max-width: 90% !important;
+      width: 380px !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: 90% !important;
+      transform: translateY(0) !important;
+      transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      flex-grow: 0 !important;
+      flex-shrink: 0 !important;
+    }
+    #twitch-chroma-overlay.active .chroma-content-box {
+      transform: translateY(-8px) !important;
     }
     .chroma-spinner {
-      width: 50px; height: 50px;
-      border: 4px solid rgba(255,255,255,0.1);
-      border-top-color: var(--chroma-color, #ff0055);
-      border-radius: 50%;
-      animation: chroma-spin 1s linear infinite;
-      margin-bottom: 24px;
-      box-shadow: 0 0 15px var(--chroma-color-alpha, rgba(255,0,85,0.4));
+      width: 50px !important; height: 50px !important;
+      border: 4px solid rgba(255,255,255,0.08) !important;
+      border-top-color: var(--chroma-color, #ff0055) !important;
+      border-radius: 50% !important;
+      animation: chroma-spin 1s linear infinite !important;
+      margin: 0 0 20px 0 !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box !important;
+      display: block !important;
     }
-    @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
-    
+    @keyframes chroma-spin { 
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); } 
+    }
     .chroma-title {
-      font-size: 28px; font-weight: 700; margin-bottom: 8px;
-      letter-spacing: -0.5px;
-      text-shadow: 0 2px 15px rgba(0,0,0,0.5);
+      font-size: 24px !important; font-weight: 800 !important; 
+      margin: 0 0 8px 0 !important;
+      color: #fff !important;
+      letter-spacing: -0.02em !important;
+      text-align: center !important;
+      line-height: 1.2 !important;
+      text-shadow: 0 2px 15px rgba(0,0,0,0.5) !important;
     }
     .chroma-subtitle {
-      font-size: 16px; color: #adadb8;
-      margin-bottom: 24px;
-      text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+      font-size: 15px !important; color: rgba(255, 255, 255, 0.6) !important;
+      margin: 0 0 20px 0 !important;
+      text-align: center !important;
+      line-height: 1.4 !important;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.5) !important;
     }
-
     .chroma-progress-container {
-      width: 60%; height: 4px;
-      background: rgba(255,255,255,0.1);
-      border-radius: 2px; overflow: hidden;
-      margin-top: 10px;
+      width: 100% !important;
+      height: 4px !important;
+      background: rgba(255,255,255,0.1) !important;
+      border-radius: 2px !important;
+      overflow: hidden !important;
+      display: block !important;
     }
     .chroma-progress-bar {
-      height: 100%; width: 0%;
-      background: var(--chroma-color, #ff0055);
-      transition: width 0.2s linear;
+      width: 0%;
+      height: 100% !important;
+      background: var(--chroma-color, #ff0055) !important;
+      transition: width 0.1s linear, background 0.3s linear !important;
     }
 
     /* Target Twitch ad labels to highlight them */
