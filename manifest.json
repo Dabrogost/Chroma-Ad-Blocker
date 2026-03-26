@@ -12,7 +12,14 @@
   ],
   "host_permissions": [
     "*://*.youtube.com/*",
-    "<all_urls>"
+    "*://*.doubleclick.net/*",
+    "*://*.googleads.g.doubleclick.net/*",
+    "*://*.googlesyndication.com/*",
+    "*://*.google-analytics.com/*",
+    "*://*.googleapis.com/*",
+    "*://*.adservice.google.com/*",
+    "*://*.ytimg.com/*",
+    "*://*.ggpht.com/*"
   ],
   "background": {
     "service_worker": "background.js",
