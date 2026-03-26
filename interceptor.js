@@ -9,6 +9,11 @@
 
   const DEBUG = false;
 
+  // Retrieve the unique session token from the content script
+  const token = document.documentElement.dataset.chromaToken;
+  // Immediately remove it from the DOM to minimize exposure
+  delete document.documentElement.dataset.chromaToken;
+
   const originalOpen = window.open;
   const originalFocus = window.focus;
   const originalBlur = window.blur;
@@ -31,6 +36,7 @@
       // Notify the isolated content script about the window.open call
       window.postMessage({
         source: 'chroma-interceptor',
+        token: token,
         type: 'WINDOW_OPEN_ATTEMPT',
         url: String(url || 'about:blank'),
         name: String(name || ''),
@@ -50,6 +56,7 @@
     if (checkPopUnderBlocking() && Date.now() - lastOpenTime < 1000) {
       window.postMessage({
         source: 'chroma-interceptor',
+        token: token,
         type: 'SUSPICIOUS_FOCUS_ATTEMPT',
         context: 'window.focus() called shortly after window.open()'
       }, '*');
@@ -61,6 +68,7 @@
     if (checkPopUnderBlocking() && Date.now() - lastOpenTime < 1000) {
       window.postMessage({
         source: 'chroma-interceptor',
+        token: token,
         type: 'SUSPICIOUS_BLUR_ATTEMPT',
         context: 'window.blur() called shortly after window.open()'
       }, '*');
@@ -79,7 +87,7 @@
     window.Notification.requestPermission = function(callback) {
       if (checkPushBlocking()) {
         if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked notification permission request.');
-        window.postMessage({ source: 'chroma-interceptor', type: 'NOTIFICATION_ATTEMPT' }, '*');
+        window.postMessage({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' }, '*');
         
         const denied = 'denied';
         if (typeof callback === 'function') {
@@ -114,7 +122,7 @@
       constructor(title, options) {
         if (checkPushBlocking()) {
           if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked Notification construction:', title);
-          window.postMessage({ source: 'chroma-interceptor', type: 'NOTIFICATION_ATTEMPT' }, '*');
+          window.postMessage({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' }, '*');
           
           // Return a mock object that inherits from ShadowNotification.prototype
           // to ensure (obj instanceof Notification) remains true, without calling super()
@@ -162,7 +170,7 @@
     ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
       if (checkPushBlocking()) {
         if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked ServiceWorker showNotification:', title);
-        window.postMessage({ source: 'chroma-interceptor', type: 'NOTIFICATION_ATTEMPT' }, '*');
+        window.postMessage({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' }, '*');
         return Promise.resolve();
       }
       return originalShowNotification.apply(this, arguments);
