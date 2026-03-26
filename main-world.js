@@ -1,5 +1,5 @@
 /**
- * YT Chroma - Main World Interceptor
+ * Chroma Ad-Blocker - Main World Interceptor
  * Runs in the page's execution context (MAIN world).
  * Overrides window.open to detect and notify about popup attempts.
  */
@@ -78,7 +78,7 @@
     // Shadow Notification.requestPermission
     window.Notification.requestPermission = function(callback) {
       if (checkPushBlocking()) {
-        console.warn('[YT Chroma] Blocked notification permission request.');
+        console.warn('[Chroma Ad-Blocker] Blocked notification permission request.');
         window.postMessage({ source: 'yt-chroma-main-world', type: 'NOTIFICATION_ATTEMPT' }, '*');
         
         const denied = 'denied';
@@ -113,7 +113,7 @@
     const OriginalNotification = window.Notification;
     const ShadowNotification = function(title, options) {
       if (checkPushBlocking()) {
-        console.warn('[YT Chroma] Blocked Notification construction:', title);
+        console.warn('[Chroma Ad-Blocker] Blocked Notification construction:', title);
         window.postMessage({ source: 'yt-chroma-main-world', type: 'NOTIFICATION_ATTEMPT' }, '*');
         
         // Return a dummy object that mimics a Notification
@@ -156,7 +156,7 @@
     const originalShowNotification = ServiceWorkerRegistration.prototype.showNotification;
     ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
       if (checkPushBlocking()) {
-        console.warn('[YT Chroma] Blocked ServiceWorker showNotification:', title);
+        console.warn('[Chroma Ad-Blocker] Blocked ServiceWorker showNotification:', title);
         window.postMessage({ source: 'yt-chroma-main-world', type: 'NOTIFICATION_ATTEMPT' }, '*');
         return Promise.resolve();
       }
@@ -190,7 +190,7 @@
     if (typeof originalSubscribe === 'function') {
       PushManager.prototype.subscribe = function() {
         if (checkPushBlocking()) {
-          console.warn('[YT Chroma] Blocked PushManager subscription attempt.');
+          console.warn('[Chroma Ad-Blocker] Blocked PushManager subscription attempt.');
           return Promise.reject(new DOMException('Registration failed - push service not available', 'AbortError'));
         }
         return originalSubscribe.apply(this, arguments);
@@ -198,5 +198,5 @@
     }
   }
 
-  console.log('[YT Chroma] Main world interceptor active.');
+  console.log('[Chroma Ad-Blocker] Main world interceptor active.');
 })();

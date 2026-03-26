@@ -12,7 +12,7 @@ const MSG = {
 
 async function sendBg(msg) {
   return chrome.runtime.sendMessage(msg).catch(err => {
-    console.warn('[YT Chroma] Messaging error (Worker waking up?):', err);
+    console.warn('[Chroma Ad-Blocker] Messaging error (Worker waking up?):', err);
     return null; 
   });
 }

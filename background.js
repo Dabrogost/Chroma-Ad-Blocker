@@ -1,5 +1,5 @@
 /**
- * YT Chroma - Service Worker (MV3 Background)
+ * Chroma Ad-Blocker - Service Worker (MV3 Background)
  * Handles: dynamic rule updates, stat tracking, config persistence
  *
  * MV3 NOTE: This service worker is ephemeral — it shuts down after
@@ -30,7 +30,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       ruleCounter: 5000000,
       lastHarvestTime: Date.now(),
     });
-    console.log('[YT Chroma] Installed. Default config applied.');
+    console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
 
   // Load any saved dynamic rules on startup
@@ -72,7 +72,7 @@ async function updateDNRState(isEnabled) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
     }
   } catch (err) {
-    console.error('[YT Chroma] Error updating DNR state:', err);
+    console.error('[Chroma Ad-Blocker] Error updating DNR state:', err);
   }
 }
 
@@ -95,9 +95,9 @@ async function syncDynamicRules() {
       addRules: rules,
     });
 
-    console.log(`[YT Chroma] Synced ${rules.length} dynamic rules.`);
+    console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules.`);
   } catch (err) {
-    console.error('[YT Chroma] Dynamic rule sync failed:', err);
+    console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }
 }
 
@@ -245,7 +245,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   ];
 
   if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
-    console.error(`[YT Chroma] Blocked unauthorized ${msg.type} attempt from tab ${_sender.tab.id}`);
+    console.error(`[Chroma Ad-Blocker] Blocked unauthorized ${msg.type} attempt from tab ${_sender.tab.id}`);
     return false;
   }
 
@@ -285,7 +285,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         popunderResolvers.delete(tabId);
       }
 
-      console.log(`[YT Chroma] Window open notification from tab ${tabId}:`, msg);
+      console.log(`[Chroma Ad-Blocker] Window open notification from tab ${tabId}:`, msg);
     }
     return false;
   }
@@ -300,7 +300,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       // RETROACTIVE CLOSING: If any tabs were just opened from this opener, close them now
       if (existing.createdTabIds && existing.createdTabIds.length > 0) {
-        console.log(`[YT Chroma] Successfully blocked ${existing.createdTabIds.length} pop-under(s) (Retroactive: ${msg.activity})`);
+        console.log(`[Chroma Ad-Blocker] Successfully blocked ${existing.createdTabIds.length} pop-under(s) (Retroactive: ${msg.activity})`);
         existing.createdTabIds.forEach(id => {
           chrome.tabs.remove(id).catch(() => {});
         });
@@ -314,7 +314,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         existing.createdTabIds = [];
       }
       
-      console.log(`[YT Chroma] Suspicious activity notification from tab ${tabId}:`, msg);
+      console.log(`[Chroma Ad-Blocker] Suspicious activity notification from tab ${tabId}:`, msg);
     }
     return false;
   }
@@ -515,7 +515,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
                       stackLower.includes('click');
 
   if ((request.isSuspicious || request.popupCount > 1 || isAdScript) && timeSinceNotify < 3000) {
-    console.warn(`[YT Chroma] Blocking suspicious pop-under: ${tab.pendingUrl || tab.url || 'unknown'}`);
+    console.warn(`[Chroma Ad-Blocker] Blocking suspicious pop-under: ${tab.pendingUrl || tab.url || 'unknown'}`);
     
     // Close the tab
     chrome.tabs.remove(tab.id).catch(() => {});
@@ -572,10 +572,10 @@ async function harvestNetworkStats() {
         stats, 
         lastHarvestTime: latestMatchTime 
       });
-      console.log(`[YT Chroma] Harvested ${newMatches.length} network blocks. Total: ${stats.networkBlocked}`);
+      console.log(`[Chroma Ad-Blocker] Harvested ${newMatches.length} network blocks. Total: ${stats.networkBlocked}`);
     }
   } catch (err) {
-    console.warn('[YT Chroma] Error harvesting network stats:', err);
+    console.warn('[Chroma Ad-Blocker] Error harvesting network stats:', err);
   }
 }
 

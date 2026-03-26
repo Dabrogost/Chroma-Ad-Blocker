@@ -1,5 +1,5 @@
 /**
- * YT Chroma - Content Script
+ * Chroma Ad-Blocker - Content Script
  * Strategy 1: Ad-Acceleration (16x speed + mute) — detection-resistant
  * Strategy 2: Cosmetic Filtering — hides ad containers and sponsored slots
  * Strategy 3: Anti-Adblock Warning Suppression — removes overlay dialogs
@@ -558,9 +558,9 @@ function cleanupVideoState() {
     delete targetAdVideo.dataset.ytChromaVolume;
 
     targetAdVideo = null;
-    console.log('[YT Chroma] Video state cleaned and reference released.');
+    console.log('[Chroma Ad-Blocker] Video state cleaned and reference released.');
   } catch (err) {
-    console.warn('[YT Chroma] Error during video cleanup:', err);
+    console.warn('[Chroma Ad-Blocker] Error during video cleanup:', err);
   }
 }
 
@@ -607,7 +607,7 @@ function handleAdAcceleration() {
   
   if (rawAdShowing) {
     if (!window.chromaAdSessionActive) {
-      console.log('[YT Chroma] Ad Session Detected');
+      console.log('[Chroma Ad-Blocker] Ad Session Detected');
       window.chromaAdSkipped = false; // Reset skip state for new session
       startFastAdWatcher(); // Start higher frequency loop during ads
       startChromaClock(); // Restart the color clock loop
@@ -850,7 +850,7 @@ function startPolling() {
 setInterval(() => {
   if (!isYouTube || !CONFIG.enabled || !CONFIG.acceleration) return;
   if (!pollingInterval) {
-    console.log("[YT Chroma] Watchdog restarting polling interval.");
+    console.log("[Chroma Ad-Blocker] Watchdog restarting polling interval.");
     startPolling();
   }
 }, 5000);
@@ -887,7 +887,7 @@ function initPopUnderProtection() {
       const isOverlay = rect.width > window.innerWidth * 0.9 && rect.height > window.innerHeight * 0.9;
       
       if (isTiny || isOverlay) {
-        console.warn('[YT Chroma] Suspicious link click detected:', link.href);
+        console.warn('[Chroma Ad-Blocker] Suspicious link click detected:', link.href);
       }
     }
   }, { capture: true, passive: true });
@@ -922,7 +922,7 @@ function initPopUnderProtection() {
     }
 
     if (event.data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || event.data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
-      console.log(`[YT Chroma] Blocked suspicious pop-under attempt (${event.data.type})`);
+      console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${event.data.type})`);
       notifyBackground({
         type: MSG.SUSPICIOUS_ACTIVITY,
         activity: event.data.type,
@@ -1063,7 +1063,7 @@ function initSkipButtonListener() {
         }
       }
     } catch (err) {
-      console.warn('[YT Chroma] Error in skip button listener:', err);
+      console.warn('[Chroma Ad-Blocker] Error in skip button listener:', err);
     }
   }, true);
 }
@@ -1161,7 +1161,7 @@ function init() {
       startExtensionServices();
     }
   }).catch(err => {
-    console.warn('[YT Chroma] Init config fetch failed, using defaults.', err);
+    console.warn('[Chroma Ad-Blocker] Init config fetch failed, using defaults.', err);
     startExtensionServices(); // Fallback
   });
 }
