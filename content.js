@@ -7,6 +7,8 @@
 
 'use strict';
 
+const DEBUG = false;
+
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 const CONFIG = {
   accelerationSpeed: 16,
@@ -555,9 +557,9 @@ function cleanupVideoState() {
     delete targetAdVideo.dataset.ytChromaVolume;
 
     targetAdVideo = null;
-    console.log('[Chroma Ad-Blocker] Video state cleaned and reference released.');
+    if (DEBUG) console.log('[Chroma Ad-Blocker] Video state cleaned and reference released.');
   } catch (err) {
-    console.warn('[Chroma Ad-Blocker] Error during video cleanup:', err);
+    if (DEBUG) console.warn('[Chroma Ad-Blocker] Error during video cleanup:', err);
   }
 }
 
@@ -604,7 +606,7 @@ function handleAdAcceleration() {
   
   if (rawAdShowing) {
     if (!window.chromaAdSessionActive) {
-      console.log('[Chroma Ad-Blocker] Ad Session Detected');
+      if (DEBUG) console.log('[Chroma Ad-Blocker] Ad Session Detected');
       window.chromaAdSkipped = false; // Reset skip state for new session
       startFastAdWatcher(); // Start higher frequency loop during ads
       startChromaClock(); // Restart the color clock loop
@@ -847,7 +849,7 @@ function startPolling() {
 setInterval(() => {
   if (!isYouTube || !CONFIG.enabled || !CONFIG.acceleration) return;
   if (!pollingInterval) {
-    console.log("[Chroma Ad-Blocker] Watchdog restarting polling interval.");
+    if (DEBUG) console.log("[Chroma Ad-Blocker] Watchdog restarting polling interval.");
     startPolling();
   }
 }, 5000);
@@ -968,7 +970,7 @@ function initSkipButtonListener() {
         }
       }
     } catch (err) {
-      console.warn('[Chroma Ad-Blocker] Error in skip button listener:', err);
+      if (DEBUG) console.warn('[Chroma Ad-Blocker] Error in skip button listener:', err);
     }
   }, true);
 }
@@ -1066,7 +1068,7 @@ function init() {
       startExtensionServices();
     }
   }).catch(err => {
-    console.warn('[Chroma Ad-Blocker] Init config fetch failed, using defaults.', err);
+    if (DEBUG) console.warn('[Chroma Ad-Blocker] Init config fetch failed, using defaults.', err);
     startExtensionServices(); // Fallback
   });
 }

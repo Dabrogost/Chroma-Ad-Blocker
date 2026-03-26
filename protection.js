@@ -7,6 +7,8 @@
 'use strict';
 
 (function() {
+  const DEBUG = false;
+
   const CONFIG = {
     blockPopUnders: true,
     blockPushNotifications: true,
@@ -51,7 +53,7 @@
         const isOverlay = rect.width > window.innerWidth * 0.9 && rect.height > window.innerHeight * 0.9;
         
         if (isTiny || isOverlay) {
-          console.warn('[Chroma Ad-Blocker] Suspicious link click detected:', link.href);
+          if (DEBUG) console.warn('[Chroma Ad-Blocker] Suspicious link click detected:', link.href);
         }
       }
     }, { capture: true, passive: true });
@@ -83,7 +85,7 @@
       }
 
       if (event.data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || event.data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
-        console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${event.data.type})`);
+        if (DEBUG) console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${event.data.type})`);
         chrome.runtime.sendMessage({
           type: MSG.SUSPICIOUS_ACTIVITY,
           activity: event.data.type,
@@ -136,5 +138,5 @@
   initGestureTracking();
   initInterceptorListener();
 
-  console.log('[Chroma Ad-Blocker] Protection script active.');
+  if (DEBUG) console.log('[Chroma Ad-Blocker] Protection script active.');
 })();

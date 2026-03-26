@@ -6,7 +6,6 @@
   "permissions": [
     "declarativeNetRequest",
     "declarativeNetRequestFeedback",
-    "scripting",
     "storage",
     "tabs"
   ],
@@ -36,17 +35,7 @@
       "run_at": "document_start",
       "all_frames": true
     },
-    {
-      "matches": [
-        "*://*.youtube.com/*"
-      ],
-      "js": [
-        "main-world.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
+
     {
       "matches": [
         "<all_urls>"

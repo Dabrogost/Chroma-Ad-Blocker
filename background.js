@@ -8,6 +8,8 @@
 
 'use strict';
 
+const DEBUG = false;
+
 // ─── INSTALL / STARTUP ────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') {
@@ -30,7 +32,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       ruleCounter: 5000000,
       lastHarvestTime: Date.now(),
     });
-    console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
+    if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
 
   // Load any saved dynamic rules on startup
@@ -72,7 +74,7 @@ async function updateDNRState(isEnabled) {
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
     }
   } catch (err) {
-    console.error('[Chroma Ad-Blocker] Error updating DNR state:', err);
+    if (DEBUG) console.error('[Chroma Ad-Blocker] Error updating DNR state:', err);
   }
 }
 
@@ -95,9 +97,9 @@ async function syncDynamicRules() {
       addRules: rules,
     });
 
-    console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules.`);
+    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules.`);
   } catch (err) {
-    console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
+    if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }
 }
 
@@ -245,13 +247,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   ];
 
   if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
-    console.error(`[Chroma Ad-Blocker] Blocked unauthorized ${msg.type} attempt from tab ${_sender.tab.id}`);
     return false;
   }
 
   if (msg.type === MSG.STATS_UPDATE) {
     // Accumulate stats from content scripts
-    chrome.storage.local.get('stats').then(({ stats = {} }) => {
+    chrome.storage.local.get(['config', 'stats']).then(({ config: storedConfig, stats = {} }) => {
+      if (storedConfig && storedConfig.enabled === false) return;
+      
       const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
       // We no longer track 'blocked' (cosmetic) in the main stats row per user request
       
@@ -285,37 +288,39 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         popunderResolvers.delete(tabId);
       }
 
-      console.log(`[Chroma Ad-Blocker] Window open notification from tab ${tabId}:`, msg);
+      if (DEBUG) console.log(`[Chroma Ad-Blocker] Window open notification from tab ${tabId}:`, msg);
     }
     return false;
   }
 
   if (msg.type === MSG.SUSPICIOUS_ACTIVITY) {
-    const tabId = _sender.tab?.id;
-    if (tabId) {
-      const existing = popunderRequests.get(tabId) || { time: Date.now(), createdTabIds: [] };
-      existing.isSuspicious = true;
-      existing.activity = msg.activity;
-      popunderRequests.set(tabId, existing);
+    chrome.storage.local.get(['config', 'stats']).then(({ config: storedConfig, stats = {} }) => {
+      if (storedConfig && storedConfig.enabled === false) return;
 
-      // RETROACTIVE CLOSING: If any tabs were just opened from this opener, close them now
-      if (existing.createdTabIds && existing.createdTabIds.length > 0) {
-        console.log(`[Chroma Ad-Blocker] Successfully blocked ${existing.createdTabIds.length} pop-under(s) (Retroactive: ${msg.activity})`);
-        existing.createdTabIds.forEach(id => {
-          chrome.tabs.remove(id).catch(() => {});
-        });
-        
-        // Update stats (Network/Pop-under blocks)
-        chrome.storage.local.get('stats').then(({ stats = {} }) => {
+      const tabId = _sender.tab?.id;
+      if (tabId) {
+        const existing = popunderRequests.get(tabId) || { time: Date.now(), createdTabIds: [] };
+        existing.isSuspicious = true;
+        existing.activity = msg.activity;
+        popunderRequests.set(tabId, existing);
+
+        // RETROACTIVE CLOSING: If any tabs were just opened from this opener, close them now
+        if (existing.createdTabIds && existing.createdTabIds.length > 0) {
+          if (DEBUG) console.log(`[Chroma Ad-Blocker] Successfully blocked ${existing.createdTabIds.length} pop-under(s) (Retroactive: ${msg.activity})`);
+          existing.createdTabIds.forEach(id => {
+            chrome.tabs.remove(id).catch(() => {});
+          });
+          
+          // Update stats (Network/Pop-under blocks)
           stats.networkBlocked = (stats.networkBlocked || 0) + existing.createdTabIds.length;
           chrome.storage.local.set({ stats });
-        });
+          
+          existing.createdTabIds = [];
+        }
         
-        existing.createdTabIds = [];
+        if (DEBUG) console.log(`[Chroma Ad-Blocker] Suspicious activity notification from tab ${tabId}:`, msg);
       }
-      
-      console.log(`[Chroma Ad-Blocker] Suspicious activity notification from tab ${tabId}:`, msg);
-    }
+    });
     return false;
   }
 
@@ -468,7 +473,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // ─── TAB MONITORING (Pop-Under Blocker) ───────────────────────────────────────
 chrome.tabs.onCreated.addListener(async (tab) => {
-  if (!config?.enabled || !config?.blockPopUnders) return;
+  const { config: storedConfig } = await chrome.storage.local.get('config');
+  if (storedConfig && (storedConfig.enabled === false || storedConfig.blockPopUnders === false)) return;
 
   // Give a small grace period for the WINDOW_OPEN_NOTIFY to arrive from content script
   // since postMessage -> runtime.sendMessage is slightly slower than tab creation.
@@ -515,7 +521,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
                       stackLower.includes('click');
 
   if ((request.isSuspicious || request.popupCount > 1 || isAdScript) && timeSinceNotify < 3000) {
-    console.warn(`[Chroma Ad-Blocker] Blocking suspicious pop-under: ${tab.pendingUrl || tab.url || 'unknown'}`);
+    if (DEBUG) console.warn(`[Chroma Ad-Blocker] Blocking suspicious pop-under: ${tab.pendingUrl || tab.url || 'unknown'}`);
     
     // Close the tab
     chrome.tabs.remove(tab.id).catch(() => {});
@@ -572,10 +578,10 @@ async function harvestNetworkStats() {
         stats, 
         lastHarvestTime: latestMatchTime 
       });
-      console.log(`[Chroma Ad-Blocker] Harvested ${newMatches.length} network blocks. Total: ${stats.networkBlocked}`);
+      if (DEBUG) console.log(`[Chroma Ad-Blocker] Harvested ${newMatches.length} network blocks. Total: ${stats.networkBlocked}`);
     }
   } catch (err) {
-    console.warn('[Chroma Ad-Blocker] Error harvesting network stats:', err);
+    if (DEBUG) console.warn('[Chroma Ad-Blocker] Error harvesting network stats:', err);
   }
 }
 

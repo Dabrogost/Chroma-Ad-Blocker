@@ -7,6 +7,8 @@
 (function() {
   'use strict';
 
+  const DEBUG = false;
+
   const originalOpen = window.open;
   const originalFocus = window.focus;
   const originalBlur = window.blur;
@@ -76,7 +78,7 @@
     
     window.Notification.requestPermission = function(callback) {
       if (checkPushBlocking()) {
-        console.warn('[Chroma Ad-Blocker] Blocked notification permission request.');
+        if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked notification permission request.');
         window.postMessage({ source: 'chroma-interceptor', type: 'NOTIFICATION_ATTEMPT' }, '*');
         
         const denied = 'denied';
@@ -106,41 +108,51 @@
     }
 
     const OriginalNotification = window.Notification;
-    const ShadowNotification = function(title, options) {
-      if (checkPushBlocking()) {
-        console.warn('[Chroma Ad-Blocker] Blocked Notification construction:', title);
-        window.postMessage({ source: 'chroma-interceptor', type: 'NOTIFICATION_ATTEMPT' }, '*');
-        
-        this.title = title;
-        this.body = options?.body || '';
-        this.icon = options?.icon || '';
-        this.tag = options?.tag || '';
-        this.onclick = null;
-        this.onshow = null;
-        this.onerror = null;
-        this.onclose = null;
-        this.close = () => {};
-        
-        setTimeout(() => {
-          if (typeof this.onshow === 'function') {
-            try { this.onshow(); } catch (e) {}
-          }
-        }, 50);
-        
-        return this;
+    
+    // Create a true class to ensure instanceof checks pass correctly
+    class ShadowNotification extends OriginalNotification {
+      constructor(title, options) {
+        if (checkPushBlocking()) {
+          if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked Notification construction:', title);
+          window.postMessage({ source: 'chroma-interceptor', type: 'NOTIFICATION_ATTEMPT' }, '*');
+          
+          // Return a mock object that inherits from ShadowNotification.prototype
+          // to ensure (obj instanceof Notification) remains true, without calling super()
+          // which would trigger an actual notification or permission request.
+          const instance = Object.create(ShadowNotification.prototype);
+          
+          instance.title = title;
+          instance.body = options?.body || '';
+          instance.icon = options?.icon || '';
+          instance.tag = options?.tag || '';
+          instance.onclick = null;
+          instance.onshow = null;
+          instance.onerror = null;
+          instance.onclose = null;
+          instance.close = () => {};
+          
+          setTimeout(() => {
+            if (typeof instance.onshow === 'function') {
+              try { instance.onshow(); } catch (e) {}
+            }
+          }, 50);
+          
+          return instance;
+        }
+        return new OriginalNotification(title, options);
       }
-      return new OriginalNotification(title, options);
-    };
 
-    ShadowNotification.requestPermission = window.Notification.requestPermission;
-    Object.defineProperty(ShadowNotification, 'permission', {
-      get: function() {
+      static get permission() {
         if (checkPushBlocking()) return 'denied';
         return OriginalNotification.permission;
-      },
-      configurable: true
-    });
-    ShadowNotification.prototype = OriginalNotification.prototype;
+      }
+
+      static requestPermission(...args) {
+        // This is handled by the earlier override, but keeping it here for completeness
+        return OriginalNotification.requestPermission(...args);
+      }
+    }
+
     window.Notification = ShadowNotification;
   }
 
@@ -149,7 +161,7 @@
     const originalShowNotification = ServiceWorkerRegistration.prototype.showNotification;
     ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
       if (checkPushBlocking()) {
-        console.warn('[Chroma Ad-Blocker] Blocked ServiceWorker showNotification:', title);
+        if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked ServiceWorker showNotification:', title);
         window.postMessage({ source: 'chroma-interceptor', type: 'NOTIFICATION_ATTEMPT' }, '*');
         return Promise.resolve();
       }
@@ -181,7 +193,7 @@
     if (typeof originalSubscribe === 'function') {
       PushManager.prototype.subscribe = function() {
         if (checkPushBlocking()) {
-          console.warn('[Chroma Ad-Blocker] Blocked PushManager subscription attempt.');
+          if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked PushManager subscription attempt.');
           return Promise.reject(new DOMException('Registration failed - push service not available', 'AbortError'));
         }
         return originalSubscribe.apply(this, arguments);
@@ -189,5 +201,5 @@
     }
   }
 
-  console.log('[Chroma Ad-Blocker] Global interceptor active.');
+  if (DEBUG) console.log('[Chroma Ad-Blocker] Global interceptor active.');
 })();
