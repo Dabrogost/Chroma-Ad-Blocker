@@ -11,6 +11,7 @@
     "tabs"
   ],
   "host_permissions": [
+    "<all_urls>",
     "*://*.youtube.com/*",
     "*://*.doubleclick.net/*",
     "*://*.googleads.g.doubleclick.net/*",
@@ -41,6 +42,27 @@
       ],
       "js": [
         "main-world.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "protection.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "interceptor.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",

@@ -35,9 +35,6 @@ const isYouTube = window.location.hostname.includes('youtube.com');
 
 // ─── STATE ────────────────────────────────────────────────────────────────────
 let stats = { accelerated: 0 };
-let lastUserGestureTime = 0;
-let lastUserGestureType = '';
-let popupCountInGesture = 0;
 let observer = null;
 
 // ─── COSMETIC SELECTORS ──────────────────────────────────────────────────────
@@ -860,99 +857,7 @@ setInterval(() => {
  * Monitor user gestures (clicks) to distinguish between legitimate
  * user-initiated popups and automated pop-under ads.
  */
-function initPopUnderProtection() {
-  // Track last click/interaction time with broader event coverage
-  const updateGesture = (e) => {
-    const now = Date.now();
-    // If this is a new gesture (more than 300ms since last), reset popup count
-    if (now - lastUserGestureTime > 300) {
-      popupCountInGesture = 0;
-    }
-    lastUserGestureTime = now;
-    lastUserGestureType = e.type;
-  };
-  
-  ['mousedown', 'mouseup', 'keydown', 'touchstart', 'touchend', 'click'].forEach(evt => {
-    document.addEventListener(evt, updateGesture, { capture: true, passive: true });
-    window.addEventListener(evt, updateGesture, { capture: true, passive: true });
-  });
-
-  // Intercept link clicks that might open new windows
-  document.addEventListener('click', (e) => {
-    const link = e.target.closest('a');
-    if (link && (link.target === '_blank' || e.ctrlKey || e.shiftKey || e.metaKey)) {
-      // If it's a suspicious link (e.g., hidden, overlay-like), we could flag it
-      const rect = link.getBoundingClientRect();
-      const isTiny = rect.width < 5 || rect.height < 5;
-      const isOverlay = rect.width > window.innerWidth * 0.9 && rect.height > window.innerHeight * 0.9;
-      
-      if (isTiny || isOverlay) {
-        console.warn('[Chroma Ad-Blocker] Suspicious link click detected:', link.href);
-      }
-    }
-  }, { capture: true, passive: true });
-
-  // Listen for messages from the MAIN world (main-world.js)
-  window.addEventListener('message', (event) => {
-    if (event.source !== window || !event.data || event.data.source !== 'yt-chroma-main-world') return;
-
-    if (event.data.type === 'WINDOW_OPEN_ATTEMPT') {
-      const now = Date.now();
-      const timeSinceGesture = now - lastUserGestureTime;
-      
-      // A popup is suspicious if:
-      // 1. It's too long after a gesture (> 300ms)
-      // 2. It's the 2nd or further popup in a single gesture
-      // 3. The gesture was a mousemove or something non-specific (though we only track specific ones)
-      
-      popupCountInGesture++;
-      
-      const isSuspicious = timeSinceGesture > 300 || popupCountInGesture > 1;
-
-      // Notify background script about the attempt
-      notifyBackground({
-        type: MSG.WINDOW_OPEN_NOTIFY,
-        url: event.data.url,
-        isSuspicious,
-        timeSinceGesture,
-        popupCount: popupCountInGesture,
-        gestureType: lastUserGestureType,
-        stack: event.data.stack
-      });
-    }
-
-    if (event.data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || event.data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
-      console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${event.data.type})`);
-      notifyBackground({
-        type: MSG.SUSPICIOUS_ACTIVITY,
-        activity: event.data.type,
-        context: event.data.context
-      });
-    }
-
-    if (event.data.type === 'NOTIFICATION_ATTEMPT') {
-      // Handle notification attempts (stat tracking) - No longer globally tracked
-    }
-  });
-}
-
-/**
- * Signals the main-world.js script whether push notification blocking
- * should be active.
- */
-function signalMainWorld() {
-  if (CONFIG.enabled && CONFIG.blockPushNotifications) {
-    document.documentElement.dataset.ytChromaPushActive = 'true';
-  } else {
-    delete document.documentElement.dataset.ytChromaPushActive;
-  }
-
-  if (CONFIG.enabled && CONFIG.blockPopUnders) {
-    document.documentElement.dataset.ytChromaPopActive = 'true';
-  } else {
-    delete document.documentElement.dataset.ytChromaPopActive;
-  }
-}
+// Removed redundancy: Pop-under and Push-notification logic moved to protection.js
 
 // ─── BACKGROUND COMMUNICATION ─────────────────────────────────────────────────
 function notifyBackground(message) {
@@ -1011,7 +916,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     updateShortsState();
     updateMerchState();
     updateOffersState();
-    signalMainWorld();
+    // signalMainWorld() removed - handled by protection.js
   }
   if (msg.type === MSG.STATS_GET) {
     sendResponse(stats);
@@ -1027,7 +932,7 @@ function startExtensionServices() {
   startObserver();
   startPolling();
   suppressAdblockWarnings();
-  signalMainWorld();
+  // signalMainWorld() removed - handled by protection.js
   startChromaClock();
   initSkipButtonListener();
 }
@@ -1142,7 +1047,7 @@ function init() {
   injectShortsCSS();
   injectMerchCSS();
   injectOffersCSS();
-  initPopUnderProtection();
+  // initPopUnderProtection() removed - handled by protection.js
 
   // 2. Fetch the true saved config before starting the heavy observers
   chrome.storage.local.get('config').then(({ config: savedConfig }) => {

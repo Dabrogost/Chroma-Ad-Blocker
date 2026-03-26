@@ -18,37 +18,45 @@ graph TD
     subgraph "Extension UI & Core"
         POP["popup.js<br/>(Extension UI)"]
         BS["background.js<br/>(Service Worker)"]
-        CS["content.js<br/>(Isolated World)"]
+        CS_YT["content.js<br/>(YouTube-specific)"]
+        CS_GEN["protection.js<br/>(Global Protection)"]
     end
 
     STORAGE[("chrome.storage.local<br/>(Central Hub)")]
 
     subgraph "Execution & Network Contexts"
         DNR["Declarative Net Request<br/>(Network Rules)"]
-        MW["main-world.js<br/>(Main World Interceptor)"]
-        DOM["YouTube DOM<br/>(Video Element)"]
+        MW_YT["main-world.js<br/>(YouTube Interceptor)"]
+        MW_GEN["interceptor.js<br/>(Global Interceptor)"]
+        DOM_YT["YouTube DOM<br/>(Video Element)"]
+        DOM_GEN["General Web DOM<br/>(Other Sites)"]
     end
 
     %% Storage Interactions
     POP <-->|"User Config & Stats"| STORAGE
     BS <-->|"Config & Stats"| STORAGE
-    CS <-->|"Config & State"| STORAGE
+    CS_YT <-->|"Config & State"| STORAGE
+    CS_GEN <-->|"Config & State"| STORAGE
 
     %% Logic & Control Flow
     BS -- "Enables/Disables" --> DNR
-    CS -- "Configures" --> MW
-    CS -- "Accelerates/Hides" --> DOM
+    CS_YT -- "Configures" --> MW_YT
+    CS_YT -- "Accelerates/Hides" --> DOM_YT
+    CS_GEN -- "Configures" --> MW_GEN
     
-    DNR -.->|"Blocks Requests"| DOM
-    MW -.->|"Intercepts APIs"| DOM
+    DNR -.->|"Blocks Requests"| DOM_YT
+    DNR -.->|"Blocks Requests"| DOM_GEN
+    MW_YT -.->|"Intercepts APIs"| DOM_YT
+    MW_GEN -.->|"Intercepts APIs"| DOM_GEN
 ```
 
 ### System Layers
 1. **The Data Hub (`chrome.storage.local`)**: The single source of truth for the system. It persists user preferences (acceleration speed, toggle states) and aggregates block statistics, allowing the ephemeral Service Worker to maintain state across restarts.
-2. **Layer 1: Ad Acceleration (`content.js`)**: Monitors for the `.ad-showing` class and accelerates playback speed (up to 16x) to fulfill impression requirements invisibly.
-3. **Layer 2: Network Blocking (`rules/` & `background.js`)**: Leverages `chrome.declarativeNetRequest` to intercept and block ad-related network requests. The Service Worker dynamically enables or disables these rulesets based on the central hub's configuration.
-4. **Layer 3: Cosmetic & Warning Suppression (`content.js`)**: Injects CSS and utilizes a `MutationObserver` to hide ad slots and remove YouTube's anti-adblock modals (`ytd-enforcement-message-view-model`).
-5. **Main World Interceptor (`main-world.js`)**: Shadowing sensitive APIs like `window.open` at the page level to prevent pop-under and notification-based advertisements.
+2. **Layer 1: Ad Acceleration (`content.js`)**: Monitors for the `.ad-showing` class on YouTube and accelerates playback speed (up to 16x) to fulfill impression requirements invisibly.
+3. **Layer 2: Network Blocking (`rules/` & `background.js`)**: Leverages `chrome.declarativeNetRequest` to intercept and block ad-related network requests globally. The Service Worker dynamically enables or disables these rulesets based on the central hub's configuration.
+4. **Layer 3: Cosmetic & Warning Suppression (`content.js`)**: Injects CSS and utilizes a `MutationObserver` on YouTube to hide ad slots and remove anti-adblock modals (`ytd-enforcement-message-view-model`).
+5. **Universal Pop-under Protection (`protection.js` & `interceptor.js`)**: Generic scripts injected into all websites via `<all_urls>` to shadow sensitive APIs like `window.open` and `Notification.requestPermission`, providing proactive pop-under and push-ad blocking everywhere.
+6. **YouTube Interceptor (`main-world.js`)**: Placeholder for any YouTube-specific main-world API shadowing.
 
 ## Key Concepts
 - **Ad Acceleration**: The primary fallback mechanism. Instead of blocking the video stream (which YouTube's server-side logic can detect), the extension speeds up the ad so it completes in milliseconds.
