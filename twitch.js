@@ -1,6 +1,6 @@
 /**
  * Chroma Ad-Blocker - Twitch Accelerator
- * Strategy: Ad-Acceleration (16x speed + mute)
+ * Strategy: Ad-Acceleration (8x speed + mute)
  * Specifically tuned for Twitch.tv DOM structure.
  */
 
@@ -321,8 +321,12 @@ function isAdShowing() {
   const playerContainer = document.querySelector('.video-player__container, .highwind-video-player');
   if (playerContainer && (playerContainer.offsetParent !== null || playerContainer.getClientRects().length > 0)) {
     const overlay = document.getElementById('twitch-chroma-overlay');
-    const originalVisibility = overlay ? overlay.style.visibility : null;
-    if (overlay) overlay.style.visibility = 'hidden';
+    // FIX: Must use display:none (not visibility:hidden).
+    // innerText still reads visibility:hidden content in most browsers, so the overlay's
+    // own text ("Accelerating Twitch Ad...") was matching the "Ad" regex and keeping
+    // isAdShowing() returning true indefinitely after the real ad ended.
+    // An inline !important overrides the stylesheet's `display: flex !important`.
+    if (overlay) overlay.style.setProperty('display', 'none', 'important');
     
     try {
       const text = playerContainer.innerText || '';
@@ -330,7 +334,7 @@ function isAdShowing() {
         return true;
       }
     } finally {
-      if (overlay) overlay.style.visibility = originalVisibility || 'visible';
+      if (overlay) overlay.style.removeProperty('display');
     }
   }
 
