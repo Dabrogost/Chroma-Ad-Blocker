@@ -7,3 +7,4 @@ tests/
 .DS_Store
 Thumbs.db
 *.local
+descriptions.txt
