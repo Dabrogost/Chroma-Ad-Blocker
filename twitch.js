@@ -1,6 +1,6 @@
 /**
  * Chroma Ad-Blocker - Twitch Accelerator
- * Strategy: Ad-Acceleration (16x speed + mute)
+ * Strategy: Ad-Acceleration (10x speed + mute)
  * Specifically tuned for Twitch.tv DOM structure.
  */
 
