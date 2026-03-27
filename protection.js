@@ -201,7 +201,7 @@
       window.postMessage({
         action: '__CHROMA_PORT_TRANSFER__',
         token: secretToken,
-        selectors: selectors // Pass selectors to MAIN world
+        selectors: { ...selectors, ...CONFIG } // Pass initial config too
       }, '*', [channel.port2]);
 
       if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
@@ -273,6 +273,14 @@
       CONFIG.blockPopUnders = msg.config.blockPopUnders !== false;
       CONFIG.blockPushNotifications = msg.config.blockPushNotifications !== false;
       signalInterceptor();
+
+      // Forward to MAIN world if port is active
+      if (isolatedPort) {
+        isolatedPort.postMessage({
+          type: 'BACKGROUND_RESPONSE',
+          data: { type: 'CONFIG_UPDATE', config: msg.config }
+        });
+      }
     }
   });
 

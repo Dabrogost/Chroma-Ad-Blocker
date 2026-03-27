@@ -52,8 +52,8 @@ graph TD
     end
 
     subgraph SP ["Site-Specific Accelerators"]
-        CS_YT["youtube.js<br/>(Shadow DOM)"]:::isolated
-        CS_PV["prime.js<br/>(Shadow DOM)"]:::isolated
+        CS_YT["yt_handler.js<br/>(Shadow DOM)"]:::isolated
+        CS_PV["prm_handler.js<br/>(Shadow DOM)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
@@ -89,7 +89,7 @@ graph TD
 
 ## System Layers
 
-### Layer 1: Ad Acceleration (`youtube.js`, `prime.js`)
+### Layer 1: Ad Acceleration (`yt_handler.js`, `prm_handler.js`)
 The ultimate defense against server-side ad detection. Instead of blocking the video stream (which triggers warnings), Chroma accelerates ads to 16x speed and mutes them.
 
 ### Layer 2: Network-Level Blocking (`rules/`, `background.js`)

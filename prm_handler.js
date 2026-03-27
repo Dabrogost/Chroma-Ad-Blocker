@@ -464,7 +464,10 @@ function startMutationObserver() {
     handlePrimeAdAcceleration();
   });
   
-  adMutationObserver.observe(document.body, {
+  // Observe document.documentElement instead of document.body to avoid null errors at document_start
+  const target = document.body || document.documentElement || document;
+  
+  adMutationObserver.observe(target, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -527,7 +530,13 @@ function handlePrimeAdAcceleration() {
         // Increment stats
         const currentSrc = video.src || 'prime-ad';
         if (lastAcceleratedSrc !== currentSrc) {
-          notifyBackground({ type: MSG.STATS_UPDATE, stats: { accelerated: 1 } });
+          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
+            window.__CHROMA_INTERNAL__.send({
+              token: window.__CHROMA_INTERNAL__.token,
+              action: 'STATS_UPDATE',
+              payload: { type: 'accelerated' }
+            });
+          }
           lastAcceleratedSrc = currentSrc;
         }
       }
@@ -573,32 +582,28 @@ function resetSession() {
 }
 
 function init() {
-  // CRITICAL: Start basic services BEFORE storage retrieval to catch the first ad
+  // 1. Check for global internal config first (faster, passed via handshake)
+  if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+    Object.assign(CONFIG, window.__CHROMA_INTERNAL__.config);
+  }
+
+  // Handle SPA transitions
+  window.addEventListener('popstate', resetSession);
+  window.addEventListener('hashchange', resetSession);
+  document.addEventListener('atv-navigation-complete', resetSession);
+
+  // CRITICAL: Start basic services
   injectChromaCSS();
   startPolling();
   startMutationObserver();
-
-  chrome.storage.local.get('config').then(({ config: savedConfig }) => {
-    if (savedConfig) {
-      Object.assign(CONFIG, savedConfig);
-    }
-    
-    // Handle SPA transitions
-    window.addEventListener('popstate', resetSession);
-    window.addEventListener('hashchange', resetSession);
-    document.addEventListener('atv-navigation-complete', resetSession);
-  }).catch(() => {
-    // Fallback if storage access fails
-    window.addEventListener('popstate', resetSession);
-    window.addEventListener('hashchange', resetSession);
-    document.addEventListener('atv-navigation-complete', resetSession);
-  });
 }
 
-// Listen for config updates
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type === MSG.CONFIG_UPDATE) {
-    Object.assign(CONFIG, msg.config);
+// Listen for config updates via custom event from handshake logic
+document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+  if (e.detail) {
+    Object.assign(CONFIG, e.detail);
+    if (DEBUG) console.log('[Chroma] prm_handler updated config:', CONFIG);
+    
     if (!CONFIG.enabled || !CONFIG.acceleration) {
       if (pollingInterval) {
         clearInterval(pollingInterval);

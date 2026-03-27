@@ -340,6 +340,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case 'CLOSE_TAB':
         handleCloseTab(_sender, sendResponse);
         break;
+      case 'STATS_UPDATE':
+        // ACCUMULATE STATS FROM MAIN WORLD
+        chrome.storage.local.get(['stats']).then(({ stats = {} }) => {
+          if (msg.payload && msg.payload.type === 'accelerated') {
+            stats.accelerated = (stats.accelerated || 0) + 1;
+            chrome.storage.local.set({ stats });
+            if (DEBUG) console.log('[Chroma] Stat incremented via secure port:', stats.accelerated);
+          }
+        });
+        sendResponse({ ok: true });
+        break;
       default:
         if (DEBUG) console.warn('[Chroma] Unknown action requested:', msg.action);
         sendResponse({ ok: false, error: 'Unknown action' });
@@ -367,13 +378,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === MSG.STATS_UPDATE) {
-    // Accumulate stats from content scripts
+    // Only accept from extension context (popup) or if specifically allowed
+    // Note: Main world handlers now use the 'chroma_interceptor' block above.
+    if (!isFromInternal) {
+      if (DEBUG) console.warn('[Chroma Security] Rejected legacy STATS_UPDATE from external origin.');
+      return false;
+    }
+
     chrome.storage.local.get(['config', 'stats']).then(({ config: storedConfig, stats = {} }) => {
       if (storedConfig && storedConfig.enabled === false) return;
       
       const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
-      // We no longer track 'blocked' (cosmetic) in the main stats row per user request
-      
       stats.accelerated = (stats.accelerated || 0) + accelerated;
       chrome.storage.local.set({ stats });
     });
@@ -450,15 +465,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false;
   }
 
-  if (msg.type === MSG.STATS_GET) {
-    // Attempt to harvest matches before returning stats
-    harvestNetworkStats().catch(() => {}).finally(() => {
-      chrome.storage.local.get('stats').then(({ stats }) => {
-        sendResponse(stats || { networkBlocked: 0, accelerated: 0 });
-      });
-    });
-    return true; // keep channel open for async response
-  }
+  // MSG.STATS_GET removed in favor of reactive storage listeners in popup.js
 
   if (msg.type === MSG.CONFIG_GET) {
     chrome.storage.local.get('config').then(({ config }) => {

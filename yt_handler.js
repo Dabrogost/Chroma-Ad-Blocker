@@ -12,7 +12,6 @@
   };
 
   // ─── STATE ────────────────────────────────────────────────────────────────────
-  let stats = { accelerated: 0 };
   let targetAdVideo = null;
   let adOverlayHost = null; // The Shadow Host
   let adOverlayRoot = null; // The Closed Shadow Root
@@ -343,8 +342,13 @@
       if (rawAdShowing && video.playbackRate !== CONFIG.accelerationSpeed) {
         video.playbackRate = CONFIG.accelerationSpeed;
         if (window.lastAcceleratedSrc !== video.src) {
-          stats.accelerated++;
-          notifyBackground({ type: MSG.STATS_UPDATE, stats: { accelerated: 1 } });
+          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
+            window.__CHROMA_INTERNAL__.send({ 
+              token: window.__CHROMA_INTERNAL__.token,
+              action: 'STATS_UPDATE', 
+              payload: { type: 'accelerated' } 
+            });
+          }
           window.lastAcceleratedSrc = video.src;
         }
       }
@@ -399,9 +403,11 @@
   document.addEventListener('yt-navigate-finish', onYTNavigate);
   document.addEventListener('yt-page-data-updated', onYTNavigate);
 
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === MSG.CONFIG_UPDATE) {
-      Object.assign(CONFIG, msg.config);
+  // We now handle config updates via a custom event from interceptor.js or direct property update
+  document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+    if (e.detail) {
+      Object.assign(CONFIG, e.detail);
+      if (DEBUG) console.log('[Chroma] yt_handler updated config:', CONFIG);
       
       if (!CONFIG.enabled || !CONFIG.acceleration) {
         if (pollingInterval) {
@@ -599,21 +605,17 @@
 
 
   function init() {
-    chrome.storage.local.get('config').then(({ config: savedConfig }) => {
-      if (savedConfig) {
-        Object.assign(CONFIG, savedConfig);
-      }
-      
-      if (CONFIG.enabled && CONFIG.acceleration) {
-        injectChromaCSS();
-        startPolling();
-        startChromaClock();
-        initSkipButtonListener();
-      }
-    }).catch(() => {
+    // 1. Check for global internal config first (faster, passed via handshake)
+    if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+      Object.assign(CONFIG, window.__CHROMA_INTERNAL__.config);
+    }
+
+    if (CONFIG.enabled && CONFIG.acceleration) {
       injectChromaCSS();
       startPolling();
-    });
+      startChromaClock();
+      initSkipButtonListener();
+    }
   }
 
   init();

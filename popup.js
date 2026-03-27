@@ -31,10 +31,19 @@ async function init() {
   $('togglePopUnders').checked = isEnabled ? (config.blockPopUnders ?? true) : false;
   $('togglePush').checked = isEnabled ? (config.blockPushNotifications ?? true) : false;
 
-  // Load stats
-  const stats = await notifyBackground({ type: MSG.STATS_GET }) || { networkBlocked: 0, accelerated: 0 };
+  // Load stats initially
+  const { stats = { networkBlocked: 0, accelerated: 0 } } = await chrome.storage.local.get('stats');
   $('statAccelerated').textContent = stats.accelerated ?? 0;
   $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
+
+  // Reactive Stats: Listen for storage changes
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.stats) {
+      const newStats = changes.stats.newValue || { accelerated: 0, networkBlocked: 0 };
+      $('statAccelerated').textContent = newStats.accelerated ?? 0;
+      $('statNetworkBlocked').textContent = newStats.networkBlocked ?? 0;
+    }
+  });
 
   // Toggle handlers
   const TOGGLES = [

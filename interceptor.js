@@ -66,6 +66,13 @@
    * This is called only after the secure handshake completes.
    */
   function initChromaInterceptor(token, selectors = {}) {
+    // Store info globally for other Main world handlers (yt_handler, prm_handler)
+    window.__CHROMA_INTERNAL__ = {
+      token: token,
+      send: sendToProtection,
+      config: { ...selectors }
+    };
+
     if (DEBUG) console.log('[Chroma Ad-Blocker] Global interceptor active with secure token.');
     
     // Store selectors locally for potential future use (e.g. dynamic injection from MAIN world)
@@ -335,6 +342,19 @@
           // 3. Grab the port and selectors
           chromaPort = e.ports[0];
           const selectors = e.data?.selectors || {};
+
+          // Listen for events FROM Isolated -> Main (Config Updates)
+          chromaPort.onmessage = (msgEvent) => {
+            if (msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
+              const resp = msgEvent.data.data;
+              if (resp && resp.type === 'CONFIG_UPDATE') {
+                if (window.__CHROMA_INTERNAL__) {
+                  window.__CHROMA_INTERNAL__.config = { ...window.__CHROMA_INTERNAL__.config, ...resp.config };
+                  document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: resp.config }));
+                }
+              }
+            }
+          };
           
           // 4. Clean up the listener
           pristineRemoveEventListener('message', portCatcher, true);
