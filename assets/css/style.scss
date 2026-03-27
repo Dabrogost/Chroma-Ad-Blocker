@@ -22,8 +22,8 @@
   --c-bblue:       #00aaff;
   --c-cyan:        #00ffcc;
 
-  --grad-chroma:   linear-gradient(135deg, #9900ff 0%, #6c5ce7 35%, #00aaff 70%, #00ffcc 100%);
-  --grad-chroma-h: linear-gradient(90deg,  #9900ff 0%, #6c5ce7 35%, #00aaff 70%, #00ffcc 100%);
+  --grad-chroma:   linear-gradient(135deg, #9900ff 0%, #6c5ce7 25%, #00aaff 50%, #00ffcc 75%, #9900ff 100%);
+  --grad-chroma-h: linear-gradient(90deg,  #9900ff 0%, #6c5ce7 25%, #00aaff 50%, #00ffcc 75%, #9900ff 100%);
   --grad-dark:     linear-gradient(135deg, #0a0025 0%, #04020c 100%);
 
   --border-glass:  rgba(108, 92, 231, 0.22);
@@ -249,18 +249,18 @@ ul  { list-style: none; }
   font-size: 15px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma);
-  background-size: 100vw 100vh;
+  background-size: 100vw 200vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: hue-cycle 12s linear infinite;
+  animation: scan-v 15s linear infinite;
   white-space: nowrap;
 }
 
-@keyframes hue-cycle {
-  from { filter: hue-rotate(0deg);   }
-  to   { filter: hue-rotate(360deg); }
+@keyframes scan-v {
+  from { background-position: center 0vh; }
+  to   { background-position: center -100vh; }
 }
 
 .pill-nav__links {
@@ -450,12 +450,12 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma);
-  background-size: 100vw 100vh;
+  background-size: 100vw 200vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: hue-cycle 12s linear infinite;
+  animation: scan-v 15s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -550,12 +550,12 @@ ul  { list-style: none; }
   letter-spacing: -0.04em;
   margin-bottom: 22px;
   background: var(--grad-chroma);
-  background-size: 100vw 100vh;
+  background-size: 100vw 200vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: hue-cycle 12s linear infinite;
+  animation: scan-v 15s linear infinite;
 }
 
 .hero__tagline {
@@ -697,12 +697,12 @@ ul  { list-style: none; }
   line-height: 1.08;
   margin-bottom: 18px;
   background: var(--grad-chroma);
-  background-size: 100vw 100vh; /* Viewport Method: Elements scan through the gradient */
+  background-size: 100vw 200vh; /* Viewport Method: Elements scan vertically through the palette */
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: hue-cycle 12s linear infinite;
+  animation: scan-v 15s linear infinite;
   text-align: center;
 }
 
