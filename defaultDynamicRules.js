@@ -1,7 +1,8 @@
 /**
  * Default dynamic rules — these supplement the static rules.json.
  * Because these are dynamic, they can be updated at runtime without
- * going through the extension store review process.
+ * going through the extension store review process. This is to prevent
+ * YouTube from blocking the extension.
  */
 export function getDefaultDynamicRules() {
   return [
