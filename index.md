@@ -182,51 +182,60 @@ graph TD
     classDef main fill:#2a0a10,color:#ede8ff,stroke:#ff0055,stroke-width:2px
     classDef dnr fill:#1a1040,color:#ede8ff,stroke:#6c5ce7,stroke-width:2px
     classDef dom fill:#1a1a00,color:#ede8ff,stroke:#00aaff,stroke-width:2px
-    classDef secure fill:#1a1205,color:#ede8ff,stroke:#6c5ce7,stroke-dasharray:5 5
+    classDef secure fill:#1a1205,color:#ede8ff,stroke:#6c5ce7,stroke-dasharray: 5 5
 
     subgraph SW ["Extension Core (Service Worker)"]
-        BS["background.js"]:::sw
-        AUTH["Session Token Store"]:::secure
+        BS["background.js<br/>(Main Logic & Router)"]:::sw
+        AUTH["Origin Auth &<br/>Session Token Store"]:::secure
     end
 
     subgraph ST ["Central Hub"]
         STORAGE[("chrome.storage.local")]:::storage
     end
 
-    subgraph GR ["Global Protection Layer"]
+    subgraph GR ["Global Protection Layer (Secure Pipeline)"]
         subgraph MW ["Main World Execution"]
-            MW_INT["interceptor.js"]:::main
+            MW_INT["interceptor.js<br/>(Pristine API Cache)"]:::main
         end
         subgraph IW ["Isolated World Relay"]
-            CS_PROT["protection.js"]:::isolated
+            CS_PROT["protection.js<br/>(Secure Handshake)"]:::isolated
         end
-        MW_INT <==>|"Secure MessagePort"| CS_PROT
+        MW_INT <==>|"Secure MessagePort Handshake"| CS_PROT
     end
 
     subgraph SP ["Site-Specific Accelerators"]
-        CS_YT["yt_handler.js"]:::isolated
-        CS_PV["prm_handler.js"]:::isolated
-        CS_GEN["content.js"]:::isolated
+        CS_YT["yt_handler.js<br/>(Shadow DOM)"]:::isolated
+        CS_PV["prm_handler.js<br/>(Shadow DOM)"]:::isolated
+        CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
     subgraph DN ["Network Blocking (DNR)"]
-        DNR["Declarative Net Request 300k+ Rules"]:::dnr
+        DNR["Declarative Net Request<br/>(300k Rules)"]:::dnr
     end
 
+    %% Logic Flow
     MW_INT -- "Interception" --> CS_PROT
     CS_PROT -- "Relay (Verified Token)" --> BS
+    
     CS_YT -- "Stats" --> BS
     CS_PV -- "Stats" --> BS
+    
     BS <-->|"Sync State"| STORAGE
     BS -- "Generate Token" --> AUTH
     AUTH -- "Auth Token" --> CS_PROT
+    
     CS_YT -.->|"Read Config"| STORAGE
     CS_PV -.->|"Read Config"| STORAGE
     CS_GEN -.->|"Read Config"| STORAGE
+    CS_PROT -.->|"Read Config/Selectors"| STORAGE
+
     BS -- "Harvest Matches" --> DNR
-    CS_YT ==>|"Shadow DOM"| DOM_YT["YT Player"]:::dom
-    CS_PV ==>|"Shadow DOM"| DOM_PV["Prime Player"]:::dom
-    CS_GEN ==>|"Hide / Remove"| DOM_YT
+
+    %% Execution
+    CS_YT ==>|"Accelerate"| DOM_YT["YT Shadow DOM"]:::dom
+    CS_PV ==>|"Accelerate"| DOM_PV["Prm Shadow DOM"]:::dom
+    CS_GEN ==>|"Hide/Remove"| DOM_YT
+
     </div>
   </div>
 </section>

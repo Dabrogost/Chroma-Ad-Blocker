@@ -283,6 +283,11 @@ ul  { list-style: none; }
   to   { background-position: -100vw center; }
 }
 
+@keyframes scan-btn {
+  from { background-position: 0% center; }
+  to   { background-position: -200% center; }
+}
+
 .pill-nav__title {
   font-family: 'Outfit', sans-serif;
   font-weight: 800;
@@ -674,9 +679,8 @@ ul  { list-style: none; }
   font-weight: 600;
   color: #fff;
   background: var(--grad-chroma);
-  background: var(--grad-chroma);
-  background-size: 100vw 100vh;
-  background-attachment: fixed;
+  background-size: 200% auto;
+  animation: scan-btn 5s linear infinite;
   border: none;
   cursor: pointer;
   text-decoration: none;
