@@ -284,5 +284,3 @@ graph TD
     Buy me a coffee
   </a>
 </section>
-
-</section>

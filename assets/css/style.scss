@@ -22,16 +22,7 @@
   --c-bblue:       #00aaff;
   --c-cyan:        #00ffcc;
 
-  --grad-chroma:   linear-gradient(135deg, 
-    #ff0055 0%, 
-    #9900ff 25%, 
-    rgba(255, 255, 255, 0.7) 28%, 
-    #9900ff 31%, 
-    #0088ff 60%, 
-    rgba(255, 255, 255, 0.4) 63%,
-    #0088ff 66%,
-    #00ffcc 100%
-  );
+  --grad-chroma:   linear-gradient(135deg, #ff0055 0%, #9900ff 35%, #0088ff 70%, #00ffcc 100%);
   --grad-chroma-h: linear-gradient(90deg,  #ff0055 0%, #9900ff 35%, #0088ff 70%, #00ffcc 100%);
   --grad-dark:     linear-gradient(135deg, #0a0025 0%, #04020c 100%);
 
@@ -258,17 +249,17 @@ ul  { list-style: none; }
   font-size: 15px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma);
-  background-size: 1200px 1200px;
+  background-size: 800px 800px;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 5.5s linear infinite;
+  animation: shimmer-fixed 4s linear infinite;
   white-space: nowrap;
 }
 
 @keyframes shimmer-fixed {
-  from { background-position: 0px center;    }
-  to   { background-position: -1200px center; }
+  from { background-position: 0px center; }
+  to { background-position: -800px center; }
 }
 
 .pill-nav__links {
@@ -458,11 +449,11 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma);
-  background-size: 1200px 1200px;
+  background-size: 800px 800px;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 5.5s linear infinite;
+  animation: shimmer-fixed 4s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -557,11 +548,11 @@ ul  { list-style: none; }
   letter-spacing: -0.04em;
   margin-bottom: 22px;
   background: var(--grad-chroma);
-  background-size: 1200px 1200px;
+  background-size: 800px 800px;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 5.5s linear infinite;
+  animation: shimmer-fixed 4s linear infinite;
 }
 
 .hero__tagline {
@@ -704,11 +695,11 @@ ul  { list-style: none; }
   margin-bottom: 18px;
   /* Universal Sync Animation */
   background: var(--grad-chroma);
-  background-size: 1200px 1200px; /* Square scale for perfect slant visibility */
+  background-size: 800px 800px; /* Logic: Sharper transitions = visible slant */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 5.5s linear infinite;
+  animation: shimmer-fixed 4s linear infinite;
   text-align: center;
 }
 
