@@ -29,6 +29,7 @@ let targetVideo = null;
 let isAdActive = false;
 let lastAcceleratedSrc = null;
 let adOverlay = null;
+let overlayContainer = null;
 let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
 let savedVolume = 1;
@@ -88,6 +89,7 @@ function initAdOverlay(video) {
   // Target the best container: Twitch's specific player containers
   const container = video.closest('.video-player__container, .highwind-video-player') || video.parentElement;
   if (container) {
+    overlayContainer = container;
     if (window.getComputedStyle(container).position === 'static') {
       container.style.position = 'relative'; 
     }
@@ -102,8 +104,9 @@ function updateAdOverlay(video, isActive) {
   adOverlay = document.getElementById('twitch-chroma-overlay') || adOverlay;
 
   if (!CONFIG.acceleration || !isActive) {
-    if (adOverlay && adOverlay.classList.contains('active')) {
+    if (adOverlay) {
       adOverlay.classList.remove('active');
+      adOverlay.style.removeProperty('display');
     }
     return;
   }
@@ -115,6 +118,7 @@ function updateAdOverlay(video, isActive) {
   // Ensure it's in the right place
   const container = video.closest('.video-player__container, .highwind-video-player') || video.parentElement;
   if (container && adOverlay && !container.contains(adOverlay)) {
+    overlayContainer = container;
     container.appendChild(adOverlay);
   }
   
@@ -321,15 +325,13 @@ function isAdShowing() {
   const playerContainer = document.querySelector('.video-player__container, .highwind-video-player');
   if (playerContainer && (playerContainer.offsetParent !== null || playerContainer.getClientRects().length > 0)) {
     const overlay = document.getElementById('twitch-chroma-overlay');
-    // FIX: Must use display:none (not visibility:hidden).
-    // innerText still reads visibility:hidden content in most browsers, so the overlay's
-    // own text ("Accelerating Twitch Ad...") was matching the "Ad" regex and keeping
-    // isAdShowing() returning true indefinitely after the real ad ended.
-    // An inline !important overrides the stylesheet's `display: flex !important`.
+    const overlayText = overlay ? (overlay.innerText || overlay.textContent || '') : '';
+    
+    // Hide the overlay while reading container text so it cannot self-trigger.
     if (overlay) overlay.style.setProperty('display', 'none', 'important');
     
     try {
-      const text = playerContainer.innerText || '';
+      const text = (playerContainer.innerText || '').replace(overlayText, '');
       if (/\b(Ad|Sponsored|Advertisement|Commercial|Annonce|Anzeige|Break)\b/i.test(text)) {
         return true;
       }
@@ -407,10 +409,13 @@ function handleTwitchAdAcceleration() {
         video.playbackRate = 1;
         video.volume = savedVolume;
         video.muted = false;
-    isAdActive = false;
-    const overlayEl = document.getElementById('twitch-chroma-overlay');
-    if (overlayEl) overlayEl.classList.remove('active');
-    document.body.classList.remove('chroma-twitch-session');
+        isAdActive = false;
+        const overlayEl = document.getElementById('twitch-chroma-overlay');
+        if (overlayEl) {
+          overlayEl.classList.remove('active');
+          overlayEl.style.removeProperty('display');
+        }
+        document.body.classList.remove('chroma-twitch-session');
         lastAcceleratedSrc = null;
         currentAdRemainingStart = 0;
         lastAdTimerText = null;
@@ -435,7 +440,11 @@ function resetSession() {
   isAdActive = false;
   lastAcceleratedSrc = null;
   document.body.classList.remove('chroma-twitch-session');
-  if (adOverlay) adOverlay.classList.remove('active');
+  if (adOverlay) {
+    adOverlay.classList.remove('active');
+    adOverlay.style.removeProperty('display');
+  }
+  overlayContainer = null;
 }
 
 function init() {
