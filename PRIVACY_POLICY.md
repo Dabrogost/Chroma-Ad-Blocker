@@ -1,7 +1,3 @@
----
-layout: page
-title: Privacy Policy
----
 # Privacy Policy for Chroma Ad-Blocker
 
 **Effective Date:** March 26, 2026

@@ -1,7 +1,3 @@
----
-layout: page
-title: Terms of Service
----
 # Terms of Service for Chroma Ad-Blocker
 
 **Effective Date:** March 27, 2026
