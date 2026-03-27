@@ -281,7 +281,7 @@ ul  { list-style: none; }
 
 @keyframes scan-h {
   from { background-position: 0vw center; }
-  to   { background-position: 100vw center; }
+  to   { background-position: -100vw center; }
 }
 
 .pill-nav__title {
