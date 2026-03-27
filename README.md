@@ -5,7 +5,7 @@
 ## Key Features
 
 - **Multi-Platform Ad Acceleration**: Automatically detects and accelerates ads (up to 16x speed) on **YT** and **Prm**. This fulfills server-side impression requirements instantly without triggering ad-block detections.
-- **Massive Network Blocking (DNR)**: Utilizes over **300,000+ optimized rules** across 10 rulesets to block trackers, invasive analytics, and traditional banner ads at the browser level.
+- **Massive Network Blocking (DNR)**: Utilizes **300,000 optimized rules** across 10 rulesets to block trackers, invasive analytics, and traditional banner ads at the browser level.
 - **Cosmetic Filtering & Layout Cleanup**: Proactively removes ad placeholders, sidebars, and empty slots.
 - **YT Power Tools**:
     - **Hide Shorts**: Clean up your feed by removing Shorts shelves and menu entries.
