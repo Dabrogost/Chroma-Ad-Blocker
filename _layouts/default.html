@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="{{ site.lang | default: 'en-US' }}">
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page.title }} | {{ site.title }}</title>
+    <meta name="description" content="{{ page.description | default: site.description }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css?v=' | append: site.github.build_revision | relative_url }}">
+    <!--[if lt IE 9]>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
+    <![endif]-->
+    {% include head-custom.html %}
+  </head>
+  <body>
+    <div class="nebula-bg"></div>
+    <div class="glow-1"></div>
+    <div class="glow-2"></div>
+
+    <header class="main-header">
+      <div class="container">
+        <div class="header-content">
+          <img src="{{ site.logo | relative_url }}" alt="Logo" class="logo">
+          <h1>{{ site.title }}</h1>
+          <p class="tagline">{{ site.description }}</p>
+          <nav class="nav-links">
+            <a href="{{ '/' | relative_url }}" class="nav-item">Home</a>
+            <a href="{{ '/privacy/' | relative_url }}" class="nav-item">Privacy</a>
+            <a href="{{ '/terms/' | relative_url }}" class="nav-item">Terms</a>
+            <a href="{{ '/license/' | relative_url }}" class="nav-item">License</a>
+            <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" class="nav-item github-link">GitHub</a>
+          </nav>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="glass-card">
+        {{ content }}
+      </section>
+    </main>
+
+    <footer class="main-footer">
+      <div class="container">
+        <p>&copy; 2026 {{ site.author | default: 'Dabrogost' }}. Built with passion for a cleaner web.</p>
+      </div>
+    </footer>
+
+    <script type="module">
+      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+      mermaid.initialize({ 
+        startOnLoad: true, 
+        theme: 'dark',
+        themeVariables: {
+          primaryColor: '#6c5ce7',
+          primaryTextColor: '#fff',
+          primaryBorderColor: '#a29bfe',
+          lineColor: '#9d50bb',
+          secondaryColor: '#1a0b2e',
+          tertiaryColor: '#05010d'
+        }
+      });
+    </script>
+  </body>
+</html>

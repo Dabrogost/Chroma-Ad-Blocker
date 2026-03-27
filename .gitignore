@@ -1,10 +1,31 @@
+# Dependencies
 node_modules/
+
+# IDEs and Editors
 .idea/
-_metadata/
-gemini.md
-tests/
-*.log
+.vscode/
+*.sublime-project
+*.sublime-workspace
 .DS_Store
 Thumbs.db
-*.local
+
+# Chrome Extension Artifacts
+_metadata/
+*.crx
+*.pem
+
+# Jekyll / GitHub Pages (Build Artifacts)
+_site/
+.jekyll-cache/
+.jekyll-metadata
+.sass-cache/
+
+# Project Specific
+gemini.md
 descriptions.txt
+tmp/
+*.log
+*.local
+
+# Tests
+tests/

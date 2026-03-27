@@ -1,11 +1,7 @@
 title: Chroma Ad-Blocker
 description: Premium YouTube Ad-Blocker for Manifest V3. Bypass detections with style.
-remote_theme: pages-themes/minimal@v0.2.0
-
-# Sidebar links for minimal theme
-github:
-  is_project_page: true
-  repository_url: https://github.com/Dabrogost/Chroma-Ad-Blocker
 
 # Custom settings
 logo: /icons/icon128.png
+baseurl: "" # the subpath of your site, e.g. /blog
+url: "https://Dabrogost.github.io" # the base hostname & protocol for your site

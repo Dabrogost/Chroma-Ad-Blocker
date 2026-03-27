@@ -3,40 +3,37 @@ layout: default
 title: Home
 ---
 
-# Chroma Ad-Blocker
+## 🛡️ The Ultimate Shield for Modern Browsing
 
-<div align="center">
-  <a href="/privacy/">Privacy Policy</a> | 
-  <a href="/terms/">Terms of Service</a> | 
-  <a href="/license/">License</a> | 
-  <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker">GitHub</a>
-</div>
+**Chroma Ad-Blocker** is a premium, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to bypass modern anti-adblock systems while maintaining a lightweight footprint.
 
-<br/>
-
-**Chroma Ad-Blocker** is a premium, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to bypass modern anti-adblock systems while maintaining a lightweight footprint. It is highly recommeneded to disable all other ad-blockers while using Chroma.
-
-## Key Features
-
-- **Multi-Platform Ad Acceleration**: Automatically detects and accelerates ads (up to 16x speed) on **YT** and **Prm**. This fulfills server-side impression requirements instantly without triggering ad-block detections.
-- **Massive Network Blocking (DNR)**: Utilizes **300,000 optimized rules** across 10 rulesets to block trackers, invasive analytics, and traditional banner ads at the browser level.
-- **Cosmetic Filtering & Layout Cleanup**: Proactively removes ad placeholders, sidebars, and empty slots.
-- **YT Power Tools**:
-    - **Hide Shorts**: Clean up your feed by removing Shorts shelves and menu entries.
-    - **Hide Merch & Offers**: Suppress intrusive shopping panels and rental/buy offers.
-    - **Anti-Adblock Suppression**: Automatically deletes enforcement modals (e.g., "Ad blockers are not allowed") and restores page functionality.
-- **Global Privacy Protection**:
-    - **Pop-under Blocker**: Intercepts and closes suspicious windows opened without direct user intent.
-    - **Push Suppression**: Automatically silences intrusive "Show notifications" prompts from websites.
-- **Privacy-First Architecture**: Your data never leaves your device. All stats and settings are stored locally.
+> [!IMPORTANT]
+> It is highly recommended to disable all other ad-blockers while using Chroma to prevent conflicts and ensure maximum performance.
 
 ---
 
-## Architecture Overview
+### 🚀 Key Features
 
-Chroma uses a decentralized architecture synchronized through `chrome.storage.local`. This ensures that configuration changes and statistics persist across the ephemeral Manifest V3 service worker lifecycle.
+*   **Multi-Platform Ad Acceleration**  
+    Automatically detects and accelerates ads (up to 16x speed) on **YouTube** and **Prime Video**. Fulfills server-side impression requirements instantly.
+*   **Massive Network Blocking (DNR)**  
+    Utilizes **300,000+ optimized rules** across 10 rulesets to block trackers, invasive analytics, and banner ads at the browser level.
+*   **Cosmetic Filtering & Layout Cleanup**  
+    Proactively removes ad placeholders, sidebars, and empty slots for a distraction-free experience.
+*   **YouTube Power Tools**  
+    Clean up your feed by removing Shorts, Merch panels, and invasive "Ad blockers are not allowed" modals.
+*   **Global Privacy Protection**  
+    Intercepts unauthorized pop-unders and automatically silences intrusive "Show notifications" prompts globally.
+*   **Privacy-First Architecture**  
+    Your data never leaves your device. All stats and settings are stored locally in `chrome.storage.local`.
 
-<pre class="mermaid">
+---
+
+### 🏗️ Architecture Overview
+
+Chroma uses a decentralized architecture synchronized through a secure central hub. This ensures that configuration changes and statistics persist across the ephemeral Manifest V3 service worker lifecycle.
+
+<div class="mermaid">
 graph TD
     classDef sw fill:#2d3436,color:#fff,stroke:#636e72,stroke-width:2px
     classDef storage fill:#0984e3,color:#fff,stroke:#74b9ff,stroke-width:2px
@@ -97,102 +94,38 @@ graph TD
     CS_YT ==>|"Accelerate"| DOM_YT["YT Shadow DOM"]:::dom
     CS_PV ==>|"Accelerate"| DOM_PV["Prm Shadow DOM"]:::dom
     CS_GEN ==>|"Hide/Remove"| DOM_YT
-</pre>
-
----
-
-## System Layers
-
-### Layer 1: Ad Acceleration (`yt_handler.js`, `prm_handler.js`)
-The ultimate defense against server-side ad detection. Instead of blocking the video stream (which triggers warnings), Chroma accelerates ads to 16x speed and mutes them.
-
-### Layer 2: Network-Level Blocking (`rules/`, `background.js`)
-Powered by Chrome’s **Declarative Net Request (DNR)** API. Chroma partitions over **300,000 rules** into 10 manageable files to ensure high performance and reliability. The Service Worker handles rule state and periodically harvests block statistics.
-
-### Layer 3: Cosmetic & Warning Suppression (`content.js`, `utils/selectors.js`)
-Uses a `MutationObserver` and dynamic CSS injection to hide ad slots, remove "Ad blockers are not allowed" modals, and clean up the interface (removing Shorts, Merch, and Offers).
-
-### Layer 4: Universal Protection (`protection.js`, `interceptor.js`)
-A dual-layer approach to blocking pop-unders and push notifications globally. The `interceptor.js` runs in the **Main World** to shadow browser APIs, while `protection.js` relays events to the background via a **Secure Pipeline** for enforcement.
-
----
-
-## Security Hardening
-
-Chroma implements several advanced security measures to ensure integrity and prevent bypass by malicious scripts:
-
-- **Secure Communication Pipeline**: Instead of standard `window.postMessage`, Chroma establishes a dedicated `MessageChannel` (secure port) between the Main World and Isolated World. This prevents host-page scripts from sniffing or spoofing sensitive control signals.
-- **Per-Tab Session Tokens**: Every tab is assigned a unique, 16-byte random session token generated by the Background Service Worker. All signals from the Main World must include this verified token to be processed.
-- **Pristine API Caching**: `interceptor.js` captures native browser APIs (like `window.open` and `fetch`) on Line 1 of execution. This mitigates race conditions where malicious site scripts might try to override these APIs before the extension can.
-- **API Lockdown**: Once intercepted, sensitive browser APIs are frozen using `Object.defineProperty` with `writable: false` to prevent the host page from "re-clobbering" the extension's protection layers.
-- **Origin Authentication**: The Background Service Worker strictly validates the origin of all incoming messages, rejecting any sensitive configuration or statistic requests from outside the extension's own internal context.
-
----
-
-## Quick Start
-
-1. Clone the repository or download the ZIP.
-2. Navigate to `chrome://extensions/` in Chrome.
-3. Enable **Developer mode** (top right).
-4. Click **Load unpacked** and select the extension folder.
-5. The extension is now active on all tabs. Settings can be managed via the popup UI.
-
-## Configuration
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `enabled` | Global switch for all features. | `true` |
-| `networkBlocking` | Enables DNR rulesets (300k rules). | `true` |
-| `acceleration` | Enables high-speed ad playback (YT/Prm). | `true` |
-| `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
-| `hideShorts` | Removes Shorts from feed. | `false` |
-| `hideMerch` | Removes Merchandise panels. | `true` |
-| `hideOffers` | Removes Movie/TV offers. | `true` |
-| `suppressWarnings` | Removes anti-adblock modals/locks. | `true` |
-| `blockPopUnders` | Intercepts unauthorized new windows. | `true` |
-| `blockPushNotifications` | Blocks web notification requests. | `true` |
-| `whitelist` | Toggles blocking for the current active site. | `false` |
-
----
-
-## AI Usage & Quality Assurance Disclosure
-
-Portions of this codebase, including initial logic structures and documentation, were developed with the assistance of agentic AI coding assistants. To ensure project integrity, every AI-assisted component has been manually audited, refactored, and verified to meet strict security and performance standards. This collaborative approach combines the efficiency of advanced tooling with focused oversight and robust test coverage.
-
----
-
-## Support the Project
-
-Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
-
-<div align="center">
-  <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker">GitHub Repository</a>
 </div>
 
-<br/>
+---
+
+### 🔒 Security Hardening
+
+Chroma implements advanced measures to ensure integrity:
+
+*   **Secure MessageChannel**: Dedicated authenticated ports between the Main and Isolated worlds.
+*   **Per-Tab Session Tokens**: 16-byte random tokens generated by the Background worker.
+*   **Pristine API Caching**: Native APIs captured on Line 1 of execution.
+*   **API Lockdown**: Sensitive APIs are frozen using `Object.defineProperty`.
+
+---
+
+### ⚙️ Configuration Options
+
+| Setting | Description | Default |
+|:--- |:--- |:--- |
+| `enabled` | Global switch for all features. | `true` |
+| `networkBlocking` | Enables DNR rulesets (300k rules). | `true` |
+| `acceleration` | Enables high-speed ad playback. | `true` |
+| `cosmetic` | Enables hiding ad placeholders. | `true` |
+| `suppressWarnings` | Removes anti-adblock modals. | `true` |
+| `blockPopUnders` | Intercepts unauthorized new windows. | `true` |
+
+---
 
 <div align="center">
+  <h3>Support the Project</h3>
+  <p>Chroma is a solo project dedicated to restoring the web to its fast, private origins.</p>
   <a href="https://buymeacoffee.com/dabrogost">
     <img src="https://img.shields.io/badge/Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee">
   </a>
 </div>
-
-<p align="right">
-  <sub>&copy; 2026 Dabrogost</sub>
-</p>
-
-<script type="module">
-  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-  mermaid.initialize({ 
-    startOnLoad: true, 
-    theme: 'dark',
-    themeVariables: {
-      primaryColor: '#6c5ce7',
-      primaryTextColor: '#fff',
-      primaryBorderColor: '#a29bfe',
-      lineColor: '#9d50bb',
-      secondaryColor: '#1a0b2e',
-      tertiaryColor: '#0d0221'
-    }
-  });
-</script>
