@@ -247,6 +247,11 @@ ul  { list-style: none; }
   to   { background-position: 250% center; }
 }
 
+@keyframes shimmer-fixed {
+  from { background-position: 0px center;    }
+  to   { background-position: 2500px center; }
+}
+
 .pill-nav__links {
   display: flex;
   align-items: center;
@@ -434,11 +439,11 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma-h);
-  background-size: 250% auto;
+  background-size: 2500px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 5s linear infinite;
+  animation: shimmer-fixed 12s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -533,11 +538,11 @@ ul  { list-style: none; }
   letter-spacing: -0.04em;
   margin-bottom: 22px;
   background: var(--grad-chroma-h);
-  background-size: 250% auto;
+  background-size: 2500px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 5s linear infinite;
+  animation: shimmer-fixed 12s linear infinite;
 }
 
 .hero__tagline {
@@ -678,13 +683,14 @@ ul  { list-style: none; }
   letter-spacing: -0.03em;
   line-height: 1.08;
   margin-bottom: 18px;
-  /* Sync with chroma-text animation */
+  /* Universal Sync Animation */
   background: var(--grad-chroma-h);
-  background-size: 250% auto;
+  background-size: 2500px auto; /* Large fixed size for perfect sync */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 5s linear infinite;
+  animation: shimmer-fixed 12s linear infinite;
+  text-align: center;
 }
 
 .section__sub {
@@ -871,6 +877,10 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 24px 130px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .qs-steps {

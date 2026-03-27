@@ -20,7 +20,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
     />
   </div>
 
-  <p class="hero__eyebrow">Manifest V3 &middot; Chrome Extension</p>
+  <p class="hero__eyebrow">Manifest V3 &middot; Browser Extension</p>
 
   <h1 class="hero__title">Chroma<br/>Ad&#8209;Blocker</h1>
 
@@ -63,7 +63,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
 <!-- ═══════════════════════════════════ FEATURE CARDS ══════════════════════════════════ -->
 <section class="section">
   <p class="section__eyebrow fade-up">Protection Layers</p>
-  <h2 class="section__title fade-up">Built to outlast<br/>every ad system</h2>
+  <h2 class="section__title fade-up">Built to Outlast<br/>Every Ad System</h2>
   <p class="section__sub fade-up">
     Six independent layers of protection, each targeting a different attack vector.
     Together they handle anything ad networks throw at your browser.
@@ -234,7 +234,7 @@ graph TD
 <!-- ══════════════════════════════════ QUICK START ═════════════════════════════════════ -->
 <section class="qs-section">
   <p class="section__eyebrow fade-up">Quick Start</p>
-  <h2 class="section__title fade-up">Up and running<br/>in under a minute</h2>
+  <h2 class="section__title fade-up">Up and Running<br/>in Under a Minute</h2>
 
   <div class="qs-steps fade-up">
     <div class="qs-line"></div>
