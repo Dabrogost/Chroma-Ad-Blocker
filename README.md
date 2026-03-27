@@ -151,6 +151,10 @@ Portions of this codebase, including initial logic structures and documentation,
 
 Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
 
+<div align="center">
+  <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker">GitHub Repository</a>
+</div>
+
 <br/>
 
 <div align="center">
