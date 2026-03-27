@@ -128,7 +128,7 @@ Chroma implements several advanced security measures to ensure integrity and pre
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `enabled` | Global switch for all features. | `true` |
-| `networkBlocking` | Enables DNR rulesets (300k+ rules). | `true` |
+| `networkBlocking` | Enables DNR rulesets (300k rules). | `true` |
 | `acceleration` | Enables high-speed ad playback (YT/Prm). | `true` |
 | `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
 | `hideShorts` | Removes Shorts from feed. | `false` |
