@@ -1,7 +1,6 @@
 ---
-layout: default
+layout: page
 title: Privacy Policy
-permalink: /privacy/
 ---
 # Privacy Policy for Chroma Ad-Blocker
 

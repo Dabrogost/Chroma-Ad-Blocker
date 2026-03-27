@@ -1,7 +1,6 @@
 ---
-layout: default
+layout: page
 title: License
-permalink: /license/
 ---
 # PolyForm Noncommercial License 1.0.0
 

@@ -1,11 +1,17 @@
 ---
-layout: default
+layout: home
 title: Home
 ---
 
 ## The Ultimate Shield for Modern Browsing
 
-**Chroma Ad-Blocker** is a premium, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to bypass modern anti-adblock systems while maintaining a lightweight footprint.
+**Chroma Ad-Blocker** is a premium, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy.
+
+<div align="center">
+  <img src="{{ '/icons/icon128.png' | relative_url }}" alt="Logo" width="80">
+</div>
+
+---
 
 > [!IMPORTANT]
 > It is highly recommended to disable all other ad-blockers while using Chroma to prevent conflicts and ensure maximum performance.
@@ -129,3 +135,15 @@ Chroma implements advanced measures to ensure integrity:
     <img src="https://img.shields.io/badge/Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee">
   </a>
 </div>
+
+<p align="right">
+  <sub>&copy; 2026 Dabrogost</sub>
+</p>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ 
+    startOnLoad: true, 
+    theme: 'dark'
+  });
+</script>

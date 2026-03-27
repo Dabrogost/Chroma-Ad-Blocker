@@ -1,20 +1,25 @@
 title: Chroma Ad-Blocker
 description: Premium YouTube Ad-Blocker for Manifest V3. Bypass detections with style.
+remote_theme: jekyll/minima
 
-# Custom settings
-logo: icons/icon128.png
-baseurl: ""
-url: "https://Dabrogost.github.io/YT-Chroma"
+# Minima configuration
+minima:
+  skin: dark # Start with dark skin if available, but we'll override
 
-# Ensure assets are included
-include: 
-  - icons
-  - assets
+# Navigation
+header_pages:
+  - index.md
   - PRIVACY_POLICY.md
   - ToS.md
   - LICENSE.md
-permalink: /:title/
-markdown: kramdown
-kramdown:
-  input: GFM
-  hard_wrap: false
+
+# Plugins
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+  - jekyll-remote-theme
+
+# Assets
+include:
+  - icons
+  - assets
