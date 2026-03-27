@@ -18,11 +18,11 @@ Chroma Ad-Blocker provides tools to manage your YouTube experience, including:
 - **Cosmetic Filtering**: Hiding ad-related elements on the YouTube interface.
 - **Warning Suppression**: Removing anti-adblock modals and enforcement messages.
 
-## 4. Third-Party Services (YouTube)
-The Extension is designed to interact with YouTube. You acknowledge that:
-- The Extension is NOT affiliated with, endorsed by, or sponsored by YouTube or Google.
-- YouTube may update its platform at any time, which may cause the Extension to stop functioning.
-- Use of the Extension may violate YouTube's Terms of Service. You assume all risks associated with using the Extension, including the potential for account restrictions or bans.
+## 4. Third-Party Services
+The Extension is designed to interact with Third-Party Services. You acknowledge that:
+- The Extension is NOT affiliated with, endorsed by, or sponsored by any Third-Party Service or any other platform.
+- Third-Party Services may update their platforms at any time, which may cause the Extension to stop functioning.
+- Use of the Extension may violate Terms of Service. You assume all risks associated with using the Extension, including the potential for account restrictions or bans from Third-Party Services.
 
 ## 5. Disclaimer of Warranties
 THE EXTENSION IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. THE DEVELOPER DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
