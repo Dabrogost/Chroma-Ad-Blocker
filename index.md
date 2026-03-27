@@ -44,6 +44,14 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
     <a href="{{ '/PRIVACY_POLICY/' | relative_url }}" class="btn-ghost">
       Privacy Policy
     </a>
+    <a
+      href="https://buymeacoffee.com/dabrogost"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="btn-ghost btn-ghost--support"
+    >
+      Support Development
+    </a>
   </div>
 
   <div class="hero__scroll-cue" aria-hidden="true">
@@ -256,4 +264,25 @@ graph TD
       <p class="qs-step__label">Done &mdash; Chroma is active on all tabs</p>
     </div>
   </div>
+</section>
+<!-- ════════════════════════════════════ SUPPORT ═══════════════════════════════════════ -->
+<section class="support-section fade-up">
+  <h2 class="section__title">Support the Project</h2>
+  <p class="section__sub">
+    Chroma is built and maintained by a single developer. If it has improved your
+    web experience, consider supporting the work with a coffee.
+  </p>
+  <a
+    href="https://buymeacoffee.com/dabrogost"
+    target="_blank"
+    rel="noopener noreferrer"
+    class="btn-bmc"
+  >
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.216 6.415l-.132-.666c-.209-1.052-1.122-1.83-2.196-1.83H1.936c-1.216 0-2.136 1.074-1.903 2.258l2.133 10.85c.231 1.181 1.253 2.053 2.46 2.053h11.23c1.122 0 2.078-.766 2.332-1.819l.885-3.648C21.053 12.71 22 11.452 22 10.108V8.658c0-1.215-.747-2.188-1.784-2.243zm-2.023 10.319c-.12.495-.57.855-1.079.855H4.626c-.571 0-1.054-.412-1.163-.974l-2.133-10.85c-.11-.561.325-1.074.896-1.074h15.952c.504 0 .935.367 1.035.867l.132.666c.012.066.029.132.029.2v1.45c0 .641-.451 1.242-1.071 1.503l-.885 3.648c-.013.053-.028.106-.028.16v2.108c0 .351-.042.697-.123 1.029zm4.242-5.447c-.016-.016-.032-.032-.047-.047-.015-.015-.031-.031-.047-.047-.125-.125-.262-.236-.407-.333l.885-3.648c.11-.453.078-.925-.091-1.359.102-.273.158-.567.158-.871v1.45c0 1.344-.947 2.602-1.91 3.204L22.435 11.287z"/>
+    </svg>
+    Buy me a coffee
+  </a>
+</section>
+
 </section>

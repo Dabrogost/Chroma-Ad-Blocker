@@ -56,13 +56,14 @@
 html {
   font-size: 16px;
   scroll-behavior: smooth;
+  scroll-snap-type: y proximity;
   -webkit-text-size-adjust: 100%;
 }
 
 body {
   background: var(--bg-void);
   color: var(--text);
-  font-family: 'Figtree', system-ui, sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
   font-weight: 400;
   line-height: 1.65;
   min-height: 100vh;
@@ -76,6 +77,24 @@ a   { color: inherit; text-decoration: none; }
 ul  { list-style: none; }
 
 /* ── Aurora Background ──────────────────────────────────────── */
+@keyframes scroll-progress {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--grad-chroma-h);
+  z-index: 2000;
+  transform-origin: 0 50%;
+  animation: scroll-progress auto linear;
+  animation-timeline: scroll();
+}
+
 .aurora {
   position: fixed;
   inset: 0;
@@ -174,8 +193,8 @@ ul  { list-style: none; }
 .pill-nav__inner {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 9px 12px 9px 10px;
+  gap: 20px;
+  padding: 10px 18px 10px 12px;
   background: var(--bg-glass);
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
@@ -211,7 +230,7 @@ ul  { list-style: none; }
 }
 
 .pill-nav__title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 800;
   font-size: 15px;
   letter-spacing: -0.01em;
@@ -240,7 +259,7 @@ ul  { list-style: none; }
   font-size: 13px;
   font-weight: 500;
   color: var(--text-dim);
-  padding: 6px 15px;
+  padding: 8px 20px;
   border-radius: var(--r-pill);
   transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
   white-space: nowrap;
@@ -361,7 +380,7 @@ ul  { list-style: none; }
   display: flex;
   align-items: center;
   gap: 10px;
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 700;
   font-size: 15px;
   color: var(--text-dim);
@@ -431,6 +450,10 @@ ul  { list-style: none; }
   z-index: 10;
 }
 
+.qs-section {
+  scroll-snap-align: start;
+}
+
 /* ── Hero ───────────────────────────────────────────────────── */
 .hero {
   min-height: 100svh;
@@ -441,6 +464,7 @@ ul  { list-style: none; }
   text-align: center;
   padding: 130px 24px 90px;
   position: relative;
+  scroll-snap-align: start;
 }
 
 /* Animated logo rings */
@@ -508,22 +532,18 @@ ul  { list-style: none; }
 }
 
 .hero__title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: clamp(3rem, 8vw, 6rem);
   font-weight: 800;
   line-height: 1.0;
   letter-spacing: -0.04em;
   margin-bottom: 22px;
-  background: linear-gradient(
-    150deg,
-    #ffffff 0%,
-    #d8c8ff 35%,
-    #9900ff 65%,
-    #0088ff 100%
-  );
+  background: var(--grad-chroma-h);
+  background-size: 250% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  animation: shimmer 5s linear infinite;
 }
 
 .hero__tagline {
@@ -640,6 +660,7 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 100px 24px;
+  scroll-snap-align: start;
 }
 
 .section__eyebrow {
@@ -654,7 +675,7 @@ ul  { list-style: none; }
 }
 
 .section__title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: clamp(1.9rem, 4.5vw, 3rem);
   font-weight: 800;
   letter-spacing: -0.03em;
@@ -777,7 +798,7 @@ ul  { list-style: none; }
 }
 
 .card__title {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 16.5px;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -813,6 +834,7 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 24px 100px;
+  scroll-snap-align: start;
 }
 
 .arch-card {
@@ -843,6 +865,7 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 24px 130px;
+  scroll-snap-align: start;
 }
 
 .qs-steps {
@@ -954,7 +977,7 @@ ul  { list-style: none; }
 
 /* Prose typography */
 .layout-prose h1 {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: clamp(2rem, 6vw, 3.2rem);
   font-weight: 800;
   letter-spacing: -0.04em;
@@ -967,7 +990,7 @@ ul  { list-style: none; }
 }
 
 .layout-prose h2 {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.015em;
@@ -997,7 +1020,7 @@ ul  { list-style: none; }
 .layout-prose h2:nth-of-type(6n+6)::before { background: var(--c-cyan);    }
 
 .layout-prose h3 {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-size: 1.05rem;
   font-weight: 700;
   color: var(--text-dim);

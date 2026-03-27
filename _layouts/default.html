@@ -9,13 +9,15 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Figtree:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}" />
   <link rel="icon" type="image/png" sizes="48x48" href="{{ '/icons/icon48.png' | relative_url }}" />
   <link rel="icon" type="image/png" sizes="128x128" href="{{ '/icons/icon128.png' | relative_url }}" />
 </head>
 <body>
+  <!-- Scroll progress bar -->
+  <div class="scroll-progress" id="scroll-progress"></div>
 
   <!-- Aurora background blobs -->
   <div class="aurora" aria-hidden="true">
@@ -130,6 +132,18 @@
         el.classList.add('draw');
       });
     }
+
+    // Scroll progress JS fallback for non-supporting browsers
+    (function() {
+      if (CSS.supports('animation-timeline', 'scroll()')) return;
+      var bar = document.getElementById('scroll-progress');
+      window.addEventListener('scroll', function() {
+        var winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+        var height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        var scrolled = (winScroll / height) * 100;
+        bar.style.width = scrolled + "%";
+      }, { passive: true });
+    })();
   </script>
 </body>
 </html>
