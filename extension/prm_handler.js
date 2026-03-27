@@ -33,7 +33,11 @@ const AD_SELECTORS = [
   'div[class*="ad-overlay"]',
   'div[class*="ad-indicator"]',
   'div[class*="ad-timer"]',
+  'div[class*="ad-break"]',
   '.adunit',
+  '.fbt-ad-indicator',
+  '.fbt-ad-progress',
+  '#ape_VideoAd-Player-Container',
   // Brittle but sometimes necessary fallbacks
   '.webPlayerUIContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)',
   '.templateContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)'
@@ -436,6 +440,8 @@ function isAdShowing() {
     '.webPlayerUIContainer',
     '.templateContainer',
     '.dv-player-fullscreen',
+    '.amazon-video-player',
+    '.av-player-container',
     '#dv-web-player',
     '[data-testid="video-player"]'
   ].join(','));
@@ -448,12 +454,12 @@ function isAdShowing() {
     
     try {
       const text = (playerContainer.innerText || '').trim();
-      // Use more robust regex that ignores "Accelerating Prime Ad" from our own overlay 
-      // even if the visibility check fails or is bypassed.
-      if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
+      // More robust regex for Amazon with case-insensitivity and colon support
+      if (/\b(Ad|AD|Ad:|AD:|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
         // Double check: if it's JUST our title, it's not an ad
         const cleanText = text.replace(/Chroma Active|Accelerating Prime Ad/gi, '').trim();
-        if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(cleanText)) {
+        if (/\b(Ad|AD|Ad:|AD:|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(cleanText) ||
+            (text.toLowerCase().includes('skip ad') || text.toLowerCase().includes('advertisement'))) {
           return true;
         }
       }
@@ -464,7 +470,7 @@ function isAdShowing() {
   }
 
   // 3. Last resort: specific skippable elements
-  const skipButton = document.querySelector('.adSkipButton, .skippable, .atvwebplayersdk-ad-skip-button');
+  const skipButton = document.querySelector('.adSkipButton, .skippable, .atvwebplayersdk-ad-skip-button, [class*="skip-button"], div[aria-label*="Skip"]');
   if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) return true;
 
   return false;
@@ -503,18 +509,20 @@ function findActiveVideo() {
   const videos = Array.from(document.querySelectorAll('video'));
   if (videos.length === 0) return null;
   
-  // 1. Prefer videos that are actually playing or ready
+  // 1. Prefer videos that are actually playing or ready and are large enough
   const activeVideos = videos.filter(v => 
     v.readyState >= 1 && // Relaxed from readyState > 0 to include HAVE_METADATA
     !v.paused && 
-    (v.offsetParent !== null || v.getClientRects().length > 0)
+    (v.offsetParent !== null || v.getClientRects().length > 0) &&
+    v.videoWidth > 100 && v.videoHeight > 100 // Filter out miniature tracking videos
   );
   if (activeVideos.length > 0) return activeVideos[0];
 
   // 2. Fallback to visible videos with source, even if paused (for pre-rolls)
   const visibleVideos = videos.filter(v => 
     (v.offsetParent !== null || v.getClientRects().length > 0) && 
-    (v.src || v.querySelector('source'))
+    (v.src || v.querySelector('source')) &&
+    (v.offsetWidth > 100 && v.offsetHeight > 100 || v.readyState >= 1)
   );
   if (visibleVideos.length > 0) return visibleVideos[0];
 
@@ -539,6 +547,13 @@ function handlePrimeAdAcceleration() {
     }
     
     targetVideo = video;
+
+    // Detect Source Change - Reset state if video source swapped (common on Amazon)
+    const currentSrc = video.src || (video.querySelector('source') ? video.querySelector('source').src : null);
+    if (lastAcceleratedSrc && lastAcceleratedSrc !== currentSrc && !rawAdShowing) {
+        if (DEBUG) console.log('[Chroma] Video source changed, resetting ad state.');
+        resetSession();
+    }
 
     if (rawAdShowing) {
       if (!isAdActive) {
