@@ -137,6 +137,7 @@ Chroma implements several advanced security measures to ensure integrity and pre
 | `suppressWarnings` | Removes anti-adblock modals/locks. | `true` |
 | `blockPopUnders` | Intercepts unauthorized new windows. | `true` |
 | `blockPushNotifications` | Blocks web notification requests. | `true` |
+| `whitelist` | Toggles blocking for the current active site. | `false` |
 
 ---
 
