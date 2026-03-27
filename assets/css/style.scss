@@ -20,10 +20,11 @@
   --c-purple:      #6c5ce7;
   --c-blue:        #0088ff;
   --c-bblue:       #00aaff;
+  --c-teal:        #00d1b2;
   --c-cyan:        #00ffcc;
 
-  --grad-chroma:   linear-gradient(135deg, #9900ff 0%, #6c5ce7 25%, #00aaff 50%, #00ffcc 75%, #9900ff 100%);
-  --grad-chroma-h: linear-gradient(90deg,  #9900ff 0%, #6c5ce7 25%, #00aaff 50%, #00ffcc 75%, #9900ff 100%);
+  --grad-chroma:   linear-gradient(135deg, #ff0055 0%, #9900ff 16.6%, #6c5ce7 33.3%, #0088ff 50%, #00d1b2 66.6%, #00ffcc 83.3%, #ff0055 100%);
+  --grad-chroma-h: linear-gradient(90deg,  #ff0055 0%, #9900ff 16.6%, #6c5ce7 33.3%, #0088ff 50%, #00d1b2 66.6%, #00ffcc 83.3%, #ff0055 100%);
   --grad-dark:     linear-gradient(135deg, #0a0025 0%, #04020c 100%);
 
   --border-glass:  rgba(108, 92, 231, 0.22);
@@ -38,6 +39,7 @@
   --glow-purple:   rgba(108, 92, 231, 0.28);
   --glow-blue:     rgba(0, 136, 255, 0.28);
   --glow-bblue:    rgba(0, 170, 255, 0.28);
+  --glow-teal:     rgba(0, 209, 178, 0.28);
   --glow-cyan:     rgba(0, 255, 204, 0.25);
 
   --r-sm:   8px;
@@ -243,24 +245,25 @@ ul  { list-style: none; }
   flex-shrink: 0;
 }
 
+@keyframes scan-v {
+  from { background-position: center 0vh; }
+  to   { background-position: center -100vh; }
+}
+
 .pill-nav__title {
   font-family: 'Outfit', sans-serif;
   font-weight: 800;
   font-size: 15px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma);
-  background-size: 100vw 200vh;
+  background-size: 100vw 100vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 15s linear infinite;
+  animation: scan-v auto linear;
+  animation-timeline: scroll();
   white-space: nowrap;
-}
-
-@keyframes scan-v {
-  from { background-position: center 0vh; }
-  to   { background-position: center -100vh; }
 }
 
 .pill-nav__links {
@@ -288,12 +291,13 @@ ul  { list-style: none; }
 
 .pill-nav__link.active {
   color: var(--text);
-  background: linear-gradient(135deg,
-    rgba(255, 0, 85, 0.14) 0%,
-    rgba(153, 0, 255, 0.18) 50%,
-    rgba(0, 136, 255, 0.14) 100%
-  );
-  box-shadow: inset 0 0 0 1px rgba(153, 0, 255, 0.32);
+  background: var(--grad-chroma);
+  background-size: 100vw 100vh;
+  background-attachment: fixed;
+  opacity: 0.95;
+  box-shadow: 
+    0 4px 15px rgba(153, 0, 255, 0.25),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 /* Hamburger */
@@ -450,12 +454,12 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma);
-  background-size: 100vw 200vh;
+  background-size: 100vw 100vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 15s linear infinite;
+  animation: scan-v 8s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -550,12 +554,13 @@ ul  { list-style: none; }
   letter-spacing: -0.04em;
   margin-bottom: 22px;
   background: var(--grad-chroma);
-  background-size: 100vw 200vh;
+  background-size: 100vw 100vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 15s linear infinite;
+  animation: scan-v auto linear;
+  animation-timeline: scroll();
 }
 
 .hero__tagline {
@@ -585,15 +590,17 @@ ul  { list-style: none; }
   font-size: 14px;
   font-weight: 600;
   color: #fff;
-  background: linear-gradient(135deg, #ff0055 0%, #9900ff 50%, #0088ff 100%);
-  background-size: 200% auto;
+  background: var(--grad-chroma);
+  background: var(--grad-chroma);
+  background-size: 100vw 100vh;
+  background-attachment: fixed;
   border: none;
   cursor: pointer;
   text-decoration: none;
   transition:
-    background-position 0.45s ease,
     transform 0.2s ease,
-    box-shadow 0.25s ease;
+    box-shadow 0.25s ease,
+    filter 0.2s ease;
   box-shadow: 0 0 24px rgba(153, 0, 255, 0.4);
 }
 
@@ -604,7 +611,7 @@ ul  { list-style: none; }
 }
 
 .btn-primary:hover {
-  background-position: right center;
+  filter: brightness(1.1);
   transform: translateY(-3px);
   box-shadow: 0 4px 32px rgba(153, 0, 255, 0.55);
 }
@@ -697,12 +704,13 @@ ul  { list-style: none; }
   line-height: 1.08;
   margin-bottom: 18px;
   background: var(--grad-chroma);
-  background-size: 100vw 200vh; /* Viewport Method: Elements scan vertically through the palette */
+  background-size: 100vw 100vh; /* Viewport Method: Elements scan vertically through the palette */
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 15s linear infinite;
+  animation: scan-v auto linear;
+  animation-timeline: scroll();
   text-align: center;
 }
 
