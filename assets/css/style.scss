@@ -1,0 +1,106 @@
+---
+---
+@import "{{ site.theme }}";
+
+:root {
+  --background-color: #0d0221;
+  --text-color: #e0e0e0;
+  --accent-color: #9d50bb;
+  --secondary-accent: #6c5ce7;
+  --link-color: #a29bfe;
+  --header-color: #ffffff;
+  --code-bg: #1a0b2e;
+  --sidebar-bg: #16082c;
+}
+
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+}
+
+header {
+  background: linear-gradient(135deg, var(--accent-color), var(--secondary-accent));
+  padding: 2rem 0;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+header h1, header h2 {
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+a {
+  color: var(--link-color);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--header-color);
+  margin-top: 1.5em;
+}
+
+code {
+  background-color: var(--code-bg);
+  color: #ff79c6; /* Dracula-ish purple */
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+
+pre {
+  background-color: var(--code-bg);
+  border: 1px solid rgba(157, 80, 187, 0.3);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+pre code {
+  background-color: transparent;
+  color: var(--text-color);
+  padding: 0;
+}
+
+.wrapper {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+/* Fix for minimal theme sidebar if it exists */
+header .buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+header .button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    backdrop-filter: blur(5px);
+}
+
+header .button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    text-decoration: none;
+}
+
+footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 4rem;
+    padding: 2rem 0;
+    font-size: 0.8rem;
+    color: #888;
+}
