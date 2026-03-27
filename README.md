@@ -37,8 +37,11 @@ graph TD
     end
 
     subgraph "Global Protection (Main World)"
-        CS_PROT["protection.js<br/>(Isolated Relay)"]
         MW_INT["interceptor.js<br/>(Main World Interceptor)"]
+    end
+
+    subgraph "Global Protection (Isolated World)"
+        CS_PROT["protection.js<br/>(Isolated Relay)"]
     end
 
     subgraph "Network & Stats (DNR)"
@@ -55,7 +58,7 @@ graph TD
     %% Feedback & Stats
     CS_YT -- "Stats" --> BS
     CS_PV -- "Stats" --> BS
-    CS_PROT -- "Relay" --> CS_GEN
+    CS_PROT -- "Relay" --> BS
     MW_INT -- "Interception" --> CS_PROT
     BS -- "Harvest Matches" --> DNR
     
@@ -105,6 +108,12 @@ A dual-layer approach to blocking pop-unders and push notifications globally. Th
 | `suppressWarnings` | Removes anti-adblock modals/locks. | `true` |
 | `blockPopUnders` | Intercepts unauthorized new windows. | `true` |
 | `blockPushNotifications` | Blocks web notification requests. | `true` |
+
+---
+
+## AI Usage & Quality Assurance Disclosure
+
+Portions of this codebase, including initial logic structures and documentation, were developed with the assistance of agentic AI coding assistants. To ensure project integrity, every AI-assisted component has been manually audited, refactored, and verified to meet strict security and performance standards. This collaborative approach combines the efficiency of advanced tooling with focused oversight and robust test coverage.
 
 ---
 
