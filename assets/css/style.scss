@@ -206,11 +206,26 @@ ul  { list-style: none; }
 }
 
 @keyframes border-cycle {
-  0%   { border-color: rgba(255, 0,   85,  0.28); }
-  25%  { border-color: rgba(153, 0,   255, 0.28); }
-  50%  { border-color: rgba(0,   136, 255, 0.28); }
-  75%  { border-color: rgba(0,   255, 204, 0.22); }
-  100% { border-color: rgba(255, 0,   85,  0.28); }
+  0%   { 
+    border-color: rgba(255, 0, 85, 0.65); 
+    box-shadow: 0 4px 20px rgba(255, 0, 85, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+  25%  { 
+    border-color: rgba(153, 0, 255, 0.65); 
+    box-shadow: 0 4px 20px rgba(153, 0, 255, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+  50%  { 
+    border-color: rgba(0, 136, 255, 0.65); 
+    box-shadow: 0 4px 20px rgba(0, 136, 255, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+  75%  { 
+    border-color: rgba(0, 255, 204, 0.55); 
+    box-shadow: 0 4px 20px rgba(0, 255, 204, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
+  100% { 
+    border-color: rgba(255, 0, 85, 0.65); 
+    box-shadow: 0 4px 20px rgba(255, 0, 85, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  }
 }
 
 .pill-nav__brand {
