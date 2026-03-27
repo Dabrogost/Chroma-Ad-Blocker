@@ -571,19 +571,6 @@ function handlePrimeAdAcceleration() {
         video.playbackRate = CONFIG.accelerationSpeed;
         video.muted = true;
         video.volume = 0;
-
-        // Increment stats
-        const currentSrc = video.src || 'prime-ad';
-        if (lastAcceleratedSrc !== currentSrc) {
-          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
-            window.__CHROMA_INTERNAL__.send({
-              token: window.__CHROMA_INTERNAL__.token,
-              action: 'STATS_UPDATE',
-              payload: { type: 'accelerated' }
-            });
-            lastAcceleratedSrc = currentSrc; 
-          }
-        }
       }
       
       // Auto-click skip button if it appears
@@ -594,6 +581,15 @@ function handlePrimeAdAcceleration() {
     } else {
       // Restore normal playback
       if (isAdActive) {
+        // --- NEW: Update stats when ad session ends ---
+        if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
+          window.__CHROMA_INTERNAL__.send({
+            token: window.__CHROMA_INTERNAL__.token,
+            action: 'STATS_UPDATE',
+            payload: { type: 'accelerated' }
+          });
+        }
+        
         video.playbackRate = 1;
         video.volume = savedVolume;
         video.muted = false;

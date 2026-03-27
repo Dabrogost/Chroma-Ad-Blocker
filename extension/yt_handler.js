@@ -138,6 +138,16 @@
     if (!CONFIG.acceleration || !effectiveAdShowing) {
       if (adOverlayHost && adOverlayHost.classList.contains('active')) {
         adOverlayHost.classList.remove('active');
+        
+        // --- NEW: Update stats when overlay turns OFF ---
+        if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
+          window.__CHROMA_INTERNAL__.send({ 
+            token: window.__CHROMA_INTERNAL__.token,
+            action: 'STATS_UPDATE', 
+            payload: { type: 'accelerated' } 
+          });
+        }
+        
         window.cachedCurrentAd = 1;
         window.cachedTotalAds = 1;
         window.lastVideoDuration = 0;
@@ -341,16 +351,6 @@
       
       if (rawAdShowing && video.playbackRate !== CONFIG.accelerationSpeed) {
         video.playbackRate = CONFIG.accelerationSpeed;
-        if (window.lastAcceleratedSrc !== video.src) {
-          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
-            window.__CHROMA_INTERNAL__.send({ 
-              token: window.__CHROMA_INTERNAL__.token,
-              action: 'STATS_UPDATE', 
-              payload: { type: 'accelerated' } 
-            });
-            window.lastAcceleratedSrc = video.src; // Only mark as sent if send was possible
-          }
-        }
       }
     } else {
       if (video.muted && video.dataset.ytChromaMuted === 'true') {
