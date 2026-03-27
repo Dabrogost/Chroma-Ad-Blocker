@@ -6,6 +6,8 @@
 
 'use strict';
 
+const DEBUG = false;
+
 const CONFIG = {
   enabled: true,
   acceleration: true,
@@ -429,7 +431,7 @@ function handlePrimeAdAcceleration() {
 
     updateAdOverlay(video, isAdActive);
   } catch (err) {
-    console.error('[Chroma] Error in Prime loop:', err);
+    if (DEBUG) console.error('[Chroma] Error in Prime loop:', err);
   }
 }
 
