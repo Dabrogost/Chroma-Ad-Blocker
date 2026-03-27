@@ -24,48 +24,56 @@ Chroma uses a decentralized architecture synchronized through `chrome.storage.lo
 
 ```mermaid
 graph TD
-    subgraph "Extension Core (Service Worker)"
-        BS["background.js<br/>(Logic & Rules)"]
+    classDef sw fill:#2d3436,color:#fff,stroke:#636e72,stroke-width:2px
+    classDef storage fill:#0984e3,color:#fff,stroke:#74b9ff,stroke-width:2px
+    classDef isolated fill:#00b894,color:#fff,stroke:#55efc4,stroke-width:2px
+    classDef main fill:#d63031,color:#fff,stroke:#ff7675,stroke-width:2px
+    classDef dnr fill:#6c5ce7,color:#fff,stroke:#a29bfe,stroke-width:2px
+    classDef dom fill:#f1c40f,color:#000,stroke:#f39c12,stroke-width:2px
+
+    subgraph SW ["Extension Core (Service Worker)"]
+        BS["background.js<br/>(Main Logic)"]:::sw
     end
 
-    STORAGE[("chrome.storage.local<br/>(Central Hub)")]
-
-    subgraph "YouTube & Prime (Isolated World)"
-        CS_YT["youtube.js<br/>(YT Accelerator)"]
-        CS_PV["prime.js<br/>(Prime Accelerator)"]
-        CS_GEN["content.js<br/>(Cosmetic & Warnings)"]
+    subgraph ST ["Central Hub"]
+        STORAGE[("chrome.storage.local")]:::storage
     end
 
-    subgraph "Global Protection (Main World)"
-        MW_INT["interceptor.js<br/>(Main World Interceptor)"]
+    subgraph GR ["Global Protection Layer"]
+        MW_INT["interceptor.js<br/>(Main World)"]:::main
+        CS_PROT["protection.js<br/>(Isolated Relay)"]:::isolated
     end
 
-    subgraph "Global Protection (Isolated World)"
-        CS_PROT["protection.js<br/>(Isolated Relay)"]
+    subgraph SP ["Site-Specific Accelerators"]
+        CS_YT["youtube.js<br/>(YT)"]:::isolated
+        CS_PV["prime.js<br/>(Prime)"]:::isolated
+        CS_GEN["content.js<br/>(Cosmetic)"]:::isolated
     end
 
-    subgraph "Network & Stats (DNR)"
-        DNR["Declarative Net Request<br/>(300k+ Rules)"]
+    subgraph DN ["Network Blocking (DNR)"]
+        DNR["Declarative Net Request<br/>(300k+ Rules)"]:::dnr
     end
 
-    %% Storage & Central Hub
-    BS <-->|"Sync State"| STORAGE
-    CS_YT -- "Read Config" --> STORAGE
-    CS_PV -- "Read Config" --> STORAGE
-    CS_GEN -- "Read Config" --> STORAGE
-    CS_PROT -- "Read Config" --> STORAGE
-
-    %% Feedback & Stats
+    %% Logic Flow
+    MW_INT -- "Interception" --> CS_PROT
+    CS_PROT -- "Relay" --> BS
+    
     CS_YT -- "Stats" --> BS
     CS_PV -- "Stats" --> BS
-    CS_PROT -- "Relay" --> BS
-    MW_INT -- "Interception" --> CS_PROT
-    BS -- "Harvest Matches" --> DNR
     
+    BS <-->|"Sync State"| STORAGE
+    
+    CS_YT -.->|"Read Config"| STORAGE
+    CS_PV -.->|"Read Config"| STORAGE
+    CS_GEN -.->|"Read Config"| STORAGE
+    CS_PROT -.->|"Read Config"| STORAGE
+
+    BS -- "Harvest Matches" --> DNR
+
     %% Execution
-    CS_YT -- "Accelerate" --> DOM_YT["YouTube DOM"]
-    CS_PV -- "Accelerate" --> DOM_PV["Prime DOM"]
-    CS_GEN -- "Hide/Remove" --> DOM_YT
+    CS_YT ==>|"Accelerate"| DOM_YT["YouTube DOM"]:::dom
+    CS_PV ==>|"Accelerate"| DOM_PV["Prime Video DOM"]:::dom
+    CS_GEN ==>|"Hide/Remove"| DOM_YT
 ```
 
 ---
