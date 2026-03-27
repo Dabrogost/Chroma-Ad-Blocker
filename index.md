@@ -3,7 +3,7 @@ layout: default
 title: Home
 ---
 
-## 🛡️ The Ultimate Shield for Modern Browsing
+## The Ultimate Shield for Modern Browsing
 
 **Chroma Ad-Blocker** is a premium, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to bypass modern anti-adblock systems while maintaining a lightweight footprint.
 
@@ -12,7 +12,7 @@ title: Home
 
 ---
 
-### 🚀 Key Features
+### Key Features
 
 *   **Multi-Platform Ad Acceleration**  
     Automatically detects and accelerates ads (up to 16x speed) on **YouTube** and **Prime Video**. Fulfills server-side impression requirements instantly.
@@ -29,7 +29,7 @@ title: Home
 
 ---
 
-### 🏗️ Architecture Overview
+### Architecture Overview
 
 Chroma uses a decentralized architecture synchronized through a secure central hub. This ensures that configuration changes and statistics persist across the ephemeral Manifest V3 service worker lifecycle.
 

@@ -2,6 +2,6 @@ title: Chroma Ad-Blocker
 description: Premium YouTube Ad-Blocker for Manifest V3. Bypass detections with style.
 
 # Custom settings
-logo: /icons/icon128.png
-baseurl: "" # the subpath of your site, e.g. /blog
-url: "https://Dabrogost.github.io" # the base hostname & protocol for your site
+logo: icons/icon128.png
+baseurl: "/YT-Chroma" # The subpath of your site
+url: "https://Dabrogost.github.io"
