@@ -35,7 +35,8 @@ const AD_SELECTORS = [
 let targetVideo = null;
 let isAdActive = false;
 let lastAcceleratedSrc = null;
-let adOverlay = null;
+let adOverlayHost = null;
+let adOverlayRoot = null;
 let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
 let savedVolume = 1;
@@ -47,10 +48,106 @@ let chromaClockRunning = false;
  * Initializes the visual overlay for Prime Video.
  */
 function initAdOverlay(video) {
-  if (document.getElementById('prime-chroma-overlay')) return;
+  if (adOverlayHost) return;
   
-  adOverlay = document.createElement('div');
-  adOverlay.id = 'prime-chroma-overlay';
+  adOverlayHost = document.createElement('div');
+  adOverlayHost.id = 'prime-chroma-host-' + Math.random().toString(36).substring(2, 9);
+  
+  // Create a CLOSED shadow root for maximum isolation (VULN-06)
+  adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
+  
+  // Inject Styles into ShadowRoot
+  const style = document.createElement('style');
+  style.textContent = `
+    :host {
+      position: absolute !important;
+      top: 0 !important; left: 0 !important; 
+      width: 100% !important; height: 100% !important;
+      background: rgba(0, 0, 0, 0.7) !important;
+      backdrop-filter: blur(12px) !important;
+      z-index: 2147483647 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      color: white !important;
+      font-family: 'Amazon Ember', Arial, sans-serif !important;
+      opacity: 0 !important;
+      transition: opacity 0.5s ease-out !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    :host(.active) {
+      opacity: 1 !important;
+      pointer-events: all !important;
+    }
+    .chroma-content-box {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      justify-content: center !important;
+      background: rgba(20, 20, 25, 0.85) !important;
+      padding: 40px !important;
+      border-radius: 20px !important;
+      border: 1px solid rgba(255, 255, 255, 0.1) !important;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.8) !important;
+      max-width: 90% !important;
+      width: 380px !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: 90% !important;
+      transform: translateY(0) !important;
+      transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
+      flex-grow: 0 !important;
+      flex-shrink: 0 !important;
+    }
+    :host(.active) .chroma-content-box {
+      transform: translateY(-8px) !important;
+    }
+    .chroma-spinner {
+      width: 50px !important; height: 50px !important;
+      border: 4px solid rgba(255,255,255,0.08) !important;
+      border-top-color: var(--chroma-color, #00A8E1) !important;
+      border-radius: 50% !important;
+      animation: chroma-spin 1s linear infinite !important;
+      margin: 0 0 20px 0 !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box !important;
+      display: block !important;
+    }
+    @keyframes chroma-spin { 
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); } 
+    }
+    .chroma-title {
+      font-size: 24px !important; font-weight: 800 !important; 
+      margin: 0 0 8px 0 !important;
+      color: #fff !important;
+      letter-spacing: -0.02em !important;
+      text-align: center !important;
+      line-height: 1.2 !important;
+    }
+    .chroma-subtitle {
+      font-size: 15px !important; color: rgba(255, 255, 255, 0.6) !important;
+      margin: 0 0 20px 0 !important;
+      text-align: center !important;
+      line-height: 1.4 !important;
+    }
+    .chroma-progress-container {
+      width: 100% !important;
+      height: 4px !important;
+      background: rgba(255,255,255,0.1) !important;
+      border-radius: 2px !important;
+      overflow: hidden !important;
+      display: block !important;
+    }
+    .chroma-progress-bar {
+      width: 0%;
+      height: 100% !important;
+      background: var(--chroma-color, #00A8E1) !important;
+      transition: width 0.1s linear, background 0.3s linear !important;
+    }
+  `;
   
   const contentBox = document.createElement('div');
   contentBox.className = 'chroma-content-box';
@@ -78,7 +175,8 @@ function initAdOverlay(video) {
   contentBox.appendChild(subtitle);
   contentBox.appendChild(progressContainer);
   
-  adOverlay.appendChild(contentBox);
+  adOverlayRoot.appendChild(style);
+  adOverlayRoot.appendChild(contentBox);
 
   // Target the best container: the SDK player container or the UI container
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
@@ -86,7 +184,7 @@ function initAdOverlay(video) {
     if (window.getComputedStyle(container).position === 'static') {
       container.style.position = 'relative'; 
     }
-    container.appendChild(adOverlay);
+    container.appendChild(adOverlayHost);
   }
 }
 
@@ -95,29 +193,29 @@ function initAdOverlay(video) {
  */
 function updateAdOverlay(video, isActive) {
   if (!CONFIG.acceleration || !isActive) {
-    if (adOverlay && adOverlay.classList.contains('active')) {
-      adOverlay.classList.remove('active');
+    if (adOverlayHost && adOverlayHost.classList.contains('active')) {
+      adOverlayHost.classList.remove('active');
     }
     return;
   }
   
-  if (!adOverlay) {
+  if (!adOverlayHost) {
     initAdOverlay(video);
   }
 
   // Ensure it's in the right place
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
-  if (container && adOverlay && !container.contains(adOverlay)) {
-    container.appendChild(adOverlay);
+  if (container && adOverlayHost && !container.contains(adOverlayHost)) {
+    container.appendChild(adOverlayHost);
   }
   
-  if (adOverlay && !adOverlay.classList.contains('active')) {
-    adOverlay.classList.add('active');
+  if (adOverlayHost && !adOverlayHost.classList.contains('active')) {
+    adOverlayHost.classList.add('active');
   }
 
   // Update progress bar
-  if (adOverlay && video) {
-    const progressBar = adOverlay.querySelector('.chroma-progress-bar');
+  if (adOverlayRoot && video) {
+    const progressBar = adOverlayRoot.querySelector('.chroma-progress-bar');
     if (progressBar) {
       let percent = 0;
       
@@ -312,6 +410,7 @@ function injectChromaCSS() {
       transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
     }
   `;
+  Object.freeze(style);
   (document.head || document.documentElement).appendChild(style);
 }
 
@@ -447,7 +546,7 @@ function resetSession() {
   isAdActive = false;
   lastAcceleratedSrc = null;
   document.body.classList.remove('chroma-prime-session');
-  if (adOverlay) adOverlay.classList.remove('active');
+  if (adOverlayHost) adOverlayHost.classList.remove('active');
 }
 
 function init() {
@@ -488,7 +587,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       }
       isAdActive = false;
       document.body.classList.remove('chroma-prime-session');
-      if (adOverlay) adOverlay.classList.remove('active');
+      if (adOverlayHost) adOverlayHost.classList.remove('active');
     } else {
       startPolling();
     }

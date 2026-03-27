@@ -14,14 +14,80 @@
   // ─── STATE ────────────────────────────────────────────────────────────────────
   let stats = { accelerated: 0 };
   let targetAdVideo = null;
-  let adOverlay = null;
+  let adOverlayHost = null; // The Shadow Host
+  let adOverlayRoot = null; // The Closed Shadow Root
 
   // ─── AD ACCELERATION ─────────────────────────────────────────────────────────
   function initAdOverlay() {
-    if (document.getElementById('yt-chroma-overlay')) return;
+    if (adOverlayHost) return;
     
-    adOverlay = document.createElement('div');
-    adOverlay.id = 'yt-chroma-overlay';
+    adOverlayHost = document.createElement('div');
+    // Randomized stable ID to avoid clobbering but remain targetable by extension logic if needed
+    adOverlayHost.id = 'yt-chroma-host-' + Math.random().toString(36).substring(2, 9);
+    
+    // Create a CLOSED shadow root for maximum isolation (VULN-06)
+    adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
+    
+    // Inject Styles into ShadowRoot
+    const style = document.createElement('style');
+    style.textContent = `
+      :host {
+        position: absolute !important;
+        top: 0 !important; left: 0 !important; 
+        width: 100% !important; height: 100% !important;
+        background: rgba(15, 15, 18, 0.8) !important;
+        backdrop-filter: blur(12px) !important;
+        z-index: 2147483647 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: white !important;
+        font-family: 'YouTube Noto', Roboto, Arial, sans-serif !important;
+        opacity: 0 !important;
+        transition: opacity 0.2s ease !important;
+        pointer-events: none !important;
+      }
+      :host(.active) {
+        opacity: 1 !important;
+        pointer-events: all !important;
+      }
+      .chroma-spinner {
+        width: 48px; height: 48px;
+        border: 4px solid rgba(255,255,255,0.1);
+        border-top-color: var(--chroma-color, #ff0055);
+        border-radius: 50%;
+        animation: chroma-spin 1s linear infinite;
+        margin-bottom: 20px;
+      }
+      @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
+      .chroma-checkmark {
+        width: 48px; height: 48px;
+        border: 4px solid var(--chroma-color, #ff0055);
+        border-radius: 50%;
+        margin-bottom: 20px;
+        position: relative;
+      }
+      .chroma-checkmark::after {
+        content: '';
+        position: absolute;
+        top: 6px; left: 16px;
+        width: 10px; height: 20px;
+        border: solid var(--chroma-color, #ff0055);
+        border-width: 0 4px 4px 0;
+        transform: rotate(45deg);
+      }
+      .chroma-title {
+        font-size: 24px; font-weight: 600; margin-bottom: 8px;
+        text-shadow: 0 2px 12px rgba(0,0,0,0.8);
+      }
+      .chroma-subtitle {
+        font-size: 15px; color: #eee;
+        position: absolute;
+        bottom: 18%;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+      }
+    `;
     
     const spinner = document.createElement('div');
     spinner.className = 'chroma-spinner';
@@ -34,20 +100,21 @@
     subtitle.className = 'chroma-subtitle';
     subtitle.textContent = 'Accelerating Ad...';
     
-    adOverlay.appendChild(spinner);
-    adOverlay.appendChild(title);
-    adOverlay.appendChild(subtitle);
+    adOverlayRoot.appendChild(style);
+    adOverlayRoot.appendChild(spinner);
+    adOverlayRoot.appendChild(title);
+    adOverlayRoot.appendChild(subtitle);
 
     const playerContainer = document.querySelector('.html5-video-player') || document.querySelector('#movie_player');
-    if (playerContainer && !playerContainer.contains(adOverlay)) {
-      playerContainer.appendChild(adOverlay);
+    if (playerContainer && !playerContainer.contains(adOverlayHost)) {
+      playerContainer.appendChild(adOverlayHost);
     }
   }
 
   function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
     if (!CONFIG.acceleration || !effectiveAdShowing) {
-      if (adOverlay && adOverlay.classList.contains('active')) {
-        adOverlay.classList.remove('active');
+      if (adOverlayHost && adOverlayHost.classList.contains('active')) {
+        adOverlayHost.classList.remove('active');
         window.cachedCurrentAd = 1;
         window.cachedTotalAds = 1;
         window.lastVideoDuration = 0;
@@ -55,17 +122,17 @@
       return;
     }
     
-    if (!adOverlay) {
+    if (!adOverlayHost) {
       initAdOverlay();
     }
 
     const playerContainer = video.closest('.html5-video-player') || video.parentElement;
-    if (playerContainer && !playerContainer.contains(adOverlay)) {
-      playerContainer.appendChild(adOverlay);
+    if (playerContainer && !playerContainer.contains(adOverlayHost)) {
+      playerContainer.appendChild(adOverlayHost);
     }
     
-    if (!adOverlay.classList.contains('active')) {
-      adOverlay.classList.add('active');
+    if (!adOverlayHost.classList.contains('active')) {
+      adOverlayHost.classList.add('active');
     }
     
     if (typeof window.cachedCurrentAd === 'undefined') {
@@ -103,9 +170,9 @@
     
     const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || window.chromaAdSkipped;
     
-    const spinner = adOverlay.querySelector('.chroma-spinner, .chroma-checkmark');
-    const titleEl = adOverlay.querySelector('.chroma-title');
-    const subtitleEl = adOverlay.querySelector('.chroma-subtitle');
+    const spinner = adOverlayRoot.querySelector('.chroma-spinner, .chroma-checkmark');
+    const titleEl = adOverlayRoot.querySelector('.chroma-title');
+    const subtitleEl = adOverlayRoot.querySelector('.chroma-subtitle');
 
     if (isAdsDone) {
       if (spinner && spinner.className !== 'chroma-checkmark') spinner.className = 'chroma-checkmark';
@@ -341,7 +408,7 @@
           }
         }
         
-        const overlay = document.getElementById('yt-chroma-overlay');
+        const overlay = adOverlayHost;
         if (overlay) overlay.classList.remove('active');
         
         window.chromaAdSessionActive = false;
@@ -529,6 +596,8 @@
         text-shadow: 0 1px 4px rgba(0,0,0,0.5);
       }
     `;
+    // Freeze the style text content to prevent accidental tampering
+    Object.freeze(style);
     (document.head || document.documentElement).appendChild(style);
   }
 

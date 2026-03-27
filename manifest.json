@@ -32,7 +32,6 @@
       "js": [
         "messaging.js",
         "utils/chromaColor.js",
-        "utils/selectors.js",
         "content.js",
         "youtube.js"
       ],

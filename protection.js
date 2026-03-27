@@ -8,18 +8,18 @@
 
 (function() {
   const DEBUG = false;
+  let isolatedPort; // This will hold our secure pipe
 
-  // Generate a unique session token to secure cross-world communication
-  const secretToken = (function() {
-    try {
-      const buffer = new Uint8Array(16);
-      crypto.getRandomValues(buffer);
-      return Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch (e) {
-      // Fallback for environments where crypto is not fully available
-      return Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+  // Generate a unique session token via the background script (VULN-02 Fix)
+  let secretToken = null;
+  const getTokenFromBackground = async () => {
+    const response = await chrome.runtime.sendMessage({ type: 'GET_TOKEN' });
+    if (response && response.token) {
+      secretToken = response.token;
+      return true;
     }
-  })();
+    return false;
+  };
 
   const CONFIG = {
     blockPopUnders: true,
@@ -66,45 +66,158 @@
   }
 
   /**
+   * Processes messages from the interceptor (via the secure MessagePort)
+   * and routes them to the background script.
+   */
+  function processInterceptorMessage(data) {
+    if (!data || data.source !== 'chroma-interceptor') return;
+
+
+    // LEGACY: Handle existing message types that aren't yet using action/payload
+    if (data.type === 'WINDOW_OPEN_ATTEMPT') {
+      const now = Date.now();
+      const timeSinceGesture = now - lastUserGestureTime;
+      popupCountInGesture++;
+      
+      const isSuspicious = timeSinceGesture > 300 || popupCountInGesture > 1;
+
+      notifyBackground({
+        type: MSG.WINDOW_OPEN_NOTIFY,
+        token: data.token,
+        url: data.url,
+        isSuspicious,
+        timeSinceGesture,
+        popupCount: popupCountInGesture,
+        gestureType: lastUserGestureType,
+        stack: data.stack
+      });
+      return;
+    }
+
+    if (data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
+      if (DEBUG) console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${data.type})`);
+      notifyBackground({
+        type: MSG.SUSPICIOUS_ACTIVITY,
+        token: data.token,
+        activity: data.type,
+        context: data.context
+      });
+      return;
+    }
+
+    if (data.type === 'NOTIFICATION_ATTEMPT') {
+      if (DEBUG) console.log('[Chroma Ad-Blocker] Blocked notification attempt');
+      notifyBackground({
+        type: MSG.SUSPICIOUS_ACTIVITY,
+        token: data.token,
+        activity: data.type
+      });
+      return;
+    }
+
+    // NEW: Generic Routing to Background
+    const payload = {
+      source: 'chroma_interceptor',
+      token: data.token,
+      action: data.action || data.type,
+      payload: data.payload || data
+    };
+
+    try {
+      chrome.runtime.sendMessage(payload, (response) => {
+        if (chrome.runtime.lastError) {
+          if (DEBUG) console.error("Background script unreachable:", chrome.runtime.lastError.message);
+          return;
+        }
+        // Optional: Send the response back down the secure pipe to the MAIN world
+        if (isolatedPort && response) {
+           isolatedPort.postMessage({ type: 'BACKGROUND_RESPONSE', data: response });
+        }
+      });
+    } catch (error) {
+      if (DEBUG) console.error("Failed to route message to background:", error);
+    }
+  }
+
+  /**
    * Listen for messages from the MAIN world interceptor
    */
   function initInterceptorListener() {
+    // SECURITY: The ONLY way to process sensitive interceptor messages is through the secure port (isolatedPort.onmessage)
+    // We quarantine the window listener to handle only non-sensitive interactions.
     window.addEventListener('message', (event) => {
-      if (event.source !== window || !event.data || event.data.source !== 'chroma-interceptor') return;
+      if (event.source !== window || !event.data) return;
 
-      // SECURITY: Validate session token to prevent DOM-based message forgery
-      if (event.data.token !== secretToken) {
-        if (DEBUG) console.warn('[Chroma Ad-Blocker] Rejected message with invalid or missing session token.');
+      const sensitiveTypes = [
+        'WINDOW_OPEN_ATTEMPT',
+        'SUSPICIOUS_FOCUS_ATTEMPT',
+        'SUSPICIOUS_BLUR_ATTEMPT',
+        'NOTIFICATION_ATTEMPT'
+      ];
+
+      if (sensitiveTypes.includes(event.data.type)) {
+        if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked insecure delivery of sensitive command via window.postMessage.');
         return;
       }
 
-      if (event.data.type === 'WINDOW_OPEN_ATTEMPT') {
-        const now = Date.now();
-        const timeSinceGesture = now - lastUserGestureTime;
-        popupCountInGesture++;
-        
-        const isSuspicious = timeSinceGesture > 300 || popupCountInGesture > 1;
-
-        notifyBackground({
-          type: MSG.WINDOW_OPEN_NOTIFY,
-          url: event.data.url,
-          isSuspicious,
-          timeSinceGesture,
-          popupCount: popupCountInGesture,
-          gestureType: lastUserGestureType,
-          stack: event.data.stack
-        });
-      }
-
-      if (event.data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || event.data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
-        if (DEBUG) console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${event.data.type})`);
-        notifyBackground({
-          type: MSG.SUSPICIOUS_ACTIVITY,
-          activity: event.data.type,
-          context: event.data.context
-        });
-      }
+      // Process non-sensitive messages here if any...
+      // processInterceptorMessage(event.data); // Removed legacy support for sensitive messages
     });
+  }
+
+  /**
+   * Securely transfers the secret token to the MAIN world using
+   * a two-way CustomEvent handshake with stopImmediatePropagation.
+   */
+  function initHandshake(selectors = {}) {
+    const handleMainReady = (e) => {
+      // Stop the host page from knowing the extension is initializing
+      if (typeof e.stopImmediatePropagation === 'function') {
+        e.stopImmediatePropagation();
+      }
+      
+      // Clean up the listener
+      document.removeEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
+      
+      if (DEBUG) console.log('[Chroma Ad-Blocker] MAIN world ready. Delivering token.');
+
+      // Dispatch the token securely via CustomEvent
+      // SECURITY: We no longer pass the token in the event detail (VULN-01 Fix)
+      // The token is now only passed via the MessagePort transfer.
+      document.dispatchEvent(new CustomEvent('__CHROMA_TOKEN_DELIVERY__'));
+
+      // Create the secure pipe (MessagePort)
+      const channel = new MessageChannel();
+      isolatedPort = channel.port1;
+
+      // Set up a listener for messages coming FROM interceptor.js via the secure pipe
+      isolatedPort.onmessage = (e) => {
+        if (DEBUG) console.log('[Chroma Ad-Blocker] Received via secure pipe:', e.data);
+        processInterceptorMessage(e.data);
+      };
+
+      // Send port2 to the MAIN world, attaching the token for verification
+      // SECURITY: The token is now ONLY passed via the MessagePort transfer. (VULN-01 Fix)
+      window.postMessage({
+        action: '__CHROMA_PORT_TRANSFER__',
+        token: secretToken,
+        selectors: selectors // Pass selectors to MAIN world
+      }, '*', [channel.port2]);
+
+      if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
+    };
+
+    if (secretToken) {
+      document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
+    } else {
+      // If token isn't ready, wait for it and then add the listener
+      const waitForToken = setInterval(() => {
+        if (secretToken) {
+          clearInterval(waitForToken);
+          document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
+        }
+      }, 5);
+    }
   }
 
   /**
@@ -123,24 +236,34 @@
       delete document.documentElement.dataset.chromaPopActive;
     }
 
-    // Pass the session token to the MAIN world interceptor
-    if (CONFIG.enabled) {
-      document.documentElement.dataset.chromaToken = secretToken;
-    } else {
-      delete document.documentElement.dataset.chromaToken;
-    }
+    // SECURITY: We no longer pass the token via dataset (VULN-02 Fix)
+    delete document.documentElement.dataset.chromaToken;
   }
 
   // Initial sync with storage
-  chrome.storage.local.get('config').then(({ config: savedConfig }) => {
+  chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS']).then(async (data) => {
+    const savedConfig = data.config;
     if (savedConfig) {
       CONFIG.enabled = savedConfig.enabled !== false;
       CONFIG.blockPopUnders = savedConfig.blockPopUnders !== false;
       CONFIG.blockPushNotifications = savedConfig.blockPushNotifications !== false;
     }
+    
+    // Cache selectors to pass to MAIN world
+    const selectors = {
+      HIDE_SELECTORS: data.HIDE_SELECTORS || [],
+      WARNING_SELECTORS: data.WARNING_SELECTORS || []
+    };
+
+    // SECURITY: Request token from background before starting handshake
+    await getTokenFromBackground();
+    
     signalInterceptor();
-  }).catch(() => {
+    initHandshake(selectors); // Pass selectors to handshake
+  }).catch(async () => {
+    await getTokenFromBackground();
     signalInterceptor(); // Fallback
+    initHandshake();
   });
 
   // Listen for config updates

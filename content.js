@@ -21,10 +21,8 @@
 
   // ─── STATE ────────────────────────────────────────────────────────────────────
   let observer = null;
-
-  // ─── COSMETIC SELECTORS (Extracted to utils/selectors.js) ──────────────────
-  const HIDE_SELECTORS = window.HIDE_SELECTORS || [];
-  const WARNING_SELECTOR_COMBINED = window.WARNING_SELECTOR_COMBINED || '';
+  let HIDE_SELECTORS = [];
+  let WARNING_SELECTOR_COMBINED = '';
 
   // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
   function injectAllCSS() {
@@ -219,19 +217,33 @@
 
       const isElement = node.nodeType === Node.ELEMENT_NODE;
 
-      // Handle ad-containers
+      // Handle ad-containers (Harden against VULN-07: UI Destruction)
       const processAdContainer = (el) => {
-        if (el.id && el.id !== 'yt-chroma-cosmetic' && el.id !== 'yt-chroma-shorts' && el.id !== 'yt-chroma-merch' && el.id !== 'yt-chroma-offers' && !el.id.includes('masthead')) {
+        if (!el || !el.id) return;
+        
+        // 1. Exclude internal extension styles and critical site elements
+        const id = el.id.toLowerCase();
+        const EXCLUDE_IDS = ['yt-chroma', 'masthead', 'player', 'content', 'columns', 'guide', 'secondary', 'primary'];
+        if (EXCLUDE_IDS.some(ex => id.includes(ex))) return;
+
+        // 2. More restrictive matching for ad-like IDs
+        // We look for patterns that are typical of ad injections but not general UI.
+        const isAdPattern = /^(ad[_-]container|ad[_-]slot|google_ads_iframe|taboola-|outbrain-)/i.test(id) || 
+                           (id.includes('ad-container') && !id.includes('video-ad-container'));
+
+        if (isAdPattern) {
+          if (DEBUG) console.log('[Chroma Ad-Blocker] Removing suspicious container:', el.id);
           el.style.display = 'none';
           el.remove();
         }
       };
 
-      if (isElement && node.id && (node.id.includes('ad-container') || node.id.includes('ad_container'))) {
+      if (isElement && node.id) {
         processAdContainer(node);
       }
       if (typeof node.querySelectorAll === 'function') {
-        node.querySelectorAll('[id*="ad-container"], [id*="ad_container"]').forEach(processAdContainer);
+        // Only target specific suspicious patterns to avoid over-matching
+        node.querySelectorAll('[id*="ad-container"], [id*="ad_container"], [id*="ad-slot"]').forEach(processAdContainer);
       }
 
       // Handle Shorts
@@ -340,24 +352,35 @@
   });
 
   // ─── INIT ─────────────────────────────────────────────────────────────────────
-  function init() {
-    injectAllCSS();
-
-    chrome.storage.local.get('config').then(({ config: savedConfig }) => {
-      if (savedConfig) {
-        Object.assign(CONFIG, savedConfig);
-        updateAllStyles();
+  async function init() {
+    try {
+      const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS']);
+      
+      if (data.config) {
+        Object.assign(CONFIG, data.config);
       }
       
+      if (data.HIDE_SELECTORS) {
+        HIDE_SELECTORS = data.HIDE_SELECTORS;
+      }
+      
+      if (data.WARNING_SELECTORS) {
+        WARNING_SELECTOR_COMBINED = data.WARNING_SELECTORS.join(',');
+      }
+
+      injectAllCSS();
+      updateAllStyles();
+
       if (CONFIG.enabled) {
         startObserver();
         suppressAdblockWarnings();
       }
-    }).catch(err => {
-      if (DEBUG) console.warn('[Chroma Ad-Blocker] Init config fetch failed, using defaults.', err);
+    } catch (err) {
+      if (DEBUG) console.warn('[Chroma Ad-Blocker] Init fetch failed, using defaults.', err);
+      injectAllCSS();
       startObserver();
       suppressAdblockWarnings();
-    });
+    }
   }
 
   init();

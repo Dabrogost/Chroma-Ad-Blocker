@@ -33,6 +33,34 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       stats: { networkBlocked: 0, accelerated: 0 },
       ruleCounter: 5000000,
       lastHarvestTime: Date.now(),
+      // Shared cosmetic selectors (moved from utils/selectors.js)
+      HIDE_SELECTORS: [
+        '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
+        'ytd-banner-promo-renderer', '#banner-ad', '#player-ads',
+        '.ytd-promoted-sparkles-web-renderer', 'ytd-promoted-sparkles-web-renderer',
+        '.ytd-promoted-video-renderer', 'ytd-promoted-video-renderer',
+        'ytd-search-pyv-renderer', 'ytd-ad-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
+        'ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
+        'ytd-rich-item-renderer:has(.ytd-ad-slot-renderer)',
+        'ytd-rich-section-renderer:has(ytd-ad-slot-renderer)',
+        'ytd-rich-section-renderer:has(.ytd-ad-slot-renderer)',
+        'ytd-rich-item-renderer:has(#ad-badge)',
+        'ytd-rich-section-renderer:has(#ad-badge)',
+        'ytd-statement-banner-renderer', 'ytd-video-masthead-ad-v3-renderer',
+        'ytd-reel-shelf-renderer[is-ad]', '.ytd-mealbar-promo-renderer',
+        'ytd-mealbar-promo-renderer', '.ytp-suggested-action',
+        '.adbox.banner_ads.adsbox', '.textads', '.ad_unit', '.ad-server',
+        '.ad-wrapper', '#ad-test', '.ad-test', '.advertisement',
+        'img[src*="/ad/gif.gif"]', 'img[src*="/ad/static.png"]',
+        'img[src*="advmaker"]', 'div[class*="advmaker"]', 'a[href*="advmaker"]',
+        '.advmaker', '#advmaker', '.ad-slot', '.ad-container',
+        '.ads-by-google', '[id^="ad-"]', '[class^="ad-"]'
+      ],
+      WARNING_SELECTORS: [
+        'tp-yt-iron-overlay-backdrop', 'ytd-enforcement-message-view-model',
+        '.ytd-enforcement-message-view-model', '#header-ad-container',
+        '.yt-playability-error-supported-renderers'
+      ]
     });
     if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
@@ -136,6 +164,9 @@ let lastGlobalRequest = null; // Fallback for when openerTabId is missing
 // RESOLVER SYNC: Track tabs waiting for a WINDOW_OPEN_NOTIFY from their opener
 const popunderResolvers = new Map(); // openerTabId -> [ (request) => void ]
 
+// SESSION TOKENS: track secure tokens per tab to prevent spoofing (VULN-02 Fix)
+const sessionTokens = new Map(); // tabId -> token
+
 // PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
 setInterval(() => {
   const now = Date.now();
@@ -163,8 +194,10 @@ const MSG = {
   STATS_RESET: 'STATS_RESET',
   STATS_UPDATE: 'STATS_UPDATE',
   DYNAMIC_RULE_ADD: 'DYNAMIC_RULE_ADD',
+  DYNAMIC_RULE_REMOVE: 'DYNAMIC_RULE_REMOVE',
   WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
-  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
+  GET_TOKEN: 'GET_TOKEN'
 };
 
 // ─── CONFIGURATION VALIDATION ───────────────────────────────────────────────
@@ -198,10 +231,12 @@ function validateDynamicRule(rule) {
     return null;
   }
 
+  // 1. Priority validation
   if (typeof rule.priority === 'number') {
     validatedRule.priority = rule.priority;
   }
 
+  // 2. Action validation
   if (rule.action && typeof rule.action === 'object') {
     const type = rule.action.type;
     if (type === 'block' || type === 'allow') {
@@ -209,12 +244,30 @@ function validateDynamicRule(rule) {
     }
   }
 
+  // 3. Condition validation
   if (rule.condition && typeof rule.condition === 'object') {
     const condition = {};
     if (typeof rule.condition.urlFilter === 'string') {
-      condition.urlFilter = rule.condition.urlFilter;
+      const filter = rule.condition.urlFilter;
+      
+      // SECURITY: Domain/Filter length sanitization (RFC 1035 limits)
+      if (filter.length > 253) return null;
+
+      // SECURITY: Hardcoded Denylist (Never whitelist core ad/tracking domains)
+      const ABSOLUTE_DENYLIST = ['doubleclick.net', 'googlesyndication.com', 'google-analytics.com'];
+      if (rule.action?.type === 'allow') {
+        if (ABSOLUTE_DENYLIST.some(d => filter.includes(d))) {
+          if (DEBUG) console.error('[Chroma Security] Blocked attempt to whitelist denylisted domain:', filter);
+          return null;
+        }
+      }
+
+      condition.urlFilter = filter;
     }
+    
     if (typeof rule.condition.regexFilter === 'string') {
+      // SECURITY: Basic regex length limit to prevent ReDoS in background context
+      if (rule.condition.regexFilter.length > 500) return null;
       condition.regexFilter = rule.condition.regexFilter;
     }
 
@@ -231,7 +284,7 @@ function validateDynamicRule(rule) {
 
     for (const prop of arrayProps) {
       if (Array.isArray(rule.condition[prop])) {
-        condition[prop] = rule.condition[prop].filter(item => typeof item === 'string');
+        condition[prop] = rule.condition[prop].filter(item => typeof item === 'string' && item.length < 253);
       }
     }
 
@@ -246,21 +299,71 @@ function validateDynamicRule(rule) {
   return validatedRule;
 }
 
+/**
+ * Handle CLOSE_TAB request from content script.
+ * SECURITY RULE: Only ever close the tab that the message originated from.
+ */
+function handleCloseTab(sender, sendResponse) {
+  const targetTabId = sender.tab?.id;
+  if (!targetTabId) {
+    if (DEBUG) console.error('[Chroma] Cannot close tab: Sender tab ID undefined.');
+    sendResponse({ ok: false, error: 'No tabId found' });
+    return;
+  }
+
+  chrome.tabs.remove(targetTabId)
+    .then(() => {
+      sendResponse({ ok: true, action: 'TAB_CLOSED' });
+    })
+    .catch(err => {
+      if (DEBUG) console.error(`[Chroma] Failed to close tab ${targetTabId}:`, err);
+      sendResponse({ ok: false, error: err.message });
+    });
+}
+
+
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  // SECURITY: Restrict sensitive message types to internal extension pages (e.g. popup)
-  // Content scripts always have a sender.tab property. Internal pages do not.
-  const isFromInternal = !_sender.tab;
+  // ROUTER: Handle messages forwarded by protection.js from the Main World
+  if (msg.source === 'chroma_interceptor') {
+    if (DEBUG) console.log('[Chroma Ad-Blocker] Routed action from interceptor:', msg.action, msg.payload);
+    
+    // SECURITY: Verify the token for all MAIN world commands (VULN-02 Fix)
+    const storedToken = sessionTokens.get(_sender.tab?.id);
+    if (!storedToken || msg.token !== storedToken) {
+      if (DEBUG) console.error('[Chroma Security] Rejected MAIN world command: Invalid Token.');
+      sendResponse({ ok: false, error: 'Unauthorized' });
+      return;
+    }
+
+    switch (msg.action) {
+      case 'CLOSE_TAB':
+        handleCloseTab(_sender, sendResponse);
+        break;
+      default:
+        if (DEBUG) console.warn('[Chroma] Unknown action requested:', msg.action);
+        sendResponse({ ok: false, error: 'Unknown action' });
+    }
+    return true; // Keep channel open for async responses
+  }
+
+  // SECURITY: ORIGIN AUTHENTICATION
+  // Strictly reject sensitive commands from any origin that isn't our extension's own UI/Background.
+  const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
+  const isFromInternal = _sender.origin === extensionOrigin;
+
   const SENSITIVE_TYPES = [
     MSG.STATS_GET,
     MSG.CONFIG_GET,
     MSG.CONFIG_SET,
     MSG.DYNAMIC_RULE_ADD,
+    MSG.DYNAMIC_RULE_REMOVE,
     MSG.STATS_RESET
   ];
 
   if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
-    return false;
+    if (DEBUG) console.error('[Chroma Security] Blocked unauthorized message from:', _sender.origin, msg.type);
+    return false; // Fail closed
   }
 
   if (msg.type === MSG.STATS_UPDATE) {
@@ -278,6 +381,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === MSG.WINDOW_OPEN_NOTIFY) {
+    const storedToken = sessionTokens.get(_sender.tab?.id);
+    if (!storedToken || msg.token !== storedToken) {
+      if (DEBUG) console.error('[Chroma Security] Rejected WINDOW_OPEN_NOTIFY: Invalid Token.');
+      return false;
+    }
     const tabId = _sender.tab?.id;
     if (tabId) {
       const existing = popunderRequests.get(tabId) || { createdTabIds: [] };
@@ -307,6 +415,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === MSG.SUSPICIOUS_ACTIVITY) {
+    const storedToken = sessionTokens.get(_sender.tab?.id);
+    if (!storedToken || msg.token !== storedToken) {
+      if (DEBUG) console.error('[Chroma Security] Rejected SUSPICIOUS_ACTIVITY: Invalid Token.');
+      return false;
+    }
     chrome.storage.local.get(['config', 'stats']).then(({ config: storedConfig, stats = {} }) => {
       if (storedConfig && storedConfig.enabled === false) return;
 
@@ -378,15 +491,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === MSG.DYNAMIC_RULE_ADD) {
-    // Allow popup/user to inject new block rules at runtime
+    // Allow popup/user to inject new rules (block or allow) at runtime
     chrome.storage.local.get(['dynamicRules', 'ruleCounter']).then(async ({ dynamicRules = [], ruleCounter }) => {
-      // Force initialization for legacy users who didn't get it via onInstalled
-      if (!ruleCounter) {
-        ruleCounter = 5000000;
-      }
+      if (!ruleCounter) ruleCounter = 5000000;
 
       const validatedRule = validateDynamicRule(msg.rule);
-
       if (!validatedRule) {
         return sendResponse({ ok: false, error: 'Invalid rule structure' });
       }
@@ -405,6 +514,23 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === MSG.DYNAMIC_RULE_REMOVE) {
+    chrome.storage.local.get('dynamicRules').then(async ({ dynamicRules = [] }) => {
+      const ruleId = msg.ruleId;
+      const initialLength = dynamicRules.length;
+      const updatedRules = dynamicRules.filter(r => r.id !== ruleId);
+      
+      if (updatedRules.length === initialLength) {
+        return sendResponse({ ok: false, error: 'Rule not found' });
+      }
+
+      await chrome.storage.local.set({ dynamicRules: updatedRules });
+      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [ruleId] });
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
   if (msg.type === MSG.STATS_RESET) {
     chrome.storage.local.get('stats').then(({ stats = {} }) => {
       stats.networkBlocked = 0;
@@ -413,6 +539,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         .then(() => sendResponse({ ok: true }));
     });
     return true;
+  }
+
+  if (msg.type === MSG.GET_TOKEN) {
+    const tabId = _sender.tab?.id;
+    if (!tabId) return sendResponse({ error: 'No tabId' });
+    
+    // Generate a unique session token
+    const buffer = new Uint8Array(16);
+    crypto.getRandomValues(buffer);
+    const token = Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    sessionTokens.set(tabId, token);
+    sendResponse({ token });
+    return;
   }
 });
 
@@ -536,6 +676,7 @@ setInterval(harvestNetworkStats, 120000);
 // Clean up and final harvest
 chrome.tabs.onRemoved.addListener((tabId) => {
   popunderRequests.delete(tabId);
+  sessionTokens.delete(tabId); // Cleanup session token (VULN-02 Fix)
   harvestNetworkStats().catch(() => {});
 });
 

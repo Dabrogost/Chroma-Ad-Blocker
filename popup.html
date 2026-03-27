@@ -215,6 +215,12 @@
       margin-left: 6px;
       border: 1px solid rgba(16, 185, 129, 0.2);
     }
+
+    .toggle-row.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+      filter: grayscale(1);
+    }
   </style>
 </head>
 <body>
@@ -342,6 +348,17 @@
     </div>
     <label class="switch">
       <input type="checkbox" id="togglePush" />
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="name">Whitelist this site</div>
+      <div class="desc">Disable blocking on current domain</div>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="toggleWhitelist" />
       <span class="slider"></span>
     </label>
   </div>

@@ -111,6 +111,57 @@ async function init() {
     }
   }
 
+  // ─── WHITELIST LOGIC ───────────────────────────────────────────────────
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  let currentDomain = '';
+  if (activeTab && activeTab.url) {
+    try {
+      const url = new URL(activeTab.url);
+      if (url.protocol.startsWith('http')) {
+        currentDomain = url.hostname;
+      }
+    } catch (e) {}
+  }
+
+  if (currentDomain) {
+    const { dynamicRules = [] } = await chrome.storage.local.get('dynamicRules');
+    const existingWhitelistRule = dynamicRules.find(r => 
+      r.action.type === 'allow' && 
+      r.condition.urlFilter === `||${currentDomain}^`
+    );
+
+    $('toggleWhitelist').checked = !!existingWhitelistRule;
+
+    $('toggleWhitelist').addEventListener('change', async (e) => {
+      const isChecked = e.target.checked;
+      
+      if (isChecked) {
+        const newRule = {
+          priority: 100, // High priority for whitelist
+          action: { type: 'allow' },
+          condition: { 
+            urlFilter: `||${currentDomain}^`,
+            resourceTypes: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'image', 'media', 'ping', 'other']
+          }
+        };
+        await notifyBackground({ type: MSG.DYNAMIC_RULE_ADD, rule: newRule });
+      } else {
+        const { dynamicRules: latestRules = [] } = await chrome.storage.local.get('dynamicRules');
+        const ruleToRemove = latestRules.find(r => 
+          r.action.type === 'allow' && 
+          r.condition.urlFilter === `||${currentDomain}^`
+        );
+        if (ruleToRemove) {
+          await notifyBackground({ type: MSG.DYNAMIC_RULE_REMOVE, ruleId: ruleToRemove.id });
+        }
+      }
+    });
+  } else {
+    // Disable whitelist toggle if not on a valid web page
+    $('toggleWhitelist').disabled = true;
+    $('toggleWhitelist').parentElement.parentElement.classList.add('disabled');
+  }
+
   // Reset stats
   $('resetStats').addEventListener('click', async () => {
     await notifyBackground({ type: MSG.STATS_RESET });
