@@ -6,6 +6,7 @@ Thanks for your interest. Here's what you need to know.
 
 - **Bug reports** — Open an issue. Include your Chrome version, extension version, and steps to reproduce.
 - **Rule updates** — If an ad domain or selector has changed, PRs targeting the `rules/` folder or `utils/selectors.js` are the most useful contributions.
+- **New Accelerator** —  New site specific video ad-accelerators, very useful but hard to maintain. 
 - **Code changes** — Open an issue first to discuss before writing anything significant. This avoids wasted effort.
 
 ## Ground Rules
