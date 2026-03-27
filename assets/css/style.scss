@@ -249,17 +249,12 @@ ul  { list-style: none; }
   font-size: 15px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma-h);
-  background-size: 250% auto;
+  background-size: 2500px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 5s linear infinite;
+  animation: shimmer-fixed 12s linear infinite;
   white-space: nowrap;
-}
-
-@keyframes shimmer {
-  from { background-position: 0% center;   }
-  to   { background-position: 250% center; }
 }
 
 @keyframes shimmer-fixed {

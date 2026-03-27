@@ -92,7 +92,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
       </svg>
       <h3 class="card__title">Network Blocking</h3>
       <p class="card__desc">
-        Over 300,000 declarative net request rules block tracker pings, analytics
+        300,000 declarative net request rules block tracker pings, analytics
         beacons, and banner ads at the browser level before they ever load.
       </p>
       <span class="card__tag">300k+ DNR Rules</span>
