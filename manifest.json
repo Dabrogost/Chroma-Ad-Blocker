@@ -40,18 +40,7 @@
       "all_frames": true
     },
 
-    {
-      "matches": [
-        "*://*.twitch.tv/*"
-      ],
-      "js": [
-        "messaging.js",
-        "utils/chromaColor.js",
-        "twitch.js"
-      ],
-      "run_at": "document_start",
-      "all_frames": true
-    },
+
     {
       "matches": [
         "*://*.amazon.com/gp/video/*",
