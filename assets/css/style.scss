@@ -249,17 +249,18 @@ ul  { list-style: none; }
   font-size: 15px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma);
-  background-size: 800px 800px;
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 4s linear infinite;
+  animation: shimmer-viewport 8s linear infinite;
   white-space: nowrap;
 }
 
-@keyframes shimmer-fixed {
-  from { background-position: 0px center; }
-  to { background-position: -800px center; }
+@keyframes shimmer-viewport {
+  from { background-position: 0px 0px; }
+  to   { background-position: -200vw 0px; }
 }
 
 .pill-nav__links {
@@ -449,11 +450,12 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma);
-  background-size: 800px 800px;
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 4s linear infinite;
+  animation: shimmer-viewport 8s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -548,11 +550,12 @@ ul  { list-style: none; }
   letter-spacing: -0.04em;
   margin-bottom: 22px;
   background: var(--grad-chroma);
-  background-size: 800px 800px;
+  background-size: 200vw 100vh;
+  background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 4s linear infinite;
+  animation: shimmer-viewport 8s linear infinite;
 }
 
 .hero__tagline {
@@ -693,13 +696,13 @@ ul  { list-style: none; }
   letter-spacing: -0.03em;
   line-height: 1.08;
   margin-bottom: 18px;
-  /* Universal Sync Animation */
   background: var(--grad-chroma);
-  background-size: 800px 800px; /* Logic: Sharper transitions = visible slant */
+  background-size: 200vw 100vh; /* Viewport Sync Logic */
+  background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 4s linear infinite;
+  animation: shimmer-viewport 8s linear infinite;
   text-align: center;
 }
 
