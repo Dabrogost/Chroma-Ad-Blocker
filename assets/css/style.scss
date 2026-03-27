@@ -56,7 +56,6 @@
 html {
   font-size: 16px;
   scroll-behavior: smooth;
-  scroll-snap-type: y proximity;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -450,10 +449,6 @@ ul  { list-style: none; }
   z-index: 10;
 }
 
-.qs-section {
-  scroll-snap-align: start;
-}
-
 /* ── Hero ───────────────────────────────────────────────────── */
 .hero {
   min-height: 100svh;
@@ -464,7 +459,6 @@ ul  { list-style: none; }
   text-align: center;
   padding: 130px 24px 90px;
   position: relative;
-  scroll-snap-align: start;
 }
 
 /* Animated logo rings */
@@ -660,7 +654,6 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 100px 24px;
-  scroll-snap-align: start;
 }
 
 .section__eyebrow {
@@ -834,7 +827,6 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 24px 100px;
-  scroll-snap-align: start;
 }
 
 .arch-card {
@@ -865,7 +857,6 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 0 24px 130px;
-  scroll-snap-align: start;
 }
 
 .qs-steps {
@@ -1120,7 +1111,7 @@ ul  { list-style: none; }
 }
 
 .layout-prose th {
-  font-family: 'Syne', sans-serif;
+  font-family: 'Outfit', sans-serif;
   font-weight: 700;
   font-size: 12px;
   letter-spacing: 1px;
@@ -1140,6 +1131,57 @@ ul  { list-style: none; }
 
 .layout-prose tr:last-child td {
   border-bottom: none;
+}
+
+/* ── Support Section ────────────────────────────────────────── */
+.support-section {
+  max-width: 800px;
+  margin: 60px auto 100px;
+  padding: 60px 24px;
+  text-align: center;
+  border-top: 1px solid var(--border-glass);
+}
+
+.support-section .section__title {
+  font-size: 2.2rem;
+  margin-bottom: 24px;
+}
+
+.support-section .section__sub {
+  margin: 0 auto 40px;
+}
+
+.btn-bmc {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 32px;
+  background: #FFDD00;
+  color: #000000;
+  border-radius: var(--r-pill);
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 16px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 14px rgba(255, 221, 0, 0.25);
+  text-decoration: none;
+}
+
+.btn-bmc:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(255, 221, 0, 0.4);
+}
+
+.btn-bmc svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Secondary Hero CTA */
+.btn-ghost--support:hover {
+  background: rgba(255, 221, 0, 0.08) !important;
+  color: #FFDD00 !important;
+  border-color: #FFDD00 !important;
 }
 
 /* ── Responsive ─────────────────────────────────────────────── */
