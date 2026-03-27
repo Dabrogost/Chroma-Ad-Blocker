@@ -81,7 +81,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
         Ads play at 16&times; speed with audio muted. Fulfills impression requirements
         server-side without triggering detection&nbsp;&mdash; the cleanest bypass available.
       </p>
-      <span class="card__tag">YouTube &middot; Prime Video</span>
+      <span class="card__tag">YT &middot; APV</span>
     </div>
 
     <!-- Card 2: Network Blocking -->
