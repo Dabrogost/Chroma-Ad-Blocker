@@ -29,9 +29,9 @@
   --border-glass:  rgba(108, 92, 231, 0.22);
   --border-hover:  rgba(0, 136, 255, 0.5);
 
-  --text:          #ede8ff;
-  --text-dim:      #7a6e99;
-  --text-muted:    #3d3558;
+  --text:          #ffffff;
+  --text-dim:      #9b91b9;
+  --text-muted:    #685e85;
 
   --glow-red:      rgba(255, 0, 85, 0.28);
   --glow-magenta:  rgba(153, 0, 255, 0.28);
@@ -434,11 +434,11 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma-h);
-  background-size: 300% auto;
+  background-size: 250% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer 7s linear infinite;
+  animation: shimmer 5s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -542,7 +542,7 @@ ul  { list-style: none; }
 
 .hero__tagline {
   font-size: clamp(1rem, 2.2vw, 1.2rem);
-  font-weight: 300;
+  font-weight: 400;
   color: var(--text-dim);
   max-width: 500px;
   margin: 0 auto 44px;
@@ -654,6 +654,10 @@ ul  { list-style: none; }
   max-width: 1180px;
   margin: 0 auto;
   padding: 100px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .section__eyebrow {
@@ -674,6 +678,13 @@ ul  { list-style: none; }
   letter-spacing: -0.03em;
   line-height: 1.08;
   margin-bottom: 18px;
+  /* Sync with chroma-text animation */
+  background: var(--grad-chroma-h);
+  background-size: 250% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 5s linear infinite;
 }
 
 .section__sub {
@@ -840,6 +851,9 @@ ul  { list-style: none; }
 }
 
 .arch-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
   margin-bottom: 44px;
 }
@@ -1135,9 +1149,12 @@ ul  { list-style: none; }
 
 /* ── Support Section ────────────────────────────────────────── */
 .support-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   max-width: 800px;
-  margin: 60px auto 100px;
-  padding: 60px 24px;
+  margin: 100px auto 100px;
+  padding: 100px 24px 60px;
   text-align: center;
   border-top: 1px solid var(--border-glass);
 }
@@ -1175,6 +1192,8 @@ ul  { list-style: none; }
 .btn-bmc svg {
   width: 20px;
   height: 20px;
+  display: block;
+  flex-shrink: 0;
 }
 
 /* Secondary Hero CTA */
