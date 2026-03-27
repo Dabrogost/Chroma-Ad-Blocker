@@ -82,7 +82,7 @@ body::before {
   z-index: -8;
   background: var(--grad-chroma);
   background-size: 100vw 100vh;
-  animation: scan-v 10s linear infinite;
+  animation: scan-v 7s linear infinite;
   opacity: 0.12; /* Subtle global flow */
   pointer-events: none;
 }
@@ -121,74 +121,7 @@ ul  { list-style: none; }
   animation-timeline: scroll();
 }
 
-.aurora {
-  position: fixed;
-  inset: 0;
-  z-index: -10;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.aurora__blob {
-  position: absolute;
-  border-radius: 50%;
-  will-change: transform;
-}
-
-.aurora__blob--1 {
-  width: 75vmax;
-  height: 75vmax;
-  background: radial-gradient(circle at center, rgba(255, 0, 85, 0.18) 0%, transparent 68%);
-  top: -25%;
-  left: -20%;
-  animation: blob-1 20s ease-in-out infinite alternate;
-}
-
-.aurora__blob--2 {
-  width: 65vmax;
-  height: 65vmax;
-  background: radial-gradient(circle at center, rgba(153, 0, 255, 0.16) 0%, transparent 68%);
-  top: 15%;
-  left: 25%;
-  animation: blob-2 26s ease-in-out infinite alternate;
-}
-
-.aurora__blob--3 {
-  width: 60vmax;
-  height: 60vmax;
-  background: radial-gradient(circle at center, rgba(0, 136, 255, 0.15) 0%, transparent 68%);
-  bottom: -15%;
-  right: -15%;
-  animation: blob-3 18s ease-in-out infinite alternate;
-}
-
-.aurora__blob--4 {
-  width: 45vmax;
-  height: 45vmax;
-  background: radial-gradient(circle at center, rgba(0, 255, 204, 0.09) 0%, transparent 68%);
-  bottom: 25%;
-  left: 5%;
-  animation: blob-4 30s ease-in-out infinite alternate;
-}
-
-@keyframes blob-1 {
-  from { transform: translate(0,    0)    scale(1);    }
-  to   { transform: translate(8vw,  7vh)  scale(1.18); }
-}
-@keyframes blob-2 {
-  from { transform: translate(0,    0)    scale(1.08); }
-  to   { transform: translate(-7vw, 9vh)  scale(0.92); }
-}
-@keyframes blob-3 {
-  from { transform: translate(0,    0)    scale(1);    }
-  to   { transform: translate(-9vw, -7vh) scale(1.22); }
-}
-@keyframes blob-4 {
-  from { transform: translate(0,    0)    scale(1);    }
-  to   { transform: translate(7vw,  -9vh) scale(1.12); }
-}
-
-/* ── Grain overlay ──────────────────────────────────────────── */
+/* ── Film Grain overlay ─────────────────────────────────────── */
 .grain {
   position: fixed;
   inset: 0;
@@ -286,7 +219,7 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 10s linear infinite;
+  animation: scan-v 7s linear infinite;
   white-space: nowrap;
 }
 
@@ -483,7 +416,7 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 10s linear infinite;
+  animation: scan-v 7s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -583,7 +516,7 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 10s linear infinite;
+  animation: scan-v 7s linear infinite;
 }
 
 .hero__tagline {
@@ -732,7 +665,7 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 10s linear infinite;
+  animation: scan-v 7s linear infinite;
   text-align: center;
 }
 
