@@ -249,7 +249,7 @@ ul  { list-style: none; }
   font-size: 15px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma);
-  background-size: 2500px auto;
+  background-size: 1200px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -258,8 +258,8 @@ ul  { list-style: none; }
 }
 
 @keyframes shimmer-fixed {
-  from { background-position: 0px center; }
-  to { background-position: -2500px center; }
+  from { background-position: 0px center;    }
+  to   { background-position: -1200px center; }
 }
 
 .pill-nav__links {
@@ -449,7 +449,7 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma);
-  background-size: 2500px auto;
+  background-size: 1200px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -548,7 +548,7 @@ ul  { list-style: none; }
   letter-spacing: -0.04em;
   margin-bottom: 22px;
   background: var(--grad-chroma);
-  background-size: 2500px auto;
+  background-size: 1200px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -695,7 +695,7 @@ ul  { list-style: none; }
   margin-bottom: 18px;
   /* Universal Sync Animation */
   background: var(--grad-chroma);
-  background-size: 2500px auto; /* Large fixed size for perfect sync */
+  background-size: 1200px auto; /* Scaled for better slant visibility */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
