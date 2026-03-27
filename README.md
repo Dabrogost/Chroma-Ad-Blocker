@@ -4,11 +4,11 @@
 
 ## Key Features
 
-- **Multi-Platform Ad Acceleration**: Automatically detects and accelerates ads (up to 16x speed) on **YouTube** and **Amazon Prime Video**. This fulfills server-side impression requirements instantly without triggering ad-block detections.
+- **Multi-Platform Ad Acceleration**: Automatically detects and accelerates ads (up to 16x speed) on **YT** and **Prm**. This fulfills server-side impression requirements instantly without triggering ad-block detections.
 - **Massive Network Blocking (DNR)**: Utilizes over **300,000+ optimized rules** across 10 rulesets to block trackers, invasive analytics, and traditional banner ads at the browser level.
 - **Cosmetic Filtering & Layout Cleanup**: Proactively removes ad placeholders, sidebars, and empty slots.
-- **YouTube Power Tools**:
-    - **Hide Shorts**: Clean up your feed by removing YouTube Shorts shelves and menu entries.
+- **YT Power Tools**:
+    - **Hide Shorts**: Clean up your feed by removing Shorts shelves and menu entries.
     - **Hide Merch & Offers**: Suppress intrusive shopping panels and rental/buy offers.
     - **Anti-Adblock Suppression**: Automatically deletes enforcement modals (e.g., "Ad blockers are not allowed") and restores page functionality.
 - **Global Privacy Protection**:
@@ -80,8 +80,8 @@ graph TD
     BS -- "Harvest Matches" --> DNR
 
     %% Execution
-    CS_YT ==>|"Accelerate"| DOM_YT["YouTube Shadow DOM"]:::dom
-    CS_PV ==>|"Accelerate"| DOM_PV["Prime Video Shadow DOM"]:::dom
+    CS_YT ==>|"Accelerate"| DOM_YT["YT Shadow DOM"]:::dom
+    CS_PV ==>|"Accelerate"| DOM_PV["Prm Shadow DOM"]:::dom
     CS_GEN ==>|"Hide/Remove"| DOM_YT
 ```
 
@@ -96,7 +96,7 @@ The ultimate defense against server-side ad detection. Instead of blocking the v
 Powered by Chrome’s **Declarative Net Request (DNR)** API. Chroma partitions over **300,000 rules** into 10 manageable files to ensure high performance and reliability. The Service Worker handles rule state and periodically harvests block statistics.
 
 ### Layer 3: Cosmetic & Warning Suppression (`content.js`, `utils/selectors.js`)
-Uses a `MutationObserver` and dynamic CSS injection to hide ad slots, remove "Ad blockers are not allowed" modals, and clean up the YouTube interface (removing Shorts, Merch, and Offers).
+Uses a `MutationObserver` and dynamic CSS injection to hide ad slots, remove "Ad blockers are not allowed" modals, and clean up the interface (removing Shorts, Merch, and Offers).
 
 ### Layer 4: Universal Protection (`protection.js`, `interceptor.js`)
 A dual-layer approach to blocking pop-unders and push notifications globally. The `interceptor.js` runs in the **Main World** to shadow browser APIs, while `protection.js` relays events to the background via a **Secure Pipeline** for enforcement.
@@ -129,11 +129,11 @@ Chroma implements several advanced security measures to ensure integrity and pre
 |---------|-------------|---------|
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR rulesets (300k+ rules). | `true` |
-| `acceleration` | Enables high-speed ad playback (YT/Prime). | `true` |
+| `acceleration` | Enables high-speed ad playback (YT/Prm). | `true` |
 | `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
-| `hideShorts` | Removes YouTube Shorts from feed. | `false` |
-| `hideMerch` | Removes YouTube Merchandise panels. | `true` |
-| `hideOffers` | Removes YouTube Movie/TV offers. | `true` |
+| `hideShorts` | Removes Shorts from feed. | `false` |
+| `hideMerch` | Removes Merchandise panels. | `true` |
+| `hideOffers` | Removes Movie/TV offers. | `true` |
 | `suppressWarnings` | Removes anti-adblock modals/locks. | `true` |
 | `blockPopUnders` | Intercepts unauthorized new windows. | `true` |
 | `blockPushNotifications` | Blocks web notification requests. | `true` |
