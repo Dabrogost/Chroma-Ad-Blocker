@@ -58,7 +58,7 @@ graph TD
     end
 
     subgraph DN ["Network Blocking (DNR)"]
-        DNR["Declarative Net Request<br/>(300k+ Rules)"]:::dnr
+        DNR["Declarative Net Request<br/>(300k Rules)"]:::dnr
     end
 
     %% Logic Flow
