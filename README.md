@@ -105,3 +105,11 @@ A dual-layer approach to blocking pop-unders and push notifications globally. Th
 | `suppressWarnings` | Removes anti-adblock modals/locks. | `true` |
 | `blockPopUnders` | Intercepts unauthorized new windows. | `true` |
 | `blockPushNotifications` | Blocks web notification requests. | `true` |
+
+---
+
+## Support the Project
+
+Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
+
+[**Support Chroma on Buy Me a Coffee**](https://buymeacoffee.com/dabrogost)
