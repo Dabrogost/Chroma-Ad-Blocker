@@ -109,6 +109,7 @@
       ],
       "js": [
         "interceptor.js",
+        "utils/chromaColor.js",
         "yt_handler.js",
         "prm_handler.js"
       ],

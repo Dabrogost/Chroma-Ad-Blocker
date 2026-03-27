@@ -51,7 +51,7 @@ function initAdOverlay(video) {
   if (adOverlayHost) return;
   
   adOverlayHost = document.createElement('div');
-  adOverlayHost.id = 'prime-chroma-host-' + Math.random().toString(36).substring(2, 9);
+  adOverlayHost.id = 'prime-chroma-overlay';
   
   // Create a CLOSED shadow root for maximum isolation (VULN-06)
   adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
@@ -426,7 +426,7 @@ function isAdShowing() {
   const playerContainer = document.querySelector('.atvwebplayersdk-player-container, .webPlayerUIContainer');
   if (playerContainer && (playerContainer.offsetParent !== null || playerContainer.getClientRects().length > 0)) {
     // Hide our overlay text before checking innerText to prevent feedback loops
-    const overlay = document.getElementById('prime-chroma-overlay');
+    const overlay = adOverlayHost;
     const originalVisibility = overlay ? overlay.style.visibility : null;
     if (overlay) overlay.style.visibility = 'hidden';
     
@@ -536,8 +536,8 @@ function handlePrimeAdAcceleration() {
               action: 'STATS_UPDATE',
               payload: { type: 'accelerated' }
             });
+            lastAcceleratedSrc = currentSrc; // Only mark as sent if send was possible
           }
-          lastAcceleratedSrc = currentSrc;
         }
       }
       
@@ -582,10 +582,23 @@ function resetSession() {
 }
 
 function init() {
-  // 1. Check for global internal config first (faster, passed via handshake)
+  // 1. Initial check (might be ready if handshake was fast)
   if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
     Object.assign(CONFIG, window.__CHROMA_INTERNAL__.config);
   }
+
+  // 2. Listen for the handshake completion/config update
+  document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+    if (e.detail) {
+      Object.assign(CONFIG, e.detail);
+      if (DEBUG) console.log('[Chroma] Prime handler re-init config via handshake:', CONFIG);
+      
+      if (CONFIG.enabled && CONFIG.acceleration && !pollingInterval) {
+        startPolling();
+        startMutationObserver();
+      }
+    }
+  });
 
   // Handle SPA transitions
   window.addEventListener('popstate', resetSession);

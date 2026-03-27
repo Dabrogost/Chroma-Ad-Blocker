@@ -348,8 +348,8 @@
               action: 'STATS_UPDATE', 
               payload: { type: 'accelerated' } 
             });
+            window.lastAcceleratedSrc = video.src; // Only mark as sent if send was possible
           }
-          window.lastAcceleratedSrc = video.src;
         }
       }
     } else {
@@ -497,6 +497,13 @@
       }
 
       const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS;
+      if (typeof window.calculateChromaColor !== 'function') {
+        const root = document.documentElement;
+        root.style.setProperty('--chroma-color', `rgb(255,0,85)`);
+        root.style.setProperty('--chroma-color-alpha', `rgba(255,0,85,0.3)`);
+        requestAnimationFrame(tick);
+        return;
+      }
       const [r, g, b] = window.calculateChromaColor(t);
 
       const root = document.documentElement;
@@ -604,11 +611,25 @@
   }
 
 
-  function init() {
-    // 1. Check for global internal config first (faster, passed via handshake)
+function init() {
+    // 1. Initial check (might be ready if script is deferred or loaded slowly)
     if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
       Object.assign(CONFIG, window.__CHROMA_INTERNAL__.config);
     }
+
+    // 2. Listen for the handshake completion to re-initialize config
+    document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+      if (e.detail) {
+        Object.assign(CONFIG, e.detail);
+        if (DEBUG) console.log('[Chroma] re-init config via handshake:', CONFIG);
+        
+        if (CONFIG.enabled && CONFIG.acceleration && !pollingInterval) {
+          startPolling();
+          startChromaClock();
+          initSkipButtonListener();
+        }
+      }
+    });
 
     if (CONFIG.enabled && CONFIG.acceleration) {
       injectChromaCSS();
