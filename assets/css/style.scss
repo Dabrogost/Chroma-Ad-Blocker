@@ -23,7 +23,7 @@
   --c-teal:        #00d1b2;
   --c-cyan:        #00ffcc;
 
-  --grad-chroma:   linear-gradient(135deg, #ff0055 0%, #9900ff 16.6%, #6c5ce7 33.3%, #0088ff 50%, #00d1b2 66.6%, #00ffcc 83.3%, #ff0055 100%);
+  --grad-chroma:   linear-gradient(180deg, #ff0055 0%, #9900ff 16.6%, #6c5ce7 33.3%, #0088ff 50%, #00d1b2 66.6%, #00ffcc 83.3%, #ff0055 100%);
   --grad-chroma-h: linear-gradient(90deg,  #ff0055 0%, #9900ff 16.6%, #6c5ce7 33.3%, #0088ff 50%, #00d1b2 66.6%, #00ffcc 83.3%, #ff0055 100%);
   --grad-dark:     linear-gradient(135deg, #0a0025 0%, #04020c 100%);
 
@@ -74,6 +74,7 @@ body {
   position: relative;
 }
 
+
 /* ── Global Chroma Background Layer ─────────────────────────── */
 body::before {
   content: '';
@@ -82,19 +83,8 @@ body::before {
   z-index: -8;
   background: var(--grad-chroma);
   background-size: 100vw 100vh;
-  animation: scan-v 7s linear infinite;
+  animation: scan-v 6s linear infinite;
   opacity: 0.12; /* Subtle global flow */
-  pointer-events: none;
-}
-
-/* Semi-transparent dark overlay for the "Window" effect */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -5;
-  background: var(--bg-void);
-  opacity: 0.88; 
   pointer-events: none;
 }
 
@@ -119,6 +109,73 @@ ul  { list-style: none; }
   transform-origin: 0 50%;
   animation: scroll-progress auto linear;
   animation-timeline: scroll();
+}
+
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -5;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.aurora__blob {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.aurora__blob--1 {
+  width: 75vmax;
+  height: 75vmax;
+  background: radial-gradient(circle at center, rgba(255, 0, 85, 0.18) 0%, transparent 68%);
+  top: -25%;
+  left: -20%;
+  animation: blob-1 20s ease-in-out infinite alternate;
+}
+
+.aurora__blob--2 {
+  width: 65vmax;
+  height: 65vmax;
+  background: radial-gradient(circle at center, rgba(153, 0, 255, 0.16) 0%, transparent 68%);
+  top: 15%;
+  left: 25%;
+  animation: blob-2 26s ease-in-out infinite alternate;
+}
+
+.aurora__blob--3 {
+  width: 60vmax;
+  height: 60vmax;
+  background: radial-gradient(circle at center, rgba(0, 136, 255, 0.15) 0%, transparent 68%);
+  bottom: -15%;
+  right: -15%;
+  animation: blob-3 18s ease-in-out infinite alternate;
+}
+
+.aurora__blob--4 {
+  width: 45vmax;
+  height: 45vmax;
+  background: radial-gradient(circle at center, rgba(0, 255, 204, 0.09) 0%, transparent 68%);
+  bottom: 25%;
+  left: 5%;
+  animation: blob-4 30s ease-in-out infinite alternate;
+}
+
+@keyframes blob-1 {
+  from { transform: translate(0,    0)    scale(1);    }
+  to   { transform: translate(8vw,  7vh)  scale(1.18); }
+}
+@keyframes blob-2 {
+  from { transform: translate(0,    0)    scale(1.08); }
+  to   { transform: translate(-7vw, 9vh)  scale(0.92); }
+}
+@keyframes blob-3 {
+  from { transform: translate(0,    0)    scale(1);    }
+  to   { transform: translate(-9vw, -7vh) scale(1.22); }
+}
+@keyframes blob-4 {
+  from { transform: translate(0,    0)    scale(1);    }
+  to   { transform: translate(7vw,  -9vh) scale(1.12); }
 }
 
 /* ── Film Grain overlay ─────────────────────────────────────── */
@@ -152,17 +209,18 @@ ul  { list-style: none; }
 .pill-nav__inner {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 10px 18px 10px 12px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 18px 8px 10px;
   background: var(--bg-glass);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
   border-radius: var(--r-pill);
   border: 1px solid var(--border-glass);
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.45),
     0 0 0 1px rgba(255, 255, 255, 0.025) inset;
-  animation: border-cycle 7s linear infinite;
+  animation: border-cycle 6s linear infinite;
 }
 
 @keyframes border-cycle {
@@ -201,6 +259,14 @@ ul  { list-style: none; }
   height: 28px;
   border-radius: 7px;
   flex-shrink: 0;
+  box-shadow: 0 0 15px var(--glow-magenta);
+}
+
+.pill-nav__brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+  gap: 2px;
 }
 
 @keyframes scan-v {
@@ -211,7 +277,7 @@ ul  { list-style: none; }
 .pill-nav__title {
   font-family: 'Outfit', sans-serif;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 14px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma);
   background-size: 100vw 100vh;
@@ -219,15 +285,65 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 7s linear infinite;
+  animation: scan-v 6s linear infinite;
   white-space: nowrap;
+}
+
+.pill-nav__version {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.pill-nav__tagline {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  white-space: nowrap;
+  pointer-events: none;
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .pill-nav__tagline {
+    display: block;
+  }
 }
 
 .pill-nav__links {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-left: auto;
+  gap: 4px;
+}
+
+.pill-nav__external {
+  margin-right: 8px;
+  padding-right: 12px;
+  border-right: 1px solid var(--border-glass);
+  display: flex;
+  align-items: center;
+}
+
+.pill-nav__github {
+  color: var(--text-dim);
+  transition: color 0.2s ease, filter 0.2s ease, transform 0.2s ease;
+  display: flex;
+}
+
+.pill-nav__github:hover {
+  color: var(--text);
+  filter: drop-shadow(0 0 8px var(--glow-blue));
+  transform: translateY(-1px);
 }
 
 .pill-nav__link {
@@ -416,7 +532,7 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 7s linear infinite;
+  animation: scan-v 6s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -516,7 +632,7 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 7s linear infinite;
+  animation: scan-v 6s linear infinite;
 }
 
 .hero__tagline {
@@ -665,7 +781,7 @@ ul  { list-style: none; }
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: scan-v 7s linear infinite;
+  animation: scan-v 6s linear infinite;
   text-align: center;
 }
 
