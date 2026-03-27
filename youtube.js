@@ -37,7 +37,7 @@
         width: 100% !important; height: 100% !important;
         background: rgba(15, 15, 18, 0.8) !important;
         backdrop-filter: blur(12px) !important;
-        z-index: 2147483647 !important;
+        z-index: 2147483640 !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
@@ -87,6 +87,22 @@
         bottom: 18%;
         text-shadow: 0 1px 4px rgba(0,0,0,0.5);
       }
+      .chroma-progress-container {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        overflow: hidden;
+      }
+      .chroma-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: var(--chroma-color, #ff0055);
+        transition: width 0.2s linear, background 0.15s linear;
+        box-shadow: 0 0 12px var(--chroma-color-alpha, rgba(255, 0, 85, 0.4));
+      }
     `;
     
     const spinner = document.createElement('div');
@@ -99,11 +115,19 @@
     const subtitle = document.createElement('div');
     subtitle.className = 'chroma-subtitle';
     subtitle.textContent = 'Accelerating Ad...';
+
+    const progressContainer = document.createElement('div');
+    progressContainer.className = 'chroma-progress-container';
+    
+    const progressBar = document.createElement('div');
+    progressBar.className = 'chroma-progress-bar';
+    progressContainer.appendChild(progressBar);
     
     adOverlayRoot.appendChild(style);
     adOverlayRoot.appendChild(spinner);
     adOverlayRoot.appendChild(title);
     adOverlayRoot.appendChild(subtitle);
+    adOverlayRoot.appendChild(progressContainer);
 
     const playerContainer = document.querySelector('.html5-video-player') || document.querySelector('#movie_player');
     if (playerContainer && !playerContainer.contains(adOverlayHost)) {
@@ -111,7 +135,7 @@
     }
   }
 
-  function updateAdOverlay(video, effectiveAdShowing, rawAdShowing) {
+  function updateAdOverlay(video, effectiveAdShowing, rawAdShowing, adUIElement = null) {
     if (!CONFIG.acceleration || !effectiveAdShowing) {
       if (adOverlayHost && adOverlayHost.classList.contains('active')) {
         adOverlayHost.classList.remove('active');
@@ -151,8 +175,9 @@
         window.lastVideoDuration = video.duration;
       }
 
-      if (playerContainer) {
-        const playerText = playerContainer.textContent || '';
+      const adTextSource = adUIElement || playerContainer;
+      if (adTextSource) {
+        const playerText = adTextSource.textContent || '';
         const parsedTextMatch = playerText.match(/(?:[^\d]|^)([0-9]+)\s*(?:of|de|sur|out of|von|di)\s*([0-9]+)(?:[^\d]|$)/i);
         if (parsedTextMatch) {
           const parsedCurrent = parseInt(parsedTextMatch[1], 10);
@@ -173,14 +198,14 @@
     const spinner = adOverlayRoot.querySelector('.chroma-spinner, .chroma-checkmark');
     const titleEl = adOverlayRoot.querySelector('.chroma-title');
     const subtitleEl = adOverlayRoot.querySelector('.chroma-subtitle');
+    const progressBar = adOverlayRoot.querySelector('.chroma-progress-bar');
 
     if (isAdsDone) {
       if (spinner && spinner.className !== 'chroma-checkmark') spinner.className = 'chroma-checkmark';
       if (titleEl) titleEl.textContent = 'Ads Cleared';
       if (subtitleEl) subtitleEl.textContent = 'Loading Video...';
       
-      const nativeProgressBar = document.querySelector('.chroma-native-progress');
-      if (nativeProgressBar) nativeProgressBar.style.width = '100%';
+      if (progressBar) progressBar.style.width = '100%';
     } else {
       if (spinner && spinner.className !== 'chroma-spinner') spinner.className = 'chroma-spinner';
       if (titleEl) titleEl.textContent = 'Chroma Active';
@@ -204,8 +229,7 @@
           totalPercent = basePercent + (videoPercent / window.cachedTotalAds);
         }
         
-        const nativeProgressBar = document.querySelector('.chroma-native-progress');
-        if (nativeProgressBar) nativeProgressBar.style.width = `${totalPercent}%`;
+        if (progressBar) progressBar.style.width = `${totalPercent}%`;
       }
     }
   }
@@ -242,6 +266,9 @@
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
     let currentAdVideo = document.querySelector('.video-ads video, .ytp-ad-module video');
+    let hasAdUI = document.querySelector(
+      '.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-visit-advertiser-button'
+    );
 
     if (!currentAdVideo) {
       const adPlayer = document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
@@ -252,14 +279,9 @@
 
     let rawAdShowing = !!currentAdVideo;
 
-    if (!rawAdShowing) {
-      const hasAdUI = document.querySelector(
-        '.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-visit-advertiser-button'
-      );
-      if (hasAdUI) {
-        currentAdVideo = document.querySelector('#movie_player video, .html5-main-video');
-        rawAdShowing = !!currentAdVideo;
-      }
+    if (!rawAdShowing && hasAdUI) {
+      currentAdVideo = document.querySelector('#movie_player video, .html5-main-video');
+      rawAdShowing = !!currentAdVideo;
     }
 
     const video = currentAdVideo || targetAdVideo || document.querySelector('#movie_player video, .html5-main-video');
@@ -295,20 +317,11 @@
     
     if (window.chromaAdSessionActive) {
       document.body.classList.add('chroma-session-active');
-      let nativeProgressBar = document.querySelector('.chroma-native-progress');
-      if (!nativeProgressBar) {
-        const ytpProgressBar = document.querySelector('.ytp-progress-bar');
-        if (ytpProgressBar) {
-          nativeProgressBar = document.createElement('div');
-          nativeProgressBar.className = 'chroma-native-progress';
-          ytpProgressBar.appendChild(nativeProgressBar);
-        }
-      }
     } else {
       document.body.classList.remove('chroma-session-active');
     }
-
-    updateAdOverlay(video, window.chromaAdSessionActive, rawAdShowing);
+    
+    updateAdOverlay(video, window.chromaAdSessionActive, rawAdShowing, hasAdUI);
 
     if (!video.dataset.chromaListenersAdded) {
       video.dataset.chromaListenersAdded = 'true';
@@ -519,23 +532,6 @@
       body.chroma-session-active .ytp-hover-progress {
         opacity: 0 !important;
         visibility: hidden !important;
-      }
-
-      .chroma-native-progress {
-        display: none;
-        position: absolute;
-        bottom: 0; left: 0; height: 3px;
-        z-index: 50;
-        background: var(--chroma-color, #ff0055);
-        transition: width 0.1s linear, height 0.1s ease, background 0.15s linear;
-        pointer-events: none;
-      }
-      .ytp-chrome-bottom:hover .chroma-native-progress,
-      .ytp-progress-bar-container:hover .chroma-native-progress {
-        height: 5px;
-      }
-      body.chroma-session-active .chroma-native-progress {
-        display: block;
       }
       
       #yt-chroma-overlay {

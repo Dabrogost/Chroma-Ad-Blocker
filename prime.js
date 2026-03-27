@@ -449,6 +449,29 @@ function isAdShowing() {
   return false;
 }
 
+// ─── MUTATION OBSERVER ───────────────────────────────────────────────────────
+let adMutationObserver = null;
+
+/**
+ * Starts a MutationObserver to detect ads instantly when DOM changes occur.
+ */
+function startMutationObserver() {
+  if (adMutationObserver) return;
+  
+  adMutationObserver = new MutationObserver((mutations) => {
+    // We don't need to check every mutation specifically, 
+    // just use it as a trigger for our main logic.
+    handlePrimeAdAcceleration();
+  });
+  
+  adMutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'style', 'data-testid']
+  });
+}
+
 /**
  * Finds the most likely active video element.
  */
@@ -458,13 +481,13 @@ function findActiveVideo() {
   
   // 1. Prefer videos that are actually playing or ready
   const activeVideos = videos.filter(v => 
-    v.readyState > 0 && 
+    v.readyState >= 1 && // Relaxed from readyState > 0 to include HAVE_METADATA
     !v.paused && 
     (v.offsetParent !== null || v.getClientRects().length > 0)
   );
   if (activeVideos.length > 0) return activeVideos[0];
 
-  // 2. Fallback to visible videos with source
+  // 2. Fallback to visible videos with source, even if paused (for pre-rolls)
   const visibleVideos = videos.filter(v => 
     (v.offsetParent !== null || v.getClientRects().length > 0) && 
     (v.src || v.querySelector('source'))
@@ -550,12 +573,15 @@ function resetSession() {
 }
 
 function init() {
+  // CRITICAL: Start basic services BEFORE storage retrieval to catch the first ad
+  injectChromaCSS();
+  startPolling();
+  startMutationObserver();
+
   chrome.storage.local.get('config').then(({ config: savedConfig }) => {
     if (savedConfig) {
       Object.assign(CONFIG, savedConfig);
     }
-    injectChromaCSS(); // Always inject CSS, even if disabled, for consistent behavior
-    startPolling(); // Always start polling, it will exit early if CONFIG.enabled is false
     
     // Handle SPA transitions
     window.addEventListener('popstate', resetSession);
@@ -563,8 +589,6 @@ function init() {
     document.addEventListener('atv-navigation-complete', resetSession);
   }).catch(() => {
     // Fallback if storage access fails
-    injectChromaCSS();
-    startPolling();
     window.addEventListener('popstate', resetSession);
     window.addEventListener('hashchange', resetSession);
     document.addEventListener('atv-navigation-complete', resetSession);

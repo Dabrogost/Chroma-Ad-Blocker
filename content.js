@@ -50,7 +50,7 @@
           .ytp-skip-ad-button, 
           .videoAdUiSkipButton,
           [id^="skip-button:"] {
-            z-index: 9999999 !important;
+            z-index: 2147483647 !important;
           }
           .ytp-chrome-bottom {
             z-index: 9999999 !important;
