@@ -248,18 +248,18 @@ ul  { list-style: none; }
   font-weight: 800;
   font-size: 15px;
   letter-spacing: -0.01em;
-  background: var(--grad-chroma-h);
+  background: var(--grad-chroma);
   background-size: 2500px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 12s linear infinite;
+  animation: shimmer-fixed 5.5s linear infinite;
   white-space: nowrap;
 }
 
 @keyframes shimmer-fixed {
-  from { background-position: 0px center;    }
-  to   { background-position: 2500px center; }
+  from { background-position: 0px center; }
+  to { background-position: -2500px center; }
 }
 
 .pill-nav__links {
@@ -448,12 +448,12 @@ ul  { list-style: none; }
 
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
-  background: var(--grad-chroma-h);
+  background: var(--grad-chroma);
   background-size: 2500px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 12s linear infinite;
+  animation: shimmer-fixed 5.5s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -547,12 +547,12 @@ ul  { list-style: none; }
   line-height: 1.0;
   letter-spacing: -0.04em;
   margin-bottom: 22px;
-  background: var(--grad-chroma-h);
+  background: var(--grad-chroma);
   background-size: 2500px auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 12s linear infinite;
+  animation: shimmer-fixed 5.5s linear infinite;
 }
 
 .hero__tagline {
@@ -694,12 +694,12 @@ ul  { list-style: none; }
   line-height: 1.08;
   margin-bottom: 18px;
   /* Universal Sync Animation */
-  background: var(--grad-chroma-h);
+  background: var(--grad-chroma);
   background-size: 2500px auto; /* Large fixed size for perfect sync */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-fixed 12s linear infinite;
+  animation: shimmer-fixed 5.5s linear infinite;
   text-align: center;
 }
 
