@@ -1,0 +1,76 @@
+<nav class="pill-nav" id="pill-nav" aria-label="Main navigation">
+  <div class="pill-nav__inner">
+    <a href="{{ '/' | relative_url }}" class="pill-nav__brand" aria-label="Chroma Ad-Blocker home">
+      <img src="{{ '/icons/icon128.png' | relative_url }}" alt="" class="pill-nav__logo" width="28" height="28" />
+      <span class="pill-nav__title">Chroma</span>
+    </a>
+
+    <ul class="pill-nav__links" role="list">
+      <li>
+        <a href="{{ '/' | relative_url }}"
+           class="pill-nav__link{% if page.url == '/' %} active{% endif %}">
+          Home
+        </a>
+      </li>
+      <li>
+        <a href="{{ '/PRIVACY_POLICY/' | relative_url }}"
+           class="pill-nav__link{% if page.url contains 'PRIVACY' %} active{% endif %}">
+          Privacy
+        </a>
+      </li>
+      <li>
+        <a href="{{ '/ToS/' | relative_url }}"
+           class="pill-nav__link{% if page.url contains 'ToS' %} active{% endif %}">
+          Terms
+        </a>
+      </li>
+      <li>
+        <a href="{{ '/LICENSE/' | relative_url }}"
+           class="pill-nav__link{% if page.url contains 'LICENSE' %} active{% endif %}">
+          License
+        </a>
+      </li>
+    </ul>
+
+    <button class="pill-nav__hamburger" id="nav-hamburger" aria-label="Toggle menu" aria-expanded="false">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
+
+  <div class="pill-nav__mobile" id="nav-mobile" aria-hidden="true">
+    <a href="{{ '/' | relative_url }}"
+       class="{% if page.url == '/' %}active{% endif %}">Home</a>
+    <a href="{{ '/PRIVACY_POLICY/' | relative_url }}"
+       class="{% if page.url contains 'PRIVACY' %}active{% endif %}">Privacy</a>
+    <a href="{{ '/ToS/' | relative_url }}"
+       class="{% if page.url contains 'ToS' %}active{% endif %}">Terms</a>
+    <a href="{{ '/LICENSE/' | relative_url }}"
+       class="{% if page.url contains 'LICENSE' %}active{% endif %}">License</a>
+  </div>
+</nav>
+
+<script>
+  (function () {
+    var hamburger = document.getElementById('nav-hamburger');
+    var mobileMenu = document.getElementById('nav-mobile');
+
+    hamburger.addEventListener('click', function () {
+      var isOpen = hamburger.classList.toggle('open');
+      mobileMenu.classList.toggle('open');
+      hamburger.setAttribute('aria-expanded', isOpen);
+      mobileMenu.setAttribute('aria-hidden', !isOpen);
+    });
+
+    // Close mobile menu on link click
+    mobileMenu.querySelectorAll('a').forEach(function (link) {
+      link.addEventListener('click', function () {
+        hamburger.classList.remove('open');
+        mobileMenu.classList.remove('open');
+        hamburger.setAttribute('aria-expanded', 'false');
+        mobileMenu.setAttribute('aria-hidden', 'true');
+      });
+    });
+  })();
+</script>

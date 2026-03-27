@@ -1,0 +1,45 @@
+title: Chroma Ad-Blocker
+description: >-
+  Multi-layered ad blocking built for Manifest V3. Block ads, accelerate
+  them away, and protect your privacy — all locally on your device.
+url: "https://dabrogost.github.io"
+baseurl: "/YT-Chroma"
+repository: Dabrogost/YT-Chroma
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+  syntax_highlighter: rouge
+
+permalink: pretty
+
+exclude:
+  - node_modules/
+  - package.json
+  - package-lock.json
+  - README.md
+  - background.js
+  - content.js
+  - interceptor.js
+  - protection.js
+  - messaging.js
+  - yt_handler.js
+  - prm_handler.js
+  - defaultDynamicRules.js
+  - popup.js
+  - popup.html
+  - manifest.json
+  - utils/
+  - rules/
+  - tests/
+  - Gemfile
+  - Gemfile.lock
+  - "*.crx"
+  - "*.pem"
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default

@@ -1,3 +1,10 @@
+---
+layout: default
+title: Privacy Policy
+layout-class: layout-prose
+description: Chroma Ad-Blocker privacy policy — your data never leaves your device.
+---
+
 # Privacy Policy for Chroma Ad-Blocker
 
 **Effective Date:** March 26, 2026

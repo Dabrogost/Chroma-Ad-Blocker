@@ -1,3 +1,10 @@
+---
+layout: default
+title: Terms of Service
+layout-class: layout-prose
+description: Chroma Ad-Blocker terms of service — personal, non-commercial use under the PolyForm Noncommercial License.
+---
+
 # Terms of Service for Chroma Ad-Blocker
 
 **Effective Date:** March 27, 2026
@@ -31,7 +38,7 @@ THE EXTENSION IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPL
 IN NO EVENT SHALL THE DEVELOPER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF THE USE OF OR INABILITY TO USE THE EXTENSION, even if advised of the possibility of such damage.
 
 ## 7. Privacy
-Your use of the Extension is also governed by our [Privacy Policy](PRIVACY_POLICY.md), which explains that all data stays on your local device and no personal information is collected or transmitted.
+Your use of the Extension is also governed by our [Privacy Policy]({{ '/PRIVACY_POLICY/' | relative_url }}), which explains that all data stays on your local device and no personal information is collected or transmitted.
 
 ## 8. Changes to Terms
 We reserve the right to modify these Terms of Service at any time. Any changes will be effective immediately upon posting the updated terms within the Extension's repository.

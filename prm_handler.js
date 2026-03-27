@@ -28,8 +28,15 @@ const AD_SELECTORS = [
   '.adSkipButton',
   '.skippable',
   '.atvwebplayersdk-player-container .ad-overlay',
+  '.templateContainer .ad-overlay',
+  '.dv-player-fullscreen .ad-overlay',
+  'div[class*="ad-overlay"]',
+  'div[class*="ad-indicator"]',
+  'div[class*="ad-timer"]',
+  '.adunit',
   // Brittle but sometimes necessary fallbacks
-  '.webPlayerUIContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)'
+  '.webPlayerUIContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)',
+  '.templateContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)'
 ];
 
 let targetVideo = null;
@@ -423,7 +430,16 @@ function isAdShowing() {
   if (adElement && (adElement.offsetParent !== null || adElement.getClientRects().length > 0)) return true;
 
   // 2. Text-based detection using "Invisible Overlay" strategy
-  const playerContainer = document.querySelector('.atvwebplayersdk-player-container, .webPlayerUIContainer');
+  // Expand search container to include Amazon site-specific player wrappers
+  const playerContainer = document.querySelector([
+    '.atvwebplayersdk-player-container',
+    '.webPlayerUIContainer',
+    '.templateContainer',
+    '.dv-player-fullscreen',
+    '#dv-web-player',
+    '[data-testid="video-player"]'
+  ].join(','));
+
   if (playerContainer && (playerContainer.offsetParent !== null || playerContainer.getClientRects().length > 0)) {
     // Hide our overlay text before checking innerText to prevent feedback loops
     const overlay = adOverlayHost;
@@ -431,10 +447,15 @@ function isAdShowing() {
     if (overlay) overlay.style.visibility = 'hidden';
     
     try {
-      const text = playerContainer.innerText || '';
-      // Simplified word-boundary regex to catch "Ad", "Sponsored", "Ad 0:15", etc.
+      const text = (playerContainer.innerText || '').trim();
+      // Use more robust regex that ignores "Accelerating Prime Ad" from our own overlay 
+      // even if the visibility check fails or is bypassed.
       if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
-        return true;
+        // Double check: if it's JUST our title, it's not an ad
+        const cleanText = text.replace(/Chroma Active|Accelerating Prime Ad/gi, '').trim();
+        if (/\b(Ad|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(cleanText)) {
+          return true;
+        }
       }
     } finally {
       // Always restore visibility
@@ -507,7 +528,16 @@ function handlePrimeAdAcceleration() {
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
     
-    if (!video) return;
+    // Even if no video is found, if we were active, we might need to reset
+    if (!video) {
+        if (isAdActive) {
+            isAdActive = false;
+            document.body.classList.remove('chroma-prime-session');
+            updateAdOverlay(null, false);
+        }
+        return;
+    }
+    
     targetVideo = video;
 
     if (rawAdShowing) {
@@ -536,7 +566,7 @@ function handlePrimeAdAcceleration() {
               action: 'STATS_UPDATE',
               payload: { type: 'accelerated' }
             });
-            lastAcceleratedSrc = currentSrc; // Only mark as sent if send was possible
+            lastAcceleratedSrc = currentSrc; 
           }
         }
       }
