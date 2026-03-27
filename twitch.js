@@ -407,8 +407,10 @@ function handleTwitchAdAcceleration() {
         video.playbackRate = 1;
         video.volume = savedVolume;
         video.muted = false;
-        isAdActive = false;
-        document.body.classList.remove('chroma-twitch-session');
+    isAdActive = false;
+    const overlayEl = document.getElementById('twitch-chroma-overlay');
+    if (overlayEl) overlayEl.classList.remove('active');
+    document.body.classList.remove('chroma-twitch-session');
         lastAcceleratedSrc = null;
         currentAdRemainingStart = 0;
         lastAdTimerText = null;
