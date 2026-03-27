@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ '/assets/css/style.css' | relative_url }}">
+    <link rel="stylesheet" href="{{ '/assets/css/style.css' | absolute_url }}">
     <!--[if lt IE 9]>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv.min.js"></script>
     <![endif]-->
@@ -25,14 +25,14 @@
     <header class="main-header">
       <div class="container">
         <div class="header-content">
-          <img src="{{ site.logo | relative_url }}" alt="Logo" class="logo">
+          <img src="{{ site.logo | absolute_url }}" alt="Logo" class="logo">
           <h1>{{ site.title }}</h1>
           <p class="tagline">{{ site.description }}</p>
           <nav class="nav-links">
-            <a href="{{ '/' | relative_url }}" class="nav-item">Home</a>
-            <a href="{{ '/privacy/' | relative_url }}" class="nav-item">Privacy</a>
-            <a href="{{ '/terms/' | relative_url }}" class="nav-item">Terms</a>
-            <a href="{{ '/license/' | relative_url }}" class="nav-item">License</a>
+            <a href="{{ '/' | absolute_url }}" class="nav-item">Home</a>
+            <a href="{{ '/privacy/' | absolute_url }}" class="nav-item">Privacy</a>
+            <a href="{{ '/terms/' | absolute_url }}" class="nav-item">Terms</a>
+            <a href="{{ '/license/' | absolute_url }}" class="nav-item">License</a>
             <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" class="nav-item github-link">GitHub</a>
           </nav>
         </div>
