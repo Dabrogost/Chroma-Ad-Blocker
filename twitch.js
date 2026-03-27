@@ -33,6 +33,29 @@ let overlayContainer = null;
 let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
 let savedVolume = 1;
+let lastAdEndTime = 0;
+const AD_COOLDOWN_MS = 1500;
+
+function teardownAdOverlay() {
+  const overlayEl = document.getElementById('twitch-chroma-overlay') || adOverlay;
+  if (overlayEl && overlayEl.parentNode) {
+    overlayEl.parentNode.removeChild(overlayEl);
+  }
+  adOverlay = null;
+  overlayContainer = null;
+  currentAdRemainingStart = 0;
+  lastAdTimerText = null;
+}
+
+function hideAdOverlay() {
+  const overlayEl = document.getElementById('twitch-chroma-overlay') || adOverlay;
+  if (!overlayEl) return;
+
+  overlayEl.classList.remove('active');
+  overlayEl.style.setProperty('opacity', '0', 'important');
+  overlayEl.style.setProperty('pointer-events', 'none', 'important');
+  overlayEl.setAttribute('aria-hidden', 'true');
+}
 
 const CHROMA_CYCLE_MS = 8000;
 let chromaClockRunning = false;
@@ -104,10 +127,7 @@ function updateAdOverlay(video, isActive) {
   adOverlay = document.getElementById('twitch-chroma-overlay') || adOverlay;
 
   if (!CONFIG.acceleration || !isActive) {
-    if (adOverlay) {
-      adOverlay.classList.remove('active');
-      adOverlay.style.removeProperty('display');
-    }
+    hideAdOverlay();
     return;
   }
   
@@ -124,6 +144,9 @@ function updateAdOverlay(video, isActive) {
   
   if (adOverlay && !adOverlay.classList.contains('active')) {
     adOverlay.classList.add('active');
+    adOverlay.style.removeProperty('opacity');
+    adOverlay.style.removeProperty('pointer-events');
+    adOverlay.removeAttribute('aria-hidden');
   }
 
   // Update progress bar
@@ -310,10 +333,29 @@ function injectChromaCSS() {
  * Checks for ad indicators using both CSS selectors and text-based heuristics.
  */
 function isAdShowing() {
+  const isElementVisible = (el) => {
+    if (!el) return false;
+    if (el.offsetParent === null && el.getClientRects().length === 0) return false;
+    
+    // Check computed styles for common "hidden" states
+    try {
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none') return false;
+      if (style.visibility === 'hidden') return false;
+      if (parseFloat(style.opacity) < 0.1) return false;
+      
+      // Check if it's tiny (0x0 or 1x1 might be used for tracking)
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) return false;
+    } catch (e) {}
+
+    return true;
+  };
+
   // 1. Check CSS Selectors
   const adElements = document.querySelectorAll(AD_SELECTORS.join(','));
   for (const el of adElements) {
-    if (el.offsetParent === null && el.getClientRects().length === 0) continue;
+    if (!isElementVisible(el)) continue;
     
     const text = el.textContent || '';
     if (/ad|commercial|sponsored|promo|break/i.test(text) || /\d+:\d+/.test(text)) {
@@ -323,20 +365,35 @@ function isAdShowing() {
 
   // 2. Text-based detection using "Invisible Overlay" strategy
   const playerContainer = document.querySelector('.video-player__container, .highwind-video-player');
-  if (playerContainer && (playerContainer.offsetParent !== null || playerContainer.getClientRects().length > 0)) {
+  if (playerContainer && isElementVisible(playerContainer)) {
     const overlay = document.getElementById('twitch-chroma-overlay');
-    const overlayText = overlay ? (overlay.innerText || overlay.textContent || '') : '';
     
     // Hide the overlay while reading container text so it cannot self-trigger.
-    if (overlay) overlay.style.setProperty('display', 'none', 'important');
+    let oldDisplay = '';
+    if (overlay) {
+      oldDisplay = overlay.style.display;
+      overlay.style.setProperty('display', 'none', 'important');
+    }
     
     try {
-      const text = (playerContainer.innerText || '').replace(overlayText, '');
+      const text = (playerContainer.innerText || '').trim();
+      // Look for specific ad-related strings with boundaries.
       if (/\b(Ad|Sponsored|Advertisement|Commercial|Annonce|Anzeige|Break)\b/i.test(text)) {
-        return true;
+        // High confidence indicators: requires a timer OR an explicit "X of Y" count.
+        if (/\d+:\d+/.test(text) || /\b\d+ of \d+\b/i.test(text)) {
+            return true;
+        }
+        
+        // If none of the high confidence indicators are met, check for very specific ad contexts
+        if (/\b(Sponsored|Commercial|Advertisement)\b/i.test(text)) {
+            return true;
+        }
       }
     } finally {
-      if (overlay) overlay.style.removeProperty('display');
+      if (overlay) {
+        if (oldDisplay) overlay.style.display = oldDisplay;
+        else overlay.style.removeProperty('display');
+      }
     }
   }
 
@@ -370,13 +427,22 @@ function handleTwitchAdAcceleration() {
   try {
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
-    const rawAdShowing = isAdShowing();
+    let rawAdShowing = isAdShowing();
+    
+    // Cooldown logic: if we recently finished an ad, don't re-trigger immediately
+    // unless it's a very high confidence CSS selector match (not just text fallback)
+    if (rawAdShowing && !isAdActive && (Date.now() - lastAdEndTime) < AD_COOLDOWN_MS) {
+        rawAdShowing = false; 
+    }
+
     const video = findActiveVideo();
     
-    if (!video) return;
-    targetVideo = video;
+    // Update reference if found, but don't return early yet
+    if (video) targetVideo = video;
 
     if (rawAdShowing) {
+      if (!video) return; // Cannot accelerate without a video
+
       if (!isAdActive) {
         isAdActive = true;
         document.body.classList.add('chroma-twitch-session');
@@ -406,23 +472,36 @@ function handleTwitchAdAcceleration() {
     } else {
       // Restore normal playback
       if (isAdActive) {
-        video.playbackRate = 1;
-        video.volume = savedVolume;
-        video.muted = false;
-        isAdActive = false;
-        const overlayEl = document.getElementById('twitch-chroma-overlay');
-        if (overlayEl) {
-          overlayEl.classList.remove('active');
-          overlayEl.style.removeProperty('display');
+        if (video) {
+          video.playbackRate = 1;
+          video.volume = savedVolume;
+          video.muted = false;
         }
+        
+        isAdActive = false;
+        lastAdEndTime = Date.now();
         document.body.classList.remove('chroma-twitch-session');
         lastAcceleratedSrc = null;
         currentAdRemainingStart = 0;
         lastAdTimerText = null;
+
+        // Force immediate removal
+        teardownAdOverlay();
+        // Also cleanup any duplicates that might have been spawned
+        document.querySelectorAll('#twitch-chroma-overlay').forEach(el => el.remove());
       }
     }
 
-    updateAdOverlay(video, isAdActive);
+    if (video && isAdActive) {
+        updateAdOverlay(video, isAdActive);
+    } else if (!isAdActive) {
+        // Aggressive non-ad state cleanup
+        teardownAdOverlay();
+        const leftovers = document.querySelectorAll('#twitch-chroma-overlay');
+        if (leftovers.length > 0) {
+            leftovers.forEach(el => el.remove());
+        }
+    }
   } catch (err) {
     console.error('[Chroma] Error in Twitch loop:', err);
   }
@@ -440,11 +519,8 @@ function resetSession() {
   isAdActive = false;
   lastAcceleratedSrc = null;
   document.body.classList.remove('chroma-twitch-session');
-  if (adOverlay) {
-    adOverlay.classList.remove('active');
-    adOverlay.style.removeProperty('display');
-  }
-  overlayContainer = null;
+  hideAdOverlay();
+  teardownAdOverlay();
 }
 
 function init() {
@@ -482,7 +558,7 @@ chrome.runtime.onMessage.addListener((msg) => {
       }
       isAdActive = false;
       document.body.classList.remove('chroma-twitch-session');
-      if (adOverlay) adOverlay.classList.remove('active');
+      teardownAdOverlay();
     } else {
       startPolling();
     }
