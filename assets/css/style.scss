@@ -88,6 +88,7 @@ body {
   margin: 0;
   background: var(--gradient);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: -1px;
 }
@@ -149,6 +150,16 @@ body {
   border-radius: 24px;
   margin-bottom: 4rem;
   box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  text-align: center;
+}
+
+.glass-card p, .glass-card li, .glass-card h1, .glass-card h2, .glass-card h3 {
+  text-align: center;
+}
+
+.glass-card ul {
+  list-style-position: inside;
+  padding-left: 0;
 }
 
 h1, h2, h3 {
@@ -183,6 +194,8 @@ pre {
   border-radius: 12px;
   border: 1px solid var(--glass-border);
   overflow-x: auto;
+  text-align: left; /* Keep code left aligned for readability */
+  max-width: 100%;
 }
 
 /* Mermaid Fixes */

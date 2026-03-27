@@ -3,5 +3,13 @@ description: Premium YouTube Ad-Blocker for Manifest V3. Bypass detections with 
 
 # Custom settings
 logo: icons/icon128.png
-baseurl: "/YT-Chroma" # The subpath of your site
+baseurl: "/YT-Chroma"
 url: "https://Dabrogost.github.io"
+
+# Ensure assets are included
+include: [icons, assets]
+permalink: /:title/
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
