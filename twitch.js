@@ -99,7 +99,7 @@ function initAdOverlay(video) {
  * Updates the visual overlay state.
  */
 function updateAdOverlay(video, isActive) {
-  adOverlay = document.getElementById('twitch-chroma-overlay');
+  adOverlay = document.getElementById('twitch-chroma-overlay') || adOverlay;
 
   if (!CONFIG.acceleration || !isActive) {
     if (adOverlay && adOverlay.classList.contains('active')) {
