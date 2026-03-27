@@ -142,6 +142,7 @@
         // --- NEW: Update stats when overlay turns OFF ---
         if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
           window.__CHROMA_INTERNAL__.send({ 
+            source: 'chroma-interceptor',
             token: window.__CHROMA_INTERNAL__.token,
             action: 'STATS_UPDATE', 
             payload: { type: 'accelerated' } 

@@ -80,11 +80,21 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  z-index: -8;
+  z-index: -10;
   background: var(--grad-chroma);
   background-size: 100vw 100vh;
   animation: scan-v 6s linear infinite;
   opacity: 0.12; /* Subtle global flow */
+  pointer-events: none;
+}
+
+/* Original Dark Background Layer (Hidden behind aurora, covering z-layer) */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -8;
+  background: var(--bg-void);
   pointer-events: none;
 }
 
