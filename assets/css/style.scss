@@ -249,18 +249,18 @@ ul  { list-style: none; }
   font-size: 15px;
   letter-spacing: -0.01em;
   background: var(--grad-chroma);
-  background-size: 200vw 100vh;
+  background-size: 250vw 100vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-viewport 8s linear infinite;
+  animation: shimmer-viewport 5s linear infinite;
   white-space: nowrap;
 }
 
 @keyframes shimmer-viewport {
   from { background-position: 0px 0px; }
-  to   { background-position: -200vw 0px; }
+  to   { background-position: -250vw 0px; }
 }
 
 .pill-nav__links {
@@ -450,12 +450,12 @@ ul  { list-style: none; }
 /* ── Gradient text utility ──────────────────────────────────── */
 .chroma-text {
   background: var(--grad-chroma);
-  background-size: 200vw 100vh;
+  background-size: 250vw 100vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-viewport 8s linear infinite;
+  animation: shimmer-viewport 5s linear infinite;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -550,12 +550,12 @@ ul  { list-style: none; }
   letter-spacing: -0.04em;
   margin-bottom: 22px;
   background: var(--grad-chroma);
-  background-size: 200vw 100vh;
+  background-size: 250vw 100vh;
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-viewport 8s linear infinite;
+  animation: shimmer-viewport 5s linear infinite;
 }
 
 .hero__tagline {
@@ -697,12 +697,12 @@ ul  { list-style: none; }
   line-height: 1.08;
   margin-bottom: 18px;
   background: var(--grad-chroma);
-  background-size: 200vw 100vh; /* Viewport Sync Logic */
+  background-size: 250vw 100vh; /* Original Amazing Scale + Viewport Sync */
   background-attachment: fixed;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: shimmer-viewport 8s linear infinite;
+  animation: shimmer-viewport 5s linear infinite;
   text-align: center;
 }
 

@@ -41,16 +41,16 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
       </svg>
       View on GitHub
     </a>
-    <a href="{{ '/PRIVACY_POLICY/' | relative_url }}" class="btn-ghost">
-      Privacy Policy
-    </a>
     <a
       href="https://buymeacoffee.com/dabrogost"
       target="_blank"
       rel="noopener noreferrer"
-      class="btn-ghost btn-ghost--support"
+      class="btn-ghost"
     >
       Support Development
+    </a>
+    <a href="{{ '/PRIVACY_POLICY/' | relative_url }}" class="btn-ghost">
+      Privacy Policy
     </a>
   </div>
 
