@@ -51,7 +51,7 @@
     
     adOverlayHost = cE('div');
     // Randomized stable ID to avoid clobbering but remain targetable by extension logic if needed
-    adOverlayHost.id = 'yt-chroma-host-' + Math.random().toString(36).substring(2, 9);
+    adOverlayHost.id = 'chroma-host-' + Math.random().toString(36).substring(2, 9);
     
     // Shadow DOM isolation: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
     adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
@@ -565,9 +565,9 @@
   }
 
   function injectChromaCSS() {
-    if (API.getElementById('yt-chroma-acceleration')) return;
+    if (API.getElementById('chroma-acceleration')) return;
     const style = cE('style');
-    style.id = 'yt-chroma-acceleration';
+    style.id = 'chroma-acceleration';
     style.textContent = `
       body.chroma-session-active .ytp-ad-skip-button-container,
       body.chroma-session-active .ytp-ad-skip-button-slot,
@@ -596,7 +596,7 @@
         visibility: hidden !important;
       }
       
-      #yt-chroma-overlay {
+      #chroma-overlay {
         position: absolute;
         top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(15, 15, 18, 0.8);
@@ -612,7 +612,7 @@
         transition: opacity 0.2s ease;
         pointer-events: none;
       }
-      #yt-chroma-overlay.active {
+      #chroma-overlay.active {
         opacity: 1;
         pointer-events: all;
       }

@@ -30,7 +30,7 @@
   function injectAllCSS() {
     const styles = [
       {
-        id: 'yt-chroma-cosmetic',
+        id: 'chroma-cosmetic',
         content: `
           ${HIDE_SELECTORS.join(',\n    ')} {
             display: none !important;
@@ -61,7 +61,7 @@
         isEnabled: () => CONFIG.enabled && CONFIG.cosmetic
       },
       {
-        id: 'yt-chroma-shorts',
+        id: 'chroma-shorts',
         content: `
           ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts]),
           ytd-rich-shelf-renderer[is-shorts],
@@ -76,7 +76,7 @@
         isEnabled: () => CONFIG.enabled && CONFIG.hideShorts
       },
       {
-        id: 'yt-chroma-merch',
+        id: 'chroma-merch',
         content: `
           ytd-merch-shelf-renderer,
           ytd-companion-slot-renderer,
@@ -88,7 +88,7 @@
         isEnabled: () => CONFIG.enabled && CONFIG.hideMerch
       },
       {
-        id: 'yt-chroma-offers',
+        id: 'chroma-offers',
         content: `
           ytd-tvfilm-offer-module-renderer,
           ytd-movie-offer-module-renderer,
@@ -233,7 +233,7 @@
         
         // 1. Exclude internal extension styles and critical site elements
         const id = el.id.toLowerCase();
-        const EXCLUDE_IDS = ['yt-chroma', 'masthead', 'player', 'content', 'columns', 'guide', 'secondary', 'primary'];
+        const EXCLUDE_IDS = ['chroma', 'masthead', 'player', 'content', 'columns', 'guide', 'secondary', 'primary'];
         if (EXCLUDE_IDS.some(ex => id.includes(ex))) return;
 
         // 2. More restrictive matching for ad-like IDs
