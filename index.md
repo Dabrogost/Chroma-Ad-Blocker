@@ -178,65 +178,115 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
     <div class="mermaid">
 graph TD
     classDef sw fill:#1a0a35,color:#ede8ff,stroke:#9900ff,stroke-width:2px
-    classDef storage fill:#0a2040,color:#ede8ff,stroke:#0088ff,stroke-width:2px
+    classDef storage fill:#0a2040,color:#ede8ff,stroke:#00aaff,stroke-width:2px
     classDef isolated fill:#0a2a1a,color:#ede8ff,stroke:#00ffcc,stroke-width:2px
     classDef main fill:#2a0a10,color:#ede8ff,stroke:#ff0055,stroke-width:2px
-    classDef dnr fill:#1a1040,color:#ede8ff,stroke:#6c5ce7,stroke-width:2px
-    classDef dom fill:#1a1a00,color:#ede8ff,stroke:#00aaff,stroke-width:2px
-    classDef secure fill:#1a1205,color:#ede8ff,stroke:#6c5ce7,stroke-dasharray: 5 5
+    classDef dnr fill:#1a1040,color:#ede8ff,stroke:#0088ff,stroke-width:2px
+    classDef dom fill:#1a1500,color:#ede8ff,stroke:#ff9900,stroke-width:2px
+    classDef secure fill:#1a1205,color:#ede8ff,stroke:#cc77ff,stroke-width:2px
+    classDef actor fill:#161b22,color:#ede8ff,stroke:#8b949e,stroke-width:2px
 
-    subgraph SW ["Extension Core (Service Worker)"]
-        BS["background.js<br/>(Main Logic & Router)"]:::sw
-        AUTH["Origin Auth &<br/>Session Token Store"]:::secure
+    %% --- LAYER 0: ENTRANCE ---
+    INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
+
+    %% --- LAYER 1: MAIN WORLD ---
+    subgraph MW["Main World (Page Execution)"]
+        MW_INT["interceptor.js<br/>(Pristine Cache + Safety Bypass)"]:::main
+        BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
+        CS_YT["yt_handler.js<br/>(YouTube)"]:::main
+        CS_PV["prm_handler.js<br/>(Prime Video)"]:::main
     end
 
-    subgraph ST ["Central Hub"]
-        STORAGE[("chrome.storage.local")]:::storage
-    end
-
-    subgraph GR ["Global Protection Layer (Secure Pipeline)"]
-        subgraph MW ["Main World Execution"]
-            MW_INT["interceptor.js<br/>(Pristine API Cache)"]:::main
-        end
-        subgraph IW ["Isolated World Relay"]
-            CS_PROT["protection.js<br/>(Secure Handshake)"]:::isolated
-        end
-        MW_INT <==>|"Secure MessagePort Handshake"| CS_PROT
-    end
-
-    subgraph SP ["Site-Specific Accelerators"]
-        CS_YT["yt_handler.js<br/>(Shadow DOM)"]:::isolated
-        CS_PV["prm_handler.js<br/>(Shadow DOM)"]:::isolated
+    %% --- LAYER 2: ISOLATED WORLD ---
+    subgraph IW["Isolated World (Secure Relay)"]
+        CS_PROT["protection.js<br/>(Gesture Tracking + Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
-    subgraph DN ["Network Blocking (DNR)"]
-        DNR["Declarative Net Request<br/>(300k Rules)"]:::dnr
+    %% --- LAYER 3: SERVICE WORKER CORE ---
+    subgraph SW["Extension Core (Service Worker)"]
+        VERIFY{{"Token Verification"}}:::secure
+        BS["background.js<br/>(Main Router)"]:::sw
+        AUTH["Session Token Store"]:::secure
     end
 
-    %% Logic Flow
-    MW_INT -- "Interception" --> CS_PROT
-    CS_PROT -- "Relay (Verified Token)" --> BS
-    
-    CS_YT -- "Stats" --> BS
-    CS_PV -- "Stats" --> BS
-    
-    BS <-->|"Sync State"| STORAGE
-    BS -- "Generate Token" --> AUTH
-    AUTH -- "Auth Token" --> CS_PROT
-    
-    CS_YT -.->|"Read Config"| STORAGE
-    CS_PV -.->|"Read Config"| STORAGE
-    CS_GEN -.->|"Read Config"| STORAGE
-    CS_PROT -.->|"Read Config/Selectors"| STORAGE
+    %% --- LAYER 4: INFRASTRUCTURE ---
+    subgraph System["Resource & Network Layer"]
+        STORAGE[("chrome.storage.local")]:::storage
+        DNR["10-Part DNR System<br/>(300,000 Rules)"]:::dnr
+        YT_DOM["YouTube Player"]:::dom
+        PV_DOM["Prime Player"]:::dom
+    end
 
-    BS -- "Harvest Matches" --> DNR
+    %% --- LAYER 5: UI & OUTPUT ---
+    POPUP["popup.js<br/>(UI/Stats)"]:::sw
+    USER["The User (Cleaned & Accelerated UI)"]:::actor
 
-    %% Execution
-    CS_YT ==>|"Accelerate"| DOM_YT["YT Shadow DOM"]:::dom
-    CS_PV ==>|"Accelerate"| DOM_PV["Prm Shadow DOM"]:::dom
-    CS_GEN ==>|"Hide/Remove"| DOM_YT
+    %% --- PIPELINE DEFINITION (0-21) ---
+    
+    %% INTERNET (Grey: 0, 1)
+    INTERNET -- "Scripts" --> MW_INT
+    INTERNET -- "Requests" --> DNR
 
+    %% MAIN WORLD (Red: 2, 3, 4, 5)
+    MW_INT <==>|"Token-Gated Handshake"| CS_PROT
+    MW_INT --> BRIDGE
+    CS_YT ==>|"Accelerate"| YT_DOM
+    CS_PV ==>|"Accelerate"| PV_DOM
+
+    %% SECURE (Purple: 6, 7, 8, 9)
+    BRIDGE --> CS_YT
+    BRIDGE --> CS_PV
+    VERIFY -- "Valid" --> BS
+    AUTH -- "Token" --> CS_PROT
+
+    %% ISOLATED WORLD (Green: 10, 11, 12)
+    CS_PROT -- "Relay + Token" --> VERIFY
+    CS_GEN -.->|"Read Filter"| STORAGE
+    CS_GEN ==>|"Visual Filter"| YT_DOM
+
+    %% SERVICE WORKER CORE (Lavender: 13, 14, 15)
+    BS -- "Lock" --> AUTH
+    BS <-->|"Config Sync"| STORAGE
+    BS -- "Dynamic Rules" --> DNR
+
+    %% STORAGE (Blue: 16)
+    STORAGE -.->|"Whitelist Bypass"| CS_PROT
+    
+    %% DNR (Blue: 17)
+    DNR ---|"Network Shield"| USER
+
+    %% PLAYERS (Orange: 18, 19)
+    YT_DOM -- "Filtered Output" --> USER
+    PV_DOM -- "Filtered Output" --> USER
+
+    %% POPUP (Lavender: 20, 21)
+    POPUP ---|"Stats Sync"| STORAGE
+    POPUP -- "Final Statistics" --> USER
+
+    %% --- LOGIC TRACING (LINK STYLES) ---
+    %% Internet/User Origin: Grey
+    linkStyle 0,1 stroke:#8b949e,stroke-width:1.75px;
+    %% Main World Origin: Red
+    linkStyle 2,3,4,5 stroke:#ff0055,stroke-width:1.75px;
+    %% Secure Layer Origin: Purple
+    linkStyle 6,7,8,9 stroke:#cc77ff,stroke-width:1.75px;
+    %% Isolated World Origin: Green
+    linkStyle 10,11,12 stroke:#00ffcc,stroke-width:1.75px;
+    %% SW Core Origin: Lavender
+    linkStyle 13,14,15,20,21 stroke:#9900ff,stroke-width:1.75px;
+    %% System / Storage Origin: Blue
+    linkStyle 16 stroke:#00aaff,stroke-width:1.75px;
+    %% DNR Origin: Blue
+    linkStyle 17 stroke:#0088ff,stroke-width:1.75px;
+    %% Player Origin: Orange
+    linkStyle 18,19 stroke:#ff9900,stroke-width:1.75px;
+
+    %% --- HIDE SUBGRAPH BOXES ---
+    style MW fill:none,stroke:none
+    style IW fill:none,stroke:none
+    style SW fill:none,stroke:none
+    style System fill:none,stroke:none
     </div>
   </div>
 </section>
