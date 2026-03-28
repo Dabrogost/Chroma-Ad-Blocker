@@ -283,10 +283,7 @@ ul  { list-style: none; }
   to   { background-position: -100vw center; }
 }
 
-@keyframes scan-btn {
-  0%   { background-position: 0% 50%; }
-  100% { background-position: 100% 50%; }
-}
+
 
 .pill-nav__title {
   font-family: 'Outfit', sans-serif;
@@ -678,19 +675,16 @@ ul  { list-style: none; }
   font-size: 14px;
   font-weight: 600;
   color: #fff;
-  background: var(--grad-chroma);
-  background-size: 240% auto;
-  background-position: 0% 50%;
-  animation: scan-btn 10s linear infinite;
+  background: linear-gradient(135deg, #ff0055 0%, #9900ff 50%, #0088ff 100%);
+  background-size: 200% auto;
   border: none;
   cursor: pointer;
   text-decoration: none;
   transition:
-    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 0.3s ease,
-    background-position 0.6s ease,
-    filter 0.3s ease;
-  box-shadow: 0 4px 15px rgba(255, 0, 85, 0.3);
+    background-position 0.45s ease,
+    transform 0.2s ease,
+    box-shadow 0.25s ease;
+  box-shadow: 0 0 24px rgba(153, 0, 255, 0.4);
 }
 
 .btn-primary svg {
@@ -700,12 +694,10 @@ ul  { list-style: none; }
 }
 
 .btn-primary:hover {
-  background-position: 100% 50%;
-  filter: brightness(1.15);
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 
-    0 8px 32px rgba(255, 0, 85, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  background-position: right center;
+  filter: brightness(1.1);
+  transform: translateY(-3px);
+  box-shadow: 0 4px 32px rgba(153, 0, 255, 0.55);
 }
 
 .btn-ghost {
