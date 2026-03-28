@@ -203,24 +203,42 @@ chrome.storage.onChanged.addListener((changes) => {
 // ─── POP-UNDER DETECTION STATE ───────────────────────────────────────────────
 // Keep track of window.open attempts per tab to prevent cross-tab interference
 // Keyed by tabId to ensure strict isolation and prevent state-spoofing across browser sessions.
-const popunderRequests = new Map(); // tabId -> { time: number, isSuspicious: boolean, createdTabIds: number[], ... }
+// SESSION_DATA: Stored in chrome.storage.session to survive Service Worker sleep cycles.
+// Format: { popunderRequests: { tabId: data }, sessionTokens: { tabId: token }, tokenRetrievalLocked: { tabId: true } }
 let lastGlobalRequest = null; // Fallback for when openerTabId is missing
+
+async function getSessionData() {
+  const data = await chrome.storage.session.get(['popunderRequests', 'sessionTokens', 'tokenRetrievalLocked']);
+  return {
+    popunderRequests: data.popunderRequests || {},
+    sessionTokens: data.sessionTokens || {},
+    tokenRetrievalLocked: data.tokenRetrievalLocked || {}
+  };
+}
+
+async function updateSessionData(key, value) {
+  await chrome.storage.session.set({ [key]: value });
+}
 
 // RESOLVER SYNC: Track tabs waiting for a WINDOW_OPEN_NOTIFY from their opener
 const popunderResolvers = new Map(); // openerTabId -> [ (request) => void ]
 
-// SESSION TOKENS: track secure tokens per tab to prevent spoofing (VULN-02 Fix)
-const sessionTokens = new Map(); // tabId -> token
-const tokenRetrievalLocked = new Set(); // tabId
-
 // PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
-setInterval(() => {
+setInterval(async () => {
   const now = Date.now();
-  for (const [tabId, data] of popunderRequests.entries()) {
+  const { popunderRequests } = await getSessionData();
+  let changed = false;
+
+  for (const [tabId, data] of Object.entries(popunderRequests)) {
     if (now - data.time > 15000) { // Keep for 15s
-      popunderRequests.delete(tabId);
+      delete popunderRequests[tabId];
+      changed = true;
     }
   }
+  if (changed) {
+    await updateSessionData('popunderRequests', popunderRequests);
+  }
+
   if (lastGlobalRequest && now - lastGlobalRequest.time > 15000) {
     lastGlobalRequest = null;
   }
@@ -373,292 +391,211 @@ function handleCloseTab(sender, sendResponse) {
 
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  // ROUTER: Handle messages forwarded by protection.js from the Main World
-  if (msg.source === 'chroma_interceptor') {
-    if (DEBUG) console.log('[Chroma Ad-Blocker] Routed action from interceptor:', msg.action, msg.payload);
-    
-    // SECURITY: Verify the token for all MAIN world commands (VULN-02 Fix)
-    const storedToken = sessionTokens.get(_sender.tab?.id);
-    if (!storedToken || msg.token !== storedToken) {
-      if (DEBUG) console.error('[Chroma Security] Rejected MAIN world command: Invalid Token.');
-      sendResponse({ ok: false, error: 'Unauthorized' });
-      return;
-    }
-
-    // SECURITY: Whitelist allowed bridge actions (VULN: Messaging Bridge Abuse)
-    const ALLOWED_INTERCEPTOR_ACTIONS = ['STATS_UPDATE', 'CLOSE_TAB'];
-    
-    if (!ALLOWED_INTERCEPTOR_ACTIONS.includes(msg.action)) {
-      if (DEBUG) console.error(`[Chroma Security] Rejected unauthorized action from interceptor: ${msg.action}`);
-      sendResponse({ ok: false, error: 'Unauthorized Action' });
-      return;
-    }
-
-    switch (msg.action) {
-      case 'CLOSE_TAB':
-        handleCloseTab(_sender, sendResponse);
-        break;
-      case 'STATS_UPDATE':
-        // ACCUMULATE STATS FROM MAIN WORLD
-        chrome.storage.local.get(['stats']).then(({ stats = {} }) => {
-          if (msg.payload && msg.payload.type === 'accelerated') {
-            stats.accelerated = (stats.accelerated || 0) + 1;
-            chrome.storage.local.set({ stats });
-            if (DEBUG) console.log('[Chroma] Stat incremented via secure port:', stats.accelerated);
-          }
-        });
-        sendResponse({ ok: true });
-        break;
-    }
-    return true; // Keep channel open for async responses
-  }
-
-  // SECURITY: ORIGIN AUTHENTICATION
-  // Strictly reject sensitive commands from any origin that isn't our extension's own UI/Background.
-  const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
-  const isFromInternal = _sender.origin === extensionOrigin;
-
-  const SENSITIVE_TYPES = [
-    MSG.STATS_GET,
-    MSG.CONFIG_GET,
-    MSG.CONFIG_SET,
-    MSG.DYNAMIC_RULE_ADD,
-    MSG.DYNAMIC_RULE_REMOVE,
-    MSG.STATS_RESET
-  ];
-
-  if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
-    if (DEBUG) console.error('[Chroma Security] Blocked unauthorized message from:', _sender.origin, msg.type);
-    return false; // Fail closed
-  }
-
-  if (msg.type === MSG.STATS_UPDATE) {
-    // Only accept from extension context (popup) or if specifically allowed
-    // Note: Main world handlers now use the 'chroma_interceptor' block above.
-    if (!isFromInternal) {
-      if (DEBUG) console.warn('[Chroma Security] Rejected legacy STATS_UPDATE from external origin.');
-      return false;
-    }
-
-    chrome.storage.local.get(['config', 'stats']).then(({ config: storedConfig, stats = {} }) => {
-      if (storedConfig && storedConfig.enabled === false) return;
-      
-      const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
-      stats.accelerated = (stats.accelerated || 0) + accelerated;
-      chrome.storage.local.set({ stats });
-    });
-    return false;
-  }
-
-  if (msg.type === MSG.WINDOW_OPEN_NOTIFY) {
-    const storedToken = sessionTokens.get(_sender.tab?.id);
-    if (!storedToken || msg.token !== storedToken) {
-      if (DEBUG) console.error('[Chroma Security] Rejected WINDOW_OPEN_NOTIFY: Invalid Token.');
-      return false;
-    }
-    const tabId = _sender.tab?.id;
-    if (tabId) {
-      const existing = popunderRequests.get(tabId) || { createdTabIds: [] };
-      const request = {
-        ...existing,
-        tabId,
-        time: Date.now(),
-        isSuspicious: msg.isSuspicious,
-        url: msg.url,
-        popupCount: msg.popupCount,
-        gestureType: msg.gestureType,
-        stack: msg.stack
-      };
-      popunderRequests.set(tabId, request);
-      lastGlobalRequest = request; // Store as global fallback
-      
-      // RESOLVE PENDING: Notify any tabs created by this opener that were waiting for synchronization
-      const resolvers = popunderResolvers.get(tabId);
-      if (resolvers) {
-        resolvers.forEach(res => res(request));
-        popunderResolvers.delete(tabId);
-      }
-
-      if (DEBUG) console.log(`[Chroma Ad-Blocker] Window open notification from tab ${tabId}:`, msg);
-    }
-    return false;
-  }
-
-  if (msg.type === MSG.SUSPICIOUS_ACTIVITY) {
-    const storedToken = sessionTokens.get(_sender.tab?.id);
-    if (!storedToken || msg.token !== storedToken) {
-      if (DEBUG) console.error('[Chroma Security] Rejected SUSPICIOUS_ACTIVITY: Invalid Token.');
-      return false;
-    }
-    chrome.storage.local.get(['config', 'stats']).then(({ config: storedConfig, stats = {} }) => {
-      if (storedConfig && storedConfig.enabled === false) return;
-
+  const handler = async () => {
+    try {
+      const sessionData = await getSessionData();
       const tabId = _sender.tab?.id;
-      if (tabId) {
-        const existing = popunderRequests.get(tabId) || { time: Date.now(), createdTabIds: [] };
-        existing.isSuspicious = true;
-        existing.activity = msg.activity;
-        popunderRequests.set(tabId, existing);
 
-        // RETROACTIVE CLOSING: If any tabs were just opened from this opener, close them now
-        if (existing.createdTabIds && existing.createdTabIds.length > 0) {
-          if (DEBUG) console.log(`[Chroma Ad-Blocker] Successfully blocked ${existing.createdTabIds.length} pop-under(s) (Retroactive: ${msg.activity})`);
-          existing.createdTabIds.forEach(id => {
-            chrome.tabs.remove(id).catch(() => {});
-          });
-          
-          // Update stats (Network/Pop-under blocks)
-          stats.networkBlocked = (stats.networkBlocked || 0) + existing.createdTabIds.length;
-          chrome.storage.local.set({ stats });
-          
-          existing.createdTabIds = [];
-        }
+      // ROUTER: Handle messages forwarded by protection.js from the Main World
+      if (msg.source === 'chroma_interceptor') {
+        if (DEBUG) console.log('[Chroma Ad-Blocker] Routed action from interceptor:', msg.action, msg.payload);
         
-        if (DEBUG) console.log(`[Chroma Ad-Blocker] Suspicious activity notification from tab ${tabId}:`, msg);
-      }
-    });
-    return false;
-  }
+        // SECURITY: Verify the token for all MAIN world commands
+        const storedToken = tabId ? sessionData.sessionTokens[tabId] : null;
+        if (!storedToken || msg.token !== storedToken) {
+          if (DEBUG) console.error('[Chroma Security] Rejected MAIN world command: Invalid Token.');
+          sendResponse({ ok: false, error: 'Unauthorized' });
+          return;
+        }
 
-  // MSG.STATS_GET removed in favor of reactive storage listeners in popup.js
+        // SECURITY: Whitelist allowed bridge actions
+        const ALLOWED_INTERCEPTOR_ACTIONS = ['STATS_UPDATE', 'CLOSE_TAB'];
+        if (!ALLOWED_INTERCEPTOR_ACTIONS.includes(msg.action)) {
+          if (DEBUG) console.error(`[Chroma Security] Rejected unauthorized action from interceptor: ${msg.action}`);
+          sendResponse({ ok: false, error: 'Unauthorized Action' });
+          return;
+        }
 
-  if (msg.type === MSG.CONFIG_GET) {
-    chrome.storage.local.get('config').then(({ config }) => {
-      sendResponse(config);
-    });
-    return true;
-  }
-
-  if (msg.type === MSG.CONFIG_SET) {
-    chrome.storage.local.get('config').then(async ({ config }) => {
-      const validatedConfig = validateConfig(msg.config);
-      const newConfig = { ...config, ...validatedConfig };
-      await chrome.storage.local.set({ config: newConfig });
-      
-      const wasDNRActive = config.enabled !== false && config.networkBlocking !== false;
-      const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
-
-      if (isDNRActive !== wasDNRActive) {
-        await updateDNRState(isDNRActive);
-      }
-
-      // Broadcast to all tabs
-      const tabs = await chrome.tabs.query({});
-      await Promise.all(tabs.map(tab =>
-        chrome.tabs.sendMessage(tab.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})
-      ));
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-
-  if (msg.type === MSG.DYNAMIC_RULE_ADD) {
-    // Allow popup/user to inject new rules (block or allow) at runtime
-    chrome.storage.local.get(['dynamicRules', 'ruleCounter']).then(async ({ dynamicRules = [], ruleCounter }) => {
-      if (!ruleCounter) ruleCounter = 5000000;
-
-      const validatedRule = validateDynamicRule(msg.rule);
-      if (!validatedRule) {
-        return sendResponse({ ok: false, error: 'Invalid rule structure' });
+        switch (msg.action) {
+          case 'CLOSE_TAB':
+            handleCloseTab(_sender, sendResponse);
+            break;
+          case 'STATS_UPDATE':
+            const { stats = {} } = await chrome.storage.local.get(['stats']);
+            if (msg.payload && msg.payload.type === 'accelerated') {
+              stats.accelerated = (stats.accelerated || 0) + 1;
+              await chrome.storage.local.set({ stats });
+            }
+            sendResponse({ ok: true });
+            break;
+        }
+        return;
       }
 
-      const newRule = { id: ruleCounter++, ...validatedRule };
-      dynamicRules.push(newRule);
-      
-      await chrome.storage.local.set({ 
-        dynamicRules,
-        ruleCounter: ruleCounter
-      });
-      
-      await chrome.declarativeNetRequest.updateDynamicRules({ addRules: [newRule] });
-      sendResponse({ ok: true, ruleId: newRule.id });
-    });
-    return true;
-  }
+      // SECURITY: ORIGIN AUTHENTICATION
+      const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
+      const isFromInternal = _sender.origin === extensionOrigin;
 
-  if (msg.type === MSG.DYNAMIC_RULE_REMOVE) {
-    chrome.storage.local.get('dynamicRules').then(async ({ dynamicRules = [] }) => {
-      const ruleId = msg.ruleId;
-      const initialLength = dynamicRules.length;
-      const updatedRules = dynamicRules.filter(r => r.id !== ruleId);
-      
-      if (updatedRules.length === initialLength) {
-        return sendResponse({ ok: false, error: 'Rule not found' });
+      const SENSITIVE_TYPES = [
+        MSG.STATS_GET,
+        MSG.CONFIG_GET,
+        MSG.CONFIG_SET,
+        MSG.DYNAMIC_RULE_ADD,
+        MSG.DYNAMIC_RULE_REMOVE,
+        MSG.STATS_RESET
+      ];
+
+      if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
+        if (DEBUG) console.error('[Chroma Security] Blocked unauthorized message from:', _sender.origin, msg.type);
+        return;
       }
 
-      await chrome.storage.local.set({ dynamicRules: updatedRules });
-      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [ruleId] });
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
+      switch (msg.type) {
+        case MSG.STATS_UPDATE:
+          if (!isFromInternal) return;
+          const { config: storedConfig, stats: currentStats = {} } = await chrome.storage.local.get(['config', 'stats']);
+          if (storedConfig && storedConfig.enabled === false) return;
+          const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
+          currentStats.accelerated = (currentStats.accelerated || 0) + accelerated;
+          await chrome.storage.local.set({ stats: currentStats });
+          break;
 
-  if (msg.type === MSG.STATS_RESET) {
-    chrome.storage.local.get('stats').then(({ stats = {} }) => {
-      stats.networkBlocked = 0;
-      stats.accelerated = 0;
-      chrome.storage.local.set({ stats })
-        .then(() => sendResponse({ ok: true }));
-    });
-    return true;
-  }
+        case MSG.WINDOW_OPEN_NOTIFY:
+          const winToken = tabId ? sessionData.sessionTokens[tabId] : null;
+          if (!winToken || msg.token !== winToken) return;
+          if (tabId) {
+            const existing = sessionData.popunderRequests[tabId] || { createdTabIds: [] };
+            const request = {
+              ...existing,
+              tabId,
+              time: Date.now(),
+              isSuspicious: msg.isSuspicious,
+              url: msg.url,
+              popupCount: msg.popupCount,
+              gestureType: msg.gestureType,
+              stack: msg.stack
+            };
+            sessionData.popunderRequests[tabId] = request;
+            await updateSessionData('popunderRequests', sessionData.popunderRequests);
+            lastGlobalRequest = request;
+            const resolvers = popunderResolvers.get(tabId);
+            if (resolvers) {
+              resolvers.forEach(res => res(request));
+              popunderResolvers.delete(tabId);
+            }
+          }
+          break;
 
-  if (msg.type === MSG.GET_TOKEN) {
-    // SECURITY: Ensure request is from a legitimate content script (VULN: Token Hijack)
-    if (!_sender.tab || !_sender.url) {
-        if (DEBUG) console.error('[Chroma Security] Rejected token request: Missing sender context.');
-        return sendResponse({ error: 'Invalid Sender' });
+        case MSG.SUSPICIOUS_ACTIVITY:
+          const suspToken = tabId ? sessionData.sessionTokens[tabId] : null;
+          if (!suspToken || msg.token !== suspToken) return;
+          const { config: sConf, stats: sStats = {} } = await chrome.storage.local.get(['config', 'stats']);
+          if (sConf && sConf.enabled === false) return;
+          if (tabId) {
+            const existing = sessionData.popunderRequests[tabId] || { time: Date.now(), createdTabIds: [] };
+            existing.isSuspicious = true;
+            existing.activity = msg.activity;
+            sessionData.popunderRequests[tabId] = existing;
+            if (existing.createdTabIds && existing.createdTabIds.length > 0) {
+              existing.createdTabIds.forEach(id => chrome.tabs.remove(id).catch(() => {}));
+              sStats.networkBlocked = (sStats.networkBlocked || 0) + existing.createdTabIds.length;
+              await chrome.storage.local.set({ stats: sStats });
+              existing.createdTabIds = [];
+            }
+            await updateSessionData('popunderRequests', sessionData.popunderRequests);
+          }
+          break;
+
+        case MSG.CONFIG_GET:
+          const { config: cGet } = await chrome.storage.local.get('config');
+          sendResponse(cGet);
+          break;
+
+        case MSG.CONFIG_SET:
+          const { config: cCurr } = await chrome.storage.local.get('config');
+          const validatedConfig = validateConfig(msg.config);
+          const newConfig = { ...cCurr, ...validatedConfig };
+          await chrome.storage.local.set({ config: newConfig });
+          const wasDNRActive = cCurr.enabled !== false && cCurr.networkBlocking !== false;
+          const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
+          if (isDNRActive !== wasDNRActive) await updateDNRState(isDNRActive);
+          const tabs = await chrome.tabs.query({});
+          await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})));
+          sendResponse({ ok: true });
+          break;
+
+        case MSG.DYNAMIC_RULE_ADD:
+          const { dynamicRules = [], ruleCounter = 5000000 } = await chrome.storage.local.get(['dynamicRules', 'ruleCounter']);
+          const validatedRule = validateDynamicRule(msg.rule);
+          if (!validatedRule) return sendResponse({ ok: false, error: 'Invalid rule' });
+          const newRule = { id: ruleCounter, ...validatedRule };
+          dynamicRules.push(newRule);
+          await chrome.storage.local.set({ dynamicRules, ruleCounter: ruleCounter + 1 });
+          await chrome.declarativeNetRequest.updateDynamicRules({ addRules: [newRule] });
+          sendResponse({ ok: true, ruleId: newRule.id });
+          break;
+
+        case MSG.DYNAMIC_RULE_REMOVE:
+          const { dynamicRules: drRemove = [] } = await chrome.storage.local.get('dynamicRules');
+          const updatedRules = drRemove.filter(r => r.id !== msg.ruleId);
+          if (updatedRules.length === drRemove.length) return sendResponse({ ok: false, error: 'Not found' });
+          await chrome.storage.local.set({ dynamicRules: updatedRules });
+          await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [msg.ruleId] });
+          sendResponse({ ok: true });
+          break;
+
+        case MSG.STATS_RESET:
+          await chrome.storage.local.set({ stats: { networkBlocked: 0, accelerated: 0 } });
+          sendResponse({ ok: true });
+          break;
+
+        case MSG.GET_TOKEN:
+          if (!_sender.tab || !_sender.url) return sendResponse({ error: 'Invalid Sender' });
+          if (tabId) {
+            if (sessionData.tokenRetrievalLocked[tabId]) return sendResponse({ error: 'Locked' });
+            sessionData.tokenRetrievalLocked[tabId] = true;
+            await updateSessionData('tokenRetrievalLocked', sessionData.tokenRetrievalLocked);
+            const buffer = new Uint8Array(16);
+            crypto.getRandomValues(buffer);
+            const token = Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+            sessionData.sessionTokens[tabId] = token;
+            await updateSessionData('sessionTokens', sessionData.sessionTokens);
+            sendResponse({ token });
+          }
+          break;
+
+        case MSG.WHITELIST_GET:
+          const { whitelist: wlGet = [] } = await chrome.storage.local.get('whitelist');
+          sendResponse({ whitelist: wlGet });
+          break;
+
+        case MSG.WHITELIST_ADD:
+          const { whitelist: wlAdd = [] } = await chrome.storage.local.get('whitelist');
+          if (!wlAdd.includes(msg.domain)) {
+            wlAdd.push(msg.domain);
+            await chrome.storage.local.set({ whitelist: wlAdd });
+            await syncWhitelistRules();
+          }
+          sendResponse({ ok: true });
+          break;
+
+        case MSG.WHITELIST_REMOVE:
+          const { whitelist: wlRem = [] } = await chrome.storage.local.get('whitelist');
+          const wlNew = wlRem.filter(d => d !== msg.domain);
+          if (wlNew.length !== wlRem.length) {
+            await chrome.storage.local.set({ whitelist: wlNew });
+            await syncWhitelistRules();
+          }
+          sendResponse({ ok: true });
+          break;
+      }
+    } catch (err) {
+      if (DEBUG) console.error('[Chroma] Error in message handler:', err);
     }
+  };
 
-    const tabId = _sender.tab.id;
-    
-    // SECURITY: Once a token is retrieved, lock subsequent requests for this tab (VULN-02 Fix)
-    if (tokenRetrievalLocked.has(tabId)) {
-      if (DEBUG) console.error(`[Chroma Security] Blocked duplicate token retrieval for tab ${tabId}`);
-      return sendResponse({ error: 'Locked' });
-    }
-    tokenRetrievalLocked.add(tabId);
-
-    // Generate a unique session token
-    const buffer = new Uint8Array(16);
-    crypto.getRandomValues(buffer);
-    const token = Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-    
-    sessionTokens.set(tabId, token);
-    sendResponse({ token });
-    return;
-  }
-
-  if (msg.type === MSG.WHITELIST_GET) {
-    chrome.storage.local.get('whitelist').then(({ whitelist = [] }) => {
-      sendResponse({ whitelist });
-    });
-    return true;
-  }
-
-  if (msg.type === MSG.WHITELIST_ADD) {
-    chrome.storage.local.get('whitelist').then(async ({ whitelist = [] }) => {
-      if (!whitelist.includes(msg.domain)) {
-        whitelist.push(msg.domain);
-        await chrome.storage.local.set({ whitelist });
-        await syncWhitelistRules();
-      }
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-
-  if (msg.type === MSG.WHITELIST_REMOVE) {
-    chrome.storage.local.get('whitelist').then(async ({ whitelist = [] }) => {
-      const updated = whitelist.filter(d => d !== msg.domain);
-      if (updated.length !== whitelist.length) {
-        await chrome.storage.local.set({ whitelist: updated });
-        await syncWhitelistRules();
-      }
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
+  handler();
+  return true;
 });
 
 // ─── TAB MONITORING (Pop-Under Blocker) ───────────────────────────────────────
@@ -685,7 +622,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 
   // Give a small grace period for the WINDOW_OPEN_NOTIFY to arrive from content script
   // since postMessage -> runtime.sendMessage is slightly slower than tab creation.
-  let request = openerId ? popunderRequests.get(openerId) : null;
+  const sessionData = await getSessionData();
+  let request = openerId ? sessionData.popunderRequests[openerId] : null;
   
   if (!request && lastGlobalRequest && (Date.now() - lastGlobalRequest.time < 2000)) {
     request = lastGlobalRequest;
@@ -738,11 +676,15 @@ chrome.tabs.onCreated.addListener(async (tab) => {
       chrome.storage.local.set({ stats });
     });
 
-    if (openerId) popunderRequests.delete(openerId);
+    if (openerId) {
+      delete sessionData.popunderRequests[openerId];
+      await updateSessionData('popunderRequests', sessionData.popunderRequests);
+    }
     if (request === lastGlobalRequest) lastGlobalRequest = null;
   } else {
     // If it's not immediately suspicious, store the tabId for potential retroactive closing
     request.createdTabIds.push(tab.id);
+    await updateSessionData('popunderRequests', sessionData.popunderRequests);
   }
 });
 
@@ -795,10 +737,27 @@ async function harvestNetworkStats() {
 setInterval(harvestNetworkStats, 120000);
 
 // Clean up and final harvest
-chrome.tabs.onRemoved.addListener((tabId) => {
-  popunderRequests.delete(tabId);
-  sessionTokens.delete(tabId); // Cleanup session token (VULN-02 Fix)
-  tokenRetrievalLocked.delete(tabId);
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const sessionData = await getSessionData();
+  let changed = false;
+
+  if (sessionData.popunderRequests[tabId]) {
+    delete sessionData.popunderRequests[tabId];
+    changed = true;
+  }
+  if (sessionData.sessionTokens[tabId]) {
+    delete sessionData.sessionTokens[tabId];
+    changed = true;
+  }
+  if (sessionData.tokenRetrievalLocked[tabId]) {
+    delete sessionData.tokenRetrievalLocked[tabId];
+    changed = true;
+  }
+
+  if (changed) {
+    await chrome.storage.session.set(sessionData);
+  }
+  
   harvestNetworkStats().catch(() => {});
 });
 

@@ -13,6 +13,9 @@
     checkIntervalMs: 300,
   });
 
+  // Whitelist of allowed config keys for secure updates (VULN-07 Hardening)
+  const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
+
   // ─── PRISTINE API BRIDGE ──────────────────────────────────────────────────────
   // SECURE REFERENCE: Use the pristine APIs provided by interceptor.js (VULN-03)
   const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
@@ -432,7 +435,13 @@
   // We now handle config updates via a custom event from interceptor.js or direct property update
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
-      Object.assign(CONFIG, e.detail);
+      // SECURE ASSIGNMENT: Only accept known configuration keys (VULN-07)
+      for (const key of VALID_CONFIG_KEYS) {
+        if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
+          CONFIG[key] = e.detail[key];
+        }
+      }
+
       if (DEBUG) console.log('[Chroma] yt_handler updated config:', CONFIG);
       
       if (!CONFIG.enabled || !CONFIG.acceleration) {
@@ -648,9 +657,9 @@ function init() {
 
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
     if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-      // Safely merge config from the secure pipe
+      // SECURE ASSIGNMENT: Only accept known configuration keys from the secure pipe (VULN-07)
       const remoteConfig = window.__CHROMA_INTERNAL__.config;
-      for (const key in remoteConfig) {
+      for (const key of VALID_CONFIG_KEYS) {
         if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
           CONFIG[key] = remoteConfig[key];
         }
@@ -660,7 +669,13 @@ function init() {
     // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
     API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       if (e.detail) {
-        Object.assign(CONFIG, e.detail);
+        // SECURE ASSIGNMENT: Only accept known configuration keys (VULN-07)
+        for (const key of VALID_CONFIG_KEYS) {
+          if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
+            CONFIG[key] = e.detail[key];
+          }
+        }
+
         if (DEBUG) console.log('[Chroma] YouTube handler activated via handshake:', CONFIG);
         
         if (CONFIG.enabled && !pollingInterval) {

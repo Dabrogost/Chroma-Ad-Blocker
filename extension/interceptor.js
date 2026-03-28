@@ -30,6 +30,11 @@
   const hasOwn = Object.prototype.hasOwnProperty;
   const toString = Object.prototype.toString;
   const slice = Array.prototype.slice;
+  
+  // VULN-01 Hardening: Cache pristine prototype methods for isNative check
+  const pristineFnToString = Function.prototype.toString;
+  const pristineCall = Function.prototype.call;
+  const pristineIncludes = String.prototype.includes;
 
   // =========================================================================
   // 2. THE DEAD MAN'S SWITCH (Detects Hijacked Environment)
@@ -40,7 +45,8 @@
   try {
     const isNative = (fn) => {
       try {
-        return typeof fn === 'function' && fn.toString().includes('[native code]');
+        return typeof fn === 'function' && 
+               pristineCall.call(pristineIncludes, pristineCall.call(pristineFnToString, fn), '[native code]');
       } catch (e) {
         return false;
       }
