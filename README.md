@@ -117,11 +117,11 @@ Chroma implements several advanced security measures to ensure integrity and pre
 
 ## Quick Start
 
-1. Clone the repository or download the ZIP.
-2. Navigate to `chrome://extensions/` in Chrome.
-3. Enable **Developer mode** (top right).
-4. Click **Load unpacked** and select the extension folder.
-5. The extension is now active on all tabs. Settings can be managed via the popup UI.
+1. Download the ZIP from GitHub and extract it (or clone the repo).
+2. Open `chrome://extensions` in Chrome.
+3. Toggle on **Developer mode** (top-right corner).
+4. Click **"Load unpacked"** &rarr; select the `extension/` folder (inside the extracted repo).
+5. Done &mdash; Chroma is active on all tabs. Settings can be managed via the popup UI.
 
 ## Configuration
 

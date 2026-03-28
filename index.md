@@ -250,7 +250,7 @@ graph TD
 
     <div class="qs-step">
       <div class="qs-step__num">1</div>
-      <p class="qs-step__label">Clone the repo or download the ZIP</p>
+      <p class="qs-step__label">Download the ZIP from GitHub and extract it (or clone the repo)</p>
     </div>
 
     <div class="qs-step">
@@ -260,12 +260,12 @@ graph TD
 
     <div class="qs-step">
       <div class="qs-step__num">3</div>
-      <p class="qs-step__label">Enable Developer Mode (top right toggle)</p>
+      <p class="qs-step__label">Toggle on Developer Mode (top-right corner)</p>
     </div>
 
     <div class="qs-step">
       <div class="qs-step__num">4</div>
-      <p class="qs-step__label">Click Load unpacked &amp; select the folder</p>
+      <p class="qs-step__label">Click "Load unpacked" &rarr; select the <code style="font-size:11px">extension/</code> folder (inside the extracted repo)</p>
     </div>
 
     <div class="qs-step">

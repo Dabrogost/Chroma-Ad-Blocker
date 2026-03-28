@@ -3,6 +3,12 @@
 const $ = id => document.getElementById(id);
 
 async function init() {
+  // Set version from manifest
+  const manifest = chrome.runtime.getManifest();
+  if ($('versionText')) {
+    $('versionText').textContent = `v${manifest.version} · MV3`;
+  }
+
   // Load config
   const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {
     networkBlocking: true,

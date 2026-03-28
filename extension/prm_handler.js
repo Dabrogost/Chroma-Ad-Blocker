@@ -560,55 +560,47 @@ function handlePrimeAdAcceleration() {
   try {
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
-    const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
+    const rawAdShowing = isAdShowing();
     
-    // Safety check: If video duration > 180s (3m), it's content.
-    // This provides a deterministic "kill switch" for stuck overlays.
+    // We only use the duration as a weak signal now, not a hard kill switch.
+    // If it's a 2-hour movie, it's definitely content.
     let effectiveAdShowing = rawAdShowing;
-    if (video && video.duration > 180 && isFinite(video.duration)) {
+    if (video && video.duration > 600 && isFinite(video.duration)) {
       effectiveAdShowing = false;
     }
     
-    // Even if no video is found, if we were active, we might need to reset
-    if (!video) {
-        if (isAdActive) {
-            isAdActive = false;
-            document.body.classList.remove('chroma-prime-session');
-            updateAdOverlay(null, false);
-            if (targetVideo) targetVideo.playbackRate = 1;
-        }
-        return;
-    }
-    
-    const currentSrc = video.src || (video.querySelector('source') ? video.querySelector('source').src : null);
+    // Determine current video source for transition tracking
+    const currentSrc = video ? (video.src || (video.querySelector('source') ? video.querySelector('source').src : null)) : null;
 
-    // Detect Source Change - Force reset if source swapped (must have a valid currentSrc)
-    if (currentSrc && lastAcceleratedSrc && lastAcceleratedSrc !== currentSrc) {
+    // Detect Source Change - Force reset IF source swapped AND we are not seeing an ad
+    if (currentSrc && lastAcceleratedSrc && lastAcceleratedSrc !== currentSrc && !rawAdShowing) {
         if (DEBUG) console.log('[Chroma] Video source changed, resetting ad state.');
         resetSession(video);
-        // Recount immediately after source swap
-        effectiveAdShowing = isAdShowing() && (video.duration <= 180 || !video.duration || !isFinite(video.duration));
+        effectiveAdShowing = false;
     }
 
     if (effectiveAdShowing) {
+
       if (!isAdActive) {
         isAdActive = true;
         document.body.classList.add('chroma-prime-session');
         startChromaClock();
       }
       lastAdDetectTime = Date.now();
-      lastAcceleratedSrc = currentSrc;
+      if (currentSrc) lastAcceleratedSrc = currentSrc;
       
-      // Apply acceleration
-      if (video.playbackRate !== CONFIG.accelerationSpeed) {
-        // Save the user's current volume before muting
-        if (!video.muted && video.volume > 0) {
-          savedVolume = video.volume;
+      // Apply acceleration ONLY if we have a video
+      if (video) {
+        if (video.playbackRate !== CONFIG.accelerationSpeed) {
+          // Save the user's current volume before muting
+          if (!video.muted && video.volume > 0) {
+            savedVolume = video.volume;
+          }
+          video.playbackRate = CONFIG.accelerationSpeed;
+          video.muted = true;
+          video.volume = 0;
         }
-        video.playbackRate = CONFIG.accelerationSpeed;
-        video.muted = true;
-        video.volume = 0;
       }
       
       // Auto-click skip button if it appears
@@ -617,11 +609,10 @@ function handlePrimeAdAcceleration() {
         skipButton.click();
       }
     } else {
-      // Restore normal playback with debounce logic
+      // Sticky State: Restore normal playback ONLY after 1000ms of stable "no ad" signal
       if (isAdActive) {
         const timeSinceAd = Date.now() - lastAdDetectTime;
-        // Wait at least 500ms stable "no ad" state before clearing
-        if (timeSinceAd > 500) {
+        if (timeSinceAd > 1000) {
           // --- NEW: Update stats when ad session ends ---
           if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
             window.__CHROMA_INTERNAL__.send({
@@ -630,9 +621,11 @@ function handlePrimeAdAcceleration() {
             });
           }
           
-          video.playbackRate = 1;
-          video.volume = savedVolume;
-          video.muted = false;
+          if (video) {
+            video.playbackRate = 1;
+            video.volume = savedVolume;
+            video.muted = false;
+          }
           
           // Also reset the targetVideo in case it's different from the active video
           if (targetVideo && targetVideo !== video) {
@@ -649,8 +642,8 @@ function handlePrimeAdAcceleration() {
       }
     }
 
-    targetVideo = video;
-    updateAdOverlay(video, isAdActive);
+    if (video) targetVideo = video;
+    updateAdOverlay(targetVideo, isAdActive);
   } catch (err) {
     if (DEBUG) console.error('[Chroma] Error in Prime loop:', err);
   }

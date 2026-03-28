@@ -83,13 +83,26 @@
       border-radius: var(--r-pill);
       border: 1px solid var(--border-glass);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      animation: border-cycle 8s linear infinite;
+      animation: border-cycle 16s linear infinite;
     }
 
     @keyframes border-cycle {
-      0%, 100% { border-color: rgba(255, 0, 85, 0.4); }
-      33% { border-color: rgba(153, 0, 255, 0.4); }
-      66% { border-color: rgba(0, 136, 255, 0.4); }
+      0%, 100% { 
+        border-color: rgba(255, 0, 85, 0.5); 
+        box-shadow: 0 4px 24px rgba(255, 0, 85, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+      }
+      25% { 
+        border-color: rgba(153, 0, 255, 0.5); 
+        box-shadow: 0 4px 24px rgba(153, 0, 255, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+      }
+      50% { 
+        border-color: rgba(0, 136, 255, 0.5); 
+        box-shadow: 0 4px 24px rgba(0, 136, 255, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+      }
+      75% { 
+        border-color: rgba(0, 255, 204, 0.45); 
+        box-shadow: 0 4px 24px rgba(0, 255, 204, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+      }
     }
 
     .logo {
@@ -132,9 +145,10 @@
       border-radius: var(--r-md);
       padding: 12px 8px;
       text-align: center;
-      transition: transform 0.2s, border-color 0.2s;
+      transition: transform 0.2s;
+      animation: border-cycle 16s linear infinite;
     }
-    .stat-card:hover { transform: translateY(-2px); border-color: var(--border-hover); }
+    .stat-card:hover { transform: translateY(-2px); }
 
     .stat-value {
       font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 4px;
@@ -162,6 +176,7 @@
       border: 1px solid var(--border-glass);
       border-radius: var(--r-md);
       overflow: hidden;
+      animation: border-cycle 16s linear infinite;
     }
 
     .toggle-row {
@@ -180,28 +195,31 @@
     .switch { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
     .slider {
-      position: absolute; inset: 0; background: #1e1e2e;
-      border-radius: 20px; transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-      border: 1px solid rgba(255,255,255,0.05);
-      background-size: 200% auto;
-      background-position: left center;
+      position: absolute; inset: 0; 
+      background-color: #1e1e2e;
+      background-size: 200% 100%;
+      background-repeat: no-repeat;
+      background-position: 0% 50%;
+      border-radius: 20px; 
+      transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05); /* Inset shadow instead of border */
     }
     .slider::before {
       content: ''; position: absolute; height: 12px; width: 12px;
-      left: 2px; bottom: 2px; background: #685e85;
+      left: 3px; top: 3px; background: #685e85;
       border-radius: 50%; transition: 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     input:checked + .slider { 
-      background: linear-gradient(135deg, #ff0055, #9900ff, #0088ff);
-      border-color: transparent;
-      box-shadow: 0 0 12px rgba(153, 0, 255, 0.4);
+      background-image: linear-gradient(110deg, #ff0055, #9900ff, #0088ff);
+      box-shadow: 0 0 12px rgba(153, 0, 255, 0.35); /* Outer glow only */
     }
     input:checked + .slider::before { transform: translateX(16px); background: #fff; }
 
     /* Hover effect: shift gradient on hover */
     .switch:hover input:checked + .slider {
-      background-position: right center;
-      box-shadow: 0 0 18px rgba(153, 0, 255, 0.6);
+      background-position: 100% 50%;
+      filter: brightness(1.1);
+      box-shadow: 0 0 18px rgba(153, 0, 255, 0.55);
     }
 
     /* Enable Switch (Header) */
@@ -389,7 +407,7 @@
 
   <footer>
     <button class="reset-btn" id="resetStats">Reset Stats</button>
-    <span class="version">v1.2.0 · MV3</span>
+    <span class="version" id="versionText">v1.0.0 · MV3</span>
   </footer>
 
   <script src="messaging.js"></script>
