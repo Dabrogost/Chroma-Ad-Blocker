@@ -103,7 +103,7 @@
             io.unobserve(entry.target);
           }
         });
-      }, { threshold: 0.08 });
+      }, { threshold: 0.15, rootMargin: '0px 0px -10% 0px' });
 
       document.querySelectorAll('.fade-up').forEach(function (el, i) {
         el.dataset.delay = i * 75;
@@ -118,7 +118,7 @@
             lineIo.unobserve(entry.target);
           }
         });
-      }, { threshold: 0.4 });
+      }, { threshold: 0.2 });
 
       document.querySelectorAll('.qs-line').forEach(function (el) {
         lineIo.observe(el);

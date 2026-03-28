@@ -20,6 +20,9 @@ The Extension uses your browser's local storage (`chrome.storage.local`) to save
 - **User Settings**: Your preferred toggles for ad-acceleration, network blocking, and cosmetic filtering.
 - **Aggregated Statistics**: Local counts of blocked ads and prevented tracking attempts. These stats are for your personal view only and are never shared.
 
+### No Tracking and Cookies
+We do not use cookies, tracking pixels, or any other web beacons. There is no server-side tracking of your browsing habits or your use of the Extension.
+
 ## 2. Permissions and Rationale
 The Extension requires specific permissions to function effectively. Below is a breakdown of why these permissions are used:
 

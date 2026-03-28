@@ -147,6 +147,20 @@ Portions of this codebase, including initial logic structures and documentation,
 
 ---
 
+## Legal Disclaimers
+
+**Trademark Disclaimer:** YouTube is a trademark of Google LLC. Amazon Prime Video is a trademark of Amazon.com, Inc. Chroma Ad-Blocker is an independent project and is NOT affiliated with, endorsed by, or sponsored by Google LLC, YouTube, Amazon.com, Inc., or any other third-party platform.
+
+**Usage Warning:** Using ad-blockers or ad-acceleration tools may violate the Terms of Service of various platforms. By using Chroma, you acknowledge and assume all risks associated with potential account restrictions or enforcement actions.
+
+---
+
+## Security Policy
+
+For information on how to report security vulnerabilities, please see our [Security Policy](SECURITY.md).
+
+---
+
 ## Support the Project
 
 Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
@@ -164,5 +178,5 @@ Chroma is a solo project dedicated to restoring the web to its fast, private, an
 </div>
 
 <p align="right">
-  <sub>&copy; 2026 Dabrogost</sub>
+  <sub>Copyright 2026 Dabrogost</sub>
 </p>
