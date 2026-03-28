@@ -105,21 +105,28 @@ graph TD
     POPUP -- "Final Statistics" --> USER
 
     %% --- LOGIC TRACING (LINK STYLES) ---
-    %% Internet: Grey
-    linkStyle 0,1 stroke:#636e72,stroke-width:2px;
-    %% Main World: Red
-    linkStyle 2,12,13 stroke:#d63031,stroke-width:2px;
-    %% Isolated World: Green
-    linkStyle 3,9,14 stroke:#00b894,stroke-width:2px;
-    %% Secure Paths: Purple
-    linkStyle 4,6 stroke:#9b59b6,stroke-width:2px;
-    %% Core/SW Paths: Lavender
-    linkStyle 5,7,8,10,17 stroke:#a29bfe,stroke-width:2px;
-    %% Infrastructure Paths: Blue
-    linkStyle 11 stroke:#0984e3,stroke-width:2px;
-    %% DOM Outputs: Orange
-    linkStyle 15,16 stroke:#e67e22,stroke-width:2px;
+    %% 1. Internet: Grey (Links 3, 4)
+    linkStyle 3,4 stroke:#636e72,stroke-width:2px;
+    %% 2. Main World: Red (Links 0, 5, 15, 16)
+    linkStyle 0,5,15,16 stroke:#d63031,stroke-width:2px;
+    %% 3. Isolated World: Green (Links 6, 12, 17)
+    linkStyle 6,12,17 stroke:#00b894,stroke-width:2px;
+    %% 4. Secure Paths: Purple (Links 1, 2, 7, 9)
+    linkStyle 1,2,7,9 stroke:#9b59b6,stroke-width:2px;
+    %% 5. Core/SW Paths: Lavender (Links 8, 10, 11, 13, 20)
+    linkStyle 8,10,11,13,20 stroke:#a29bfe,stroke-width:2px;
+    %% 6. Infrastructure (DNR): Blue (Link 14)
+    linkStyle 14 stroke:#0984e3,stroke-width:2px;
+    %% 7. DOM Outputs: Orange (Links 18, 19)
+    linkStyle 18,19 stroke:#e67e22,stroke-width:2px;
+
+    %% --- HIDE SUBGRAPH BOXES ---
+    style MW fill:none,stroke:none
+    style IW fill:none,stroke:none
+    style SW fill:none,stroke:none
+    style System fill:none,stroke:none
 ```
+
 
 
 
