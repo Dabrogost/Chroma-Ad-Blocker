@@ -365,7 +365,12 @@ ul  { list-style: none; }
   color: var(--text-dim);
   padding: 8px 20px;
   border-radius: var(--r-pill);
-  transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+  transition: 
+    color 0.25s ease, 
+    background 0.35s ease, 
+    background-position 0.45s ease,
+    transform 0.2s ease,
+    box-shadow 0.25s ease;
   white-space: nowrap;
   letter-spacing: 0.01em;
 }
@@ -373,17 +378,24 @@ ul  { list-style: none; }
 .pill-nav__link:hover {
   color: var(--text);
   background: rgba(108, 92, 231, 0.14);
+  transform: translateY(-1px);
 }
 
 .pill-nav__link.active {
   color: var(--text);
-  background: var(--grad-chroma);
-  background-size: 100vw 100vh;
-  background-attachment: fixed;
-  opacity: 0.95;
-  box-shadow: 
-    0 4px 15px rgba(153, 0, 255, 0.25),
+  background: linear-gradient(135deg, #ff0055 0%, #9900ff 50%, #0088ff 100%);
+  background-size: 200% auto;
+  background-position: left center;
+  opacity: 1;
+  box-shadow:
+    0 4px 15px rgba(255, 0, 85, 0.25),
     inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.pill-nav__link.active:hover {
+  background-position: right center;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(153, 0, 255, 0.35);
 }
 
 /* Hamburger */
