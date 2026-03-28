@@ -385,6 +385,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return;
     }
 
+    // SECURITY: Whitelist allowed bridge actions (VULN: Messaging Bridge Abuse)
+    const ALLOWED_INTERCEPTOR_ACTIONS = ['STATS_UPDATE', 'CLOSE_TAB'];
+    
+    if (!ALLOWED_INTERCEPTOR_ACTIONS.includes(msg.action)) {
+      if (DEBUG) console.error(`[Chroma Security] Rejected unauthorized action from interceptor: ${msg.action}`);
+      sendResponse({ ok: false, error: 'Unauthorized Action' });
+      return;
+    }
+
     switch (msg.action) {
       case 'CLOSE_TAB':
         handleCloseTab(_sender, sendResponse);
@@ -400,9 +409,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
         sendResponse({ ok: true });
         break;
-      default:
-        if (DEBUG) console.warn('[Chroma] Unknown action requested:', msg.action);
-        sendResponse({ ok: false, error: 'Unknown action' });
     }
     return true; // Keep channel open for async responses
   }
@@ -598,8 +604,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === MSG.GET_TOKEN) {
-    const tabId = _sender.tab?.id;
-    if (!tabId) return sendResponse({ error: 'No tabId' });
+    // SECURITY: Ensure request is from a legitimate content script (VULN: Token Hijack)
+    if (!_sender.tab || !_sender.url) {
+        if (DEBUG) console.error('[Chroma Security] Rejected token request: Missing sender context.');
+        return sendResponse({ error: 'Invalid Sender' });
+    }
+
+    const tabId = _sender.tab.id;
     
     // SECURITY: Once a token is retrieved, lock subsequent requests for this tab (VULN-02 Fix)
     if (tokenRetrievalLocked.has(tabId)) {
@@ -652,7 +663,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // ─── TAB MONITORING (Pop-Under Blocker) ───────────────────────────────────────
 chrome.tabs.onCreated.addListener(async (tab) => {
-  if (config.enabled === false || config.blockPopUnders === false) return;
+  const { config, whitelist } = await chrome.storage.local.get(['config', 'whitelist']);
+  if (!config || config.enabled === false || config.blockPopUnders === false) return;
 
   // Kill Switch: Check if the opener tab is whitelisted
   const openerId = tab.openerTabId;

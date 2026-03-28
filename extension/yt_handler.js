@@ -28,7 +28,9 @@
                 clearInterval: window.clearInterval.bind(window),
                 dispatchEvent: document.dispatchEvent.bind(document),
                 addDocEventListener: document.addEventListener.bind(document),
-                removeDocEventListener: document.removeEventListener.bind(document)
+                removeDocEventListener: document.removeEventListener.bind(document),
+                calculateChromaColor: (typeof window.calculateChromaColor === 'function') ? 
+                                     window.calculateChromaColor.bind(window) : null
               };
 
   const qS = (s) => API.querySelector(s);
@@ -528,7 +530,7 @@
         requestAnimationFrame(tick);
         return;
       }
-      const [r, g, b] = window.calculateChromaColor(t);
+      const [r, g, b] = (API.calculateChromaColor) ? API.calculateChromaColor(t) : [255, 0, 85];
 
       const root = document.documentElement;
       root.style.setProperty('--chroma-color', `rgb(${r},${g},${b})`);

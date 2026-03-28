@@ -132,10 +132,18 @@
       // SECURITY: We NO LONGER expose the token on the window object (VULN-02 Fix).
       // Site-specific handlers (yt_handler, prm_handler) must use the exposed 'send' function
       // which automatically injects the token from this closure.
-      window.__CHROMA_INTERNAL__ = Object.create(null);
-      Object.assign(window.__CHROMA_INTERNAL__, {
-        // token: token, // REMOVED for security
+      const internalBridge = Object.create(null);
+      Object.assign(internalBridge, {
         send: (payload) => {
+          // SECURITY: Whitelist allowed bridge actions (VULN: Messaging Bridge Abuse)
+          const ALLOWED_ACTIONS = ['STATS_UPDATE', 'CLOSE_TAB', 'WINDOW_OPEN_ATTEMPT'];
+          const action = (payload && payload.action) ? payload.action : (payload && payload.type);
+          
+          if (!ALLOWED_ACTIONS.includes(action)) {
+            if (DEBUG) console.error(`[Chroma Security] Blocked unauthorized bridge action: ${action}`);
+            return;
+          }
+
           // Automatically inject token and source for site-specific handlers
           sendToProtection({
             ...payload,
@@ -157,10 +165,24 @@
           dispatchEvent: pristineDispatchEvent,
           addDocEventListener: pristineAddDocEventListener,
           removeDocEventListener: pristineRemoveDocEventListener,
-          MutationObserver: window.MutationObserver
+          MutationObserver: window.MutationObserver,
+          // VULN-01 Hardening: Capture and expose pure utility functions
+          calculateChromaColor: (typeof window.calculateChromaColor === 'function') ? 
+                                window.calculateChromaColor.bind(window) : null
         })
       });
-      Object.freeze(window.__CHROMA_INTERNAL__);
+
+      // SECURITY: Permanently lock the bridge to prevent host-page hijacking (VULN: Bridge Hijack)
+      try {
+        Object.defineProperty(window, '__CHROMA_INTERNAL__', {
+          value: Object.freeze(internalBridge),
+          writable: false,
+          configurable: false
+        });
+      } catch (e) {
+        // Fallback for non-configurable scenarios
+        window.__CHROMA_INTERNAL__ = Object.freeze(internalBridge);
+      }
     }
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Trusted: ${isTrusted}`);

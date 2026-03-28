@@ -32,7 +32,9 @@ const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ?
               dispatchEvent: document.dispatchEvent.bind(document),
               addDocEventListener: document.addEventListener.bind(document),
               removeDocEventListener: document.removeEventListener.bind(document),
-              MutationObserver: window.MutationObserver
+              MutationObserver: window.MutationObserver,
+              calculateChromaColor: (typeof window.calculateChromaColor === 'function') ? 
+                                   window.calculateChromaColor.bind(window) : null
             };
 
 const qS = (s) => API.querySelector(s);
@@ -333,7 +335,7 @@ function startChromaClock() {
     }
 
     const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS;
-    const [r, g, b] = window.calculateChromaColor ? window.calculateChromaColor(t) : [0, 168, 225];
+    const [r, g, b] = (API.calculateChromaColor) ? API.calculateChromaColor(t) : [0, 168, 225];
 
     const root = document.documentElement;
     root.style.setProperty('--chroma-color', `rgb(${r},${g},${b})`);
@@ -616,10 +618,6 @@ function handlePrimeAdAcceleration() {
         video.volume = 0;
       }
       
-      const skipButton = qS('.adSkipButton, .skippable, .atvwebplayersdk-ad-skip-button');
-      if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) {
-        skipButton.click();
-      }
     } else {
       consecutiveFalseCount++; // INCREMENT
       // Restore normal playback with DEBOUNCE (Fix 3)

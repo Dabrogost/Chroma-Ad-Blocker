@@ -412,5 +412,7 @@
     globalThis.removeLeftoverAdContainers = removeLeftoverAdContainers;
     globalThis.startObserver = startObserver;
     globalThis.onYTNavigate = onYTNavigate;
+    globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
+    globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = val; };
   }
 })();
