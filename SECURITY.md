@@ -1,3 +1,10 @@
+---
+layout: default
+title: Security Policy
+layout-class: layout-prose
+description: Chroma Ad-Blocker security policy — reporting vulnerabilities and version support.
+---
+
 # Security Policy
 
 ## Supported Versions
