@@ -23,10 +23,10 @@ description: Chroma Ad-Blocker security policy — reporting vulnerabilities and
     </svg>
     <h3 class="card__title">Supported Versions</h3>
     <p class="card__desc">
-      Currently, only the latest version of Chroma Ad-Blocker (the <code>main</code> branch) 
+      Currently, only the latest version of Chroma Ad-Blocker (the <code>master</code> branch) 
       is actively supported with security updates.
     </p>
-    <span class="card__tag">Branch: main</span>
+    <span class="card__tag">Branch: master</span>
   </div>
 
   <!-- Card 2: Reporting a Vulnerability -->
