@@ -29,10 +29,10 @@ graph TD
     classDef secure fill:#9b59b6,color:#fff,stroke:#8e44ad,stroke-width:2px
     classDef actor fill:#636e72,color:#fff,stroke:#2d3436,stroke-width:2px
 
-    %% --- STACK 0: INPUT (CENTERED TOP) ---
+    %% --- LAYER 0: ENTRANCE ---
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
-    %% --- STACK 1: PAGE CONTEXT (MAIN WORLD) ---
+    %% --- LAYER 1: MAIN WORLD ---
     subgraph MW["Main World (Page Execution)"]
         MW_INT["interceptor.js<br/>(Pristine Cache + Safety Bypass)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
@@ -40,21 +40,20 @@ graph TD
         CS_PV["prm_handler.js<br/>(Prime Video)"]:::main
     end
 
-    %% --- STACK 2: EXTENSION RELAY (ISOLATED WORLD) ---
+    %% --- LAYER 2: ISOLATED WORLD ---
     subgraph IW["Isolated World (Secure Relay)"]
         CS_PROT["protection.js<br/>(Gesture Tracking + Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
-    %% --- STACK 3: EXTENSION CORE (SERVICE WORKER) ---
+    %% --- LAYER 3: SERVICE WORKER CORE ---
     subgraph SW["Extension Core (Service Worker)"]
         VERIFY{{"Token Verification"}}:::secure
         BS["background.js<br/>(Main Router)"]:::sw
         AUTH["Session Token Store"]:::secure
-        POPUP["popup.js<br/>(UI/Stats)"]:::sw
     end
 
-    %% --- STACK 4: INFRASTRUCTURE ---
+    %% --- LAYER 4: INFRASTRUCTURE ---
     subgraph System["Resource & Network Layer"]
         STORAGE[("chrome.storage.local")]:::storage
         DNR["10-Part DNR System<br/>(300,000 Rules)"]:::dnr
@@ -62,64 +61,67 @@ graph TD
         PV_DOM["Prime Player"]:::dom
     end
 
-    %% --- STACK 5: OUTPUT (CENTERED BOTTOM) ---
+    %% --- LAYER 5: UI & OUTPUT ---
+    POPUP["popup.js<br/>(UI/Stats)"]:::sw
     USER["The User (Cleaned & Accelerated UI)"]:::actor
 
-    %% --- PIPELINE CONNECTIONS (ORDERED FOR TRACING) ---
+    %% --- PIPELINE DEFINITION (0-21) ---
     
-    %% INTERNET ORIGIN (Grey: 0, 1)
+    %% INTERNET (Grey: 0, 1)
     INTERNET -- "Scripts" --> MW_INT
     INTERNET -- "Requests" --> DNR
 
-    %% MAIN WORLD ORIGIN (Red: 2, 3, 15, 16)
+    %% MAIN WORLD (Red: 2, 3, 4, 5)
     MW_INT <==>|"Token-Gated Handshake"| CS_PROT
     MW_INT --> BRIDGE
     CS_YT ==>|"Accelerate"| YT_DOM
     CS_PV ==>|"Accelerate"| PV_DOM
 
-    %% SECURE ORIGIN (Purple: 4, 5, 6, 8)
+    %% SECURE (Purple: 6, 7, 8, 9)
     BRIDGE --> CS_YT
     BRIDGE --> CS_PV
-    CS_PROT -- "Relay + Token" --> VERIFY
+    VERIFY -- "Valid" --> BS
     AUTH -- "Token" --> CS_PROT
 
-    %% ISOLATED WORLD ORIGIN (Green: 7, 10, 17)
-    VERIFY -- "Valid" --> BS
+    %% ISOLATED WORLD (Green: 10, 11, 12)
+    CS_PROT -- "Relay + Token" --> VERIFY
     CS_GEN -.->|"Read Filter"| STORAGE
     CS_GEN ==>|"Visual Filter"| YT_DOM
 
-    %% CORE ORIGIN (Lavender: 9, 11, 12, 13, 20)
+    %% SERVICE WORKER CORE (Lavender: 13, 14, 15)
     BS -- "Lock" --> AUTH
     BS <-->|"Config Sync"| STORAGE
     BS -- "Dynamic Rules" --> DNR
-    POPUP ---|"Stats Sync"| STORAGE
-    POPUP -- "Final Statistics" --> USER
 
-    %% STORAGE ORIGIN (Blue: 14)
+    %% STORAGE (Blue: 16)
     STORAGE -.->|"Whitelist Bypass"| CS_PROT
     
-    %% DNR ORIGIN (Blue: 18)
+    %% DNR (Blue: 17)
     DNR ---|"Network Shield"| USER
 
-    %% PLAYER ORIGIN (Orange: 19, 21)
+    %% PLAYERS (Orange: 18, 19)
     YT_DOM -- "Filtered Output" --> USER
     PV_DOM -- "Filtered Output" --> USER
 
+    %% POPUP (Lavender: 20, 21)
+    POPUP ---|"Stats Sync"| STORAGE
+    POPUP -- "Final Statistics" --> USER
+
     %% --- LOGIC TRACING (LINK STYLES) ---
-    %% Internet/User: Grey
+    %% Internet/User Origin: Grey
     linkStyle 0,1 stroke:#636e72,stroke-width:2px;
-    %% Main World: Red
-    linkStyle 2,3,15,16 stroke:#d63031,stroke-width:2px;
-    %% Isolated World: Green
-    linkStyle 7,10,17 stroke:#00b894,stroke-width:2px;
-    %% Secure Paths: Purple
-    linkStyle 4,5,6,8 stroke:#9b59b6,stroke-width:2px;
-    %% Core/SW Paths: Lavender
-    linkStyle 9,11,12,13,20 stroke:#a29bfe,stroke-width:2px;
-    %% System Infra: Blue
-    linkStyle 14,18 stroke:#0984e3,stroke-width:2px;
-    %% DOM Outputs: Orange
-    linkStyle 19,21 stroke:#e67e22,stroke-width:2px;
+    %% Main World Origin: Red
+    linkStyle 2,3,4,5 stroke:#d63031,stroke-width:2px;
+    %% Secure Layer Origin: Purple
+    linkStyle 6,7,8,9 stroke:#9b59b6,stroke-width:2px;
+    %% Isolated World Origin: Green
+    linkStyle 10,11,12 stroke:#00b894,stroke-width:2px;
+    %% SW Core Origin: Lavender
+    linkStyle 13,14,15,20,21 stroke:#a29bfe,stroke-width:2px;
+    %% System / Storage Origin: Blue
+    linkStyle 16,17 stroke:#0984e3,stroke-width:2px;
+    %% DOM Player Origin: Orange
+    linkStyle 18,19 stroke:#e67e22,stroke-width:2px;
 
     %% --- HIDE SUBGRAPH BOXES ---
     style MW fill:none,stroke:none
@@ -127,6 +129,7 @@ graph TD
     style SW fill:none,stroke:none
     style System fill:none,stroke:none
 ```
+
 
 
 
