@@ -213,6 +213,7 @@
       const adTextSource = adUIElement || playerContainer;
       if (adTextSource) {
         const playerText = adTextSource.textContent || '';
+        // Pod Detection: Extracts 'current' and 'total' ad counts from localized UI strings (e.g., 'Ad 1 of 2') to track progress through multi-ad sequences.
         const parsedTextMatch = playerText.match(/(?:[^\d]|^)([0-9]+)\s*(?:of|de|sur|out of|von|di)\s*([0-9]+)(?:[^\d]|$)/i);
         if (parsedTextMatch) {
           const parsedCurrent = parseInt(parsedTextMatch[1], 10);
@@ -619,7 +620,7 @@
         text-shadow: 0 1px 4px rgba(0,0,0,0.5);
       }
     `;
-    // Prevent the 'style' variable reference from being reassigned.
+    // Lockdown: Attempt to freeze the style object properties to mitigate potential host-page tampering.
     try {
       Object.freeze(style);
     } catch (e) {}

@@ -33,7 +33,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       stats: { networkBlocked: 0, accelerated: 0 },
       ruleCounter: 5000000,
       lastHarvestTime: Date.now(),
-      // Primary copy of cosmetic selectors (Synchronized with extension/utils/selectors.js)
+      // WARNING: Manual Sync Required. This list must be kept identical to extension/utils/selectors.js 
+      // to ensure consistent blocking across all extension contexts.
       HIDE_SELECTORS: [
         '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
         'ytd-banner-promo-renderer', '#banner-ad', '#player-ads',
@@ -619,8 +620,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     }
   }
 
-  // Give a small grace period for the WINDOW_OPEN_NOTIFY to arrive from content script
-  // since postMessage -> runtime.sendMessage is slightly slower than tab creation.
+  // Timing Bridge: Wait up to 1000ms for the content script to deliver pop-under metadata 
+  // via the secure pipe before making a blocking decision on the newly created tab.
   const sessionData = await getSessionData();
   let request = openerId ? sessionData.popunderRequests[openerId] : null;
   

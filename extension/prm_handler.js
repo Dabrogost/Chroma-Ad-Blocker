@@ -297,7 +297,7 @@ function updateAdOverlay(video, isActive) {
             }
 
             if (currentAdRemainingStart > 0) {
-              // Heuristic Estimation: Calculate completion percentage based on the starting remaining time.
+              // Pod Detection: Calculate completion percentage based on the starting remaining time.
               // Caps at 99% until the ad actually terminates to avoid visual jumping.
               const estimated = ((currentAdRemainingStart - remaining) / currentAdRemainingStart) * 100;
               percent = Math.min(99, Math.max(5, estimated));
@@ -427,7 +427,7 @@ function injectChromaCSS() {
       transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
     }
   `;
-  // Prevent the 'style' variable reference from being reassigned.
+  // Lockdown: Attempt to freeze the style object properties to mitigate potential host-page tampering.
   Object.freeze(style);
   (document.head || document.documentElement).appendChild(style);
 }
@@ -543,10 +543,8 @@ function findActiveVideo() {
 
 function handlePrimeAdAcceleration() {
   try {
-    // NOTE: rawAdShowing and video must be declared here, before the CONFIG guard.
-    // Moving them below the guard causes the overlay to flash. The exact cause is a
-    // timing interaction between isAdShowing()'s visibility toggle and the
-    // MutationObserver — do not reorder without testing ad cycles on Prime Video.
+    // Critical Ordering: Capture ad state and video reference BEFORE the configuration guard 
+    // to prevent UI 'flicker' caused by the MutationObserver/visibility-toggle race condition.
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
     mutationPending = false;

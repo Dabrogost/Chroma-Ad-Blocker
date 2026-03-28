@@ -146,7 +146,7 @@
   }
 
   // =========================================================================
-  // 3. THE API LOCKDOWN (Prevents future host-page hijacking)
+  // 4. THE API LOCKDOWN (Prevents future host-page hijacking)
   // =========================================================================
   if (isHostileDomain) {
     // API Lockdown: Conditionals for potential future hardening

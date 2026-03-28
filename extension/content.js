@@ -2,6 +2,8 @@
   'use strict';
 
   const DEBUG = false;
+  const MSG = window.MSG; // Access shared message constants
+
 
   // ─── CONFIG ──────────────────────────────────────────────────────────────────
   const CONFIG = {
@@ -367,7 +369,7 @@
     try {
       const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']);
       
-      // Whitelist check: if whitelisted, exit early.
+      // Domain Exclusion: Terminate initialization for whitelisted domains to ensure zero overhead and interference.
       const whitelist = data.whitelist || [];
       const hostname = window.location.hostname;
       if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {
