@@ -33,68 +33,84 @@ graph TD
     classDef secure fill:#ffeaa7,color:#000,stroke:#fab1a0,stroke-dasharray: 5 5
     classDef actor fill:#dfe6e9,color:#2d3436,stroke:#b2bec3,stroke-width:2px
 
+    %% Actors
     USER["User (Browsing/Interaction)"]:::actor
     INTERNET["The Internet (Ads & Trackers)"]:::actor
 
-    subgraph SW["Extension Core (Service Worker)"]
-        BS["background.js<br/>(Main Logic & Router)"]:::sw
-        AUTH["Session Token Store<br/>(Per-Tab Locking)"]:::secure
-        VERIFY{{"Token Verification"}}:::secure
-        POPUP["popup.js<br/>(UI & Stats)"]:::sw
-    end
-
-    subgraph ST["Central Hub"]
-        STORAGE[("chrome.storage.local")]:::storage
-    end
-
-    subgraph MW["Main World Execution (Page Context)"]
-        MW_INT["interceptor.js<br/>(Pristine API Cache)"]:::main
+    %% Row 1: The Page Execution Context
+    subgraph MW["Main World (Page Context)"]
+        MW_INT["interceptor.js<br/>(Pristine Cache)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
         CS_YT["yt_handler.js<br/>(Accelerator)"]:::main
         CS_PV["prm_handler.js<br/>(Accelerator)"]:::main
     end
 
+    %% Row 2: The Relay and Cosmetic Logic
     subgraph IW["Isolated World (Extension Context)"]
-        CS_PROT["protection.js<br/>(Secure Handshake & Relay)"]:::isolated
+        CS_PROT["protection.js<br/>(Secure Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
-    subgraph DN["Network Blocking (DNR)"]
-        DNR["Declarative Net Request<br/>(300k Rules)"]:::dnr
+    %% Row 3: Backend & Interface
+    subgraph SW["Extension Core (Background)"]
+        VERIFY{{"Token Verification"}}:::secure
+        BS["background.js<br/>(Main Router)"]:::sw
+        AUTH["Session Token Store"]:::secure
+        POPUP["popup.js<br/>(Stats UI)"]:::sw
     end
 
-    %% User & Internet Interaction
-    USER -- "Gestures / Clicks" --> MW
-    USER -- "Toggle / Reset Stats" --> POPUP
-    INTERNET -- "Ad Requests" --> DNR
-    INTERNET -- "Pop-under Attempts" --> MW_INT
+    %% Row 4: Infrastructure
+    subgraph System["Infrastructure"]
+        STORAGE[("chrome.storage.local")]:::storage
+        DNR["Network Blocking<br/>(DNR)"]:::dnr
+    end
 
-    %% Handshake & Communication
+    %% Interaction Paths (Indexes: 0, 1)
+    USER -- "Gestures" --> MW
+    USER -- "Manage" --> POPUP
+    
+    %% Threat Paths (Indexes: 2, 3)
+    INTERNET -- "Payloads" --> MW_INT
+    INTERNET -- "Traffic" --> DNR
+
+    %% Secure Tunnel Path (Indexes: 4, 5, 6, 7, 8)
     MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
+    CS_PROT -- "Relay + Token" --> VERIFY
+    VERIFY -- "Valid" --> BS
+    BS -- "Lock Token" --> AUTH
+    AUTH -- "Unique ID" --> CS_PROT
+
+    %% Internal Bridge Path (Indexes: 9, 10, 11)
     MW_INT --- BRIDGE
     BRIDGE --- CS_YT
     BRIDGE --- CS_PV
 
-    CS_PROT -- "Relay Payload + Token" --> VERIFY
-    VERIFY -- "Valid" --> BS
-    
-    BS -- "Generate & Lock" --> AUTH
-    AUTH -- "Unique Tab Token" --> CS_PROT
-
-    %% Stats & Config
-    BS <-->|"Sync State"| STORAGE
-    POPUP <-->|"Update/Read"| STORAGE
+    %% System Connections (Indexes: 12, 13, 14, 15)
+    BS <--> STORAGE
+    POPUP <--> STORAGE
     CS_GEN -.->|"Read Config"| STORAGE
-    CS_YT -.->|"Stats (via Bridge/Relay)"| VERIFY
-    CS_PV -.->|"Stats (via Bridge/Relay)"| VERIFY
-
     BS -- "Control" --> DNR
 
-    %% DOM Interaction
-    CS_YT ==>|"Accelerate"| DOM_YT["YT Shadow DOM"]:::dom
-    CS_PV ==>|"Accelerate"| DOM_PV["Prm Shadow DOM"]:::dom
-    CS_GEN ==>|"Hide/Remove"| DOM_YT
+    %% DOM Actions (Indexes: 16, 17, 18)
+    CS_YT ==>|"Accelerate Ad"| YT_DOM["YouTube Player"]:::dom
+    CS_PV ==>|"Accelerate Ad"| PV_DOM["Prime Player"]:::dom
+    CS_GEN ==>|"Hide Slot"| YT_DOM
+
+    %% --- Logic Tracing (Link Styles) ---
+    %% User Interaction: Cyan
+    linkStyle 0,1 stroke:#00cec9,stroke-width:2px;
+    %% Threat/Traffic: Grey
+    linkStyle 2,3 stroke:#636e72,stroke-width:2px;
+    %% Security Pipeline: Orange
+    linkStyle 4,5,6,7,8 stroke:#e17055,stroke-width:3px;
+    %% Internal Bridge: Yellow
+    linkStyle 9,10,11 stroke:#fdcb6e,stroke-width:2px;
+    %% Storage/Config: Purple
+    linkStyle 12,13,14 stroke:#a29bfe,stroke-width:2px;
+    %% Control & Action: Green
+    linkStyle 15,16,17,18 stroke:#00b894,stroke-width:2px;
 ```
+
 
 
 
