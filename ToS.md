@@ -7,7 +7,7 @@ description: Chroma Ad-Blocker terms of service — personal, non-commercial use
 
 # Terms of Service for Chroma Ad-Blocker
 
-**Effective Date:** March 27, 2026
+**Effective Date:** March 28, 2026
 
 ## 1. Acceptance of Terms
 By installing and using the Chroma Ad-Blocker browser extension ("the Extension"), you agree to be bound by these Terms of Service. If you do not agree to these terms, do not install or use the Extension.
@@ -19,10 +19,10 @@ The Extension is licensed under the **PolyForm Noncommercial License 1.0.0**.
 - You may modify the Extension for your own personal use, provided you comply with the terms of the PolyForm license.
 
 ## 3. Description of Service
-Chroma Ad-Blocker provides tools to manage your YouTube experience, including:
+Chroma Ad-Blocker provides tools to manage your browsing experience, including:
 - **Ad Acceleration**: Speeding up video advertisements to minimize interruption while fulfilling platform impression requirements.
 - **Network Blocking**: Preventing requests to known advertising and tracking domains.
-- **Cosmetic Filtering**: Hiding ad-related elements on the YouTube interface.
+- **Cosmetic Filtering**: Hiding ad-related elements on Website interfaces.
 - **Warning Suppression**: Removing anti-adblock modals and enforcement messages.
 
 ## 4. Third-Party Services

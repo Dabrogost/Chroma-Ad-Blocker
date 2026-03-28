@@ -7,7 +7,7 @@ description: Chroma Ad-Blocker privacy policy — your data never leaves your de
 
 # Privacy Policy for Chroma Ad-Blocker
 
-**Effective Date:** March 26, 2026
+**Effective Date:** March 28, 2026
 
 ## Overview
 Chroma Ad-Blocker ("we," "our," or "the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information in connection with your use of the Extension. **Our core principle is that your data stays on your device.**
