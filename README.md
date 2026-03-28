@@ -24,14 +24,14 @@ Chroma uses a decentralized architecture synchronized through `chrome.storage.lo
 
 ```mermaid
 graph TD
-    classDef sw fill:#2d3436,color:#fff,stroke:#636e72,stroke-width:2px
-    classDef storage fill:#0984e3,color:#fff,stroke:#74b9ff,stroke-width:2px
-    classDef isolated fill:#00b894,color:#fff,stroke:#55efc4,stroke-width:2px
-    classDef main fill:#d63031,color:#fff,stroke:#ff7675,stroke-width:2px
-    classDef dnr fill:#6c5ce7,color:#fff,stroke:#a29bfe,stroke-width:2px
-    classDef dom fill:#f1c40f,color:#000,stroke:#f39c12,stroke-width:2px
-    classDef secure fill:#ffeaa7,color:#000,stroke:#fab1a0,stroke-dasharray: 5 5
-    classDef actor fill:#dfe6e9,color:#2d3436,stroke:#b2bec3,stroke-width:2px
+    classDef sw fill:#34495e,color:#fff,stroke:#2c3e50,stroke-width:2px
+    classDef storage fill:#0984e3,color:#fff,stroke:#0d47a1,stroke-width:2px
+    classDef isolated fill:#00b894,color:#fff,stroke:#00695c,stroke-width:2px
+    classDef main fill:#d63031,color:#fff,stroke:#b71c1c,stroke-width:2px
+    classDef dnr fill:#2980b9,color:#fff,stroke:#1565c0,stroke-width:2px
+    classDef dom fill:#e67e22,color:#fff,stroke:#e65100,stroke-width:2px
+    classDef secure fill:#f1c40f,color:#000,stroke:#fbc02d,stroke-width:2px
+    classDef actor fill:#636e72,color:#fff,stroke:#2d3436,stroke-width:2px
 
     %% --- STACK 0: INPUT (CENTERED TOP) ---
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
@@ -74,7 +74,7 @@ graph TD
 
     %% --- FLOW CONNECTIONS ---
     
-    %% Internet to Components
+    %% Internet to Components (Grey)
     INTERNET -- "Scripts" --> MW_INT
     INTERNET -- "Requests" --> DNR
 
@@ -101,16 +101,18 @@ graph TD
     POPUP -- "Final Statistics" --> USER
 
     %% --- LOGIC TRACING (LINK STYLES) ---
+    %% Internet: Grey (#636e72)
     linkStyle 0,1 stroke:#636e72,stroke-width:2px;
-    linkStyle 2 stroke:#e67e22,stroke-width:4px;
-    linkStyle 3,4 stroke:#e74c3c,stroke-width:2px;
-    linkStyle 5,6 stroke:#f1c40f,stroke-width:2px;
-    %% Storage Path (Index 9,10,11)
-    linkStyle 9,10,11 stroke:#a29bfe,stroke-width:2px;
-    %% Control Path (Index 12)
-    linkStyle 12 stroke:#6c5ce7,stroke-width:2px;
-    %% User Output (Index 13,14,15,16,17,18)
-    linkStyle 13,14,15,16,17,18 stroke:#00cec9,stroke-width:3px;
+    %% Main World: Red (#d63031)
+    linkStyle 2,7,14,15 stroke:#d63031,stroke-width:2px;
+    %% Isolated World: Green (#00b894)
+    linkStyle 3,12,16 stroke:#00b894,stroke-width:2px;
+    %% Secure Paths: Gold (#f1c40f)
+    linkStyle 4,6,8,9 stroke:#f1c40f,stroke-width:2px;
+    %% Core/SW Paths: Slate (#34495e)
+    linkStyle 5,10,11,13,19 stroke:#34495e,stroke-width:2px;
+    %% DOM Outputs: Orange (#e67e22)
+    linkStyle 17,18 stroke:#e67e22,stroke-width:2px;
 
     %% --- HIDE SUBGRAPH BOXES ---
     style MW fill:none,stroke:none
@@ -118,6 +120,7 @@ graph TD
     style SW fill:none,stroke:none
     style System fill:none,stroke:none
 ```
+
 ```
 
 
