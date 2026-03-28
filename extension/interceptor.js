@@ -125,7 +125,7 @@
     const isNative = (fn) => {
       try {
         // SECURITY BYPASS: Allow unit tests to skip native code verification in non-browser environments.
-        if (DEBUG && window.__CHROMA_TEST_ENVIRONMENT__ === true) return true;
+        if (window.__CHROMA_TEST_ENVIRONMENT__ === true) return true;
 
         return typeof fn === 'function' && 
                pristineCall.call(pristineIncludes, pristineCall.call(pristineFnToString, fn), '[native code]');

@@ -564,63 +564,6 @@
         visibility: hidden !important;
       }
       
-      #chroma-overlay {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(15, 15, 18, 0.8);
-        backdrop-filter: blur(12px);
-        z-index: 999999;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-family: 'YouTube Noto', Roboto, Arial, sans-serif;
-        opacity: 0;
-        transition: opacity 0.2s ease;
-        pointer-events: none;
-      }
-      #chroma-overlay.active {
-        opacity: 1;
-        pointer-events: all;
-      }
-      .chroma-spinner {
-        width: 48px; height: 48px;
-        border: 4px solid rgba(255,255,255,0.1);
-        border-top-color: #FE0034;
-        border-radius: 50%;
-        animation: chroma-spin 1s linear infinite;
-        margin-bottom: 20px;
-      }
-      @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
-      
-      .chroma-checkmark {
-        width: 48px; height: 48px;
-        border: 4px solid #FE0034;
-        border-radius: 50%;
-        margin-bottom: 20px;
-        position: relative;
-      }
-      .chroma-checkmark::after {
-        content: '';
-        position: absolute;
-        top: 6px; left: 16px;
-        width: 10px; height: 20px;
-        border: solid #FE0034;
-        border-width: 0 4px 4px 0;
-        transform: rotate(45deg);
-      }
-      
-      .chroma-title {
-        font-size: 24px; font-weight: 600; margin-bottom: 8px;
-        text-shadow: 0 2px 12px rgba(0,0,0,0.8);
-      }
-      .chroma-subtitle {
-        font-size: 15px; color: #eee;
-        position: absolute;
-        bottom: 18%;
-        text-shadow: 0 1px 4px rgba(0,0,0,0.5);
-      }
     `;
     // Lockdown: Attempt to freeze the style object properties to mitigate potential host-page tampering.
     try {

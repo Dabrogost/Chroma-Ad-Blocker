@@ -162,27 +162,6 @@
   /**
    * Listen for messages from the MAIN world interceptor
    */
-  function initInterceptorListener() {
-    // Message Quarantine: Handling only non-sensitive interactions via window.postMessage to prevent handshake spoofing.
-    window.addEventListener('message', (event) => {
-      if (event.source !== window || !event.data) return;
-
-      const sensitiveTypes = [
-        'WINDOW_OPEN_ATTEMPT',
-        'SUSPICIOUS_FOCUS_ATTEMPT',
-        'SUSPICIOUS_BLUR_ATTEMPT',
-        'NOTIFICATION_ATTEMPT'
-      ];
-
-      if (sensitiveTypes.includes(event.data.type)) {
-        if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked insecure delivery of sensitive command via window.postMessage.');
-        return;
-      }
-
-      // Process non-sensitive messages here if any...
-      // processInterceptorMessage(event.data); // Removed legacy support for sensitive messages
-    });
-  }
 
   /**
    * Securely transfers the secret token to the MAIN world using
@@ -247,22 +226,6 @@
   /**
    * Signals the interceptor script whether protections should be active.
    */
-  function signalInterceptor() {
-    if (CONFIG.enabled && CONFIG.blockPushNotifications) {
-      document.documentElement.dataset.chromaPushActive = 'true';
-    } else {
-      delete document.documentElement.dataset.chromaPushActive;
-    }
-
-    if (CONFIG.enabled && CONFIG.blockPopUnders) {
-      document.documentElement.dataset.chromaPopActive = 'true';
-    } else {
-      delete document.documentElement.dataset.chromaPopActive;
-    }
-
-    // SECURITY: We no longer pass the token via dataset (VULN-02 Fix)
-    delete document.documentElement.dataset.chromaToken;
-  }
 
   // Initial sync with storage
   chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']).then(async (data) => {
@@ -297,11 +260,7 @@
     // SECURITY: Request token from background before starting handshake
     await getTokenFromBackground();
     
-    signalInterceptor();
     initHandshake(selectors); // Pass selectors to handshake
-  }).catch(async () => {
-    await getTokenFromBackground();
-    signalInterceptor(); // Fallback
     initHandshake();
   });
 
@@ -311,8 +270,6 @@
       CONFIG.enabled = msg.config.enabled !== false;
       CONFIG.blockPopUnders = msg.config.blockPopUnders !== false;
       CONFIG.blockPushNotifications = msg.config.blockPushNotifications !== false;
-      signalInterceptor();
-
       // Forward to MAIN world if port is active
       if (isolatedPort) {
         isolatedPort.postMessage({
@@ -325,7 +282,6 @@
 
   // Start tracking
   initGestureTracking();
-  initInterceptorListener();
 
   if (DEBUG) console.log('[Chroma Ad-Blocker] Protection script active.');
 })();

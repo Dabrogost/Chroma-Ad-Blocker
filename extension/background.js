@@ -256,11 +256,8 @@ const MSG = {
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
-  STATS_GET: 'STATS_GET',
   STATS_RESET: 'STATS_RESET',
   STATS_UPDATE: 'STATS_UPDATE',
-  DYNAMIC_RULE_ADD: 'DYNAMIC_RULE_ADD',
-  DYNAMIC_RULE_REMOVE: 'DYNAMIC_RULE_REMOVE',
   WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
   SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
   GET_TOKEN: 'GET_TOKEN',
@@ -293,80 +290,6 @@ function validateConfig(inputConfig) {
 }
 
 
-function validateDynamicRule(rule) {
-  const validatedRule = {};
-
-  if (!rule || typeof rule !== 'object') {
-    return null;
-  }
-
-  // 1. Priority validation
-  if (typeof rule.priority === 'number') {
-    validatedRule.priority = rule.priority;
-  }
-
-  // 2. Action validation
-  if (rule.action && typeof rule.action === 'object') {
-    const type = rule.action.type;
-    if (type === 'block' || type === 'allow') {
-      validatedRule.action = { type };
-    }
-  }
-
-  // 3. Condition validation
-  if (rule.condition && typeof rule.condition === 'object') {
-    const condition = {};
-    if (typeof rule.condition.urlFilter === 'string') {
-      const filter = rule.condition.urlFilter;
-      
-      // SECURITY: Domain/Filter length sanitization (RFC 1035 limits)
-      if (filter.length > 253) return null;
-
-      // SECURITY: Hardcoded Denylist (Never whitelist core ad/tracking domains)
-      const ABSOLUTE_DENYLIST = ['doubleclick.net', 'googlesyndication.com', 'google-analytics.com'];
-      if (rule.action?.type === 'allow') {
-        if (ABSOLUTE_DENYLIST.some(d => filter.includes(d))) {
-          if (DEBUG) console.error('[Chroma Security] Blocked attempt to whitelist denylisted domain:', filter);
-          return null;
-        }
-      }
-
-      condition.urlFilter = filter;
-    }
-    
-    if (typeof rule.condition.regexFilter === 'string') {
-      // SECURITY: Basic regex length limit to prevent ReDoS in background context
-      if (rule.condition.regexFilter.length > 500) return null;
-      condition.regexFilter = rule.condition.regexFilter;
-    }
-
-    const arrayProps = [
-      'initiatorDomains',
-      'excludedInitiatorDomains',
-      'requestDomains',
-      'excludedRequestDomains',
-      'resourceTypes',
-      'excludedResourceTypes',
-      'requestMethods',
-      'excludedRequestMethods'
-    ];
-
-    for (const prop of arrayProps) {
-      if (Array.isArray(rule.condition[prop])) {
-        condition[prop] = rule.condition[prop].filter(item => typeof item === 'string' && item.length < 253);
-      }
-    }
-
-    validatedRule.condition = condition;
-  }
-
-  // Basic validation for mandatory rule fields
-  if (!validatedRule.action || !validatedRule.condition || Object.keys(validatedRule.condition).length === 0) {
-    return null;
-  }
-
-  return validatedRule;
-}
 
 /**
  * Handle CLOSE_TAB request from content script.
@@ -439,11 +362,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const isFromInternal = _sender.origin === extensionOrigin;
 
       const SENSITIVE_TYPES = [
-        MSG.STATS_GET,
         MSG.CONFIG_GET,
         MSG.CONFIG_SET,
-        MSG.DYNAMIC_RULE_ADD,
-        MSG.DYNAMIC_RULE_REMOVE,
         MSG.STATS_RESET
       ];
 
@@ -526,25 +446,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
 
-        case MSG.DYNAMIC_RULE_ADD:
-          const { dynamicRules = [], ruleCounter = 5000000 } = await chrome.storage.local.get(['dynamicRules', 'ruleCounter']);
-          const validatedRule = validateDynamicRule(msg.rule);
-          if (!validatedRule) return sendResponse({ ok: false, error: 'Invalid rule' });
-          const newRule = { id: ruleCounter, ...validatedRule };
-          dynamicRules.push(newRule);
-          await chrome.storage.local.set({ dynamicRules, ruleCounter: ruleCounter + 1 });
-          await chrome.declarativeNetRequest.updateDynamicRules({ addRules: [newRule] });
-          sendResponse({ ok: true, ruleId: newRule.id });
-          break;
-
-        case MSG.DYNAMIC_RULE_REMOVE:
-          const { dynamicRules: drRemove = [] } = await chrome.storage.local.get('dynamicRules');
-          const updatedRules = drRemove.filter(r => r.id !== msg.ruleId);
-          if (updatedRules.length === drRemove.length) return sendResponse({ ok: false, error: 'Not found' });
-          await chrome.storage.local.set({ dynamicRules: updatedRules });
-          await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [msg.ruleId] });
-          sendResponse({ ok: true });
-          break;
 
         case MSG.STATS_RESET:
           await chrome.storage.local.set({ stats: { networkBlocked: 0, accelerated: 0 } });
@@ -596,7 +497,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   };
 
-  handler();
+  const p = handler();
+  if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) return p;
   return true;
 });
 
@@ -643,7 +545,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
           if (list.length === 0) popunderResolvers.delete(openerId);
         }
         resolve(null);
-      }, 1000); // 1s max wait for sync
+      }, (typeof globalThis !== 'undefined' && globalThis.__CHROMA_TEST_TIMEOUT__) || 1000); // Configurable wait for sync
 
       resolvers.push((req) => {
         clearTimeout(timeout);
@@ -770,5 +672,4 @@ if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   globalThis.updateDNRState = updateDNRState;
   globalThis.syncDynamicRules = syncDynamicRules;
   globalThis.harvestNetworkStats = harvestNetworkStats;
-  globalThis.validateDynamicRule = validateDynamicRule;
 }

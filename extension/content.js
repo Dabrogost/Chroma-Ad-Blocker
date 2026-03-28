@@ -129,10 +129,6 @@
     });
   }
 
-  function updateAllStyles() {
-    // Rely on injectAllCSS to reconcile stylesheets
-    injectAllCSS();
-  }
 
   // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
   function suppressAdblockWarnings(nodes) {
@@ -360,7 +356,7 @@
         startObserver();
       }
 
-      updateAllStyles();
+      injectAllCSS();
     }
   });
 
@@ -390,7 +386,6 @@
       }
 
       injectAllCSS();
-      updateAllStyles();
 
       if (CONFIG.enabled) {
         startObserver();
@@ -411,7 +406,6 @@
     globalThis.CONFIG = CONFIG;
     globalThis.MSG = MSG;
     globalThis.injectAllCSS = injectAllCSS;
-    globalThis.updateAllStyles = updateAllStyles;
     globalThis.suppressAdblockWarnings = suppressAdblockWarnings;
     globalThis.removeLeftoverAdContainers = removeLeftoverAdContainers;
     globalThis.startObserver = startObserver;
