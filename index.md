@@ -185,108 +185,65 @@ graph TD
     classDef dom fill:#1a1500,color:#ede8ff,stroke:#ff9900,stroke-width:2px
     classDef secure fill:#1a1205,color:#ede8ff,stroke:#cc77ff,stroke-width:2px
     classDef actor fill:#161b22,color:#ede8ff,stroke:#8b949e,stroke-width:2px
-
-    %% --- LAYER 0: ENTRANCE ---
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
-
-    %% --- LAYER 1: MAIN WORLD ---
     subgraph MW["Main World (Page Execution)"]
         MW_INT["interceptor.js<br/>(Pristine Cache + Safety Bypass)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
         CS_YT["yt_handler.js<br/>(YouTube)"]:::main
         CS_PV["prm_handler.js<br/>(Prime Video)"]:::main
     end
-
-    %% --- LAYER 2: ISOLATED WORLD ---
     subgraph IW["Isolated World (Secure Relay)"]
         CS_PROT["protection.js<br/>(Gesture Tracking + Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
-
-    %% --- LAYER 3: SERVICE WORKER CORE ---
     subgraph SW["Extension Core (Service Worker)"]
-        VERIFY{{"Token Verification"}}:::secure
+        VERIFY{{Token Verification}}:::secure
         BS["background.js<br/>(Main Router)"]:::sw
         AUTH["Session Token Store"]:::secure
     end
-
-    %% --- LAYER 4: INFRASTRUCTURE ---
     subgraph System["Resource & Network Layer"]
-        STORAGE[("chrome.storage.local")]:::storage
+        STORAGE[(chrome.storage.local)]:::storage
         DNR["10-Part DNR System<br/>(300,000 Rules)"]:::dnr
         YT_DOM["YouTube Player"]:::dom
         PV_DOM["Prime Player"]:::dom
     end
-
-    %% --- LAYER 5: UI & OUTPUT ---
     POPUP["popup.js<br/>(UI/Stats)"]:::sw
     USER["The User (Cleaned & Accelerated UI)"]:::actor
-
-    %% --- PIPELINE DEFINITION (0-21) ---
-    
-    %% INTERNET (Grey: 0, 1)
-    INTERNET -- "Scripts" --> MW_INT
-    INTERNET -- "Requests" --> DNR
-
-    %% MAIN WORLD (Red: 2, 3, 4, 5)
-    MW_INT <==>|"Token-Gated Handshake"| CS_PROT
-    MW_INT --> BRIDGE
-    CS_YT ==>|"Accelerate"| YT_DOM
-    CS_PV ==>|"Accelerate"| PV_DOM
-
-    %% SECURE (Purple: 6, 7, 8, 9)
-    BRIDGE --> CS_YT
-    BRIDGE --> CS_PV
-    VERIFY -- "Valid" --> BS
-    AUTH -- "Token" --> CS_PROT
-
-    %% ISOLATED WORLD (Green: 10, 11, 12)
-    CS_PROT -- "Relay + Token" --> VERIFY
-    CS_GEN -.->|"Read Filter"| STORAGE
-    CS_GEN ==>|"Visual Filter"| YT_DOM
-
-    %% SERVICE WORKER CORE (Lavender: 13, 14, 15)
-    BS -- "Lock" --> AUTH
-    BS <-->|"Config Sync"| STORAGE
-    BS -- "Dynamic Rules" --> DNR
-
-    %% STORAGE (Blue: 16)
-    STORAGE -.->|"Whitelist Bypass"| CS_PROT
-    
-    %% DNR (Blue: 17)
-    DNR ---|"Network Shield"| USER
-
-    %% PLAYERS (Orange: 18, 19)
-    YT_DOM -- "Filtered Output" --> USER
-    PV_DOM -- "Filtered Output" --> USER
-
-    %% POPUP (Lavender: 20, 21)
-    POPUP ---|"Stats Sync"| STORAGE
-    POPUP -- "Final Statistics" --> USER
-
-    %% --- LOGIC TRACING (LINK STYLES) ---
-    %% Internet/User Origin: Grey
-    linkStyle 0,1 stroke:#8b949e,stroke-width:1.75px;
-    %% Main World Origin: Red
-    linkStyle 2,3,4,5 stroke:#ff0055,stroke-width:1.75px;
-    %% Secure Layer Origin: Purple
-    linkStyle 6,7,8,9 stroke:#cc77ff,stroke-width:1.75px;
-    %% Isolated World Origin: Green
-    linkStyle 10,11,12 stroke:#00ffcc,stroke-width:1.75px;
-    %% SW Core Origin: Lavender
-    linkStyle 13,14,15,20,21 stroke:#9900ff,stroke-width:1.75px;
-    %% System / Storage Origin: Blue
-    linkStyle 16 stroke:#00aaff,stroke-width:1.75px;
-    %% DNR Origin: Blue
-    linkStyle 17 stroke:#0088ff,stroke-width:1.75px;
-    %% Player Origin: Orange
-    linkStyle 18,19 stroke:#ff9900,stroke-width:1.75px;
-
-    %% --- HIDE SUBGRAPH BOXES ---
+    INTERNET--"Scripts"-->MW_INT
+    INTERNET--"Requests"-->DNR
+    MW_INT<==>|"Token-Gated Handshake"|CS_PROT
+    MW_INT-->BRIDGE
+    CS_YT==>|"Accelerate"|YT_DOM
+    CS_PV==>|"Accelerate"|PV_DOM
+    BRIDGE-->CS_YT
+    BRIDGE-->CS_PV
+    VERIFY--"Valid"-->BS
+    AUTH--"Token"-->CS_PROT
+    CS_PROT--"Relay + Token"-->VERIFY
+    CS_GEN-.->|"Read Filter"|STORAGE
+    CS_GEN==>|"Visual Filter"|YT_DOM
+    BS--"Lock"-->AUTH
+    BS<-->|"Config Sync"|STORAGE
+    BS--"Dynamic Rules"-->DNR
+    STORAGE-.->|"Whitelist Bypass"|CS_PROT
+    DNR---|"Network Shield"|USER
+    YT_DOM--"Filtered Output"-->USER
+    PV_DOM--"Filtered Output"-->USER
+    POPUP---|"Stats Sync"|STORAGE
+    POPUP--"Final Statistics"-->USER
+    linkStyle 0,1 stroke:#8b949e,stroke-width:2px;
+    linkStyle 2,3,4,5 stroke:#ff0055,stroke-width:2px;
+    linkStyle 6,7,8,9 stroke:#cc77ff,stroke-width:2px;
+    linkStyle 10,11,12 stroke:#00ffcc,stroke-width:2px;
+    linkStyle 13,14,15,20,21 stroke:#9900ff,stroke-width:2px;
+    linkStyle 16 stroke:#00aaff,stroke-width:2px;
+    linkStyle 17 stroke:#0088ff,stroke-width:2px;
+    linkStyle 18,19 stroke:#ff9900,stroke-width:2px;
     style MW fill:none,stroke:none
     style IW fill:none,stroke:none
     style SW fill:none,stroke:none
     style System fill:none,stroke:none
+    </div>
     </div>
   </div>
 </section>
