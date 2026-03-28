@@ -4,7 +4,7 @@ description: >-
   them away, and protect your privacy — all locally on your device.
 url: "https://dabrogost.github.io"
 baseurl: "/Chroma-Ad-Blocker"
-repository: Dabrogost/YT-Chroma
+repository: Dabrogost/Chroma-Ad-Blocker
 
 markdown: kramdown
 kramdown:

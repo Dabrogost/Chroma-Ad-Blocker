@@ -8,16 +8,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Dabrogost/YT-Chroma.git"
+    "url": "git+https://github.com/Dabrogost/Chroma-Ad-Blocker.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/Dabrogost/YT-Chroma/issues"
+    "url": "https://github.com/Dabrogost/Chroma-Ad-Blocker/issues"
   },
-  "homepage": "https://github.com/Dabrogost/YT-Chroma#readme",
+  "homepage": "https://github.com/Dabrogost/Chroma-Ad-Blocker#readme",
   "devDependencies": {
     "jsdom": "^29.0.1"
   }

@@ -32,7 +32,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
 
   <div class="hero__ctas">
     <a
-      href="https://github.com/Dabrogost/YT-Chroma"
+      href="https://github.com/Dabrogost/Chroma-Ad-Blocker"
       target="_blank"
       rel="noopener noreferrer"
       class="btn-primary"
@@ -51,7 +51,10 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
       Support Development
     </a>
     <a href="{{ '/PRIVACY_POLICY/' | relative_url }}" class="btn-ghost">
-      Privacy Policy
+      Privacy
+    </a>
+    <a href="{{ '/ToS/' | relative_url }}" class="btn-ghost">
+      Terms
     </a>
   </div>
 
