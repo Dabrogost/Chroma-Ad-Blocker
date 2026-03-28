@@ -1066,6 +1066,7 @@ ul  { list-style: none; }
 .qs-step__num {
   width: 42px;
   height: 42px;
+  flex-shrink: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
