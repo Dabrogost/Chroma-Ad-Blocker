@@ -79,6 +79,8 @@ let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
 let savedVolume = 1;
 let lastAdDetectTime = 0;
+let lastAdEndTime = 0;
+const AD_COOLDOWN_MS = 2000;
 let consecutiveFalseCount = 0;
 let mutationPending = false;
 
@@ -574,6 +576,14 @@ function handlePrimeAdAcceleration() {
 
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
+
+    // Cooldown check: Prevents rapid re-triggering during the playback transition.
+    // However, if we definitively detect an ad, we reset the cooldown.
+    if (rawAdShowing) {
+      lastAdEndTime = 0;
+    } else if (Date.now() - lastAdEndTime < AD_COOLDOWN_MS) {
+      return;
+    }
     
     // Even if no video is found, if we were active, we might need to reset
     if (!video) {
@@ -635,6 +645,7 @@ function handlePrimeAdAcceleration() {
         video.muted = false;
         
         isAdActive = false;
+        lastAdEndTime = Date.now();
         document.body.classList.remove('chroma-prime-session');
         lastAcceleratedSrc = null;
         currentAdRemainingStart = 0;
@@ -659,6 +670,7 @@ function startPolling() {
 
 function resetSession() {
   isAdActive = false;
+  lastAdEndTime = 0; // Reset cooldown on explicit session reset
   lastAcceleratedSrc = null;
   consecutiveFalseCount = 0;
   document.body.classList.remove('chroma-prime-session');

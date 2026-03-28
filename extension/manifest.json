@@ -96,7 +96,18 @@
 
     {
       "matches": [
-        "*://*.youtube.com/*",
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "utils/chromaColor.js",
+        "yt_handler.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
         "*://*.amazon.com/gp/video/*",
         "*://*.amazon.com/video/*",
         "*://*.amazon.com/v/*",
@@ -121,7 +132,6 @@
       ],
       "js": [
         "utils/chromaColor.js",
-        "yt_handler.js",
         "prm_handler.js"
       ],
       "run_at": "document_start",

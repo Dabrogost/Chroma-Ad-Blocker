@@ -228,6 +228,8 @@
     }
 
     // Heuristic completion check: Terminal state reached if the final ad in a sequence finishes or a manual skip is detected.
+    const isOnFinalAd = (window.cachedCurrentAd || 1) >= (window.cachedTotalAds || 1);
+    const isAdMediaFinished = video && video.duration > 0 && video.currentTime >= video.duration - 0.5;
     const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || window.chromaAdSkipped;
     
     const spinner = adOverlayRoot.querySelector('.chroma-spinner, .chroma-checkmark');
@@ -717,6 +719,5 @@ function init() {
     globalThis.handleAdAcceleration = handleAdAcceleration;
     globalThis.updateAdOverlay = updateAdOverlay;
     globalThis.cleanupVideoState = cleanupVideoState;
-    globalThis.notifyBackground = notifyBackground;
   }
 })();

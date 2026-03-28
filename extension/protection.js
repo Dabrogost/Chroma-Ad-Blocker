@@ -188,49 +188,48 @@
    * a two-way CustomEvent handshake with stopImmediatePropagation.
    */
   function initHandshake(selectors = {}) {
+    // If background script failed to provide a token, abort handshake.
+    if (!secretToken) {
+      if (DEBUG) console.error('[Chroma Ad-Blocker] Token generation failed. Aborting handshake.');
+      return; 
+    }
+
     const handleMainReady = (e) => {
       // Stop the host page from knowing the extension is initializing
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
       
-      // Clean up the listener
+      // Clean up the listener so it only fires once
       document.removeEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
       
       if (DEBUG) console.log('[Chroma Ad-Blocker] MAIN world ready. Delivering token.');
 
       // Dispatch the token securely via CustomEvent
-      // SECURITY: We no longer pass the token in the event detail (VULN-01 Fix)
-      // The token is now only passed via the MessagePort transfer.
       document.dispatchEvent(new CustomEvent('__CHROMA_TOKEN_DELIVERY__'));
 
       // Create the secure pipe (MessagePort)
       const channel = new MessageChannel();
       isolatedPort = channel.port1;
 
-      // Set up a listener for messages coming FROM interceptor.js via the secure pipe
+      // Set up a listener for messages coming FROM interceptor.js
       isolatedPort.onmessage = (e) => {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Received via secure pipe:', e.data);
         processInterceptorMessage(e.data);
       };
 
-      // Send port2 to the MAIN world. 
-      // SECURITY: The token and config are NO LONGER passed via window.postMessage (VULN-01 Fix)
-      // They will be delivered via the secure pipe once established.
-      // Using a specialized CustomEvent instead of window.postMessage ensures the port 
-      // can be captured and killed in the capture phase before host-page interference.
+      // Send port2 to the MAIN world via MessageEvent
       try {
         window.dispatchEvent(new MessageEvent('__CHROMA_PORT_TRANSFER__', {
           ports: [channel.port2]
         }));
       } catch (e) {
-        // Fallback for environments where MessageEvent constructor isn't fully supported
         window.dispatchEvent(new CustomEvent('__CHROMA_PORT_TRANSFER__', {
           detail: { port: channel.port2 }
         }));
       }
 
-      // Now deliver the payload through the protected pipe
+      // Deliver the payload through the protected pipe
       isolatedPort.postMessage({
         type: 'INIT_CHROMA',
         token: secretToken,
@@ -240,17 +239,8 @@
       if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
     };
 
-    if (secretToken) {
-      document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
-    } else {
-      // If token isn't ready, wait for it and then add the listener
-      const waitForToken = setInterval(() => {
-        if (secretToken) {
-          clearInterval(waitForToken);
-          document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
-        }
-      }, 5);
-    }
+    // Attach the listener to catch the ping from interceptor.js
+    document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
   }
 
   /**

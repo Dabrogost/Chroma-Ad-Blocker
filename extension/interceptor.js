@@ -7,6 +7,73 @@
 (() => {
   'use strict';
 
+  const DEBUG = false;
+
+  // =========================================================================
+  // 0. THE DO-NO-HARM EXCLUSION LIST (User Safety First)
+  // Bypasses all MAIN world interception for critical infrastructure,
+  // financial institutions, and core authentication providers.
+  // =========================================================================
+
+  const CRITICAL_EXCLUSIONS = [
+    // --- Authentication & Identity (Heavy reliance on popups/tokens) ---
+    'accounts.google.com',
+    'github.com',
+    'login.microsoftonline.com',
+    'okta.com',
+    'auth0.com',
+    'appleid.apple.com',
+    'idm.xfinity.com',
+
+    // --- Financial, Payment Gateways & Banking ---
+    'paypal.com',
+    'stripe.com',
+    'plaid.com',
+    'squareup.com',
+    'chase.com',
+    'bankofamerica.com',
+    'wellsfargo.com',
+    'citi.com',
+    'americanexpress.com',
+    'capitalone.com',
+    'discover.com',
+    'usbank.com',
+
+    // --- Essential Cloud & Work Consoles ---
+    'console.aws.amazon.com',
+    'console.cloud.google.com',
+    'portal.azure.com',
+    'app.slack.com',
+    'teams.microsoft.com',
+    
+    // --- Password Managers (Web Vaults) ---
+    'vault.bitwarden.com',
+    'my.1password.com',
+    'lastpass.com'
+  ];
+
+  // Top-Level Domains that should never be tampered with
+  const CRITICAL_TLDS = ['.gov', '.mil', '.edu', '.int'];
+
+  function isSafetyExcluded(hostname) {
+    hostname = hostname.toLowerCase();
+
+    // 1. Check strict TLD matches
+    if (CRITICAL_TLDS.some(tld => hostname.endsWith(tld))) return true;
+
+    // 2. Check root domains and subdomains
+    return CRITICAL_EXCLUSIONS.some(domain => 
+      hostname === domain || hostname.endsWith('.' + domain)
+    );
+  }
+
+  // EXECUTE SAFETY CHECK BEFORE ANY API CAPTURE
+  if (isSafetyExcluded(window.location.hostname)) {
+    // We don't even define DEBUG here yet to keep the footprint zero.
+    // Silently exit the script. No APIs cached, no locks applied.
+    return; 
+  }
+
   // =========================================================================
   // 1. THE PRISTINE CACHE (Mitigates Race Conditions)
   // Best-effort capture of native APIs. Effectiveness depends on injection 
@@ -14,9 +81,9 @@
   // =========================================================================
   const pristineWindowOpen = window.open;
   const pristineFetch = window.fetch;
-  const pristineSetTimeout = window.setTimeout;
-  const pristineSetInterval = window.setInterval;
-  const pristineClearInterval = window.clearInterval;
+  const pristineSetTimeout = window.setTimeout.bind(window);
+  const pristineSetInterval = window.setInterval.bind(window);
+  const pristineClearInterval = window.clearInterval.bind(window);
 
   const pristineCreateElement = document.createElement.bind(document);
   const pristineGetElementById = document.getElementById.bind(document);
@@ -38,6 +105,17 @@
   const pristineIncludes = String.prototype.includes;
 
   // =========================================================================
+  // 1.5 IDENTIFY HOSTILE DOMAINS (Blast Radius Isolation)
+  // =========================================================================
+  const HOSTILE_DOMAINS = [
+    'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',
+    'amazon.co.jp', 'amazon.ca', 'amazon.fr', 'amazon.it',
+    'amazon.es', 'primevideo.com'
+  ];
+  
+  const isHostileDomain = HOSTILE_DOMAINS.some(d => window.location.hostname.endsWith(d));
+
+  // =========================================================================
   // 3. THE DEAD MAN'S SWITCH (Detects Hijacked Environment)
   // Emergency disconnect: If core primitives are hijacked, the secure relay is
   // disabled to prevent spoofing, which may degrade blocking capabilities.
@@ -46,6 +124,9 @@
   try {
     const isNative = (fn) => {
       try {
+        // SECURITY BYPASS: Allow unit tests to skip native code verification in non-browser environments.
+        if (DEBUG && window.__CHROMA_TEST_ENVIRONMENT__ === true) return true;
+
         return typeof fn === 'function' && 
                pristineCall.call(pristineIncludes, pristineCall.call(pristineFnToString, fn), '[native code]');
       } catch (e) {
@@ -66,24 +147,11 @@
 
   // =========================================================================
   // 3. THE API LOCKDOWN (Prevents future host-page hijacking)
-  // Force the global window object to permanently use our pristine references.
   // =========================================================================
-  try {
-    // Lock Fetch as we don't currently override it, but want to protect it
-    Object.defineProperty(window, 'fetch', {
-      value: pristineFetch,
-      writable: false,
-      configurable: false
-    });
-    
-    // We will lock window.open AFTER our override is applied to ensure 
-    // it remains intercepted.
-  } catch (e) {
-    // If Object.defineProperty throws, it means an inline script beat us.
-    // We already have our pristine references, so we're safe!
+  if (isHostileDomain) {
+    // API Lockdown: Conditionals for potential future hardening
   }
 
-  const DEBUG = false;
   let chromaPort; // This will hold our secure pipe
   let pingInterval;
 
@@ -120,22 +188,7 @@
     };
 
     // BRIDGE: Provisioning of secure messaging and configuration for authorized streaming domains (YouTube, Amazon/Prime Video).
-    const TRUSTED_DOMAINS = [
-      'youtube.com',
-      'amazon.com',
-      'amazon.de',
-      'amazon.co.uk',
-      'amazon.co.jp',
-      'amazon.ca',
-      'amazon.fr',
-      'amazon.it',
-      'amazon.es',
-      'primevideo.com'
-    ];
-    
-    const isTrusted = TRUSTED_DOMAINS.some(d => window.location.hostname.endsWith(d));
-
-    if (isTrusted) {
+    if (isHostileDomain) {
       // SECURITY: We NO LONGER expose the token on the window object (VULN-02 Fix).
       // Site-specific handlers (yt_handler, prm_handler) must use the exposed 'send' function
       // which automatically injects the token from this closure.
@@ -192,7 +245,7 @@
       }
     }
 
-    if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Trusted: ${isTrusted}`);
+    if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Hostile Domain: ${isHostileDomain}`);
 
     const originalFocus = window.focus;
     const originalBlur = window.blur;
@@ -370,21 +423,24 @@
     }
 
     // SECURITY: Freeze the overridden APIs (VULN-06)
-    try {
-      const lock = (obj, prop) => {
-        const desc = Object.getOwnPropertyDescriptor(obj, prop);
-        if (desc && desc.configurable) {
-          Object.defineProperty(obj, prop, { writable: false, configurable: false });
-        }
-      };
+    // ONLY apply permanent prototype locks to known hostile domains.
+    if (isHostileDomain) {
+      try {
+        const lock = (obj, prop) => {
+          const desc = Object.getOwnPropertyDescriptor(obj, prop);
+          if (desc && desc.configurable) {
+            Object.defineProperty(obj, prop, { writable: false, configurable: false });
+          }
+        };
 
-      lock(window, 'open');
-      lock(window, 'focus');
-      lock(window, 'blur');
-      if (typeof window.Notification !== 'undefined') {
-        lock(window, 'Notification');
-      }
-    } catch (e) {}
+        lock(window, 'open');
+        lock(window, 'focus');
+        lock(window, 'blur');
+        if (typeof window.Notification !== 'undefined') {
+          lock(window, 'Notification');
+        }
+      } catch (e) {}
+    }
   }
 
 
@@ -458,13 +514,14 @@
       return;
     }
     
-    // High-frequency synchronization: Minimizes handshake latency during page initialization to ensure interceptors are active before first-party scripts.
+    // Aggressive polling (5ms) for hostile domains to beat obfuscated scripts.
+    // Relaxed polling (50ms) for the rest of the web to save CPU cycles.
+    const pingRate = isHostileDomain ? 5 : 50;
+    
     pingInterval = pristineSetInterval(() => {
       pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__'));
-    }, 5);
+    }, pingRate);
   } else {
-    // If compromised, we still allow local component initialization (yt_handler) 
-    // but with NO token and NO secure port.
     initChromaInterceptor(null, {});
   }
 })(); // Execute immediately

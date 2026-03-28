@@ -27,6 +27,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
   <p class="hero__tagline">
     Multi-layered protection built for the modern web. Accelerate, block,
     and filter ads&nbsp;&mdash; all locally on your device, zero data collected.
+    <br/><strong>Always 100% free and open-source.</strong>
   </p>
 
   <div class="hero__ctas">
@@ -278,7 +279,8 @@ graph TD
 <section class="support-section fade-up">
   <h2 class="section__title">Support the Project</h2>
   <p class="section__sub">
-    Chroma is built and maintained by a single developer. If it has improved your
+    Chroma is 100% free, open-source, and always will be. It is built and 
+    maintained by a single developer. If it has improved your
     web experience, consider supporting the work with a coffee.
   </p>
   <a

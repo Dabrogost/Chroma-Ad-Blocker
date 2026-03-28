@@ -168,14 +168,14 @@
       }
     }
 
-    if (removedAny) {
+    if (removedAny && isYouTube) {
       const video = document.querySelector('video');
       if (video && video.paused) {
         video.play().catch(() => {});
       }
-      if (document.body) {
-        document.body.style.removeProperty('overflow');
-      }
+    }
+    if (removedAny && document.body) {
+      document.body.style.removeProperty('overflow');
     }
   }
 

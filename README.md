@@ -1,6 +1,6 @@
 # Chroma Ad-Blocker
 
-**Chroma Ad-Blocker** is a premium, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to bypass modern anti-adblock systems while maintaining a lightweight footprint. It is highly recommeneded to disable all other ad-blockers while using Chroma.
+**Chroma Ad-Blocker** is a premium, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to bypass modern anti-adblock systems while maintaining a lightweight footprint. Chroma is 100% free and open-source, and always will be. It is highly recommeneded to disable all other ad-blockers while using Chroma.
 
 ## Key Features
 
@@ -218,7 +218,7 @@ For information on how to report security vulnerabilities, please see our [Secur
 
 ## Support the Project
 
-Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
+Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. It is 100% free for everyone, forever. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
 
 <div align="center">
   <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker">GitHub Repository</a>
