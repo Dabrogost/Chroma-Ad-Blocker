@@ -143,8 +143,7 @@
    * Listen for messages from the MAIN world interceptor
    */
   function initInterceptorListener() {
-    // SECURITY: The ONLY way to process sensitive interceptor messages is through the secure port (isolatedPort.onmessage)
-    // We quarantine the window listener to handle only non-sensitive interactions.
+    // SECURITY: Quarantine window listener to handle only non-sensitive interactions (Mitigates VULN-02).
     window.addEventListener('message', (event) => {
       if (event.source !== window || !event.data) return;
 

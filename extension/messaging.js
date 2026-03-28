@@ -1,9 +1,8 @@
 /**
  * Chroma Ad-Blocker Shared Messaging Utilities
  *
- * NOTE: This script is injected multiple times into some pages due to
- * overlapping manifest.json matches. We use guard clauses to prevent
- * SyntaxError: Identifier 'MSG' has already been declared.
+ * NOTE: Script is multi-injected. window property assignment bypasses
+ * const/let declaration conflicts across injections.
  */
 
 if (typeof window.MSG === 'undefined') {

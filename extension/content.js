@@ -14,7 +14,6 @@
     hideOffers: true,
     suppressWarnings: true,
     accelerationSpeed: 16,
-    checkIntervalMs: 300,
   };
 
   const isYouTube = window.location.hostname.includes('youtube.com');

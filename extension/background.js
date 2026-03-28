@@ -33,7 +33,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       stats: { networkBlocked: 0, accelerated: 0 },
       ruleCounter: 5000000,
       lastHarvestTime: Date.now(),
-      // Shared cosmetic selectors (moved from utils/selectors.js)
+      // Primary copy of cosmetic selectors (Synchronized with extension/utils/selectors.js)
       HIDE_SELECTORS: [
         '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
         'ytd-banner-promo-renderer', '#banner-ad', '#player-ads',
@@ -158,6 +158,7 @@ chrome.storage.onChanged.addListener((changes) => {
 
 // ─── POP-UNDER DETECTION STATE ───────────────────────────────────────────────
 // Keep track of window.open attempts per tab to prevent cross-tab interference
+// Keyed by tabId to ensure strict isolation and prevent state-spoofing across browser sessions.
 const popunderRequests = new Map(); // tabId -> { time: number, isSuspicious: boolean, createdTabIds: number[], ... }
 let lastGlobalRequest = null; // Fallback for when openerTabId is missing
 

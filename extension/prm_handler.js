@@ -421,6 +421,7 @@ function injectChromaCSS() {
       transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
     }
   `;
+  // Prevent the 'style' variable reference from being reassigned.
   Object.freeze(style);
   (document.head || document.documentElement).appendChild(style);
 }
@@ -683,7 +684,7 @@ init();
 // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   globalThis.CONFIG = CONFIG;
-  globalThis.MSG = MSG;
+  if (typeof window.MSG !== "undefined") globalThis.MSG = window.MSG;
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
   globalThis.isAdShowing = isAdShowing;
   globalThis.findActiveVideo = findActiveVideo;

@@ -287,41 +287,6 @@ graph TD
     rel="noopener noreferrer"
     class="btn-bmc"
   >
-    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-      <path d="M20.216 6.415l-.132-.666c-.209-1.052-1.122-1.83-2.196-1.83H1.936c-1.216 0-2.136 1.074-1.903 2.258l2.133 10.85c.231 1.181 1.253 2.053 2.46 2.053h11.23c1.122 0 2.078-.766 2.332-1.819l.885-3.648C21.053 12.71 22 11.452 22 10.108V8.658c0-1.215-.747-2.188-1.784-2.243zm-2.023 10.319c-.12.495-.57.855-1.079.855H4.626c-.571 0-1.054-.412-1.163-.974l-2.133-10.85c-.11-.561.325-1.074.896-1.074h15.952c.504 0 .935.367 1.035.867l.132.666c.012.066.029.132.029.2v1.45c0 .641-.451 1.242-1.071 1.503l-.885 3.648c-.013.053-.028.106-.028.16v2.108c0 .351-.042.697-.123 1.029zm4.242-5.447c-.016-.016-.032-.032-.047-.047-.015-.015-.031-.031-.047-.047-.125-.125-.262-.236-.407-.333l.885-3.648c.11-.453.078-.925-.091-1.359.102-.273.158-.567.158-.871v1.45c0 1.344-.947 2.602-1.91 3.204L22.435 11.287z"/>
-    </svg>
+    Buy me a coffee
   </a>
 </section>
-
-<!-- ════════════════════════════════════ FOOTER ═══════════════════════════════════════ -->
-<footer class="footer fade-up">
-  <div class="footer__content">
-    <div class="footer__legal">
-      <p class="footer__disclaimer">
-        <strong>Trademark Disclaimer:</strong> YouTube™ is a trademark of Google LLC. 
-        Amazon Prime Video™ is a trademark of Amazon.com, Inc. Chroma Ad-Blocker 
-        is an independent project and is NOT affiliated with, endorsed by, or 
-        sponsored by Google LLC, YouTube, Amazon.com, Inc., or any other 
-        third-party platform.
-      </p>
-      <p class="footer__usage">
-        <strong>Usage Warning:</strong> Using ad-blockers or ad-acceleration tools 
-        may violate the Terms of Service of various platforms. By using Chroma, 
-        you acknowledge and assume all risks associated with potential account 
-        restrictions or enforcement actions.
-      </p>
-    </div>
-    
-    <div class="footer__links">
-      <a href="{{ '/PRIVACY_POLICY/' | relative_url }}">Privacy Policy</a>
-      <a href="{{ '/ToS/' | relative_url }}">Terms of Service</a>
-      <a href="{{ '/LICENSE/' | relative_url }}">License</a>
-      <a href="{{ '/SECURITY/' | relative_url }}">Security</a>
-      <a href="https://github.com/Dabrogost/YT-Chroma" target="_blank" rel="noopener noreferrer">GitHub</a>
-    </div>
-
-    <p class="footer__copyright">
-      &copy; 2026 Dabrogost. Built for a faster, private web.
-    </p>
-  </div>
-</footer>

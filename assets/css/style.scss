@@ -528,6 +528,36 @@ ul  { list-style: none; }
 
 .footer-links a:hover { color: var(--text-dim); }
 
+.footer-legal {
+  max-width: 850px;
+  margin: 10px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  padding-top: 24px;
+}
+
+.footer-disclaimer,
+.footer-usage {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  opacity: 0.8;
+  text-align: center;
+}
+
+.footer-disclaimer strong,
+.footer-usage strong {
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 10px;
+  display: block;
+  margin-bottom: 4px;
+}
+
 .footer-copy {
   font-size: 12px;
   color: var(--text-muted);

@@ -9,7 +9,7 @@
 
   // =========================================================================
   // 1. THE PRISTINE CACHE (Mitigates VULN-01 Race Conditions)
-  // Grab all native APIs immediately on Line 1 before the DOM fully parses.
+  // Capture pristine native APIs at document_start before host-page script execution.
   // =========================================================================
   const pristineWindowOpen = window.open;
   const pristineFetch = window.fetch;
@@ -66,7 +66,7 @@
    * This is called only after the secure handshake completes.
    */
   function initChromaInterceptor(token, selectors = {}) {
-    // Store info globally for other Main world handlers (yt_handler, prm_handler)
+    // BRIDGE: Exposes secure messaging pipe and config to other Main World components (yt_handler, prm_handler).
     window.__CHROMA_INTERNAL__ = {
       token: token,
       send: sendToProtection,

@@ -606,7 +606,7 @@
         text-shadow: 0 1px 4px rgba(0,0,0,0.5);
       }
     `;
-    // Freeze the style text content to prevent accidental tampering
+    // Prevent the 'style' variable reference from being reassigned.
     Object.freeze(style);
     (document.head || document.documentElement).appendChild(style);
   }
@@ -645,7 +645,7 @@ function init() {
   // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
   if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
     globalThis.CONFIG = CONFIG;
-    if (typeof MSG !== "undefined") globalThis.MSG = MSG;
+    if (typeof window.MSG !== "undefined") globalThis.MSG = window.MSG;
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;
     globalThis.updateAdOverlay = updateAdOverlay;
