@@ -2,7 +2,7 @@
   'use strict';
 
   const DEBUG = false;
-  const MSG = window.MSG; // Access shared message constants
+  const MSG = window.MSG; // Provided by messaging.js
 
 
   // ─── CONFIG ──────────────────────────────────────────────────────────────────

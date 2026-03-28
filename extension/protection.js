@@ -59,7 +59,8 @@
       if (link && (link.target === '_blank' || e.ctrlKey || e.shiftKey || e.metaKey)) {
         const rect = link.getBoundingClientRect();
         
-        // DETECTION: Ad-networks often use 1x1 invisible links or 100% transparent overlays
+        // DETECTION: Ad-networks often use 1x1 invisible pixels or full-page 
+        // transparent overlays to hijack clicks for pop-unders.
         const isTiny = rect.width > 0 && rect.width < 5 || rect.height > 0 && rect.height < 5;
         const isOverlay = rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8;
         

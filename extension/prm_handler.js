@@ -63,7 +63,7 @@ const AD_SELECTORS = [
   '.fbt-ad-indicator',
   '.fbt-ad-progress',
   '#ape_VideoAd-Player-Container',
-  // Brittle but sometimes necessary fallbacks
+  // Positional fallbacks for obfuscated players where stable classes are missing.
   '.webPlayerUIContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)',
   '.templateContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)'
 ];

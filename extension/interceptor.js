@@ -69,15 +69,15 @@
 
   // EXECUTE SAFETY CHECK BEFORE ANY API CAPTURE
   if (isSafetyExcluded(window.location.hostname)) {
-    // We don't even define DEBUG here yet to keep the footprint zero.
-    // Silently exit the script. No APIs cached, no locks applied.
+    // Terminate execution immediately for excluded domains to ensure zero interference.
     return; 
   }
 
   // =========================================================================
-  // 1. THE PRISTINE CACHE (Mitigates Race Conditions)
-  // Best-effort capture of native APIs. Effectiveness depends on injection 
-  // timing (document_start) relative to host-page scripts.
+  // 1. THE PRISTINE CACHE (Mitigates Late-Binding Attacks)
+  // Capture native APIs immediately to prevent host-page scripts from 
+  // bypassing blockers by overwriting globals later.
+  // Effectiveness depends on injection timing (document_start).
   // =========================================================================
   const pristineWindowOpen = window.open;
   const pristineFetch = window.fetch;

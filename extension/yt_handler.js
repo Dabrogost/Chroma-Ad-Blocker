@@ -48,7 +48,8 @@
     if (adOverlayHost) return;
     
     adOverlayHost = cE('div');
-    // Randomized stable ID to avoid clobbering but remain targetable by extension logic if needed
+    // Unique session ID to prevent detection by host-page scripts while 
+    // remaining logic-addressable.
     adOverlayHost.id = 'chroma-host-' + Math.random().toString(36).substring(2, 9);
     
     // Shadow DOM isolation: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
@@ -345,7 +346,8 @@
       if (!window.chromaAdSessionActive) {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Ad Session Detected');
         window.chromaAdSkipped = false; 
-        // High-performance synchronization: Transitions from polling to requestAnimationFrame when an ad is active for frame-perfect acceleration.
+        // Performance Optimization: Switches to rAF-synced watcher during active
+        // ads for frame-perfect acceleration and overlay synchronization.
         startFastAdWatcher(); 
       }
       window.chromaAdSessionActive = true;

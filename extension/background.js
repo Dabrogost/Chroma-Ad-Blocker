@@ -2,8 +2,8 @@
  * Chroma Ad-Blocker - Service Worker (MV3 Background)
  * Handles: dynamic rule updates, stat tracking, config persistence
  *
- * MV3 NOTE: This service worker is ephemeral — it shuts down after
- * ~30 seconds of inactivity. All persistent state uses chrome.storage.
+ * MV3 NOTE: This service worker is ephemeral and may restart at any time. 
+ * All persistent state must be stored in chrome.storage.
  */
 
 'use strict';
@@ -206,7 +206,9 @@ chrome.storage.onChanged.addListener((changes) => {
 // Keyed by tabId to ensure strict isolation and prevent state-spoofing across browser sessions.
 // SESSION_DATA: Stored in chrome.storage.session to survive Service Worker sleep cycles.
 // Format: { popunderRequests: { tabId: data }, sessionTokens: { tabId: token }, tokenRetrievalLocked: { tabId: true } }
-let lastGlobalRequest = null; // Fallback for when openerTabId is missing
+// Fallback: Captures the most recent window.open attempt for scenarios where 
+// openerTabId is stripped by the browser (e.g. certain async popup methods).
+let lastGlobalRequest = null; 
 
 async function getSessionData() {
   const data = await chrome.storage.session.get(['popunderRequests', 'sessionTokens', 'tokenRetrievalLocked']);
