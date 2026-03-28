@@ -31,29 +31,31 @@ graph TD
     classDef dnr fill:#6c5ce7,color:#fff,stroke:#a29bfe,stroke-width:2px
     classDef dom fill:#f1c40f,color:#000,stroke:#f39c12,stroke-width:2px
     classDef secure fill:#ffeaa7,color:#000,stroke:#fab1a0,stroke-dasharray: 5 5
+    classDef actor fill:#dfe6e9,color:#2d3436,stroke:#b2bec3,stroke-width:2px
+
+    USER["User (Browsing/Interaction)"]:::actor
+    INTERNET["The Internet (Ads & Trackers)"]:::actor
 
     subgraph SW ["Extension Core (Service Worker)"]
-        BS["background.js<br/>(Main Logic & Router)"]:::sw
-        AUTH["Origin Auth &<br/>Session Token Store"]:::secure
+        BS ["background.js<br/>(Main Logic & Router)"]:::sw
+        AUTH["Session Token Store<br/>(Per-Tab Locking)"]:::secure
+        VERIFY{{"Token Verification"}}:::secure
+        POPUP["popup.js<br/>(UI & Stats)"]:::sw
     end
 
     subgraph ST ["Central Hub"]
         STORAGE[("chrome.storage.local")]:::storage
     end
 
-    subgraph GR ["Global Protection Layer (Secure Pipeline)"]
-        subgraph MW ["Main World Execution"]
-            MW_INT["interceptor.js<br/>(Pristine API Cache)"]:::main
-        end
-        subgraph IW ["Isolated World Relay"]
-            CS_PROT["protection.js<br/>(Secure Handshake)"]:::isolated
-        end
-        MW_INT <==>|"Secure MessagePort Handshake"| CS_PROT
+    subgraph MW ["Main World Execution (Page Context)"]
+        MW_INT["interceptor.js<br/>(Pristine API Cache)"]:::main
+        BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
+        CS_YT["yt_handler.js<br/>(Accelerator)"]:::main
+        CS_PV["prm_handler.js<br/>(Accelerator)"]:::main
     end
 
-    subgraph SP ["Site-Specific Accelerators"]
-        CS_YT["yt_handler.js<br/>(Shadow DOM)"]:::isolated
-        CS_PV["prm_handler.js<br/>(Shadow DOM)"]:::isolated
+    subgraph IW ["Isolated World (Extension Context)"]
+        CS_PROT["protection.js<br/>(Secure Handshake & Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
@@ -61,29 +63,40 @@ graph TD
         DNR["Declarative Net Request<br/>(300k Rules)"]:::dnr
     end
 
-    %% Logic Flow
-    MW_INT -- "Interception" --> CS_PROT
-    CS_PROT -- "Relay (Verified Token)" --> BS
+    %% User & Internet Interaction
+    USER -- "Gestures / Clicks" --> MW
+    USER -- "Toggle / Reset Stats" --> POPUP
+    INTERNET -- "Ad Requests" --> DNR
+    INTERNET -- "Pop-under Attempts" --> MW_INT
+
+    %% Handshake & Communication
+    MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
+    MW_INT --- BRIDGE
+    BRIDGE --- CS_YT
+    BRIDGE --- CS_PV
+
+    CS_PROT -- "Relay Payload + Token" --> VERIFY
+    VERIFY -- "Valid" --> BS
     
-    CS_YT -- "Stats" --> BS
-    CS_PV -- "Stats" --> BS
-    
+    BS -- "Generate & Lock" --> AUTH
+    AUTH -- "Unique Tab Token" --> CS_PROT
+
+    %% Stats & Config
     BS <-->|"Sync State"| STORAGE
-    BS -- "Generate Token" --> AUTH
-    AUTH -- "Auth Token" --> CS_PROT
-    
-    CS_YT -.->|"Read Config"| STORAGE
-    CS_PV -.->|"Read Config"| STORAGE
+    POPUP <-->|"Update/Read"| STORAGE
     CS_GEN -.->|"Read Config"| STORAGE
-    CS_PROT -.->|"Read Config/Selectors"| STORAGE
+    CS_YT -.->|"Stats (via Bridge/Relay)"| VERIFY
+    CS_PV -.->|"Stats (via Bridge/Relay)"| VERIFY
 
-    BS -- "Harvest Matches" --> DNR
+    BS -- "Control" --> DNR
 
-    %% Execution
+    %% DOM Interaction
     CS_YT ==>|"Accelerate"| DOM_YT["YT Shadow DOM"]:::dom
     CS_PV ==>|"Accelerate"| DOM_PV["Prm Shadow DOM"]:::dom
     CS_GEN ==>|"Hide/Remove"| DOM_YT
 ```
+
+
 
 ---
 
