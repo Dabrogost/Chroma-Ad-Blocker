@@ -30,11 +30,9 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         blockPushNotifications: true,
         enabled: true,
       },
-      stats: { networkBlocked: 0, accelerated: 0 },
+      stats: { networkBlocked: 0 },
       ruleCounter: 5000000,
       lastHarvestTime: Date.now(),
-      // WARNING: Manual Sync Required. This list must be kept identical to extension/utils/selectors.js 
-      // to ensure consistent blocking across all extension contexts.
       HIDE_SELECTORS: [
         '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
         'ytd-banner-promo-renderer', '#banner-ad', '#player-ads',
@@ -334,7 +332,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
 
         // SECURITY: Whitelist allowed bridge actions
-        const ALLOWED_INTERCEPTOR_ACTIONS = ['STATS_UPDATE', 'CLOSE_TAB'];
+        const ALLOWED_INTERCEPTOR_ACTIONS = ['CLOSE_TAB'];
         if (!ALLOWED_INTERCEPTOR_ACTIONS.includes(msg.action)) {
           if (DEBUG) console.error(`[Chroma Security] Rejected unauthorized action from interceptor: ${msg.action}`);
           sendResponse({ ok: false, error: 'Unauthorized Action' });
@@ -344,14 +342,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         switch (msg.action) {
           case 'CLOSE_TAB':
             handleCloseTab(_sender, sendResponse);
-            break;
-          case 'STATS_UPDATE':
-            const { stats = {} } = await chrome.storage.local.get(['stats']);
-            if (msg.payload && msg.payload.type === 'accelerated') {
-              stats.accelerated = (stats.accelerated || 0) + 1;
-              await chrome.storage.local.set({ stats });
-            }
-            sendResponse({ ok: true });
             break;
         }
         return;
@@ -377,9 +367,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (!isFromInternal) return;
           const { config: storedConfig, stats: currentStats = {} } = await chrome.storage.local.get(['config', 'stats']);
           if (storedConfig && storedConfig.enabled === false) return;
-          const accelerated = Number.isInteger(msg.stats?.accelerated) ? msg.stats.accelerated : 0;
-          currentStats.accelerated = (currentStats.accelerated || 0) + accelerated;
-          await chrome.storage.local.set({ stats: currentStats });
+          // Note: MSG.STATS_UPDATE for accelerated is now dead code.
           break;
 
         case MSG.WINDOW_OPEN_NOTIFY:
@@ -448,7 +436,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 
         case MSG.STATS_RESET:
-          await chrome.storage.local.set({ stats: { networkBlocked: 0, accelerated: 0 } });
+          await chrome.storage.local.set({ stats: { networkBlocked: 0 } });
           sendResponse({ ok: true });
           break;
 

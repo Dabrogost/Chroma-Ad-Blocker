@@ -167,14 +167,6 @@
       if (adOverlayHost && adOverlayHost.classList.contains('active')) {
         adOverlayHost.classList.remove('active');
         
-        // Telemetry relay: Increment acceleration statistics in the background worker upon successful ad session completion.
-        if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
-          window.__CHROMA_INTERNAL__.send({ 
-            action: 'STATS_UPDATE', 
-            payload: { type: 'accelerated' } 
-          });
-        }
-        
         window.cachedCurrentAd = 1;
         window.cachedTotalAds = 1;
         window.lastVideoDuration = 0;

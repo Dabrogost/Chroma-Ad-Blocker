@@ -9,110 +9,76 @@ async function init() {
     $('versionText').textContent = `v${manifest.version} · MV3`;
   }
 
-  // Load config
-  const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {
-    networkBlocking: true,
-    acceleration: true,
-    cosmetic: true,
-    hideShorts: false,
-    hideMerch: true,
-    hideOffers: true,
-    suppressWarnings: true,
-    blockPopUnders: true,
-    blockPushNotifications: true,
-    enabled: true,
+  // Synchronize UI Toggles with persistent configuration
+  const TOGGLES = [
+    ['toggleNetwork',      'networkBlocking',          true],
+    ['toggleAcceleration', 'acceleration',             true],
+    ['toggleCosmetic',     'cosmetic',                 true],
+    ['toggleShorts',       'hideShorts',               false],
+    ['toggleMerch',        'hideMerch',                true],
+    ['toggleOffers',       'hideOffers',               true],
+    ['toggleWarnings',     'suppressWarnings',         true],
+    ['togglePopUnders',    'blockPopUnders',           true],
+    ['togglePush',         'blockPushNotifications',   true],
+  ];
+
+  const syncUI = (cfg, masterOn) => {
+    for (const [elId, key, def] of TOGGLES) {
+      if ($(elId)) $(elId).checked = masterOn ? (cfg[key] ?? def) : false;
+    }
   };
 
-  const isEnabled = config.enabled ?? true;
-  $('toggleEnabled').checked = isEnabled;
-  updateStatusDot(isEnabled);
-
-  $('toggleNetwork').checked = isEnabled ? (config.networkBlocking ?? true) : false;
-  $('toggleAcceleration').checked = isEnabled ? (config.acceleration ?? true) : false;
-  $('toggleCosmetic').checked = isEnabled ? (config.cosmetic ?? true) : false;
-  $('toggleShorts').checked = isEnabled ? (config.hideShorts ?? false) : false;
-  $('toggleMerch').checked = isEnabled ? (config.hideMerch ?? true) : false;
-  $('toggleOffers').checked = isEnabled ? (config.hideOffers ?? true) : false;
-  $('toggleWarnings').checked = isEnabled ? (config.suppressWarnings ?? true) : false;
-  $('togglePopUnders').checked = isEnabled ? (config.blockPopUnders ?? true) : false;
-  $('togglePush').checked = isEnabled ? (config.blockPushNotifications ?? true) : false;
+  syncUI(config, isEnabled);
 
   // Load stats initially
-  const { stats = { networkBlocked: 0, accelerated: 0 } } = await chrome.storage.local.get('stats');
-  $('statAccelerated').textContent = stats.accelerated ?? 0;
-  $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
+  const { stats = { networkBlocked: 0 } } = await chrome.storage.local.get('stats');
+  if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
 
   // Reactive Stats: Listen for storage changes
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.stats) {
-      const newStats = changes.stats.newValue || { accelerated: 0, networkBlocked: 0 };
-      $('statAccelerated').textContent = newStats.accelerated ?? 0;
-      $('statNetworkBlocked').textContent = newStats.networkBlocked ?? 0;
+      const newStats = changes.stats.newValue || { networkBlocked: 0 };
+      if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = newStats.networkBlocked ?? 0;
     }
   });
 
-  // Toggle handlers
-  const TOGGLES = [
-    ['toggleNetwork',      'networkBlocking'],
-    ['toggleAcceleration', 'acceleration'],
-    ['toggleCosmetic',     'cosmetic'],
-    ['toggleShorts',       'hideShorts'],
-    ['toggleMerch',        'hideMerch'],
-    ['toggleOffers',       'hideOffers'],
-    ['toggleWarnings',     'suppressWarnings'],
-    ['togglePopUnders',    'blockPopUnders'],
-    ['togglePush',         'blockPushNotifications'],
-  ];
-
+  // Register event listeners for individual feature toggles
   for (const [elId, key] of TOGGLES) {
-    $(elId).addEventListener('change', async (e) => {
-      const isChecked = e.target.checked;
-      await notifyBackground({ type: MSG.CONFIG_SET, config: { [key]: isChecked } });
-      
-      // If any individual toggle is turned on, ensure master is also on
-      if (isChecked && !$('toggleEnabled').checked) {
-        $('toggleEnabled').checked = true;
-        updateStatusDot(true);
-        await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: true } });
-      } else if (!isChecked) {
-        const anyOn = TOGGLES.some(([id]) => $(id).checked);
-        if (!anyOn) {
-          $('toggleEnabled').checked = false;
-          updateStatusDot(false);
-          await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: false } });
+    if ($(elId)) {
+      $(elId).addEventListener('change', async (e) => {
+        const isChecked = e.target.checked;
+        await notifyBackground({ type: MSG.CONFIG_SET, config: { [key]: isChecked } });
+        
+        // Auto-enable master if a feature is turned on, or auto-disable if all are off
+        if (isChecked && !$('toggleEnabled').checked) {
+          $('toggleEnabled').checked = true;
+          updateStatusDot(true);
+          await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: true } });
+        } else if (!isChecked) {
+          const anyOn = TOGGLES.some(([id]) => $(id).checked);
+          if (!anyOn) {
+            $('toggleEnabled').checked = false;
+            updateStatusDot(false);
+            await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: false } });
+          }
         }
-      }
-    });
+      });
+    }
   }
 
-  // Master toggle handler
+  // Master toggle: Globally enable/disable extension functionality
   $('toggleEnabled').addEventListener('change', async (e) => {
-    const isEnabled = e.target.checked;
-    updateStatusDot(isEnabled);
+    const active = e.target.checked;
+    updateStatusDot(active);
     
-    // We only update the 'enabled' flag in the background, 
-    // NOT the individual feature flags. This lets us restore them.
-    await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: isEnabled } });
+    // Persistent state: only 'enabled' flag is updated, preserving sub-toggle choices
+    await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: active } });
 
-    if (!isEnabled) {
-      // Visually turn off all sub-toggles (but don't save to config)
-      for (const [elId] of TOGGLES) {
-        $(elId).checked = false;
-      }
+    if (!active) {
+      syncUI({}, false); // Visually reset toggles without modifying persistent preferences
     } else {
-      // Restore visual state from the actual (persistent) config
-      const config = await notifyBackground({ type: MSG.CONFIG_GET });
-      if (config) {
-        $('toggleNetwork').checked = config.networkBlocking ?? true;
-        $('toggleAcceleration').checked = config.acceleration ?? true;
-        $('toggleCosmetic').checked = config.cosmetic ?? true;
-        $('toggleShorts').checked = config.hideShorts ?? false;
-        $('toggleMerch').checked = config.hideMerch ?? true;
-        $('toggleOffers').checked = config.hideOffers ?? true;
-        $('toggleWarnings').checked = config.suppressWarnings ?? true;
-        $('togglePopUnders').checked = config.blockPopUnders ?? true;
-        $('togglePush').checked = config.blockPushNotifications ?? true;
-      }
+      const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
+      if (activeConfig) syncUI(activeConfig, true);
     }
   });
 
@@ -177,8 +143,7 @@ async function init() {
   // Reset stats
   $('resetStats').addEventListener('click', async () => {
     await notifyBackground({ type: MSG.STATS_RESET });
-    $('statAccelerated').textContent = '0';
-    $('statNetworkBlocked').textContent = '0';
+    if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = '0';
   });
 }
 

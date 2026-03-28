@@ -135,7 +135,7 @@
     /* ── STATS ── */
     .stats-container {
       margin: 4px 12px 16px;
-      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      display: grid; grid-template-columns: 1fr; gap: 10px;
     }
 
     .stat-card {
@@ -143,15 +143,19 @@
       backdrop-filter: blur(12px);
       border: 1px solid var(--border-glass);
       border-radius: var(--r-md);
-      padding: 12px 8px;
-      text-align: center;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
       transition: transform 0.2s;
       animation: border-cycle 16s linear infinite;
     }
     .stat-card:hover { transform: translateY(-2px); }
 
     .stat-value {
-      font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 4px;
+      font-size: 26px; font-weight: 800; line-height: 1.2;
       background: var(--grad-chroma); background-size: 320px 100%;
       -webkit-background-clip: text;
       background-clip: text;
@@ -160,7 +164,18 @@
       text-shadow: 0 0 20px rgba(153, 0, 255, 0.2);
     }
 
-    .stat-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+    .stat-label { 
+      font-size: 20px; 
+      font-weight: 800; 
+      letter-spacing: -0.01em;
+      background: var(--grad-chroma);
+      background-size: 320px 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: scan-h 6s linear infinite;
+      text-shadow: 0 0 15px rgba(153, 0, 255, 0.1);
+    }
 
     /* ── TOGGLES ── */
     .section-title {
@@ -312,13 +327,9 @@
   </header>
 
   <div class="stats-container">
-    <div class="stat-card" id="cardAccelerated">
-      <div class="stat-value" id="statAccelerated">0</div>
-      <div class="stat-label">Ads Accelerated</div>
-    </div>
     <div class="stat-card" id="cardNetwork">
       <div class="stat-value" id="statNetworkBlocked">0</div>
-      <div class="stat-label">Ads Blocked</div>
+      <div class="stat-label">Ads-Blocked</div>
     </div>
   </div>
 

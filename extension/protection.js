@@ -257,11 +257,8 @@
       enabled: CONFIG.enabled
     };
 
-    // SECURITY: Request token from background before starting handshake
-    await getTokenFromBackground();
     
     initHandshake(selectors); // Pass selectors to handshake
-    initHandshake();
   });
 
   // Listen for config updates

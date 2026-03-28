@@ -604,13 +604,6 @@ function handlePrimeAdAcceleration() {
       consecutiveFalseCount++; // INCREMENT
       // Restore normal playback with DEBOUNCE (Fix 3)
       if (isAdActive && consecutiveFalseCount >= 4) {
-        // --- NEW: Update stats when ad session ends ---
-        if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
-          window.__CHROMA_INTERNAL__.send({
-            action: 'STATS_UPDATE',
-            payload: { type: 'accelerated' }
-          });
-        }
         
         video.playbackRate = 1;
         video.volume = savedVolume;
