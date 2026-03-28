@@ -166,6 +166,14 @@ async function init() {
     $('toggleWhitelist').parentElement.parentElement.classList.add('disabled');
   }
 
+  // ─── EXTERNAL LINKS ──────────────────────────────────────────────────
+  document.querySelectorAll('a[target="_blank"]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.tabs.create({ url: link.href });
+    });
+  });
+
   // Reset stats
   $('resetStats').addEventListener('click', async () => {
     await notifyBackground({ type: MSG.STATS_RESET });
