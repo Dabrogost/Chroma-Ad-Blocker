@@ -273,6 +273,17 @@
 
   const enforceMuteHandler = () => {
     if (window.chromaAdSessionActive && targetAdVideo) {
+      // Safety check: Only enforce mute if ad-specific UI is still present or if the player is in ad-showing mode.
+      // This prevents the 'sticky mute' bug where content starts but the session hasn't cleared yet.
+      const isAdDetected = qS('.ad-showing, .ad-interrupting') || 
+                          qS('.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-preview-text');
+      
+      if (!isAdDetected) {
+        // If we are here, it means the event fired but we don't see an ad anymore.
+        // We should trigger a state check to potentially end the session early.
+        return;
+      }
+
       if (!targetAdVideo.muted) {
         targetAdVideo.muted = true;
       }
@@ -344,13 +355,15 @@
     }
 
     if (!rawAdShowing) {
-      // Session release debounce: Prevents flickering between multiple ads. 500ms for rapid transitions, 5000ms as a watchdog for detection failures.
+      // Session release logic:
+      // 1. End session IMMEDIATELY if the main video has started playing (readyState 3+, currentTime > 0).
+      // 2. Otherwise, wait 500ms to bridge gaps between ads in a pod.
+      // 3. 5000ms watchdog for edge cases.
       const timeSinceAd = Date.now() - window.lastAdDetectTime;
-      if (timeSinceAd > 500) {
-        const isMainVideoReady = video && video.readyState >= 3 && !video.paused && video.currentTime > 0;
-        if (isMainVideoReady || timeSinceAd > 5000) {
-          window.chromaAdSessionActive = false;
-        }
+      const isMainVideoReady = video && video.readyState >= 3 && !video.paused && video.currentTime > 0;
+      
+      if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) {
+        window.chromaAdSessionActive = false;
       }
     }
     
