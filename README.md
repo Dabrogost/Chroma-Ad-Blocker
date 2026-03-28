@@ -4,17 +4,13 @@
 
 ## Key Features
 
-- **Multi-Platform Ad Acceleration**: Automatically detects and accelerates ads (up to 16x speed) on **YT** and **Prm**. This fulfills server-side impression requirements instantly without triggering ad-block detections.
-- **Massive Network Blocking (DNR)**: Utilizes **300,000 optimized rules** across 10 rulesets to block trackers, invasive analytics, and traditional banner ads at the browser level.
-- **Cosmetic Filtering & Layout Cleanup**: Proactively removes ad placeholders, sidebars, and empty slots.
-- **YT Power Tools**:
-    - **Hide Shorts**: Clean up your feed by removing Shorts shelves and menu entries.
-    - **Hide Merch & Offers**: Suppress intrusive shopping panels and rental/buy offers.
-    - **Anti-Adblock Suppression**: Automatically deletes enforcement modals (e.g., "Ad blockers are not allowed") and restores page functionality.
-- **Global Privacy Protection**:
-    - **Pop-under Blocker**: Intercepts and closes suspicious windows opened without direct user intent.
-    - **Push Suppression**: Automatically silences intrusive "Show notifications" prompts from websites.
-- **Privacy-First Architecture**: Your data never leaves your device. All stats and settings are stored locally.
+- **Multi-Platform Ad Acceleration**: Automatically detects and accelerates video ads (up to 16x speed) on **YouTube** and **Prime Video**. This fulfills server-side impression requirements instantly without triggering ad-block detections.
+- **Tier-1 Network Blocking (DNR)**: Utilizes a **10-Part ruleset system (300,000+ rules)** to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
+- **Global Protection Engine**:
+    - **Gesture-Based Pop-under Blocker**: Distinguishes between legitimate clicks and automated pop-under attempts via millisecond-accurate gesture tracking.
+    - **Push Suppression**: Proactively silences intrusive native notification prompts.
+    - **Safety Exclusion Protocol**: Automatically bypasses critical infrastructure (Banks, Auth providers, .gov) to ensure no disruption to sensitive workflows.
+- **Privacy-First Architecture**: Features a decentralized, token-gated communication pipeline. Your data never leaves your device; all stats and settings are stored locally.
 
 ---
 
@@ -38,10 +34,10 @@ graph TD
 
     %% --- STACK 1: PAGE CONTEXT ---
     subgraph MW["Main World (Page Execution)"]
-        MW_INT["interceptor.js<br/>(Pristine Cache)"]:::main
+        MW_INT["interceptor.js<br/>(Pristine Cache + Safety Bypass)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
         CS_YT["yt_handler.js<br/>(YouTube)"]:::main
-        CS_PV["prm_handler.js<br/>(Prime)"]:::main
+        CS_PV["prm_handler.js<br/>(Prime Video)"]:::main
         MW_INT --> BRIDGE
         BRIDGE --> CS_YT
         BRIDGE --> CS_PV
@@ -49,7 +45,7 @@ graph TD
 
     %% --- STACK 2: EXTENSION RELAY ---
     subgraph IW["Isolated World (Secure Relay)"]
-        CS_PROT["protection.js<br/>(Handshake)"]:::isolated
+        CS_PROT["protection.js<br/>(Gesture Tracking + Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
@@ -64,7 +60,7 @@ graph TD
     %% --- STACK 4: INFRASTRUCTURE ---
     subgraph System["Resource & Network Layer"]
         STORAGE[("chrome.storage.local")]:::storage
-        DNR["Network Blocking (DNR)"]:::dnr
+        DNR["10-Part DNR System<br/>(300,000 Rules)"]:::dnr
         YT_DOM["YouTube Player"]:::dom
         PV_DOM["Prime Player"]:::dom
     end
@@ -79,46 +75,48 @@ graph TD
     INTERNET -- "Requests" --> DNR
 
     %% Secure Pipeline 2,3,4,5,6
-    MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
-    CS_PROT -- "Relay + Token" --> VERIFY
+    MW_INT <==>|"Token-Gated MessagePort Handshake"| CS_PROT
+    CS_PROT -- "Relay + Session Token" --> VERIFY
     VERIFY -- "Valid" --> BS
     BS -- "Lock" --> AUTH
     AUTH -- "Token" --> CS_PROT
 
-    %% ─── Storage Connections (Staggered) 7,8,9
+    %% ─── Storage Connections (Staggered) 7,8,9,10
     POPUP ---|"Stats Sync"| STORAGE
     BS <-->|"Config Sync"| STORAGE
     CS_GEN -.->|"Read Filter"| STORAGE
+    STORAGE -.->|"Whitelist Bypass"| CS_PROT
 
-    %% Control & Action 10,11
-    BS -- "Rules" --> DNR
+    %% Control & Action 11,12
+    BS -- "Dynamic Rules" --> DNR
     DNR ---|"Network Shield"| USER
     
-    %% Handler Impact 12,13,14
+    %% Handler Impact 13,14,15
     CS_YT ==>|"Accelerate"| YT_DOM
     CS_PV ==>|"Accelerate"| PV_DOM
     CS_GEN ==>|"Visual Filter"| YT_DOM
     
-    %% User experience 15,16,17
+    %% User experience 16,17,18
     YT_DOM -- "Filtered Output" --> USER
     PV_DOM -- "Filtered Output" --> USER
     POPUP -- "Final Statistics" --> USER
 
     %% --- LOGIC TRACING (LINK STYLES) ---
-    %% 1. Internet: Grey (Links 3, 4)
-    linkStyle 3,4 stroke:#636e72,stroke-width:2px;
-    %% 2. Main World: Red (Links 0, 5, 15, 16)
-    linkStyle 0,5,15,16 stroke:#d63031,stroke-width:2px;
-    %% 3. Isolated World: Green (Links 6, 12, 17)
-    linkStyle 6,12,17 stroke:#00b894,stroke-width:2px;
-    %% 4. Secure Paths: Purple (Links 1, 2, 7, 9)
-    linkStyle 1,2,7,9 stroke:#9b59b6,stroke-width:2px;
-    %% 5. Core/SW Paths: Lavender (Links 8, 10, 11, 13, 20)
-    linkStyle 8,10,11,13,20 stroke:#a29bfe,stroke-width:2px;
-    %% 6. Infrastructure (DNR): Blue (Link 14)
-    linkStyle 14 stroke:#0984e3,stroke-width:2px;
-    %% 7. DOM Outputs: Orange (Links 18, 19)
-    linkStyle 18,19 stroke:#e67e22,stroke-width:2px;
+    %% 1. Internet: Grey (Internet Source: 0, 1)
+    linkStyle 0,1 stroke:#636e72,stroke-width:2px;
+    %% 2. Main World: Red (INT: 2, YT: 13, PV: 14)
+    linkStyle 2,13,14 stroke:#d63031,stroke-width:2px;
+    %% 3. Secure Paths: Purple (BRIDGE: 3,4, VERIFY: 5, AUTH: 6)
+    linkStyle 3,4,5,6 stroke:#9b59b6,stroke-width:2px;
+    %% 4. Isolated World: Green (PROT: 7, GEN: 11? GEN: 9, 15)
+    %% Link 7: PROT->VERIFY, Link 9: GEN->STORAGE, Link 15: GEN->DOM
+    linkStyle 7,9,15 stroke:#00b894,stroke-width:2px;
+    %% 5. Extension Core: Lavender (POPUP: 8, 18, BS: 11, 10, DNR: 12)
+    linkStyle 8,10,11,12,18 stroke:#a29bfe,stroke-width:2px;
+    %% 6. Storage: Blue (Source: 10 is Blue)
+    linkStyle 10 stroke:#0984e3,stroke-width:2px;
+    %% 7. Video Players: Orange (Source: 16, 17)
+    linkStyle 16,17 stroke:#e67e22,stroke-width:2px;
 
     %% --- HIDE SUBGRAPH BOXES ---
     style MW fill:none,stroke:none
@@ -126,6 +124,7 @@ graph TD
     style SW fill:none,stroke:none
     style System fill:none,stroke:none
 ```
+
 
 
 
