@@ -207,8 +207,8 @@ graph TD
         YT_DOM["YouTube Player"]:::dom
         PV_DOM["Prime Player"]:::dom
     end
-    POPUP["popup.js<br/>(UI/Stats)"]:::sw
     USER["The User (Cleaned & Accelerated UI)"]:::actor
+    POPUP["popup.js<br/>(UI/Stats)"]:::sw
     INTERNET--"Scripts"-->MW_INT
     INTERNET--"Requests"-->DNR
     MW_INT<==>|"Token-Gated Handshake"|CS_PROT
@@ -243,7 +243,6 @@ graph TD
     style IW fill:none,stroke:none
     style SW fill:none,stroke:none
     style System fill:none,stroke:none
-    </div>
     </div>
   </div>
 </section>
