@@ -50,19 +50,38 @@
       window.addEventListener(evt, updateGesture, { capture: true, passive: true });
     });
 
-    // Intercept suspicious link clicks
+    // Intercept suspicious link clicks (Common Pop-Under technique)
     document.addEventListener('click', (e) => {
+      // SECURITY: Fail closed if config isn't loaded yet
+      if (!CONFIG.enabled || !CONFIG.blockPopUnders) return;
+
       const link = e.target.closest('a');
       if (link && (link.target === '_blank' || e.ctrlKey || e.shiftKey || e.metaKey)) {
         const rect = link.getBoundingClientRect();
-        const isTiny = rect.width < 5 || rect.height < 5;
-        const isOverlay = rect.width > window.innerWidth * 0.9 && rect.height > window.innerHeight * 0.9;
+        
+        // DETECTION: Ad-networks often use 1x1 invisible links or 100% transparent overlays
+        const isTiny = rect.width > 0 && rect.width < 5 || rect.height > 0 && rect.height < 5;
+        const isOverlay = rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8;
         
         if (isTiny || isOverlay) {
-          if (DEBUG) console.warn('[Chroma Ad-Blocker] Suspicious link click detected:', link.href);
+          if (DEBUG) console.warn('[Chroma Ad-Blocker] Proactively blocked suspicious pop-under click.');
+          
+          // ACTION: Kill the event before the browser can open a new tab/window
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          
+          // REPORT: Update stats and log activity
+          if (secretToken) {
+            notifyBackground({
+              type: MSG.SUSPICIOUS_ACTIVITY,
+              token: secretToken,
+              activity: 'BLOCKED_SUSPICIOUS_CLICK',
+              context: `Link: ${link.href.substring(0, 100)}...`
+            });
+          }
         }
       }
-    }, { capture: true, passive: true });
+    }, { capture: true, passive: false });
   }
 
   /**
@@ -195,13 +214,28 @@
         processInterceptorMessage(e.data);
       };
 
-      // Send port2 to the MAIN world, attaching the token for verification
-      // SECURITY: The token is now ONLY passed via the MessagePort transfer. (VULN-01 Fix)
-      window.postMessage({
-        action: '__CHROMA_PORT_TRANSFER__',
+      // Send port2 to the MAIN world. 
+      // SECURITY: The token and config are NO LONGER passed via window.postMessage (VULN-01 Fix)
+      // They will be delivered via the secure pipe once established.
+      // Using a specialized CustomEvent instead of window.postMessage ensures the port 
+      // can be captured and killed in the capture phase before host-page interference.
+      try {
+        window.dispatchEvent(new MessageEvent('__CHROMA_PORT_TRANSFER__', {
+          ports: [channel.port2]
+        }));
+      } catch (e) {
+        // Fallback for environments where MessageEvent constructor isn't fully supported
+        window.dispatchEvent(new CustomEvent('__CHROMA_PORT_TRANSFER__', {
+          detail: { port: channel.port2 }
+        }));
+      }
+
+      // Now deliver the payload through the protected pipe
+      isolatedPort.postMessage({
+        type: 'INIT_CHROMA',
         token: secretToken,
-        selectors: { ...selectors, ...CONFIG } // Pass initial config too
-      }, '*', [channel.port2]);
+        selectors: { ...selectors, ...CONFIG }
+      });
 
       if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
     };
@@ -240,18 +274,33 @@
   }
 
   // Initial sync with storage
-  chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS']).then(async (data) => {
+  chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']).then(async (data) => {
+    let isWhitelisted = false;
+    const whitelist = data.whitelist || [];
+    const hostname = window.location.hostname;
+    
+    if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {
+      isWhitelisted = true;
+      if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
+      document.documentElement.setAttribute('data-chroma-whitelisted', 'true');
+    }
+
     const savedConfig = data.config;
     if (savedConfig) {
-      CONFIG.enabled = savedConfig.enabled !== false;
-      CONFIG.blockPopUnders = savedConfig.blockPopUnders !== false;
-      CONFIG.blockPushNotifications = savedConfig.blockPushNotifications !== false;
+      CONFIG.enabled = isWhitelisted ? false : (savedConfig.enabled !== false);
+      CONFIG.blockPopUnders = isWhitelisted ? false : (savedConfig.blockPopUnders !== false);
+      CONFIG.blockPushNotifications = isWhitelisted ? false : (savedConfig.blockPushNotifications !== false);
+    } else if (isWhitelisted) {
+      CONFIG.enabled = false;
+      CONFIG.blockPopUnders = false;
+      CONFIG.blockPushNotifications = false;
     }
     
     // Cache selectors to pass to MAIN world
     const selectors = {
-      HIDE_SELECTORS: data.HIDE_SELECTORS || [],
-      WARNING_SELECTORS: data.WARNING_SELECTORS || []
+      HIDE_SELECTORS: isWhitelisted ? [] : (data.HIDE_SELECTORS || []),
+      WARNING_SELECTORS: isWhitelisted ? [] : (data.WARNING_SELECTORS || []),
+      enabled: CONFIG.enabled
     };
 
     // SECURITY: Request token from background before starting handshake

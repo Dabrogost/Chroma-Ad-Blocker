@@ -5,247 +5,269 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chroma Ad-Blocker</title>
   <style>
+    /* ── Custom Properties (from website) ─────────────────────────── */
     :root {
-      --bg: #09090b;
-      --surface: #18181b;
-      --border: #27272a;
-      --accent: #a855f7;
-      --accent-dim: #7e22ce;
-      --text: #fafafa;
-      --text-dim: #a1a1aa;
-      --green: #10b981;
-      --radius: 10px;
-      --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+      --bg-void:       #04020c;
+      --bg-glass:      rgba(10, 5, 25, 0.65);
+      --bg-card:       rgba(14, 7, 32, 0.75);
+      --border-glass:  rgba(108, 92, 231, 0.25);
+      --border-hover:  rgba(0, 136, 255, 0.5);
+
+      --c-red:         #ff0055;
+      --c-magenta:     #9900ff;
+      --c-purple:      #6c5ce7;
+      --c-blue:        #0088ff;
+      --c-cyan:        #00ffcc;
+
+      --grad-chroma:   linear-gradient(90deg, #ff0055 0%, #9900ff 16.6%, #6c5ce7 33.3%, #0088ff 50%, #00d1b2 66.6%, #00ffcc 83.3%, #ff0055 100%);
+      --text:          #ffffff;
+      --text-dim:      #9b91b9;
+      --text-muted:    #685e85;
+
+      --glow-magenta:  rgba(153, 0, 255, 0.3);
+      --glow-blue:     rgba(0, 136, 255, 0.3);
+      
+      --r-md:   12px;
+      --r-pill: 9999px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
       width: 320px;
-      background: var(--bg);
+      background: var(--bg-void);
       color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       font-size: 13px;
+      line-height: 1.5;
+      overflow-x: hidden;
+      position: relative;
+      min-height: 480px;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── HEADER ── */
+    /* ── Background Layers ── */
+    .aurora {
+      position: fixed; inset: 0; z-index: -5;
+      pointer-events: none; overflow: hidden;
+    }
+    .aurora__blob { position: absolute; border-radius: 50%; will-change: transform; filter: blur(40px); opacity: 0.5; }
+    .aurora__blob-1 { width: 200px; height: 200px; background: radial-gradient(circle, rgba(255, 0, 85, 0.15), transparent); top: -10%; left: -10%; animation: blob-move 15s infinite alternate; }
+    .aurora__blob-2 { width: 180px; height: 180px; background: radial-gradient(circle, rgba(153, 0, 255, 0.12), transparent); bottom: 10%; right: -5%; animation: blob-move 18s infinite alternate-reverse; }
+    
+    @keyframes blob-move { 
+      from { transform: translate(0, 0) scale(1); } 
+      to { transform: translate(20px, 30px) scale(1.1); } 
+    }
+
+    .grain {
+      position: fixed; inset: 0; z-index: -4; pointer-events: none; opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    /* ── PILL NAV (Header) ── */
     header {
+      padding: 14px 12px;
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(4, 2, 12, 0.4);
+      backdrop-filter: blur(10px);
+    }
+
+    .pill-nav-inner {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 16px;
-      border-bottom: 1px solid var(--border);
-      background: linear-gradient(180deg, var(--surface) 0%, var(--bg) 100%);
+      gap: 10px;
+      padding: 6px 12px 6px 8px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px) saturate(160%);
+      border-radius: var(--r-pill);
+      border: 1px solid var(--border-glass);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      animation: border-cycle 8s linear infinite;
+    }
+
+    @keyframes border-cycle {
+      0%, 100% { border-color: rgba(255, 0, 85, 0.4); }
+      33% { border-color: rgba(153, 0, 255, 0.4); }
+      66% { border-color: rgba(0, 136, 255, 0.4); }
     }
 
     .logo {
-      width: 28px; height: 28px;
+      width: 26px; height: 26px;
       border-radius: 6px;
-      flex-shrink: 0;
-      object-fit: contain;
+      box-shadow: 0 0 10px var(--glow-magenta);
     }
 
+    .title-group { flex: 1; min-width: 0; }
     .title-group h1 {
-      font-size: 14px; font-weight: 600; letter-spacing: 0.3px;
+      font-size: 13px; font-weight: 800; letter-spacing: -0.01em;
+      background: var(--grad-chroma);
+      background-size: 320px 100%;
+      -webkit-background-clip: text; 
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: scan-h 6s linear infinite;
     }
-    .title-group span {
-      font-size: 11px; color: var(--text-dim);
-    }
+    .title-group span { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-top: -2px; }
 
+    @keyframes scan-h { from { background-position: 0% center; } to { background-position: 320px center; } }
+
+    .status-group { display: flex; align-items: center; gap: 8px; }
     .status-dot {
-      margin-left: 8px;
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 8px var(--green);
-      flex-shrink: 0;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--c-cyan); box-shadow: 0 0 8px var(--c-cyan);
     }
-
-    .status-dot.off {
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
-    }
+    .status-dot.off { background: var(--c-red); box-shadow: 0 0 8px var(--c-red); }
 
     /* ── STATS ── */
-    .stats-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1px;
-      background: var(--border);
-      border-bottom: 1px solid var(--border);
-      box-shadow: inset 0 0 10px rgba(0,0,0,0.2);
+    .stats-container {
+      margin: 4px 12px 16px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
     }
 
     .stat-card {
-      background: var(--surface);
-      padding: 12px 16px;
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--r-md);
+      padding: 12px 8px;
       text-align: center;
+      transition: transform 0.2s, border-color 0.2s;
     }
+    .stat-card:hover { transform: translateY(-2px); border-color: var(--border-hover); }
 
     .stat-value {
-      font-size: 24px;
-      font-weight: 800;
-      color: var(--accent);
-      line-height: 1;
-      margin-bottom: 4px;
-      text-shadow: 0 0 15px rgba(168, 85, 247, 0.3);
+      font-size: 24px; font-weight: 800; line-height: 1; margin-bottom: 4px;
+      background: var(--grad-chroma); background-size: 320px 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: scan-h 6s linear infinite;
+      text-shadow: 0 0 20px rgba(153, 0, 255, 0.2);
     }
 
-    .stat-label {
-      font-size: 10px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
+    .stat-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
 
     /* ── TOGGLES ── */
     .section-title {
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-      padding: 12px 16px 6px;
+      font-size: 10px; font-weight: 700; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 0.1em;
+      padding: 0 16px 8px;
+    }
+
+    .protection-list {
+      margin: 0 12px 16px;
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--r-md);
+      overflow: hidden;
     }
 
     .toggle-row {
-      display: flex;
-      align-items: center;
-      padding: 10px 16px;
-      gap: 10px;
-      cursor: pointer;
-      transition: background 0.15s;
+      display: flex; align-items: center; padding: 10px 14px;
+      gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.03);
+      transition: background 0.2s;
     }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-row:hover { background: rgba(108, 92, 231, 0.08); }
 
-    .toggle-row:hover { 
-      background: rgba(168, 85, 247, 0.04);
-    }
-    
-    .toggle-row:active {
-      background: rgba(168, 85, 247, 0.08);
-    }
+    .toggle-info { flex: 1; min-width: 0; }
+    .toggle-info .name { font-size: 13px; font-weight: 600; color: var(--text); }
+    .toggle-info .desc { font-size: 10.5px; color: var(--text-dim); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .toggle-info { flex: 1; }
-    .toggle-info .name { font-size: 13px; font-weight: 500; }
-    .toggle-info .desc { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
-
-    /* Toggle switch */
-    .switch {
-      position: relative;
-      width: 36px; height: 20px;
-      flex-shrink: 0;
-    }
-
+    /* Premium Switch */
+    .switch { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
-
     .slider {
-      position: absolute;
-      inset: 0;
-      background: #3f3f46;
-      border-radius: 20px;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      cursor: pointer;
+      position: absolute; inset: 0; background: #1e1e2e;
+      border-radius: 20px; transition: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      border: 1px solid rgba(255,255,255,0.05);
+      background-size: 200% auto;
+      background-position: left center;
     }
-
     .slider::before {
-      content: '';
-      position: absolute;
-      height: 14px; width: 14px;
-      left: 3px; bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      content: ''; position: absolute; height: 12px; width: 12px;
+      left: 2px; bottom: 2px; background: #685e85;
+      border-radius: 50%; transition: 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
-
     input:checked + .slider { 
-      background: var(--accent); 
-      box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+      background: linear-gradient(135deg, #ff0055, #9900ff, #0088ff);
+      border-color: transparent;
+      box-shadow: 0 0 12px rgba(153, 0, 255, 0.4);
     }
-    input:checked + .slider::before { transform: translateX(16px); }
+    input:checked + .slider::before { transform: translateX(16px); background: #fff; }
 
-    #toggleEnabled + .slider::before { width: 10px; height: 10px; left: 3px; bottom: 3px; }
-    #toggleEnabled:checked + .slider::before { transform: translateX(14px); }
-
-    /* ── DIVIDER ── */
-    .divider {
-      height: 1px;
-      background: var(--border);
-      margin: 4px 0;
+    /* Hover effect: shift gradient on hover */
+    .switch:hover input:checked + .slider {
+      background-position: right center;
+      box-shadow: 0 0 18px rgba(153, 0, 255, 0.6);
     }
+
+    /* Enable Switch (Header) */
+    #toggleLabel { cursor: pointer; }
+    .header-switch { width: 28px; height: 14px; }
+    .header-switch .slider::before { height: 10px; width: 10px; left: 1px; bottom: 1px; }
+    .header-switch input:checked + .slider::before { transform: translateX(14px); }
 
     /* ── FOOTER ── */
     footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 10px 16px;
-      border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; margin-top: auto;
+      border-top: 1px solid var(--border-glass);
     }
 
     .reset-btn {
-      font-size: 11px;
-      color: var(--text-dim);
-      background: none;
-      border: 1px solid var(--border);
-      padding: 4px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: color 0.2s, border-color 0.2s;
+      font-size: 10px; color: var(--text-dim); background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-glass); padding: 4px 10px;
+      border-radius: var(--r-pill); cursor: pointer; transition: 0.2s;
+      text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;
     }
+    .reset-btn:hover { color: var(--text); border-color: var(--c-blue); background: rgba(0, 136, 255, 0.1); transform: translateY(-1px); }
 
-    .reset-btn:hover { 
-      color: var(--text); 
-      border-color: var(--accent);
-      background: rgba(168, 85, 247, 0.05);
-    }
+    .version { font-size: 10px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
-    .version { font-size: 11px; color: var(--text-dim); }
-
-    /* ── BADGE (active indicator) ── */
     .badge {
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-weight: 600;
-      background: rgba(16, 185, 129, 0.1);
-      color: var(--green);
-      margin-left: 6px;
-      border: 1px solid rgba(16, 185, 129, 0.2);
+      font-size: 8px; padding: 1px 5px; border-radius: 4px;
+      font-weight: 700; background: rgba(0, 255, 204, 0.1);
+      color: var(--c-cyan); margin-left: 6px; text-transform: uppercase;
+      border: 1px solid rgba(0, 255, 204, 0.2);
     }
 
-    .toggle-row.disabled {
-      opacity: 0.5;
-      pointer-events: none;
-      filter: grayscale(1);
-    }
+    .toggle-row.disabled { opacity: 0.4; pointer-events: none; filter: grayscale(0.8); }
   </style>
 </head>
 <body>
 
+  <div class="aurora">
+    <div class="aurora__blob aurora__blob-1"></div>
+    <div class="aurora__blob aurora__blob-2"></div>
+  </div>
+  <div class="grain"></div>
+
   <header>
-    <img src="icons/icon48.png" class="logo" alt="Logo" />
-    <div class="title-group">
-      <h1>Chroma Ad-Blocker</h1>
-      <span>Ad-Blocker and Annoyance Eliminator</span>
-    </div>
-    <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-      <label class="switch" style="width: 30px; height: 16px;">
-        <input type="checkbox" id="toggleEnabled" checked />
-        <span class="slider" style="border-radius: 16px;"></span>
-      </label>
-      <div class="status-dot" id="statusDot" title="Active"></div>
+    <div class="pill-nav-inner">
+      <img src="icons/icon48.png" class="logo" alt="Logo" />
+      <div class="title-group">
+        <h1>Chroma Ad-Blocker</h1>
+        <span>Ad-Blocker & Annoyance Eliminator</span>
+      </div>
+      <div class="status-group">
+        <label class="switch header-switch">
+          <input type="checkbox" id="toggleEnabled" checked />
+          <span class="slider"></span>
+        </label>
+        <div class="status-dot" id="statusDot"></div>
+      </div>
     </div>
   </header>
 
-  <div class="stats-row">
-    <div class="stat-card">
+  <div class="stats-container">
+    <div class="stat-card" id="cardAccelerated">
       <div class="stat-value" id="statAccelerated">0</div>
       <div class="stat-label">Ads Accelerated</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" id="cardNetwork">
       <div class="stat-value" id="statNetworkBlocked">0</div>
       <div class="stat-label">Ads Blocked</div>
     </div>
@@ -253,121 +275,121 @@
 
   <div class="section-title">Protection Layers</div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Network Blocking <span class="badge">Primary</span></div>
-      <div class="desc">Blocks known ad and tracker requests</div>
+  <div class="protection-list">
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Network Blocking <span class="badge">Primary</span></div>
+        <div class="desc">Blocks known ad and tracker requests</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleNetwork" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleNetwork" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Ad Acceleration</div>
-      <div class="desc">Mute + 16× speed — bypasses detection</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Ad Acceleration</div>
+        <div class="desc">Mute + 16× speed — bypasses detection</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleAcceleration" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleAcceleration" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Cosmetic Filtering</div>
-      <div class="desc">Hides banners, sponsored slots, overlays</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Cosmetic Filtering</div>
+        <div class="desc">Hides banners, sponsored slots, overlays</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleCosmetic" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleCosmetic" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Hide YT Shorts</div>
-      <div class="desc">Hides Shorts shelves and sidebar tabs</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Hide YT Shorts</div>
+        <div class="desc">Hides Shorts shelves and sidebar tabs</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleShorts" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleShorts" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Hide YT Merch</div>
-      <div class="desc">Removes creator product carousels</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Hide YT Merch</div>
+        <div class="desc">Removes creator product carousels</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleMerch" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleMerch" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Hide Watch on YT</div>
-      <div class="desc">Removes movie/TV purchase offers</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Hide Watch on YT</div>
+        <div class="desc">Removes movie/TV purchase offers</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleOffers" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleOffers" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Warning Suppression</div>
-      <div class="desc">Removes "ad blocker detected" dialogs</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Warning Suppression</div>
+        <div class="desc">Removes "ad blocker detected" dialogs</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleWarnings" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleWarnings" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Pop-Under Protection</div>
-      <div class="desc">Prevents automated background popups</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Pop-Under Protection</div>
+        <div class="desc">Prevents automated background popups</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="togglePopUnders" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="togglePopUnders" />
-      <span class="slider"></span>
-    </label>
-  </div>
-  
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Push Notifications</div>
-      <div class="desc">Blocks ad-related push notification requests</div>
+    
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Push Notifications</div>
+        <div class="desc">Blocks ad-related notification requests</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="togglePush" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="togglePush" />
-      <span class="slider"></span>
-    </label>
-  </div>
 
-  <div class="toggle-row">
-    <div class="toggle-info">
-      <div class="name">Whitelist this site</div>
-      <div class="desc">Disable blocking on current domain</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="name">Whitelist this site</div>
+        <div class="desc">Disable blocking on current domain</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleWhitelist" />
+        <span class="slider"></span>
+      </label>
     </div>
-    <label class="switch">
-      <input type="checkbox" id="toggleWhitelist" />
-      <span class="slider"></span>
-    </label>
   </div>
-
-  <div class="divider"></div>
 
   <footer>
     <button class="reset-btn" id="resetStats">Reset Stats</button>
-    <span class="version">v1.0.0 · MV3</span>
+    <span class="version">v1.2.0 · MV3</span>
   </footer>
 
   <script src="messaging.js"></script>

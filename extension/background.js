@@ -60,7 +60,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         'tp-yt-iron-overlay-backdrop', 'ytd-enforcement-message-view-model',
         '.ytd-enforcement-message-view-model', '#header-ad-container',
         '.yt-playability-error-supported-renderers'
-      ]
+      ],
+      whitelist: []
     });
     if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
@@ -98,6 +99,7 @@ async function updateDNRState(isEnabled) {
     if (isEnabled) {
       await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds: STATIC_RULESETS });
       await syncDynamicRules();
+      await syncWhitelistRules();
     } else {
       await chrome.declarativeNetRequest.updateEnabledRulesets({ disableRulesetIds: STATIC_RULESETS });
       const existing = await chrome.declarativeNetRequest.getDynamicRules();
@@ -119,9 +121,9 @@ async function syncDynamicRules() {
     const stored = await chrome.storage.local.get('dynamicRules');
     const rules = stored.dynamicRules || getDefaultDynamicRules();
 
-    // Remove all existing dynamic rules first
+    // Only remove rules that are NOT whitelist rules (whitelist is 9,000,000+)
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeIds = existing.map(r => r.id);
+    const removeIds = existing.filter(r => r.id < 9000000).map(r => r.id);
 
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: removeIds,
@@ -134,7 +136,44 @@ async function syncDynamicRules() {
   }
 }
 
-// ─── CONFIGURATION STATE ──────────────────────────────────────────────────
+/**
+ * Syncs high-priority "allow" rules for whitelisted domains.
+ * This ensures the extension is completely disabled on those sites even
+ * if global blocking rules would otherwise match.
+ */
+async function syncWhitelistRules() {
+  try {
+    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
+    
+    // Whitelist rules use a safe high range (9,000,000+)
+    const WHITELIST_START_ID = 9000000;
+    
+    // Remove all existing whitelist rules
+    const existing = await chrome.declarativeNetRequest.getDynamicRules();
+    const removeIds = existing.filter(r => r.id >= WHITELIST_START_ID).map(r => r.id);
+    
+    const addRules = whitelist.map((domain, index) => ({
+      id: WHITELIST_START_ID + index,
+      priority: 999999, // Absolute priority
+      action: { type: 'allow' },
+      condition: {
+        initiatorDomains: [domain],
+        resourceTypes: ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object', 'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'other']
+      }
+    }));
+
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: removeIds,
+      addRules: addRules,
+    });
+
+    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${whitelist.length} whitelist domains to DNR.`);
+  } catch (err) {
+    if (DEBUG) console.error('[Chroma Ad-Blocker] Whitelist sync failed:', err);
+  }
+}
+
+// Initial load and listen for updates
 let config = { 
   enabled: true, 
   networkBlocking: true,
@@ -145,14 +184,19 @@ let config = {
   blockPushNotifications: true 
 };
 
-// Initial load and listen for updates
-chrome.storage.local.get('config').then(({ config: storedConfig }) => {
-  if (storedConfig) config = { ...config, ...storedConfig };
+let whitelist = [];
+
+chrome.storage.local.get(['config', 'whitelist']).then((data) => {
+  if (data.config) config = { ...config, ...data.config };
+  if (data.whitelist) whitelist = data.whitelist;
 });
 
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.config) {
     config = { ...config, ...changes.config.newValue };
+  }
+  if (changes.whitelist) {
+    whitelist = changes.whitelist.newValue || [];
   }
 });
 
@@ -167,6 +211,7 @@ const popunderResolvers = new Map(); // openerTabId -> [ (request) => void ]
 
 // SESSION TOKENS: track secure tokens per tab to prevent spoofing (VULN-02 Fix)
 const sessionTokens = new Map(); // tabId -> token
+const tokenRetrievalLocked = new Set(); // tabId
 
 // PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
 setInterval(() => {
@@ -198,7 +243,10 @@ const MSG = {
   DYNAMIC_RULE_REMOVE: 'DYNAMIC_RULE_REMOVE',
   WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
   SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
-  GET_TOKEN: 'GET_TOKEN'
+  GET_TOKEN: 'GET_TOKEN',
+  WHITELIST_GET: 'WHITELIST_GET',
+  WHITELIST_ADD: 'WHITELIST_ADD',
+  WHITELIST_REMOVE: 'WHITELIST_REMOVE'
 };
 
 // ─── CONFIGURATION VALIDATION ───────────────────────────────────────────────
@@ -553,6 +601,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     const tabId = _sender.tab?.id;
     if (!tabId) return sendResponse({ error: 'No tabId' });
     
+    // SECURITY: Once a token is retrieved, lock subsequent requests for this tab (VULN-02 Fix)
+    if (tokenRetrievalLocked.has(tabId)) {
+      if (DEBUG) console.error(`[Chroma Security] Blocked duplicate token retrieval for tab ${tabId}`);
+      return sendResponse({ error: 'Locked' });
+    }
+    tokenRetrievalLocked.add(tabId);
+
     // Generate a unique session token
     const buffer = new Uint8Array(16);
     crypto.getRandomValues(buffer);
@@ -562,16 +617,62 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ token });
     return;
   }
+
+  if (msg.type === MSG.WHITELIST_GET) {
+    chrome.storage.local.get('whitelist').then(({ whitelist = [] }) => {
+      sendResponse({ whitelist });
+    });
+    return true;
+  }
+
+  if (msg.type === MSG.WHITELIST_ADD) {
+    chrome.storage.local.get('whitelist').then(async ({ whitelist = [] }) => {
+      if (!whitelist.includes(msg.domain)) {
+        whitelist.push(msg.domain);
+        await chrome.storage.local.set({ whitelist });
+        await syncWhitelistRules();
+      }
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  if (msg.type === MSG.WHITELIST_REMOVE) {
+    chrome.storage.local.get('whitelist').then(async ({ whitelist = [] }) => {
+      const updated = whitelist.filter(d => d !== msg.domain);
+      if (updated.length !== whitelist.length) {
+        await chrome.storage.local.set({ whitelist: updated });
+        await syncWhitelistRules();
+      }
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
 });
 
 // ─── TAB MONITORING (Pop-Under Blocker) ───────────────────────────────────────
 chrome.tabs.onCreated.addListener(async (tab) => {
-  const { config: storedConfig } = await chrome.storage.local.get('config');
-  if (storedConfig && (storedConfig.enabled === false || storedConfig.blockPopUnders === false)) return;
+  if (config.enabled === false || config.blockPopUnders === false) return;
+
+  // Kill Switch: Check if the opener tab is whitelisted
+  const openerId = tab.openerTabId;
+  if (openerId) {
+    try {
+      const openerTab = await chrome.tabs.get(openerId);
+      if (openerTab && openerTab.url) {
+        const u = new URL(openerTab.url);
+        if (whitelist.some(d => u.hostname === d || u.hostname.endsWith('.' + d))) {
+          if (DEBUG) console.log(`[Chroma] Not blocking popup from whitelisted domain: ${u.hostname}`);
+          return;
+        }
+      }
+    } catch (e) {
+      // Opener might be closed or URL unavailable due to lack of permissions/timing
+    }
+  }
 
   // Give a small grace period for the WINDOW_OPEN_NOTIFY to arrive from content script
   // since postMessage -> runtime.sendMessage is slightly slower than tab creation.
-  const openerId = tab.openerTabId;
   let request = openerId ? popunderRequests.get(openerId) : null;
   
   if (!request && lastGlobalRequest && (Date.now() - lastGlobalRequest.time < 2000)) {
@@ -685,6 +786,7 @@ setInterval(harvestNetworkStats, 120000);
 chrome.tabs.onRemoved.addListener((tabId) => {
   popunderRequests.delete(tabId);
   sessionTokens.delete(tabId); // Cleanup session token (VULN-02 Fix)
+  tokenRetrievalLocked.delete(tabId);
   harvestNetworkStats().catch(() => {});
 });
 

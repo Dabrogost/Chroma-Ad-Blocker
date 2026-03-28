@@ -84,6 +84,18 @@
     },
     {
       "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "interceptor.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+
+    {
+      "matches": [
         "*://*.youtube.com/*",
         "*://*.amazon.com/gp/video/*",
         "*://*.amazon.com/video/*",
@@ -108,7 +120,6 @@
         "*://*.primevideo.com/*"
       ],
       "js": [
-        "interceptor.js",
         "utils/chromaColor.js",
         "yt_handler.js",
         "prm_handler.js"

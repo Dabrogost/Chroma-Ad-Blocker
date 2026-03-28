@@ -4,12 +4,37 @@
   const DEBUG = false;
 
   // ─── CONFIG ──────────────────────────────────────────────────────────────────
-  const CONFIG = {
-    enabled: true,
-    acceleration: true,
+  // Use Object.create(null) to protect against Prototype Pollution
+  const CONFIG = Object.create(null);
+  Object.assign(CONFIG, {
+    enabled: false, // Default to disabled until handshake (KILL SWITCH)
+    acceleration: false,
     accelerationSpeed: 16,
     checkIntervalMs: 300,
-  };
+  });
+
+  // ─── PRISTINE API BRIDGE ──────────────────────────────────────────────────────
+  // SECURE REFERENCE: Use the pristine APIs provided by interceptor.js (VULN-03)
+  const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
+              window.__CHROMA_INTERNAL__.api : 
+              {
+                querySelector: document.querySelector.bind(document),
+                getElementById: document.getElementById.bind(document),
+                createElement: document.createElement.bind(document),
+                addEventListener: window.addEventListener.bind(window),
+                removeEventListener: window.removeEventListener.bind(window),
+                setTimeout: window.setTimeout.bind(window),
+                setInterval: window.setInterval.bind(window),
+                clearInterval: window.clearInterval.bind(window),
+                dispatchEvent: document.dispatchEvent.bind(document),
+                addDocEventListener: document.addEventListener.bind(document),
+                removeDocEventListener: document.removeEventListener.bind(document)
+              };
+
+  const qS = (s) => API.querySelector(s);
+  const cE = (t) => API.createElement(t);
+  const sI = (f, t) => API.setInterval(f, t);
+  const cI = (i) => API.clearInterval(i);
 
   // ─── STATE ────────────────────────────────────────────────────────────────────
   let targetAdVideo = null;
@@ -20,7 +45,7 @@
   function initAdOverlay() {
     if (adOverlayHost) return;
     
-    adOverlayHost = document.createElement('div');
+    adOverlayHost = cE('div');
     // Randomized stable ID to avoid clobbering but remain targetable by extension logic if needed
     adOverlayHost.id = 'yt-chroma-host-' + Math.random().toString(36).substring(2, 9);
     
@@ -28,7 +53,7 @@
     adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
     
     // Inject Styles into ShadowRoot
-    const style = document.createElement('style');
+    const style = cE('style');
     style.textContent = `
       :host {
         position: absolute !important;
@@ -104,21 +129,21 @@
       }
     `;
     
-    const spinner = document.createElement('div');
+    const spinner = cE('div');
     spinner.className = 'chroma-spinner';
     
-    const title = document.createElement('div');
+    const title = cE('div');
     title.className = 'chroma-title';
     title.textContent = 'Chroma Active';
     
-    const subtitle = document.createElement('div');
+    const subtitle = cE('div');
     subtitle.className = 'chroma-subtitle';
     subtitle.textContent = 'Accelerating Ad...';
 
-    const progressContainer = document.createElement('div');
+    const progressContainer = cE('div');
     progressContainer.className = 'chroma-progress-container';
     
-    const progressBar = document.createElement('div');
+    const progressBar = cE('div');
     progressBar.className = 'chroma-progress-bar';
     progressContainer.appendChild(progressBar);
     
@@ -128,7 +153,7 @@
     adOverlayRoot.appendChild(subtitle);
     adOverlayRoot.appendChild(progressContainer);
 
-    const playerContainer = document.querySelector('.html5-video-player') || document.querySelector('#movie_player');
+    const playerContainer = qS('.html5-video-player') || qS('#movie_player');
     if (playerContainer && !playerContainer.contains(adOverlayHost)) {
       playerContainer.appendChild(adOverlayHost);
     }
@@ -142,8 +167,6 @@
         // --- NEW: Update stats when overlay turns OFF ---
         if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
           window.__CHROMA_INTERNAL__.send({ 
-            source: 'chroma-interceptor',
-            token: window.__CHROMA_INTERNAL__.token,
             action: 'STATS_UPDATE', 
             payload: { type: 'accelerated' } 
           });
@@ -275,13 +298,13 @@
   function handleAdAcceleration() {
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
-    let currentAdVideo = document.querySelector('.video-ads video, .ytp-ad-module video');
-    let hasAdUI = document.querySelector(
+    let currentAdVideo = qS('.video-ads video, .ytp-ad-module video');
+    let hasAdUI = qS(
       '.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-visit-advertiser-button'
     );
 
     if (!currentAdVideo) {
-      const adPlayer = document.querySelector('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
+      const adPlayer = qS('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
       if (adPlayer) {
         currentAdVideo = adPlayer.querySelector('video');
       }
@@ -290,11 +313,11 @@
     let rawAdShowing = !!currentAdVideo;
 
     if (!rawAdShowing && hasAdUI) {
-      currentAdVideo = document.querySelector('#movie_player video, .html5-main-video');
+      currentAdVideo = qS('#movie_player video, .html5-main-video');
       rawAdShowing = !!currentAdVideo;
     }
 
-    const video = currentAdVideo || targetAdVideo || document.querySelector('#movie_player video, .html5-main-video');
+    const video = currentAdVideo || targetAdVideo || qS('#movie_player video, .html5-main-video');
     if (!video) return;
 
     if (rawAdShowing && currentAdVideo) {
@@ -379,11 +402,11 @@
   let pollingInterval = null;
 
   function startPolling() {
-    if (pollingInterval) clearInterval(pollingInterval);
-    pollingInterval = setInterval(handleAdAcceleration, CONFIG.checkIntervalMs);
+    if (pollingInterval) cI(pollingInterval);
+    pollingInterval = sI(handleAdAcceleration, CONFIG.checkIntervalMs);
   }
 
-  setInterval(() => {
+  sI(() => {
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
     if (!pollingInterval) {
       startPolling();
@@ -401,18 +424,18 @@
     startPolling();
   }
 
-  document.addEventListener('yt-navigate-finish', onYTNavigate);
-  document.addEventListener('yt-page-data-updated', onYTNavigate);
+  API.addDocEventListener('yt-navigate-finish', onYTNavigate);
+  API.addDocEventListener('yt-page-data-updated', onYTNavigate);
 
   // We now handle config updates via a custom event from interceptor.js or direct property update
-  document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+  API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
       Object.assign(CONFIG, e.detail);
       if (DEBUG) console.log('[Chroma] yt_handler updated config:', CONFIG);
       
       if (!CONFIG.enabled || !CONFIG.acceleration) {
         if (pollingInterval) {
-          clearInterval(pollingInterval);
+          cI(pollingInterval);
           pollingInterval = null;
         }
         
@@ -443,7 +466,7 @@
   });
 
   function initSkipButtonListener() {
-    document.addEventListener('click', (e) => {
+    API.addDocEventListener('click', (e) => {
       if (!window.chromaAdSessionActive) return;
       if (!e || !e.target || typeof e.target.closest !== 'function') return;
 
@@ -517,8 +540,8 @@
   }
 
   function injectChromaCSS() {
-    if (document.getElementById('yt-chroma-acceleration')) return;
-    const style = document.createElement('style');
+    if (API.getElementById('yt-chroma-acceleration')) return;
+    const style = cE('style');
     style.id = 'yt-chroma-acceleration';
     style.textContent = `
       body.chroma-session-active .ytp-ad-skip-button-container,
@@ -607,24 +630,38 @@
       }
     `;
     // Prevent the 'style' variable reference from being reassigned.
-    Object.freeze(style);
+    try {
+      Object.freeze(style);
+    } catch (e) {}
     (document.head || document.documentElement).appendChild(style);
   }
 
 
 function init() {
-    // 1. Initial check (might be ready if script is deferred or loaded slowly)
-    if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-      Object.assign(CONFIG, window.__CHROMA_INTERNAL__.config);
+    // 0. Whitelist shortcut for MAIN world
+    if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
+      if (DEBUG) console.log('[Chroma] YouTube handler disabled by whitelist.');
+      return;
     }
 
-    // 2. Listen for the handshake completion to re-initialize config
-    document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+    // 1. Initial check (might be ready if script is deferred or loaded slowly)
+    if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+      // Safely merge config from the secure pipe
+      const remoteConfig = window.__CHROMA_INTERNAL__.config;
+      for (const key in remoteConfig) {
+        if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
+          CONFIG[key] = remoteConfig[key];
+        }
+      }
+    }
+
+    // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
+    API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       if (e.detail) {
         Object.assign(CONFIG, e.detail);
-        if (DEBUG) console.log('[Chroma] re-init config via handshake:', CONFIG);
+        if (DEBUG) console.log('[Chroma] YouTube handler activated via handshake:', CONFIG);
         
-        if (CONFIG.enabled && CONFIG.acceleration && !pollingInterval) {
+        if (CONFIG.enabled && !pollingInterval) {
           startPolling();
           startChromaClock();
           initSkipButtonListener();
@@ -632,11 +669,26 @@ function init() {
       }
     });
 
-    if (CONFIG.enabled && CONFIG.acceleration) {
+    // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
+    if (CONFIG.enabled) {
       injectChromaCSS();
       startPolling();
       startChromaClock();
       initSkipButtonListener();
+    } else {
+      // 4. SAFETY FALLBACK: If handshake fails to arrive but site is NOT whitelisted
+      // and we are NOT in a compromised environment, we wake up after a delay.
+      setTimeout(() => {
+        if (!CONFIG.enabled && !document.documentElement.getAttribute('data-chroma-whitelisted')) {
+          if (DEBUG) console.log('[Chroma] Handshake timeout. Waking up YouTube handler with defaults.');
+          CONFIG.enabled = true;
+          CONFIG.acceleration = true;
+          injectChromaCSS();
+          startPolling();
+          startChromaClock();
+          initSkipButtonListener();
+        }
+      }, 1200);
     }
   }
 

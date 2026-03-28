@@ -22,6 +22,9 @@
   let observer = null;
   let HIDE_SELECTORS = [];
   let WARNING_SELECTOR_COMBINED = '';
+  
+  // Track our adopted stylesheets to allow toggling without clobbering other extensions
+  const chromaSheets = new Map(); // id -> CSSStyleSheet
 
   // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
   function injectAllCSS() {
@@ -100,37 +103,44 @@
     ];
 
     styles.forEach(styleDef => {
-      let styleEl = document.getElementById(styleDef.id);
-      if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = styleDef.id;
-        styleEl.textContent = styleDef.content;
-        (document.head || document.documentElement).appendChild(styleEl);
+      let sheet = chromaSheets.get(styleDef.id);
+      if (!sheet) {
+        // Constructable Stylesheets — Safer against HTML breakout (VULN-03)
+        sheet = new CSSStyleSheet();
+        try {
+          sheet.replaceSync(styleDef.content);
+          chromaSheets.set(styleDef.id, sheet);
+        } catch (e) {
+          if (DEBUG) console.error(`[Chroma] Failed to parse CSS for ${styleDef.id}:`, e);
+          return;
+        }
       }
-      styleEl.disabled = !styleDef.isEnabled();
+
+      const isEnabled = styleDef.isEnabled();
+      const currentSheets = document.adoptedStyleSheets || [];
+
+      if (isEnabled && !currentSheets.includes(sheet)) {
+        document.adoptedStyleSheets = [...currentSheets, sheet];
+      } else if (!isEnabled && currentSheets.includes(sheet)) {
+        document.adoptedStyleSheets = currentSheets.filter(s => s !== sheet);
+      }
     });
   }
 
   function updateAllStyles() {
-    ['yt-chroma-cosmetic', 'yt-chroma-shorts', 'yt-chroma-merch', 'yt-chroma-offers'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        if (id === 'yt-chroma-cosmetic') el.disabled = !(CONFIG.enabled && CONFIG.cosmetic);
-        if (id === 'yt-chroma-shorts') el.disabled = !(CONFIG.enabled && CONFIG.hideShorts);
-        if (id === 'yt-chroma-merch') el.disabled = !(CONFIG.enabled && CONFIG.hideMerch);
-        if (id === 'yt-chroma-offers') el.disabled = !(CONFIG.enabled && CONFIG.hideOffers);
-      }
-    });
+    // Rely on injectAllCSS to reconcile stylesheets
+    injectAllCSS();
   }
 
   // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
   function suppressAdblockWarnings(nodes) {
-    if (!CONFIG.enabled || !CONFIG.suppressWarnings) return;
+    if (!CONFIG.enabled || !CONFIG.suppressWarnings || !WARNING_SELECTOR_COMBINED) return;
 
     let removedAny = false;
 
     if (!nodes) {
       // Fallback for full document checks (e.g. init, navigation)
+      if (!WARNING_SELECTOR_COMBINED) return; 
       const els = document.querySelectorAll(WARNING_SELECTOR_COMBINED);
       if (els.length > 0) {
         removedAny = true;
@@ -353,8 +363,16 @@
   // ─── INIT ─────────────────────────────────────────────────────────────────────
   async function init() {
     try {
-      const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS']);
+      const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']);
       
+      // Whitelist check: if whitelisted, exit early.
+      const whitelist = data.whitelist || [];
+      const hostname = window.location.hostname;
+      if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {
+        if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
+        return;
+      }
+
       if (data.config) {
         Object.assign(CONFIG, data.config);
       }

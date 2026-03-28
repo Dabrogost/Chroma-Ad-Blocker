@@ -133,37 +133,26 @@ async function init() {
   }
 
   if (currentDomain) {
-    const { dynamicRules = [] } = await chrome.storage.local.get('dynamicRules');
-    const existingWhitelistRule = dynamicRules.find(r => 
-      r.action.type === 'allow' && 
-      r.condition.urlFilter === `||${currentDomain}^`
-    );
+    // Get base domain (e.g., youtube.com instead of www.youtube.com)
+    const parts = currentDomain.split('.');
+    const baseDomain = parts.length > 2 ? parts.slice(-2).join('.') : currentDomain;
+    
+    const { whitelist = [] } = await notifyBackground({ type: MSG.WHITELIST_GET }) || { whitelist: [] };
+    const isWhitelisted = whitelist.includes(baseDomain);
 
-    $('toggleWhitelist').checked = !!existingWhitelistRule;
+    $('toggleWhitelist').checked = isWhitelisted;
 
     $('toggleWhitelist').addEventListener('change', async (e) => {
       const isChecked = e.target.checked;
       
       if (isChecked) {
-        const newRule = {
-          priority: 100, // High priority for whitelist
-          action: { type: 'allow' },
-          condition: { 
-            urlFilter: `||${currentDomain}^`,
-            resourceTypes: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'image', 'media', 'ping', 'other']
-          }
-        };
-        await notifyBackground({ type: MSG.DYNAMIC_RULE_ADD, rule: newRule });
+        await notifyBackground({ type: MSG.WHITELIST_ADD, domain: baseDomain });
       } else {
-        const { dynamicRules: latestRules = [] } = await chrome.storage.local.get('dynamicRules');
-        const ruleToRemove = latestRules.find(r => 
-          r.action.type === 'allow' && 
-          r.condition.urlFilter === `||${currentDomain}^`
-        );
-        if (ruleToRemove) {
-          await notifyBackground({ type: MSG.DYNAMIC_RULE_REMOVE, ruleId: ruleToRemove.id });
-        }
+        await notifyBackground({ type: MSG.WHITELIST_REMOVE, domain: baseDomain });
       }
+      
+      // Reload current tab to apply changes
+      chrome.tabs.reload(activeTab.id);
     });
   } else {
     // Disable whitelist toggle if not on a valid web page

@@ -1,0 +1,312 @@
+[
+  {
+    "id": 1,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "googleads.g.doubleclick.net",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "pubads.g.doubleclick.net",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "imasdk.googleapis.com/js/sdkloader/ima3.js",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 4,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "imasdk.googleapis.com/js/sdkloader/ima3_dai.js",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 5,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||static.doubleclick.net^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "image", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 6,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||pagead2.googlesyndication.com^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image"]
+    }
+  },
+  {
+    "id": 7,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||adservice.google.com^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 8,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||adservice.google.co.*^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||yt3.ggpht.com/ytads^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["image", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "/ad_simple_compiled",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "/pagead/adview",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  },
+  {
+    "id": 12,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "/pagead/interaction",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["xmlhttprequest", "image"]
+    }
+  },
+  {
+    "id": 13,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||securepubads.g.doubleclick.net^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image"]
+    }
+  },
+  {
+    "id": 14,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||ads.youtube.com^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "sub_frame"]
+    }
+  },
+  {
+    "id": 15,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||youtube.com/api^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  },
+  {
+    "id": 16,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||youtube.com/youtubei^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  },
+  {
+    "id": 17,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||google-analytics.com^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "ping"]
+    }
+  },
+  {
+    "id": 18,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||imasdk.googleapis.com^",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "sub_frame"]
+    }
+  },
+  {
+    "id": 19,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "doubleclick.net*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "media", "sub_frame", "ping", "other"]
+    }
+  },
+  {
+    "id": 20,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "googlesyndication.com*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 21,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "googleads.g.doubleclick.net*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 22,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "pubads.g.doubleclick.net*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 23,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "securepubads.g.doubleclick.net*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 24,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "adservice.google.com*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["script", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 25,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "pagead2.googlesyndication.com*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["image", "script", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 26,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "ad.doubleclick.net*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["image", "script", "ping", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 27,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "cm.g.doubleclick.net*",
+      "initiatorDomains": ["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com"],
+      "resourceTypes": ["image", "ping", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 1001,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||amazon-adsystem.com^",
+      "initiatorDomains": ["amazon.com", "www.amazon.com", "primevideo.com", "www.primevideo.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image", "sub_frame"]
+    }
+  },
+  {
+    "id": 1002,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||aan.amazon.com^",
+      "initiatorDomains": ["amazon.com", "www.amazon.com", "primevideo.com", "www.primevideo.com"],
+      "resourceTypes": ["script", "xmlhttprequest", "image"]
+    }
+  },
+  {
+    "id": 1003,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||media-amazon.com/images/G/01/video/^",
+      "initiatorDomains": ["amazon.com", "www.amazon.com", "primevideo.com", "www.primevideo.com"],
+      "resourceTypes": ["image", "media", "xmlhttprequest"]
+    }
+  },
+  {
+    "id": 1004,
+    "priority": 10,
+    "action": { "type": "allow" },
+    "condition": {
+      "urlFilter": "||fls-na.amazon.com^",
+      "initiatorDomains": ["amazon.com", "www.amazon.com", "primevideo.com", "www.primevideo.com"],
+      "resourceTypes": ["xmlhttprequest", "ping", "image"]
+    }
+  }
+]

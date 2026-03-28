@@ -8,12 +8,37 @@
 
 const DEBUG = false;
 
-const CONFIG = {
-  enabled: true,
-  acceleration: true,
+const CONFIG = Object.create(null);
+Object.assign(CONFIG, {
+  enabled: false, // Default to disabled until handshake (KILL SWITCH)
+  acceleration: false,
   accelerationSpeed: 16,
   checkIntervalMs: 400,
-};
+});
+
+// ─── PRISTINE API BRIDGE ──────────────────────────────────────────────────────
+// SECURE REFERENCE: Use the pristine APIs provided by interceptor.js (VULN-03)
+const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
+            window.__CHROMA_INTERNAL__.api : 
+            {
+              querySelector: document.querySelector.bind(document),
+              getElementById: document.getElementById.bind(document),
+              createElement: document.createElement.bind(document),
+              addEventListener: window.addEventListener.bind(window),
+              removeEventListener: window.removeEventListener.bind(window),
+              setTimeout: window.setTimeout.bind(window),
+              setInterval: window.setInterval.bind(window),
+              clearInterval: window.clearInterval.bind(window),
+              dispatchEvent: document.dispatchEvent.bind(document),
+              addDocEventListener: document.addEventListener.bind(document),
+              removeDocEventListener: document.removeEventListener.bind(document),
+              MutationObserver: window.MutationObserver
+            };
+
+const qS = (s) => API.querySelector(s);
+const cE = (t) => API.createElement(t);
+const sI = (f, t) => API.setInterval(f, t);
+const cI = (i) => API.clearInterval(i);
 
 const AD_SELECTORS = [
   '.atvwebplayersdk-ad-container',
@@ -51,6 +76,7 @@ let adOverlayRoot = null;
 let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
 let savedVolume = 1;
+let lastAdDetectTime = 0;
 
 const CHROMA_CYCLE_MS = 8000;
 let chromaClockRunning = false;
@@ -61,14 +87,14 @@ let chromaClockRunning = false;
 function initAdOverlay(video) {
   if (adOverlayHost) return;
   
-  adOverlayHost = document.createElement('div');
+  adOverlayHost = cE('div');
   adOverlayHost.id = 'prime-chroma-overlay';
   
   // Create a CLOSED shadow root for maximum isolation (VULN-06)
   adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
   
   // Inject Styles into ShadowRoot
-  const style = document.createElement('style');
+  const style = cE('style');
   style.textContent = `
     :host {
       position: absolute !important;
@@ -160,24 +186,24 @@ function initAdOverlay(video) {
     }
   `;
   
-  const contentBox = document.createElement('div');
+  const contentBox = cE('div');
   contentBox.className = 'chroma-content-box';
   
-  const spinner = document.createElement('div');
+  const spinner = cE('div');
   spinner.className = 'chroma-spinner';
   
-  const title = document.createElement('div');
+  const title = cE('div');
   title.className = 'chroma-title';
   title.textContent = 'Chroma Active';
   
-  const subtitle = document.createElement('div');
+  const subtitle = cE('div');
   subtitle.className = 'chroma-subtitle';
   subtitle.textContent = 'Accelerating Prime Ad...';
 
-  const progressContainer = document.createElement('div');
+  const progressContainer = cE('div');
   progressContainer.className = 'chroma-progress-container';
   
-  const progressBar = document.createElement('div');
+  const progressBar = cE('div');
   progressBar.className = 'chroma-progress-bar';
   progressContainer.appendChild(progressBar);
   
@@ -231,8 +257,8 @@ function updateAdOverlay(video, isActive) {
       let percent = 0;
       
       // 1. Try to find native ad timer/progress
-      const adTimer = document.querySelector('.atvwebplayersdk-ad-time-remaining, .atvwebplayersdk-ad-timer, [data-testid="ad-indicator"]');
-      const nativeProgress = document.querySelector('.atvwebplayersdk-ad-progress-bar, [class*="ad-progress"]');
+      const adTimer = qS('.atvwebplayersdk-ad-time-remaining, .atvwebplayersdk-ad-timer, [data-testid="ad-indicator"]');
+      const nativeProgress = qS('.atvwebplayersdk-ad-progress-bar, [class*="ad-progress"]');
       
       if (nativeProgress) {
         // Try to mirror native progress bar width or aria-valuenow
@@ -318,8 +344,8 @@ function startChromaClock() {
  * Injects necessary CSS for the overlay.
  */
 function injectChromaCSS() {
-  if (document.getElementById('prime-chroma-styles')) return;
-  const style = document.createElement('style');
+  if (API.getElementById('prime-chroma-styles')) return;
+  const style = cE('style');
   style.id = 'prime-chroma-styles';
   style.textContent = `
     #prime-chroma-overlay {
@@ -431,12 +457,12 @@ function injectChromaCSS() {
  */
 function isAdShowing() {
   // 1. Check CSS Selectors First (fastest)
-  const adElement = document.querySelector(AD_SELECTORS.join(','));
+  const adElement = qS(AD_SELECTORS.join(','));
   if (adElement && (adElement.offsetParent !== null || adElement.getClientRects().length > 0)) return true;
 
   // 2. Text-based detection using "Invisible Overlay" strategy
   // Expand search container to include Amazon site-specific player wrappers
-  const playerContainer = document.querySelector([
+  const playerContainer = qS([
     '.atvwebplayersdk-player-container',
     '.webPlayerUIContainer',
     '.templateContainer',
@@ -471,7 +497,7 @@ function isAdShowing() {
   }
 
   // 3. Last resort: specific skippable elements
-  const skipButton = document.querySelector('.adSkipButton, .skippable, .atvwebplayersdk-ad-skip-button, [class*="skip-button"], div[aria-label*="Skip"]');
+  const skipButton = qS('.adSkipButton, .skippable, .atvwebplayersdk-ad-skip-button, [class*="skip-button"], div[aria-label*="Skip"]');
   if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) return true;
 
   return false;
@@ -486,7 +512,7 @@ let adMutationObserver = null;
 function startMutationObserver() {
   if (adMutationObserver) return;
   
-  adMutationObserver = new MutationObserver((mutations) => {
+  adMutationObserver = new API.MutationObserver((mutations) => {
     // We don't need to check every mutation specifically, 
     // just use it as a trigger for our main logic.
     handlePrimeAdAcceleration();
@@ -537,31 +563,42 @@ function handlePrimeAdAcceleration() {
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
     
+    // Safety check: If video duration > 180s (3m), it's content.
+    // This provides a deterministic "kill switch" for stuck overlays.
+    let effectiveAdShowing = rawAdShowing;
+    if (video && video.duration > 180 && isFinite(video.duration)) {
+      effectiveAdShowing = false;
+    }
+    
     // Even if no video is found, if we were active, we might need to reset
     if (!video) {
         if (isAdActive) {
             isAdActive = false;
             document.body.classList.remove('chroma-prime-session');
             updateAdOverlay(null, false);
+            if (targetVideo) targetVideo.playbackRate = 1;
         }
         return;
     }
     
-    targetVideo = video;
-
-    // Detect Source Change - Reset state if video source swapped (common on Amazon)
     const currentSrc = video.src || (video.querySelector('source') ? video.querySelector('source').src : null);
-    if (lastAcceleratedSrc && lastAcceleratedSrc !== currentSrc && !rawAdShowing) {
+
+    // Detect Source Change - Force reset if source swapped (must have a valid currentSrc)
+    if (currentSrc && lastAcceleratedSrc && lastAcceleratedSrc !== currentSrc) {
         if (DEBUG) console.log('[Chroma] Video source changed, resetting ad state.');
-        resetSession();
+        resetSession(video);
+        // Recount immediately after source swap
+        effectiveAdShowing = isAdShowing() && (video.duration <= 180 || !video.duration || !isFinite(video.duration));
     }
 
-    if (rawAdShowing) {
+    if (effectiveAdShowing) {
       if (!isAdActive) {
         isAdActive = true;
         document.body.classList.add('chroma-prime-session');
         startChromaClock();
       }
+      lastAdDetectTime = Date.now();
+      lastAcceleratedSrc = currentSrc;
       
       // Apply acceleration
       if (video.playbackRate !== CONFIG.accelerationSpeed) {
@@ -575,34 +612,44 @@ function handlePrimeAdAcceleration() {
       }
       
       // Auto-click skip button if it appears
-      const skipButton = document.querySelector('.adSkipButton, .skippable, [class*="skip-button"], .atvwebplayersdk-ad-skip-button');
+      const skipButton = qS('.adSkipButton, .skippable, [class*="skip-button"], .atvwebplayersdk-ad-skip-button');
       if (skipButton && (skipButton.offsetParent !== null || skipButton.getClientRects().length > 0)) {
         skipButton.click();
       }
     } else {
-      // Restore normal playback
+      // Restore normal playback with debounce logic
       if (isAdActive) {
-        // --- NEW: Update stats when ad session ends ---
-        if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
-          window.__CHROMA_INTERNAL__.send({
-            source: 'chroma-interceptor',
-            token: window.__CHROMA_INTERNAL__.token,
-            action: 'STATS_UPDATE',
-            payload: { type: 'accelerated' }
-          });
+        const timeSinceAd = Date.now() - lastAdDetectTime;
+        // Wait at least 500ms stable "no ad" state before clearing
+        if (timeSinceAd > 500) {
+          // --- NEW: Update stats when ad session ends ---
+          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
+            window.__CHROMA_INTERNAL__.send({
+              action: 'STATS_UPDATE',
+              payload: { type: 'accelerated' }
+            });
+          }
+          
+          video.playbackRate = 1;
+          video.volume = savedVolume;
+          video.muted = false;
+          
+          // Also reset the targetVideo in case it's different from the active video
+          if (targetVideo && targetVideo !== video) {
+            targetVideo.playbackRate = 1;
+            targetVideo.muted = false;
+          }
+
+          isAdActive = false;
+          document.body.classList.remove('chroma-prime-session');
+          lastAcceleratedSrc = null;
+          currentAdRemainingStart = 0;
+          lastAdTimerText = null;
         }
-        
-        video.playbackRate = 1;
-        video.volume = savedVolume;
-        video.muted = false;
-        isAdActive = false;
-        document.body.classList.remove('chroma-prime-session');
-        lastAcceleratedSrc = null;
-        currentAdRemainingStart = 0;
-        lastAdTimerText = null;
       }
     }
 
+    targetVideo = video;
     updateAdOverlay(video, isAdActive);
   } catch (err) {
     if (DEBUG) console.error('[Chroma] Error in Prime loop:', err);
@@ -613,11 +660,16 @@ function handlePrimeAdAcceleration() {
 let pollingInterval = null;
 
 function startPolling() {
-  if (pollingInterval) clearInterval(pollingInterval);
-  pollingInterval = setInterval(handlePrimeAdAcceleration, CONFIG.checkIntervalMs);
+  if (pollingInterval) cI(pollingInterval);
+  pollingInterval = sI(handlePrimeAdAcceleration, CONFIG.checkIntervalMs);
 }
 
-function resetSession() {
+function resetSession(videoToRestore = null) {
+  if (videoToRestore && isAdActive) {
+    videoToRestore.playbackRate = 1;
+    videoToRestore.volume = savedVolume;
+    videoToRestore.muted = false;
+  }
   isAdActive = false;
   lastAcceleratedSrc = null;
   document.body.classList.remove('chroma-prime-session');
@@ -625,18 +677,29 @@ function resetSession() {
 }
 
 function init() {
-  // 1. Initial check (might be ready if handshake was fast)
-  if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-    Object.assign(CONFIG, window.__CHROMA_INTERNAL__.config);
+  // 0. Whitelist shortcut for MAIN world
+  if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
+    if (DEBUG) console.log('[Chroma] Prime handler disabled by whitelist.');
+    return;
   }
 
-  // 2. Listen for the handshake completion/config update
-  document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+  // 1. Initial check (might be ready if handshake was fast)
+  if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+    const remoteConfig = window.__CHROMA_INTERNAL__.config;
+    for (const key in remoteConfig) {
+      if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
+        CONFIG[key] = remoteConfig[key];
+      }
+    }
+  }
+
+  // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
+  API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
       Object.assign(CONFIG, e.detail);
-      if (DEBUG) console.log('[Chroma] Prime handler re-init config via handshake:', CONFIG);
+      if (DEBUG) console.log('[Chroma] Prime handler activated via handshake:', CONFIG);
       
-      if (CONFIG.enabled && CONFIG.acceleration && !pollingInterval) {
+      if (CONFIG.enabled && !pollingInterval) {
         startPolling();
         startMutationObserver();
       }
@@ -648,21 +711,36 @@ function init() {
   window.addEventListener('hashchange', resetSession);
   document.addEventListener('atv-navigation-complete', resetSession);
 
-  // CRITICAL: Start basic services
-  injectChromaCSS();
-  startPolling();
-  startMutationObserver();
+  // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
+  if (CONFIG.enabled) {
+    injectChromaCSS();
+    startPolling();
+    startMutationObserver();
+  } else {
+    // 4. SAFETY FALLBACK: If handshake fails to arrive but site is NOT whitelisted
+    // and we are NOT in a compromised environment, we wake up after a delay.
+    setTimeout(() => {
+      if (!CONFIG.enabled && !document.documentElement.getAttribute('data-chroma-whitelisted')) {
+        if (DEBUG) console.log('[Chroma] Handshake timeout. Waking up Prime handler with defaults.');
+        CONFIG.enabled = true;
+        CONFIG.acceleration = true;
+        injectChromaCSS();
+        startPolling();
+        startMutationObserver();
+      }
+    }, 1200);
+  }
 }
 
 // Listen for config updates via custom event from handshake logic
-document.addEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
+API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
   if (e.detail) {
     Object.assign(CONFIG, e.detail);
     if (DEBUG) console.log('[Chroma] prm_handler updated config:', CONFIG);
     
     if (!CONFIG.enabled || !CONFIG.acceleration) {
       if (pollingInterval) {
-        clearInterval(pollingInterval);
+        cI(pollingInterval);
         pollingInterval = null;
       }
       if (targetVideo && isAdActive) {
