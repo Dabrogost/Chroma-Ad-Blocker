@@ -33,10 +33,10 @@ graph TD
     classDef secure fill:#ffeaa7,color:#000,stroke:#fab1a0,stroke-dasharray: 5 5
     classDef actor fill:#dfe6e9,color:#2d3436,stroke:#b2bec3,stroke-width:2px
 
-    %% SOURCE: Input from the web
+    %% ── SOURCE: Top Centered ──
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
-    %% PROCESSING: Main World
+    %% ── PROCESSING LAYERS ──
     subgraph MW["Main World (Page Context)"]
         MW_INT["interceptor.js<br/>(Pristine Cache)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
@@ -44,13 +44,11 @@ graph TD
         CS_PV["prm_handler.js<br/>(Accelerator)"]:::main
     end
 
-    %% PROCESSING: Isolated World
     subgraph IW["Isolated World (Extension Context)"]
         CS_PROT["protection.js<br/>(Secure Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
-    %% PROCESSING: Background
     subgraph SW["Extension Core (Background)"]
         VERIFY{{"Token Verification"}}:::secure
         BS["background.js<br/>(Main Router)"]:::sw
@@ -58,38 +56,37 @@ graph TD
         POPUP["popup.js<br/>(Stats UI)"]:::sw
     end
 
-    %% SYSTEM & FILTERING
     subgraph System["Infrastructure & Filtering"]
         DNR["Network Blocking<br/>(DNR)"]:::dnr
         STORAGE[("chrome.storage.local")]:::storage
     end
 
-    %% DESTINATION: The User Experience
+    %% ── DESTINATION: Bottom Centered ──
     USER["The User (Cleaned & Accelerated UI)"]:::actor
 
-    %% ── Flow: Internet to Extension ──
+    %% ── Flow: Internet Input ──
     INTERNET -- "Scripts & Payloads" --> MW_INT
     INTERNET -- "Outgoing Requests" --> DNR
 
-    %% ── Internal Processing: Security ──
+    %% ── Flow: Security Handshake ──
     MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
     CS_PROT -- "Relay + Token" --> VERIFY
     VERIFY -- "Valid" --> BS
     BS -- "Lock Token" --> AUTH
     AUTH -- "Unique ID" --> CS_PROT
 
-    %% ── Internal Processing: Handlers ──
+    %% ── Flow: Internal Bridge ──
     MW_INT --- BRIDGE
     BRIDGE --- CS_YT
     BRIDGE --- CS_PV
 
-    %% ── Internal Processing: Management ──
+    %% ── Flow: Data & Control ──
     BS <--> STORAGE
     POPUP <--> STORAGE
     CS_GEN -.->|"Read Config"| STORAGE
     BS -- "Control" --> DNR
 
-    %% ── Flow: Extension to User ──
+    %% ── Flow: User Output ──
     CS_YT ==>|"Accelerate Ad"| YT_DOM["YouTube Player"]:::dom
     CS_PV ==>|"Accelerate Ad"| PV_DOM["Prime Player"]:::dom
     CS_GEN ==>|"Clean UI"| YT_DOM
@@ -99,21 +96,15 @@ graph TD
     POPUP -- "Statistics" --> USER
 
     %% ── Logic Tracing (Link Styles) ──
-    %% 1. Inbound Flow: Grey
     linkStyle 0,1,13 stroke:#636e72,stroke-width:2px;
-    %% 2. Tunnel Handshake: Orange
     linkStyle 2 stroke:#e67e22,stroke-width:4px;
-    %% 3. Secure Relay Path: Red
     linkStyle 3,4 stroke:#e74c3c,stroke-width:2px;
-    %% 4. Token Delivery: Gold
     linkStyle 5,6 stroke:#f1c40f,stroke-width:2px;
-    %% 5. Internal Bridge: Yellow
     linkStyle 7,8,9 stroke:#fdcb6e,stroke-width:2px;
-    %% 6. Data/Storage: Purple
     linkStyle 10,11,12 stroke:#a29bfe,stroke-width:2px;
-    %% 7. Final User Output: Cyan
     linkStyle 14,15,16,17,18,19 stroke:#00cec9,stroke-width:2px;
 ```
+
 
 
 
