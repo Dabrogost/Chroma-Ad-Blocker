@@ -74,24 +74,24 @@ graph TD
 
     %% --- FLOW CONNECTIONS ---
     
-    %% Internet to Components (Pulling Internet to center)
+    %% Internet to Components
     INTERNET -- "Scripts" --> MW_INT
     INTERNET -- "Requests" --> DNR
 
-    %% Secure Pipeline (Traceable Handshake)
+    %% Secure Pipeline
     MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
     CS_PROT -- "Relay + Token" --> VERIFY
     VERIFY -- "Valid" --> BS
     BS -- "Lock" --> AUTH
     AUTH -- "Token" --> CS_PROT
 
-    %% Management & Storage
-    BS <--> STORAGE
-    POPUP <--> STORAGE
-    CS_GEN -.->|Config| STORAGE
-    BS -- "Rules" --> DNR
+    %% ─── Storage Connections (Staggered for Visibility) ───
+    POPUP ---|"Stats Sync"| STORAGE
+    BS <-->|"Config Sync"| STORAGE
+    CS_GEN -.->|"Read Filter"| STORAGE
 
-    %% Output Generation (Pulling User to center)
+    %% Control & Action
+    BS -- "Rules" --> DNR
     CS_YT ==>|"Accelerate"| YT_DOM
     CS_PV ==>|"Accelerate"| PV_DOM
     CS_GEN ==>|"Visual Filter"| YT_DOM
@@ -101,17 +101,25 @@ graph TD
     POPUP -- "Final Statistics" --> USER
 
     %% --- LOGIC TRACING (LINK STYLES) ---
-    %% Inbound: Grey
-    linkStyle 0,1,12 stroke:#636e72,stroke-width:2px;
-    %% Handshake: Orange/Gold/Red
+    linkStyle 0,1 stroke:#636e72,stroke-width:2px;
     linkStyle 2 stroke:#e67e22,stroke-width:4px;
     linkStyle 3,4 stroke:#e74c3c,stroke-width:2px;
     linkStyle 5,6 stroke:#f1c40f,stroke-width:2px;
-    %% Data: Purple
+    %% Storage Path (Index 9,10,11)
     linkStyle 9,10,11 stroke:#a29bfe,stroke-width:2px;
-    %% User experience: Cyan
+    %% Control Path (Index 12)
+    linkStyle 12 stroke:#6c5ce7,stroke-width:2px;
+    %% User Output (Index 13,14,15,16,17,18)
     linkStyle 13,14,15,16,17,18 stroke:#00cec9,stroke-width:3px;
+
+    %% --- HIDE SUBGRAPH BOXES ---
+    style MW fill:none,stroke:none
+    style IW fill:none,stroke:none
+    style SW fill:none,stroke:none
+    style System fill:none,stroke:none
 ```
+```
+
 
 
 
