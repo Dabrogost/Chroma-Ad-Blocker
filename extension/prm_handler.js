@@ -571,11 +571,14 @@ function findActiveVideo() {
 
 function handlePrimeAdAcceleration() {
   try {
-    mutationPending = false;
-    if (!CONFIG.enabled || !CONFIG.acceleration) return;
-
+    // NOTE: rawAdShowing and video must be declared here, before the CONFIG guard.
+    // Moving them below the guard causes the overlay to flash. The exact cause is a
+    // timing interaction between isAdShowing()'s visibility toggle and the
+    // MutationObserver — do not reorder without testing ad cycles on Prime Video.
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
+    mutationPending = false;
+    if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
     // Cooldown check: Prevents rapid re-triggering during the playback transition.
     // However, if we definitively detect an ad, we reset the cooldown.
