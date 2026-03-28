@@ -33,77 +33,86 @@ graph TD
     classDef secure fill:#ffeaa7,color:#000,stroke:#fab1a0,stroke-dasharray: 5 5
     classDef actor fill:#dfe6e9,color:#2d3436,stroke:#b2bec3,stroke-width:2px
 
-    %% ── SOURCE: Top Centered ──
+    %% --- STACK 0: INPUT (CENTERED TOP) ---
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
-    %% ── PROCESSING LAYERS ──
-    subgraph MW["Main World (Page Context)"]
+    %% --- STACK 1: PAGE CONTEXT ---
+    subgraph MW["Main World (Page Execution)"]
         MW_INT["interceptor.js<br/>(Pristine Cache)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
-        CS_YT["yt_handler.js<br/>(Accelerator)"]:::main
-        CS_PV["prm_handler.js<br/>(Accelerator)"]:::main
+        CS_YT["yt_handler.js<br/>(YouTube)"]:::main
+        CS_PV["prm_handler.js<br/>(Prime)"]:::main
+        MW_INT --- BRIDGE
+        BRIDGE --- CS_YT
+        BRIDGE --- CS_PV
     end
 
-    subgraph IW["Isolated World (Extension Context)"]
-        CS_PROT["protection.js<br/>(Secure Relay)"]:::isolated
+    %% --- STACK 2: EXTENSION RELAY ---
+    subgraph IW["Isolated World (Secure Relay)"]
+        CS_PROT["protection.js<br/>(Handshake)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
-    subgraph SW["Extension Core (Background)"]
+    %% --- STACK 3: EXTENSION CORE ---
+    subgraph SW["Extension Core (Service Worker)"]
         VERIFY{{"Token Verification"}}:::secure
         BS["background.js<br/>(Main Router)"]:::sw
         AUTH["Session Token Store"]:::secure
-        POPUP["popup.js<br/>(Stats UI)"]:::sw
+        POPUP["popup.js<br/>(UI/Stats)"]:::sw
     end
 
-    subgraph System["Infrastructure & Filtering"]
-        DNR["Network Blocking<br/>(DNR)"]:::dnr
+    %% --- STACK 4: INFRASTRUCTURE ---
+    subgraph System["Resource & Network Layer"]
+        DNR["Network Blocking (DNR)"]:::dnr
         STORAGE[("chrome.storage.local")]:::storage
+        YT_DOM["YouTube Player"]:::dom
+        PV_DOM["Prime Player"]:::dom
     end
 
-    %% ── DESTINATION: Bottom Centered ──
+    %% --- STACK 5: OUTPUT (CENTERED BOTTOM) ---
     USER["The User (Cleaned & Accelerated UI)"]:::actor
 
-    %% ── Flow: Internet Input ──
-    INTERNET -- "Scripts & Payloads" --> MW_INT
-    INTERNET -- "Outgoing Requests" --> DNR
+    %% --- FLOW CONNECTIONS ---
+    
+    %% Internet to Components (Pulling Internet to center)
+    INTERNET -- "Scripts" --> MW_INT
+    INTERNET -- "Requests" --> DNR
 
-    %% ── Flow: Security Handshake ──
+    %% Secure Pipeline (Traceable Handshake)
     MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
     CS_PROT -- "Relay + Token" --> VERIFY
     VERIFY -- "Valid" --> BS
-    BS -- "Lock Token" --> AUTH
-    AUTH -- "Unique ID" --> CS_PROT
+    BS -- "Lock" --> AUTH
+    AUTH -- "Token" --> CS_PROT
 
-    %% ── Flow: Internal Bridge ──
-    MW_INT --- BRIDGE
-    BRIDGE --- CS_YT
-    BRIDGE --- CS_PV
-
-    %% ── Flow: Data & Control ──
+    %% Management & Storage
     BS <--> STORAGE
     POPUP <--> STORAGE
-    CS_GEN -.->|"Read Config"| STORAGE
-    BS -- "Control" --> DNR
+    CS_GEN -.->|Config| STORAGE
+    BS -- "Rules" --> DNR
 
-    %% ── Flow: User Output ──
-    CS_YT ==>|"Accelerate Ad"| YT_DOM["YouTube Player"]:::dom
-    CS_PV ==>|"Accelerate Ad"| PV_DOM["Prime Player"]:::dom
-    CS_GEN ==>|"Clean UI"| YT_DOM
+    %% Output Generation (Pulling User to center)
+    CS_YT ==>|"Accelerate"| YT_DOM
+    CS_PV ==>|"Accelerate"| PV_DOM
+    CS_GEN ==>|"Visual Filter"| YT_DOM
     
     YT_DOM -- "Filtered Output" --> USER
     PV_DOM -- "Filtered Output" --> USER
-    POPUP -- "Statistics" --> USER
+    POPUP -- "Final Statistics" --> USER
 
-    %% ── Logic Tracing (Link Styles) ──
-    linkStyle 0,1,13 stroke:#636e72,stroke-width:2px;
+    %% --- LOGIC TRACING (LINK STYLES) ---
+    %% Inbound: Grey
+    linkStyle 0,1,12 stroke:#636e72,stroke-width:2px;
+    %% Handshake: Orange/Gold/Red
     linkStyle 2 stroke:#e67e22,stroke-width:4px;
     linkStyle 3,4 stroke:#e74c3c,stroke-width:2px;
     linkStyle 5,6 stroke:#f1c40f,stroke-width:2px;
-    linkStyle 7,8,9 stroke:#fdcb6e,stroke-width:2px;
-    linkStyle 10,11,12 stroke:#a29bfe,stroke-width:2px;
-    linkStyle 14,15,16,17,18,19 stroke:#00cec9,stroke-width:2px;
+    %% Data: Purple
+    linkStyle 9,10,11 stroke:#a29bfe,stroke-width:2px;
+    %% User experience: Cyan
+    linkStyle 13,14,15,16,17,18 stroke:#00cec9,stroke-width:3px;
 ```
+
 
 
 
