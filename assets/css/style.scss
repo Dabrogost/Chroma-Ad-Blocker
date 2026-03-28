@@ -284,8 +284,8 @@ ul  { list-style: none; }
 }
 
 @keyframes scan-btn {
-  from { background-position: 0% center; }
-  to   { background-position: -200% center; }
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 100% 50%; }
 }
 
 .pill-nav__title {
@@ -679,16 +679,18 @@ ul  { list-style: none; }
   font-weight: 600;
   color: #fff;
   background: var(--grad-chroma);
-  background-size: 200% auto;
-  animation: scan-btn 5s linear infinite;
+  background-size: 240% auto;
+  background-position: 0% 50%;
+  animation: scan-btn 10s linear infinite;
   border: none;
   cursor: pointer;
   text-decoration: none;
   transition:
-    transform 0.2s ease,
-    box-shadow 0.25s ease,
-    filter 0.2s ease;
-  box-shadow: 0 0 24px rgba(153, 0, 255, 0.4);
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s ease,
+    background-position 0.6s ease,
+    filter 0.3s ease;
+  box-shadow: 0 4px 15px rgba(255, 0, 85, 0.3);
 }
 
 .btn-primary svg {
@@ -698,9 +700,12 @@ ul  { list-style: none; }
 }
 
 .btn-primary:hover {
-  filter: brightness(1.1);
-  transform: translateY(-3px);
-  box-shadow: 0 4px 32px rgba(153, 0, 255, 0.55);
+  background-position: 100% 50%;
+  filter: brightness(1.15);
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 
+    0 8px 32px rgba(255, 0, 85, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
 }
 
 .btn-ghost {
