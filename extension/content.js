@@ -105,7 +105,7 @@
     styles.forEach(styleDef => {
       let sheet = chromaSheets.get(styleDef.id);
       if (!sheet) {
-        // Constructable Stylesheets — Safer against HTML breakout (VULN-03)
+        // Constructable Stylesheets: Prevents HTML injection by keeping styles isolated from the DOM string parser.
         sheet = new CSSStyleSheet();
         try {
           sheet.replaceSync(styleDef.content);
@@ -183,6 +183,7 @@
   function startObserver() {
     if (observer) observer.disconnect();
 
+    // State trackers for batched DOM processing via requestAnimationFrame to maintain UI performance.
     let pendingNodes = new Set();
     let pendingFrame = false;
 
@@ -226,7 +227,7 @@
 
       const isElement = node.nodeType === Node.ELEMENT_NODE;
 
-      // Handle ad-containers (Harden against VULN-07: UI Destruction)
+      // Heuristic-based container removal: Targeting ad-specific IDs while protecting core UI components.
       const processAdContainer = (el) => {
         if (!el || !el.id) return;
         
@@ -329,6 +330,7 @@
 
   // ─── NAVIGATION HANDLING (SPA) ────────────────────────────────────────────────
   function onYTNavigate() {
+    // Multi-stage cleanup: Accounts for both early DOM mounting and late-loading ad scripts during SPA navigation.
     [500, 1500].forEach(delay => {
       setTimeout(() => {
         suppressAdblockWarnings();

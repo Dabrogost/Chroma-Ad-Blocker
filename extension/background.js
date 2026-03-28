@@ -220,7 +220,7 @@ async function updateSessionData(key, value) {
   await chrome.storage.session.set({ [key]: value });
 }
 
-// RESOLVER SYNC: Track tabs waiting for a WINDOW_OPEN_NOTIFY from their opener
+// Active listeners for tabs waiting on pop-under metadata from their opener during the creation handshake.
 const popunderResolvers = new Map(); // openerTabId -> [ (request) => void ]
 
 // PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
@@ -246,9 +246,8 @@ setInterval(async () => {
 
 // ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
 /**
- * NOTE: This constant must be kept in sync with messaging.js.
- * Since background.js is a module in MV3, it doesn't share the same
- * global scope as content scripts.
+ * Maintain parity with messaging.js. Content scripts and background workers 
+ * operate in isolated scopes, requiring manual synchronization of constants.
  */
 const MSG = {
   CONFIG_GET: 'CONFIG_GET',
@@ -690,8 +689,8 @@ chrome.tabs.onCreated.addListener(async (tab) => {
 
 // ─── NETWORK BLOCK TRACKING (DNR) ───────────────────────────────────────────
 /**
- * FAST-PATH: onRuleMatchedDebug ONLY works in Developer Mode (unpacked).
- * It provides real-time updates which is great for the developer experience.
+ * Developer Mode Check: onRuleMatchedDebug only provides real-time updates 
+ * when the extension is loaded as an unpacked directory.
  */
 if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
@@ -703,8 +702,8 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
 }
 
 /**
- * PRODUCTION-PATH: In packed extensions, we must harvest stats manually.
- * We use getMatchedRules with minTimeStamp for efficiency.
+ * Production Path: Accumulate matches via getMatchedRules since 
+ * onRuleMatchedDebug is limited to developer installs.
  */
 async function harvestNetworkStats() {
   try {

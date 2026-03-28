@@ -17,7 +17,7 @@ Object.assign(CONFIG, {
 });
 
 // ─── PRISTINE API BRIDGE ──────────────────────────────────────────────────────
-// SECURE REFERENCE: Use the pristine APIs provided by interceptor.js (VULN-03)
+// Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
 const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
             window.__CHROMA_INTERNAL__.api : 
             {
@@ -96,7 +96,7 @@ function initAdOverlay(video) {
   adOverlayHost = cE('div');
   adOverlayHost.id = 'prime-chroma-overlay';
   
-  // Create a CLOSED shadow root for maximum isolation (VULN-06)
+  // Shadow DOM isolation: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
   adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
   
   // Inject Styles into ShadowRoot
@@ -298,8 +298,8 @@ function updateAdOverlay(video, isActive) {
             }
 
             if (currentAdRemainingStart > 0) {
-              // Estimate: (Total - Remaining) / Total
-              // We caps the progress at 99% until it finishes
+              // Heuristic Estimation: Calculate completion percentage based on the starting remaining time.
+              // Caps at 99% until the ad actually terminates to avoid visual jumping.
               const estimated = ((currentAdRemainingStart - remaining) / currentAdRemainingStart) * 100;
               percent = Math.min(99, Math.max(5, estimated));
             } else {

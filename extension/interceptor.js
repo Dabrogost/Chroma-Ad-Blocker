@@ -8,8 +8,9 @@
   'use strict';
 
   // =========================================================================
-  // 1. THE PRISTINE CACHE (Mitigates VULN-01 Race Conditions)
-  // Capture pristine native APIs at document_start before host-page script execution.
+  // 1. THE PRISTINE CACHE (Mitigates Race Conditions)
+  // Best-effort capture of native APIs. Effectiveness depends on injection 
+  // timing (document_start) relative to host-page scripts.
   // =========================================================================
   const pristineWindowOpen = window.open;
   const pristineFetch = window.fetch;
@@ -31,15 +32,15 @@
   const toString = Object.prototype.toString;
   const slice = Array.prototype.slice;
   
-  // VULN-01 Hardening: Cache pristine prototype methods for isNative check
+  // Integrity Verification: Cache prototype methods to prevent 'isNative' spoofing via host-page prototype pollution
   const pristineFnToString = Function.prototype.toString;
   const pristineCall = Function.prototype.call;
   const pristineIncludes = String.prototype.includes;
 
   // =========================================================================
-  // 2. THE DEAD MAN'S SWITCH (Detects Hijacked Environment)
-  // If native APIs are compromised BEFORE we start, we sever the secure pipe
-  // to protect the background worker (Confused Deputy), but continue blocking.
+  // 3. THE DEAD MAN'S SWITCH (Detects Hijacked Environment)
+  // Emergency disconnect: If core primitives are hijacked, the secure relay is
+  // disabled to prevent spoofing, which may degrade blocking capabilities.
   // =========================================================================
   let isEnvironmentCompromised = false;
   try {
@@ -118,7 +119,7 @@
       enabled: selectors.enabled !== false
     };
 
-    // BRIDGE: Exposes secure messaging pipe and config ONLY to trusted domains (YouTube, Amazon).
+    // BRIDGE: Provisioning of secure messaging and configuration for authorized streaming domains (YouTube, Amazon/Prime Video).
     const TRUSTED_DOMAINS = [
       'youtube.com',
       'amazon.com',
@@ -158,7 +159,7 @@
           });
         },
         config: Object.freeze({ ...selectors }),
-        // VULN-03 Hardening: Expose pristine APIs to handlers
+        // API Passthrough: Provide handlers with pre-cached, unpolluted native methods for DOM manipulation.
         api: Object.freeze({
           querySelector: pristineQuerySelector,
           getElementById: pristineGetElementById,
@@ -178,7 +179,7 @@
         })
       });
 
-      // SECURITY: Permanently lock the bridge to prevent host-page hijacking (VULN: Bridge Hijack)
+      // Immutable Bridge: Using Object.defineProperty to prevent host-page scripts from overwriting or intercepting the internal API.
       try {
         Object.defineProperty(window, '__CHROMA_INTERNAL__', {
           value: Object.freeze(internalBridge),
@@ -329,7 +330,7 @@
       window.Notification = ShadowNotification;
     }
 
-    // ServiceWorker shadowing
+    // Deep Notification Blocking: Overriding ServiceWorkerRegistration prototype to catch background push notifications.
     if (typeof ServiceWorkerRegistration !== 'undefined' && ServiceWorkerRegistration.prototype) {
       const originalShowNotification = ServiceWorkerRegistration.prototype.showNotification;
       ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
@@ -388,9 +389,8 @@
 
 
   /**
-   * Two-Way Handshake:
-   * 1. Set up a capture-phase listener for the token delivery.
-   * 2. Dispatch a 'ready' event to the ISOLATED world repeatedly until token is received.
+   * Secure Synchronization: Capture-phase handshake to establish the MessagePort.
+   * Repeats 'ready' signal to handle variable script injection order between worlds.
    */
   const handleTokenDelivery = (e) => {
     // IMMEDIATELY stop the event from reaching any host page listeners
@@ -458,6 +458,7 @@
       return;
     }
     
+    // High-frequency synchronization: Minimizes handshake latency during page initialization to ensure interceptors are active before first-party scripts.
     pingInterval = pristineSetInterval(() => {
       pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__'));
     }, 5);

@@ -16,8 +16,7 @@
   // Whitelist of allowed config keys for secure updates (VULN-07 Hardening)
   const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
 
-  // ─── PRISTINE API BRIDGE ──────────────────────────────────────────────────────
-  // SECURE REFERENCE: Use the pristine APIs provided by interceptor.js (VULN-03)
+  // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
   const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
               window.__CHROMA_INTERNAL__.api : 
               {
@@ -54,7 +53,7 @@
     // Randomized stable ID to avoid clobbering but remain targetable by extension logic if needed
     adOverlayHost.id = 'yt-chroma-host-' + Math.random().toString(36).substring(2, 9);
     
-    // Create a CLOSED shadow root for maximum isolation (VULN-06)
+    // Shadow DOM isolation: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
     adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
     
     // Inject Styles into ShadowRoot
@@ -169,7 +168,7 @@
       if (adOverlayHost && adOverlayHost.classList.contains('active')) {
         adOverlayHost.classList.remove('active');
         
-        // --- NEW: Update stats when overlay turns OFF ---
+        // Telemetry relay: Increment acceleration statistics in the background worker upon successful ad session completion.
         if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.send) {
           window.__CHROMA_INTERNAL__.send({ 
             action: 'STATS_UPDATE', 
@@ -228,9 +227,7 @@
       }
     }
 
-    const isOnFinalAd = window.cachedCurrentAd >= window.cachedTotalAds;
-    const isAdMediaFinished = video && video.duration > 0 && (video.duration - video.currentTime < 0.5);
-    
+    // Heuristic completion check: Terminal state reached if the final ad in a sequence finishes or a manual skip is detected.
     const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || window.chromaAdSkipped;
     
     const spinner = adOverlayRoot.querySelector('.chroma-spinner, .chroma-checkmark');
@@ -336,6 +333,7 @@
       if (!window.chromaAdSessionActive) {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Ad Session Detected');
         window.chromaAdSkipped = false; 
+        // High-performance synchronization: Transitions from polling to requestAnimationFrame when an ad is active for frame-perfect acceleration.
         startFastAdWatcher(); 
         startChromaClock(); 
       }
@@ -344,6 +342,7 @@
     }
 
     if (!rawAdShowing) {
+      // Session release debounce: Prevents flickering between multiple ads. 500ms for rapid transitions, 5000ms as a watchdog for detection failures.
       const timeSinceAd = Date.now() - window.lastAdDetectTime;
       if (timeSinceAd > 500) {
         const isMainVideoReady = video && video.readyState >= 3 && !video.paused && video.currentTime > 0;
@@ -435,7 +434,7 @@
   // We now handle config updates via a custom event from interceptor.js or direct property update
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
-      // SECURE ASSIGNMENT: Only accept known configuration keys (VULN-07)
+      // Configuration Lockdown: Validating update keys against a strict allowlist to prevent arbitrary property injection.
       for (const key of VALID_CONFIG_KEYS) {
         if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
           CONFIG[key] = e.detail[key];
@@ -657,7 +656,7 @@ function init() {
 
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
     if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-      // SECURE ASSIGNMENT: Only accept known configuration keys from the secure pipe (VULN-07)
+      // Initial state validation: Enforcing allowlist on configuration received during the secure handshake.
       const remoteConfig = window.__CHROMA_INTERNAL__.config;
       for (const key of VALID_CONFIG_KEYS) {
         if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
@@ -693,8 +692,7 @@ function init() {
       startChromaClock();
       initSkipButtonListener();
     } else {
-      // 4. SAFETY FALLBACK: If handshake fails to arrive but site is NOT whitelisted
-      // and we are NOT in a compromised environment, we wake up after a delay.
+      // Liveness watchdog: Fallback initialization for scenarios where the secure handshake is delayed or blocked by browser-level race conditions.
       setTimeout(() => {
         if (!CONFIG.enabled && !document.documentElement.getAttribute('data-chroma-whitelisted')) {
           if (DEBUG) console.log('[Chroma] Handshake timeout. Waking up YouTube handler with defaults.');

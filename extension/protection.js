@@ -10,7 +10,7 @@
   const DEBUG = false;
   let isolatedPort; // This will hold our secure pipe
 
-  // Generate a unique session token via the background script (VULN-02 Fix)
+  // Token-Based Authorization: Request a unique session token from the background script.
   let secretToken = null;
   const getTokenFromBackground = async () => {
     const response = await chrome.runtime.sendMessage({ type: 'GET_TOKEN' });
@@ -162,7 +162,7 @@
    * Listen for messages from the MAIN world interceptor
    */
   function initInterceptorListener() {
-    // SECURITY: Quarantine window listener to handle only non-sensitive interactions (Mitigates VULN-02).
+    // Message Quarantine: Handling only non-sensitive interactions via window.postMessage to prevent handshake spoofing.
     window.addEventListener('message', (event) => {
       if (event.source !== window || !event.data) return;
 
