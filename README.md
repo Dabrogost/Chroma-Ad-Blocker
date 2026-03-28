@@ -42,9 +42,9 @@ graph TD
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
         CS_YT["yt_handler.js<br/>(YouTube)"]:::main
         CS_PV["prm_handler.js<br/>(Prime)"]:::main
-        MW_INT --- BRIDGE
-        BRIDGE --- CS_YT
-        BRIDGE --- CS_PV
+        MW_INT --> BRIDGE
+        BRIDGE --> CS_YT
+        BRIDGE --> CS_PV
     end
 
     %% --- STACK 2: EXTENSION RELAY ---
@@ -63,8 +63,8 @@ graph TD
 
     %% --- STACK 4: INFRASTRUCTURE ---
     subgraph System["Resource & Network Layer"]
-        DNR["Network Blocking (DNR)"]:::dnr
         STORAGE[("chrome.storage.local")]:::storage
+        DNR["Network Blocking (DNR)"]:::dnr
         YT_DOM["YouTube Player"]:::dom
         PV_DOM["Prime Player"]:::dom
     end
@@ -74,55 +74,53 @@ graph TD
 
     %% --- FLOW CONNECTIONS ---
     
-    %% Internet to Components (Grey)
+    %% Internet to Components (Grey) 0,1
     INTERNET -- "Scripts" --> MW_INT
     INTERNET -- "Requests" --> DNR
 
-    %% Secure Pipeline
+    %% Secure Pipeline 2,3,4,5,6
     MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
     CS_PROT -- "Relay + Token" --> VERIFY
     VERIFY -- "Valid" --> BS
     BS -- "Lock" --> AUTH
     AUTH -- "Token" --> CS_PROT
 
-    %% ─── Storage Connections (Staggered for Visibility) ───
+    %% ─── Storage Connections (Staggered) 7,8,9
     POPUP ---|"Stats Sync"| STORAGE
     BS <-->|"Config Sync"| STORAGE
     CS_GEN -.->|"Read Filter"| STORAGE
 
-    %% Control & Action
+    %% Control & Action 10,11
     BS -- "Rules" --> DNR
     DNR ---|"Network Shield"| USER
+    
+    %% Handler Impact 12,13,14
     CS_YT ==>|"Accelerate"| YT_DOM
     CS_PV ==>|"Accelerate"| PV_DOM
     CS_GEN ==>|"Visual Filter"| YT_DOM
     
+    %% User experience 15,16,17
     YT_DOM -- "Filtered Output" --> USER
     PV_DOM -- "Filtered Output" --> USER
     POPUP -- "Final Statistics" --> USER
 
     %% --- LOGIC TRACING (LINK STYLES) ---
-    %% Internet: Grey (#636e72)
+    %% Internet: Grey
     linkStyle 0,1 stroke:#636e72,stroke-width:2px;
-    %% Main World: Red (#d63031)
-    linkStyle 2,7,15,16 stroke:#d63031,stroke-width:2px;
-    %% Isolated World: Green (#00b894)
-    linkStyle 3,12,17 stroke:#00b894,stroke-width:2px;
-    %% Secure Paths: Purple (#9b59b6)
-    linkStyle 4,6,8,9 stroke:#9b59b6,stroke-width:2px;
-    %% Core/SW Paths: Lavender (#a29bfe)
-    linkStyle 5,10,11,13,20 stroke:#a29bfe,stroke-width:2px;
-    %% Infrastructure Paths: Blue (#0984e3)
-    linkStyle 14 stroke:#0984e3,stroke-width:2px;
-    %% DOM Outputs: Orange (#e67e22)
-    linkStyle 18,19 stroke:#e67e22,stroke-width:2px;
-
-    %% --- HIDE SUBGRAPH BOXES ---
-    style MW fill:none,stroke:none
-    style IW fill:none,stroke:none
-    style SW fill:none,stroke:none
-    style System fill:none,stroke:none
+    %% Main World: Red
+    linkStyle 2,12,13 stroke:#d63031,stroke-width:2px;
+    %% Isolated World: Green
+    linkStyle 3,9,14 stroke:#00b894,stroke-width:2px;
+    %% Secure Paths: Purple
+    linkStyle 4,6 stroke:#9b59b6,stroke-width:2px;
+    %% Core/SW Paths: Lavender
+    linkStyle 5,7,8,10,17 stroke:#a29bfe,stroke-width:2px;
+    %% Infrastructure Paths: Blue
+    linkStyle 11 stroke:#0984e3,stroke-width:2px;
+    %% DOM Outputs: Orange
+    linkStyle 15,16 stroke:#e67e22,stroke-width:2px;
 ```
+
 
 
 
