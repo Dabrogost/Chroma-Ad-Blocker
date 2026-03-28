@@ -33,11 +33,10 @@ graph TD
     classDef secure fill:#ffeaa7,color:#000,stroke:#fab1a0,stroke-dasharray: 5 5
     classDef actor fill:#dfe6e9,color:#2d3436,stroke:#b2bec3,stroke-width:2px
 
-    %% Actors
-    USER["User (Browsing/Interaction)"]:::actor
-    INTERNET["The Internet (Ads & Trackers)"]:::actor
+    %% SOURCE: Input from the web
+    INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
-    %% Row 1: The Page Execution Context
+    %% PROCESSING: Main World
     subgraph MW["Main World (Page Context)"]
         MW_INT["interceptor.js<br/>(Pristine Cache)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
@@ -45,13 +44,13 @@ graph TD
         CS_PV["prm_handler.js<br/>(Accelerator)"]:::main
     end
 
-    %% Row 2: The Relay and Cosmetic Logic
+    %% PROCESSING: Isolated World
     subgraph IW["Isolated World (Extension Context)"]
         CS_PROT["protection.js<br/>(Secure Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
-    %% Row 3: Backend & Interface
+    %% PROCESSING: Background
     subgraph SW["Extension Core (Background)"]
         VERIFY{{"Token Verification"}}:::secure
         BS["background.js<br/>(Main Router)"]:::sw
@@ -59,57 +58,63 @@ graph TD
         POPUP["popup.js<br/>(Stats UI)"]:::sw
     end
 
-    %% Row 4: Infrastructure
-    subgraph System["Infrastructure"]
-        STORAGE[("chrome.storage.local")]:::storage
+    %% SYSTEM & FILTERING
+    subgraph System["Infrastructure & Filtering"]
         DNR["Network Blocking<br/>(DNR)"]:::dnr
+        STORAGE[("chrome.storage.local")]:::storage
     end
 
-    %% Interaction Paths (Indexes: 0, 1)
-    USER -- "Gestures" --> MW
-    USER -- "Manage" --> POPUP
-    
-    %% Threat Paths (Indexes: 2, 3)
-    INTERNET -- "Payloads" --> MW_INT
-    INTERNET -- "Traffic" --> DNR
+    %% DESTINATION: The User Experience
+    USER["The User (Cleaned & Accelerated UI)"]:::actor
 
-    %% Secure Tunnel Path (Indexes: 4, 5, 6, 7, 8)
+    %% ── Flow: Internet to Extension ──
+    INTERNET -- "Scripts & Payloads" --> MW_INT
+    INTERNET -- "Outgoing Requests" --> DNR
+
+    %% ── Internal Processing: Security ──
     MW_INT <==>|"Secure MessagePort Tunnel"| CS_PROT
     CS_PROT -- "Relay + Token" --> VERIFY
     VERIFY -- "Valid" --> BS
     BS -- "Lock Token" --> AUTH
     AUTH -- "Unique ID" --> CS_PROT
 
-    %% Internal Bridge Path (Indexes: 9, 10, 11)
+    %% ── Internal Processing: Handlers ──
     MW_INT --- BRIDGE
     BRIDGE --- CS_YT
     BRIDGE --- CS_PV
 
-    %% System Connections (Indexes: 12, 13, 14, 15)
+    %% ── Internal Processing: Management ──
     BS <--> STORAGE
     POPUP <--> STORAGE
     CS_GEN -.->|"Read Config"| STORAGE
     BS -- "Control" --> DNR
 
-    %% DOM Actions (Indexes: 16, 17, 18)
+    %% ── Flow: Extension to User ──
     CS_YT ==>|"Accelerate Ad"| YT_DOM["YouTube Player"]:::dom
     CS_PV ==>|"Accelerate Ad"| PV_DOM["Prime Player"]:::dom
-    CS_GEN ==>|"Hide Slot"| YT_DOM
+    CS_GEN ==>|"Clean UI"| YT_DOM
+    
+    YT_DOM -- "Filtered Output" --> USER
+    PV_DOM -- "Filtered Output" --> USER
+    POPUP -- "Statistics" --> USER
 
-    %% --- Logic Tracing (Link Styles) ---
-    %% User Interaction: Cyan
-    linkStyle 0,1 stroke:#00cec9,stroke-width:2px;
-    %% Threat/Traffic: Grey
-    linkStyle 2,3 stroke:#636e72,stroke-width:2px;
-    %% Security Pipeline: Orange
-    linkStyle 4,5,6,7,8 stroke:#e17055,stroke-width:3px;
-    %% Internal Bridge: Yellow
-    linkStyle 9,10,11 stroke:#fdcb6e,stroke-width:2px;
-    %% Storage/Config: Purple
-    linkStyle 12,13,14 stroke:#a29bfe,stroke-width:2px;
-    %% Control & Action: Green
-    linkStyle 15,16,17,18 stroke:#00b894,stroke-width:2px;
+    %% ── Logic Tracing (Link Styles) ──
+    %% 1. Inbound Flow: Grey
+    linkStyle 0,1,13 stroke:#636e72,stroke-width:2px;
+    %% 2. Tunnel Handshake: Orange
+    linkStyle 2 stroke:#e67e22,stroke-width:4px;
+    %% 3. Secure Relay Path: Red
+    linkStyle 3,4 stroke:#e74c3c,stroke-width:2px;
+    %% 4. Token Delivery: Gold
+    linkStyle 5,6 stroke:#f1c40f,stroke-width:2px;
+    %% 5. Internal Bridge: Yellow
+    linkStyle 7,8,9 stroke:#fdcb6e,stroke-width:2px;
+    %% 6. Data/Storage: Purple
+    linkStyle 10,11,12 stroke:#a29bfe,stroke-width:2px;
+    %% 7. Final User Output: Cyan
+    linkStyle 14,15,16,17,18,19 stroke:#00cec9,stroke-width:2px;
 ```
+
 
 
 
