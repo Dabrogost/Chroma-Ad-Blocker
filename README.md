@@ -24,13 +24,13 @@ Chroma uses a decentralized architecture synchronized through `chrome.storage.lo
 
 ```mermaid
 graph TD
-    classDef sw fill:#34495e,color:#fff,stroke:#2c3e50,stroke-width:2px
+    classDef sw fill:#a29bfe,color:#000,stroke:#6c5ce7,stroke-width:2px
     classDef storage fill:#0984e3,color:#fff,stroke:#0d47a1,stroke-width:2px
     classDef isolated fill:#00b894,color:#fff,stroke:#00695c,stroke-width:2px
     classDef main fill:#d63031,color:#fff,stroke:#b71c1c,stroke-width:2px
     classDef dnr fill:#2980b9,color:#fff,stroke:#1565c0,stroke-width:2px
     classDef dom fill:#e67e22,color:#fff,stroke:#e65100,stroke-width:2px
-    classDef secure fill:#f1c40f,color:#000,stroke:#fbc02d,stroke-width:2px
+    classDef secure fill:#9b59b6,color:#fff,stroke:#8e44ad,stroke-width:2px
     classDef actor fill:#636e72,color:#fff,stroke:#2d3436,stroke-width:2px
 
     %% --- STACK 0: INPUT (CENTERED TOP) ---
@@ -92,6 +92,7 @@ graph TD
 
     %% Control & Action
     BS -- "Rules" --> DNR
+    DNR ---|"Network Shield"| USER
     CS_YT ==>|"Accelerate"| YT_DOM
     CS_PV ==>|"Accelerate"| PV_DOM
     CS_GEN ==>|"Visual Filter"| YT_DOM
@@ -104,15 +105,17 @@ graph TD
     %% Internet: Grey (#636e72)
     linkStyle 0,1 stroke:#636e72,stroke-width:2px;
     %% Main World: Red (#d63031)
-    linkStyle 2,7,14,15 stroke:#d63031,stroke-width:2px;
+    linkStyle 2,7,15,16 stroke:#d63031,stroke-width:2px;
     %% Isolated World: Green (#00b894)
-    linkStyle 3,12,16 stroke:#00b894,stroke-width:2px;
-    %% Secure Paths: Gold (#f1c40f)
-    linkStyle 4,6,8,9 stroke:#f1c40f,stroke-width:2px;
-    %% Core/SW Paths: Slate (#34495e)
-    linkStyle 5,10,11,13,19 stroke:#34495e,stroke-width:2px;
+    linkStyle 3,12,17 stroke:#00b894,stroke-width:2px;
+    %% Secure Paths: Purple (#9b59b6)
+    linkStyle 4,6,8,9 stroke:#9b59b6,stroke-width:2px;
+    %% Core/SW Paths: Lavender (#a29bfe)
+    linkStyle 5,10,11,13,20 stroke:#a29bfe,stroke-width:2px;
+    %% Infrastructure Paths: Blue (#0984e3)
+    linkStyle 14 stroke:#0984e3,stroke-width:2px;
     %% DOM Outputs: Orange (#e67e22)
-    linkStyle 17,18 stroke:#e67e22,stroke-width:2px;
+    linkStyle 18,19 stroke:#e67e22,stroke-width:2px;
 
     %% --- HIDE SUBGRAPH BOXES ---
     style MW fill:none,stroke:none
@@ -120,6 +123,9 @@ graph TD
     style SW fill:none,stroke:none
     style System fill:none,stroke:none
 ```
+
+
+
 
 ```
 
