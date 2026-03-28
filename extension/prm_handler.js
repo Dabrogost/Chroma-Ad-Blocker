@@ -32,9 +32,7 @@ const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ?
               dispatchEvent: document.dispatchEvent.bind(document),
               addDocEventListener: document.addEventListener.bind(document),
               removeDocEventListener: document.removeEventListener.bind(document),
-              MutationObserver: window.MutationObserver,
-              calculateChromaColor: (typeof window.calculateChromaColor === 'function') ? 
-                                   window.calculateChromaColor.bind(window) : null
+              MutationObserver: window.MutationObserver
             };
 
 const qS = (s) => API.querySelector(s);
@@ -86,8 +84,7 @@ let mutationPending = false;
 
 
 
-const CHROMA_CYCLE_MS = 8000;
-let chromaClockRunning = false;
+
 
 /**
  * Initializes the visual overlay for Prime Video.
@@ -152,7 +149,7 @@ function initAdOverlay(video) {
     .chroma-spinner {
       width: 50px !important; height: 50px !important;
       border: 4px solid rgba(255,255,255,0.08) !important;
-      border-top-color: var(--chroma-color, #00A8E1) !important;
+      border-top-color: #00A8E1 !important;
       border-radius: 50% !important;
       animation: chroma-spin 1s linear infinite !important;
       margin: 0 0 20px 0 !important;
@@ -189,7 +186,7 @@ function initAdOverlay(video) {
     .chroma-progress-bar {
       width: 0%;
       height: 100% !important;
-      background: var(--chroma-color, #00A8E1) !important;
+      background: #00A8E1 !important;
       transition: width 0.1s linear, background 0.3s linear !important;
     }
   `;
@@ -324,31 +321,6 @@ function updateAdOverlay(video, isActive) {
 }
 
 /**
- * Cycles through the chroma colors.
- */
-function startChromaClock() {
-  if (chromaClockRunning) return;
-  chromaClockRunning = true;
-
-  function tick() {
-    if (!isAdActive) {
-      chromaClockRunning = false;
-      return;
-    }
-
-    const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS;
-    const [r, g, b] = (API.calculateChromaColor) ? API.calculateChromaColor(t) : [0, 168, 225];
-
-    const root = document.documentElement;
-    root.style.setProperty('--chroma-color', `rgb(${r},${g},${b})`);
-    root.style.setProperty('--chroma-color-alpha', `rgba(${r},${g},${b},0.3)`);
-
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-}
-
-/**
  * Injects necessary CSS for the overlay.
  */
 function injectChromaCSS() {
@@ -404,7 +376,7 @@ function injectChromaCSS() {
     .chroma-spinner {
       width: 50px !important; height: 50px !important;
       border: 4px solid rgba(255,255,255,0.08) !important;
-      border-top-color: var(--chroma-color, #00A8E1) !important;
+      border-top-color: #00A8E1 !important;
       border-radius: 50% !important;
       animation: chroma-spin 1s linear infinite !important;
       margin: 0 0 20px 0 !important;
@@ -441,7 +413,7 @@ function injectChromaCSS() {
     .chroma-progress-bar {
       width: 0%;
       height: 100% !important;
-      background: var(--chroma-color, #00A8E1) !important;
+      background: #00A8E1 !important;
       transition: width 0.1s linear, background 0.3s linear !important;
     }
     
@@ -450,8 +422,8 @@ function injectChromaCSS() {
     body.chroma-prime-session .adSkipButton,
     body.chroma-prime-session [class*="skip-button"],
     body.chroma-prime-session [class*="ad-skip"] {
-      border: 2px solid var(--chroma-color, #00A8E1) !important;
-      box-shadow: 0 0 25px var(--chroma-color-alpha, rgba(0, 168, 225, 0.5)) !important;
+      border: 2px solid #00A8E1 !important;
+      box-shadow: 0 0 25px rgba(0, 168, 225, 0.4) !important;
       transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
     }
   `;
@@ -617,7 +589,6 @@ function handlePrimeAdAcceleration() {
       if (!isAdActive) {
         isAdActive = true;
         document.body.classList.add('chroma-prime-session');
-        startChromaClock();
       }
       
       // FIX: Ensure lastAcceleratedSrc is tracked

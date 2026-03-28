@@ -225,10 +225,7 @@
           dispatchEvent: pristineDispatchEvent,
           addDocEventListener: pristineAddDocEventListener,
           removeDocEventListener: pristineRemoveDocEventListener,
-          MutationObserver: window.MutationObserver,
-          // VULN-01 Hardening: Capture and expose pure utility functions
-          calculateChromaColor: (typeof window.calculateChromaColor === 'function') ? 
-                                window.calculateChromaColor.bind(window) : null
+          MutationObserver: window.MutationObserver
         })
       });
 

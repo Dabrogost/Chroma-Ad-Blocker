@@ -30,9 +30,7 @@
                 clearInterval: window.clearInterval.bind(window),
                 dispatchEvent: document.dispatchEvent.bind(document),
                 addDocEventListener: document.addEventListener.bind(document),
-                removeDocEventListener: document.removeEventListener.bind(document),
-                calculateChromaColor: (typeof window.calculateChromaColor === 'function') ? 
-                                     window.calculateChromaColor.bind(window) : null
+                removeDocEventListener: document.removeEventListener.bind(document)
               };
 
   const qS = (s) => API.querySelector(s);
@@ -82,16 +80,16 @@
       }
       .chroma-spinner {
         width: 48px; height: 48px;
-        border: 4px solid rgba(255,255,255,0.1);
-        border-top-color: var(--chroma-color, #ff0055);
-        border-radius: 50%;
-        animation: chroma-spin 1s linear infinite;
-        margin-bottom: 20px;
+        border: 4px solid rgba(255,255,255,0.1) !important;
+        border-top-color: #FE0034 !important;
+        border-radius: 50% !important;
+        animation: chroma-spin 1s linear infinite !important;
+        margin-bottom: 20px !important;
       }
       @keyframes chroma-spin { 100% { transform: rotate(360deg); } }
       .chroma-checkmark {
         width: 48px; height: 48px;
-        border: 4px solid var(--chroma-color, #ff0055);
+        border: 4px solid #FE0034;
         border-radius: 50%;
         margin-bottom: 20px;
         position: relative;
@@ -101,7 +99,7 @@
         position: absolute;
         top: 6px; left: 16px;
         width: 10px; height: 20px;
-        border: solid var(--chroma-color, #ff0055);
+        border: solid #FE0034;
         border-width: 0 4px 4px 0;
         transform: rotate(45deg);
       }
@@ -127,9 +125,9 @@
       .chroma-progress-bar {
         height: 100%;
         width: 0%;
-        background: var(--chroma-color, #ff0055);
+        background: #FE0034;
         transition: width 0.2s linear, background 0.15s linear;
-        box-shadow: 0 0 12px var(--chroma-color-alpha, rgba(255, 0, 85, 0.4));
+        box-shadow: 0 0 12px rgba(254, 0, 52, 0.4);
       }
     `;
     
@@ -348,7 +346,6 @@
         window.chromaAdSkipped = false; 
         // High-performance synchronization: Transitions from polling to requestAnimationFrame when an ad is active for frame-perfect acceleration.
         startFastAdWatcher(); 
-        startChromaClock(); 
       }
       window.chromaAdSessionActive = true;
       window.lastAdDetectTime = Date.now();
@@ -532,38 +529,6 @@
     requestAnimationFrame(check);
   }
 
-  const CHROMA_CYCLE_MS = 8000;
-  let chromaClockRunning = false;
-
-  function startChromaClock() {
-    if (chromaClockRunning) return;
-    chromaClockRunning = true;
-
-    function tick() {
-      if (!window.chromaAdSessionActive) {
-        chromaClockRunning = false;
-        return;
-      }
-
-      const t = (Date.now() % CHROMA_CYCLE_MS) / CHROMA_CYCLE_MS;
-      if (typeof window.calculateChromaColor !== 'function') {
-        const root = document.documentElement;
-        root.style.setProperty('--chroma-color', `rgb(255,0,85)`);
-        root.style.setProperty('--chroma-color-alpha', `rgba(255,0,85,0.3)`);
-        requestAnimationFrame(tick);
-        return;
-      }
-      const [r, g, b] = (API.calculateChromaColor) ? API.calculateChromaColor(t) : [255, 0, 85];
-
-      const root = document.documentElement;
-      root.style.setProperty('--chroma-color', `rgb(${r},${g},${b})`);
-      root.style.setProperty('--chroma-color-alpha', `rgba(${r},${g},${b},0.3)`);
-
-      requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
-
   function injectChromaCSS() {
     if (API.getElementById('chroma-acceleration')) return;
     const style = cE('style');
@@ -574,10 +539,10 @@
       body.chroma-session-active .ytp-skip-ad-button,
       body.chroma-session-active .videoAdUiSkipButton,
       body.chroma-session-active [id^="skip-button:"] {
-        border: 1.5px solid var(--chroma-color, #ff0055) !important;
+        border: 1.5px solid #FE0034 !important;
         border-radius: 24px !important;
-        box-shadow: 0 0 15px var(--chroma-color-alpha, rgba(255,0,85,0.4)), 
-                    inset 0 0 6px var(--chroma-color-alpha, rgba(255,0,85,0.2)) !important;
+        box-shadow: 0 0 15px rgba(254, 0, 52, 0.4), 
+                    inset 0 0 6px rgba(254, 0, 52, 0.2) !important;
         transition: border-color 0.15s linear, box-shadow 0.15s linear !important;
         overflow: hidden !important;
       }
@@ -619,7 +584,7 @@
       .chroma-spinner {
         width: 48px; height: 48px;
         border: 4px solid rgba(255,255,255,0.1);
-        border-top-color: var(--chroma-color, #ff0055);
+        border-top-color: #FE0034;
         border-radius: 50%;
         animation: chroma-spin 1s linear infinite;
         margin-bottom: 20px;
@@ -628,7 +593,7 @@
       
       .chroma-checkmark {
         width: 48px; height: 48px;
-        border: 4px solid var(--chroma-color, #ff0055);
+        border: 4px solid #FE0034;
         border-radius: 50%;
         margin-bottom: 20px;
         position: relative;
@@ -638,7 +603,7 @@
         position: absolute;
         top: 6px; left: 16px;
         width: 10px; height: 20px;
-        border: solid var(--chroma-color, #ff0055);
+        border: solid #FE0034;
         border-width: 0 4px 4px 0;
         transform: rotate(45deg);
       }
@@ -661,8 +626,7 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
-
-function init() {
+  function init() {
     // 0. Whitelist shortcut for MAIN world
     if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
       if (DEBUG) console.log('[Chroma] YouTube handler disabled by whitelist.');
@@ -694,7 +658,6 @@ function init() {
         
         if (CONFIG.enabled && !pollingInterval) {
           startPolling();
-          startChromaClock();
           initSkipButtonListener();
         }
       }
@@ -704,7 +667,6 @@ function init() {
     if (CONFIG.enabled) {
       injectChromaCSS();
       startPolling();
-      startChromaClock();
       initSkipButtonListener();
     } else {
       // Liveness watchdog: Fallback initialization for scenarios where the secure handshake is delayed or blocked by browser-level race conditions.
@@ -715,7 +677,6 @@ function init() {
           CONFIG.acceleration = true;
           injectChromaCSS();
           startPolling();
-          startChromaClock();
           initSkipButtonListener();
         }
       }, 1200);

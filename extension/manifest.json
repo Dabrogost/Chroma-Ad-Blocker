@@ -31,7 +31,6 @@
       ],
       "js": [
         "messaging.js",
-        "utils/chromaColor.js",
         "content.js"
       ],
       "run_at": "document_start",
@@ -64,8 +63,7 @@
         "*://*.primevideo.com/*"
       ],
       "js": [
-        "messaging.js",
-        "utils/chromaColor.js"
+        "messaging.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -99,7 +97,6 @@
         "*://*.youtube.com/*"
       ],
       "js": [
-        "utils/chromaColor.js",
         "yt_handler.js"
       ],
       "run_at": "document_start",
@@ -131,7 +128,6 @@
         "*://*.primevideo.com/*"
       ],
       "js": [
-        "utils/chromaColor.js",
         "prm_handler.js"
       ],
       "run_at": "document_start",
