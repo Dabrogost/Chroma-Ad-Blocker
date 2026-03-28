@@ -36,30 +36,30 @@ graph TD
     USER["User (Browsing/Interaction)"]:::actor
     INTERNET["The Internet (Ads & Trackers)"]:::actor
 
-    subgraph SW ["Extension Core (Service Worker)"]
-        BS ["background.js<br/>(Main Logic & Router)"]:::sw
+    subgraph SW["Extension Core (Service Worker)"]
+        BS["background.js<br/>(Main Logic & Router)"]:::sw
         AUTH["Session Token Store<br/>(Per-Tab Locking)"]:::secure
         VERIFY{{"Token Verification"}}:::secure
         POPUP["popup.js<br/>(UI & Stats)"]:::sw
     end
 
-    subgraph ST ["Central Hub"]
+    subgraph ST["Central Hub"]
         STORAGE[("chrome.storage.local")]:::storage
     end
 
-    subgraph MW ["Main World Execution (Page Context)"]
+    subgraph MW["Main World Execution (Page Context)"]
         MW_INT["interceptor.js<br/>(Pristine API Cache)"]:::main
         BRIDGE["__CHROMA_INTERNAL__<br/>(Secure Bridge)"]:::secure
         CS_YT["yt_handler.js<br/>(Accelerator)"]:::main
         CS_PV["prm_handler.js<br/>(Accelerator)"]:::main
     end
 
-    subgraph IW ["Isolated World (Extension Context)"]
+    subgraph IW["Isolated World (Extension Context)"]
         CS_PROT["protection.js<br/>(Secure Handshake & Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
-    subgraph DN ["Network Blocking (DNR)"]
+    subgraph DN["Network Blocking (DNR)"]
         DNR["Declarative Net Request<br/>(300k Rules)"]:::dnr
     end
 
