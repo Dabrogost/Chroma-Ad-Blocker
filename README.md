@@ -21,14 +21,14 @@ Chroma utilizes a multi-layered execution model designed to survive the ephemera
 
 ```mermaid
 graph TD
-    classDef sw fill:none,color:#01579b,stroke:#01579b,stroke-width:2px
-    classDef storage fill:none,color:#e65100,stroke:#e65100,stroke-width:2px
-    classDef isolated fill:none,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
-    classDef main fill:none,color:#880e4f,stroke:#880e4f,stroke-width:2px
-    classDef dnr fill:none,color:#311b92,stroke:#311b92,stroke-width:2px
-    classDef dom fill:none,color:#f57f17,stroke:#f57f17,stroke-width:2px
-    classDef secure fill:none,color:#4a148c,stroke:#4a148c,stroke-width:2px
-    classDef actor fill:none,color:#263238,stroke:#263238,stroke-width:2px
+    classDef sw fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
+    classDef storage fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
+    classDef isolated fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
+    classDef main fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
+    classDef dnr fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
+    classDef dom fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
+    classDef secure fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
+    classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
     %% --- LAYER 0: ENTRANCE ---
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
@@ -90,10 +90,10 @@ graph TD
     BG <-->|"Sync Rules"| DNR
 
     %% Style Tweaks
-    style MW fill:none,stroke:#880e4f,stroke-dasharray: 5 5
-    style IW fill:none,stroke:#1b5e20,stroke-dasharray: 5 5
-    style SW fill:none,stroke:#01579b,stroke-dasharray: 5 5
-    style System fill:none,stroke:#263238,stroke-dasharray: 5 5
+    style MW fill:none,stroke:none
+    style IW fill:none,stroke:none
+    style SW fill:none,stroke:none
+    style System fill:none,stroke:none
 ```
 
 ---
