@@ -69,7 +69,7 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
   <p class="section__eyebrow fade-up">Protection Layers</p>
   <h2 class="section__title fade-up">Built to Outlast<br/>Every Ad System</h2>
   <p class="section__sub fade-up">
-    Five independent layers of protection, each targeting a different attack vector.
+    Six independent layers of protection, each targeting a different attack vector.
     Together they handle anything ad networks throw at your browser.
   </p>
 
@@ -142,6 +142,20 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
         to silently deny intrusive permission requests globally.
       </p>
       <span class="card__tag">Notification API</span>
+    </div>
+
+    <!-- Card 6: Hardened Security -->
+    <div class="card card--bblue fade-up">
+      <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+      <h3 class="card__title">Hardened Security</h3>
+      <p class="card__desc">
+        A session-based token handshake ensures secure communication between 
+        execution worlds, while local-only processing keeps your data private.
+      </p>
+      <span class="card__tag">Secure Handshake &middot; Local-Only</span>
     </div>
 
   </div>
