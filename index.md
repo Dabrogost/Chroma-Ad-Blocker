@@ -182,7 +182,7 @@ graph TD
 
     INTERNET["The Internet (Ads & Content)"]:::actor
 
-    subgraph CHROMA["Chroma Ad-Blocker Engine"]
+    subgraph CHROMA["Chroma Ad-Blocker Engine<br/><br/>"]
         NETWORK["Network Shield (Blocks Trackers & Banners)"]:::action
         VIDEO["Video Accelerator (Speeds Through Video Ads)"]:::action
         CONTENT["Content Cleaner (Removes Overlays & Symbols)"]:::action
