@@ -69,7 +69,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
   <p class="section__eyebrow fade-up">Protection Layers</p>
   <h2 class="section__title fade-up">Built to Outlast<br/>Every Ad System</h2>
   <p class="section__sub fade-up">
-    Six independent layers of protection, each targeting a different attack vector.
+    Five independent layers of protection, each targeting a different attack vector.
     Together they handle anything ad networks throw at your browser.
   </p>
 
@@ -127,24 +127,6 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
         offers, and silently delete anti-adblock enforcement modals as they appear.
       </p>
       <span class="card__tag">Shorts &middot; Merch &middot; Offers</span>
-    </div>
-
-    <!-- Card 5: Pop-Under Blocker -->
-    <div class="card card--bblue fade-up">
-      <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-        <line x1="8" y1="21" x2="16" y2="21"/>
-        <line x1="12" y1="17" x2="12" y2="21"/>
-        <line x1="8.5" y1="7.5" x2="15.5" y2="14.5"/>
-        <line x1="15.5" y1="7.5" x2="8.5" y2="14.5"/>
-      </svg>
-      <h3 class="card__title">Pop-Under Blocker</h3>
-      <p class="card__desc">
-        A secure MessageChannel pipeline intercepts <code>window.open</code> calls,
-        validates user intent via gesture timing, and closes suspicious tabs before
-        they render.
-      </p>
-      <span class="card__tag">Gesture Detection</span>
     </div>
 
     <!-- Card 6: Push Suppression -->

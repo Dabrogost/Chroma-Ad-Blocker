@@ -26,7 +26,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         hideOffers: true,
         suppressWarnings: true,
         accelerationSpeed: 16,
-        blockPopUnders: true,
         blockPushNotifications: true,
         enabled: true,
       },
@@ -178,7 +177,6 @@ let config = {
   hideShorts: false,
   hideMerch: true,
   hideOffers: true,
-  blockPopUnders: true, 
   blockPushNotifications: true 
 };
 
@@ -198,19 +196,10 @@ chrome.storage.onChanged.addListener((changes) => {
   }
 });
 
-// ─── POP-UNDER DETECTION STATE ───────────────────────────────────────────────
-// Keep track of window.open attempts per tab to prevent cross-tab interference
-// Keyed by tabId to ensure strict isolation and prevent state-spoofing across browser sessions.
-// SESSION_DATA: Stored in chrome.storage.session to survive Service Worker sleep cycles.
-// Format: { popunderRequests: { tabId: data }, sessionTokens: { tabId: token }, tokenRetrievalLocked: { tabId: true } }
-// Fallback: Captures the most recent window.open attempt for scenarios where 
-// openerTabId is stripped by the browser (e.g. certain async popup methods).
-let lastGlobalRequest = null; 
 
 async function getSessionData() {
-  const data = await chrome.storage.session.get(['popunderRequests', 'sessionTokens', 'tokenRetrievalLocked']);
+  const data = await chrome.storage.session.get(['sessionTokens', 'tokenRetrievalLocked']);
   return {
-    popunderRequests: data.popunderRequests || {},
     sessionTokens: data.sessionTokens || {},
     tokenRetrievalLocked: data.tokenRetrievalLocked || {}
   };
@@ -220,29 +209,7 @@ async function updateSessionData(key, value) {
   await chrome.storage.session.set({ [key]: value });
 }
 
-// Active listeners for tabs waiting on pop-under metadata from their opener during the creation handshake.
-const popunderResolvers = new Map(); // openerTabId -> [ (request) => void ]
 
-// PERIODIC CLEANUP: Remove stale pop-under requests every 30 seconds
-setInterval(async () => {
-  const now = Date.now();
-  const { popunderRequests } = await getSessionData();
-  let changed = false;
-
-  for (const [tabId, data] of Object.entries(popunderRequests)) {
-    if (now - data.time > 15000) { // Keep for 15s
-      delete popunderRequests[tabId];
-      changed = true;
-    }
-  }
-  if (changed) {
-    await updateSessionData('popunderRequests', popunderRequests);
-  }
-
-  if (lastGlobalRequest && now - lastGlobalRequest.time > 15000) {
-    lastGlobalRequest = null;
-  }
-}, 30000);
 
 // ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
 /**
@@ -254,17 +221,16 @@ const MSG = {
   CONFIG_SET: 'CONFIG_SET',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
   STATS_RESET: 'STATS_RESET',
-  WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
-  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
   GET_TOKEN: 'GET_TOKEN',
   WHITELIST_GET: 'WHITELIST_GET',
   WHITELIST_ADD: 'WHITELIST_ADD',
-  WHITELIST_REMOVE: 'WHITELIST_REMOVE'
+  WHITELIST_REMOVE: 'WHITELIST_REMOVE',
+  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
 };
 
 // ─── CONFIGURATION VALIDATION ───────────────────────────────────────────────
 function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'blockPopUnders', 'blockPushNotifications', 'enabled'];
+  const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'blockPushNotifications', 'enabled'];
   const validatedConfig = {};
 
   if (inputConfig && typeof inputConfig === 'object') {
@@ -310,51 +276,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       switch (msg.type) {
 
-        case MSG.WINDOW_OPEN_NOTIFY:
-          const winToken = tabId ? sessionData.sessionTokens[tabId] : null;
-          if (!winToken || msg.token !== winToken) return;
-          if (tabId) {
-            const existing = sessionData.popunderRequests[tabId] || { createdTabIds: [] };
-            const request = {
-              ...existing,
-              tabId,
-              time: Date.now(),
-              isSuspicious: msg.isSuspicious,
-              url: msg.url,
-              popupCount: msg.popupCount,
-              gestureType: msg.gestureType,
-              stack: msg.stack
-            };
-            sessionData.popunderRequests[tabId] = request;
-            await updateSessionData('popunderRequests', sessionData.popunderRequests);
-            lastGlobalRequest = request;
-            const resolvers = popunderResolvers.get(tabId);
-            if (resolvers) {
-              resolvers.forEach(res => res(request));
-              popunderResolvers.delete(tabId);
-            }
-          }
-          break;
-
-        case MSG.SUSPICIOUS_ACTIVITY:
-          const suspToken = tabId ? sessionData.sessionTokens[tabId] : null;
-          if (!suspToken || msg.token !== suspToken) return;
-          const { config: sConf, stats: sStats = {} } = await chrome.storage.local.get(['config', 'stats']);
-          if (sConf && sConf.enabled === false) return;
-          if (tabId) {
-            const existing = sessionData.popunderRequests[tabId] || { time: Date.now(), createdTabIds: [] };
-            existing.isSuspicious = true;
-            existing.activity = msg.activity;
-            sessionData.popunderRequests[tabId] = existing;
-            if (existing.createdTabIds && existing.createdTabIds.length > 0) {
-              existing.createdTabIds.forEach(id => chrome.tabs.remove(id).catch(() => {}));
-              sStats.networkBlocked = (sStats.networkBlocked || 0) + existing.createdTabIds.length;
-              await chrome.storage.local.set({ stats: sStats });
-              existing.createdTabIds = [];
-            }
-            await updateSessionData('popunderRequests', sessionData.popunderRequests);
-          }
-          break;
 
         case MSG.CONFIG_GET:
           const { config: cGet } = await chrome.storage.local.get('config');
@@ -419,6 +340,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
           sendResponse({ ok: true });
           break;
+        case MSG.SUSPICIOUS_ACTIVITY:
+          if (tabId && sessionData.sessionTokens[tabId] === msg.token) {
+            if (DEBUG) console.warn(`[Chroma Security] Suspicious Activity on tab ${tabId}:`, msg.activity);
+          }
+          sendResponse({ ok: true });
+          break;
       }
     } catch (err) {
       if (DEBUG) console.error('[Chroma] Error in message handler:', err);
@@ -430,95 +357,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
-// ─── TAB MONITORING (Pop-Under Blocker) ───────────────────────────────────────
-chrome.tabs.onCreated.addListener(async (tab) => {
-  const { config, whitelist } = await chrome.storage.local.get(['config', 'whitelist']);
-  if (!config || config.enabled === false || config.blockPopUnders === false) return;
-
-  // Kill Switch: Check if the opener tab is whitelisted
-  const openerId = tab.openerTabId;
-  if (openerId) {
-    try {
-      const openerTab = await chrome.tabs.get(openerId);
-      if (openerTab && openerTab.url) {
-        const u = new URL(openerTab.url);
-        if (whitelist.some(d => u.hostname === d || u.hostname.endsWith('.' + d))) {
-          if (DEBUG) console.log(`[Chroma] Not blocking popup from whitelisted domain: ${u.hostname}`);
-          return;
-        }
-      }
-    } catch (e) {
-      // Opener might be closed or URL unavailable due to lack of permissions/timing
-    }
-  }
-
-  // Timing Bridge: Wait up to 1000ms for the content script to deliver pop-under metadata 
-  // via the secure pipe before making a blocking decision on the newly created tab.
-  const sessionData = await getSessionData();
-  let request = openerId ? sessionData.popunderRequests[openerId] : null;
-  
-  if (!request && lastGlobalRequest && (Date.now() - lastGlobalRequest.time < 2000)) {
-    request = lastGlobalRequest;
-  }
-
-  // If no match yet, wait for the notification to arrive via promise resolution
-  if (!request && openerId) {
-    request = await new Promise(resolve => {
-      const resolvers = popunderResolvers.get(openerId) || [];
-      const timeout = setTimeout(() => {
-        const list = popunderResolvers.get(openerId);
-        if (list) {
-          const idx = list.indexOf(resolve);
-          if (idx !== -1) list.splice(idx, 1);
-          if (list.length === 0) popunderResolvers.delete(openerId);
-        }
-        resolve(null);
-      }, (typeof globalThis !== 'undefined' && globalThis.__CHROMA_TEST_TIMEOUT__) || 1000); // Configurable wait for sync
-
-      resolvers.push((req) => {
-        clearTimeout(timeout);
-        resolve(req);
-      });
-      popunderResolvers.set(openerId, resolvers);
-    });
-  }
-
-  const now = Date.now();
-  if (!request) return;
-  if (!request.createdTabIds) request.createdTabIds = [];
-
-  const timeSinceNotify = now - request.time;
-  
-  const stackLower = (request.stack || '').toLowerCase();
-  const isAdScript = stackLower.includes('pop') || 
-                      stackLower.includes('ad') || 
-                      stackLower.includes('promo') || 
-                      stackLower.includes('test') || 
-                      stackLower.includes('click');
-
-  if ((request.isSuspicious || request.popupCount > 1 || isAdScript) && timeSinceNotify < 3000) {
-    if (DEBUG) console.warn(`[Chroma Ad-Blocker] Blocking suspicious pop-under: ${tab.pendingUrl || tab.url || 'unknown'}`);
-    
-    // Close the tab
-    chrome.tabs.remove(tab.id).catch(() => {});
-    
-    // Increment stats
-    chrome.storage.local.get('stats').then(({ stats = {} }) => {
-      stats.networkBlocked = (stats.networkBlocked || 0) + 1;
-      chrome.storage.local.set({ stats });
-    });
-
-    if (openerId) {
-      delete sessionData.popunderRequests[openerId];
-      await updateSessionData('popunderRequests', sessionData.popunderRequests);
-    }
-    if (request === lastGlobalRequest) lastGlobalRequest = null;
-  } else {
-    // If it's not immediately suspicious, store the tabId for potential retroactive closing
-    request.createdTabIds.push(tab.id);
-    await updateSessionData('popunderRequests', sessionData.popunderRequests);
-  }
-});
 
 // ─── NETWORK BLOCK TRACKING (DNR) ───────────────────────────────────────────
 /**
@@ -573,10 +411,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   const sessionData = await getSessionData();
   let changed = false;
 
-  if (sessionData.popunderRequests[tabId]) {
-    delete sessionData.popunderRequests[tabId];
-    changed = true;
-  }
   if (sessionData.sessionTokens[tabId]) {
     delete sessionData.sessionTokens[tabId];
     changed = true;

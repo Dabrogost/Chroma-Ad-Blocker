@@ -182,7 +182,6 @@
 
     // SECURE CONFIG STATE: Use local variables instead of HTML datasets to prevent host-page tampering.
     const localConfig = {
-      blockPopUnders: selectors.blockPopUnders !== false,
       blockPushNotifications: selectors.blockPushNotifications !== false,
       enabled: selectors.enabled !== false
     };
@@ -227,72 +226,19 @@
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Hostile Domain: ${isHostileDomain}`);
 
-    const originalFocus = window.focus;
-    const originalBlur = window.blur;
-    let lastOpenTime = 0;
-
     // SECURITY: Use localConfig instead of insecure datasets (VULN-01/02 Hardening)
-    const checkPopUnderBlocking = () => localConfig.enabled && localConfig.blockPopUnders;
     const checkPushBlocking = () => localConfig.enabled && localConfig.blockPushNotifications;
 
     // Listen for config updates via the secure MessagePort
     pristineAddDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       if (e.detail) {
         Object.assign(localConfig, {
-          blockPopUnders: e.detail.blockPopUnders !== false,
           blockPushNotifications: e.detail.blockPushNotifications !== false,
           enabled: e.detail.enabled !== false
         });
       }
     }, true);
 
-    // Intercept window.open
-    window.open = function(url, name, specs) {
-      if (checkPopUnderBlocking()) {
-        let stack = '';
-        try { throw new Error(); } catch (e) { stack = e.stack || ''; }
-
-        const message = {
-          source: 'chroma-interceptor',
-          token: token,
-          type: 'WINDOW_OPEN_ATTEMPT',
-          url: String(url || 'about:blank'),
-          name: String(name || ''),
-          specs: String(specs || ''),
-          stack: stack
-        };
-
-        sendToProtection(message);
-        lastOpenTime = Date.now();
-      }
-      
-      return pristineWindowOpen.apply(this, arguments);
-    };
-
-    // Detect suspicious focus/blur patterns
-    window.focus = function() {
-      if (checkPopUnderBlocking() && Date.now() - lastOpenTime < 1000) {
-        sendToProtection({
-          source: 'chroma-interceptor',
-          token: token,
-          type: 'SUSPICIOUS_FOCUS_ATTEMPT',
-          context: 'window.focus() called shortly after window.open()'
-        });
-      }
-      return originalFocus.apply(this, arguments);
-    };
-
-    window.blur = function() {
-      if (checkPopUnderBlocking() && Date.now() - lastOpenTime < 1000) {
-        sendToProtection({
-          source: 'chroma-interceptor',
-          token: token,
-          type: 'SUSPICIOUS_BLUR_ATTEMPT',
-          context: 'window.blur() called shortly after window.open()'
-        });
-      }
-      return originalBlur.apply(this, arguments);
-    };
 
     /**
      * PUSH NOTIFICATION BLOCKING
@@ -413,9 +359,6 @@
           }
         };
 
-        lock(window, 'open');
-        lock(window, 'focus');
-        lock(window, 'blur');
         if (typeof window.Notification !== 'undefined') {
           lock(window, 'Notification');
         }

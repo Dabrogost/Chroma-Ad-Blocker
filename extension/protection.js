@@ -1,13 +1,13 @@
 /**
- * Chroma Ad-Blocker - Global Protection Script
- * Handles gesture tracking, message relay for pop-under attempts,
- * and push notification suppression across all websites.
+ * Handles message relay for push notification suppression
+ * and other security tasks across all websites.
  */
 
 'use strict';
 
 (function() {
   const DEBUG = false;
+  const MSG = window.MSG; // Provided by messaging.js
   let isolatedPort; // This will hold our secure pipe
 
   // Token-Based Authorization: Request a unique session token from the background script.
@@ -22,68 +22,11 @@
   };
 
   const CONFIG = {
-    blockPopUnders: true,
     blockPushNotifications: true,
     enabled: true
   };
 
-  let lastUserGestureTime = 0;
-  let lastUserGestureType = '';
-  let popupCountInGesture = 0;
 
-  /**
-   * Track user gestures to distinguish between legitimate
-   * user-initiated popups and automated pop-under ads.
-   */
-  function initGestureTracking() {
-    const updateGesture = (e) => {
-      const now = Date.now();
-      if (now - lastUserGestureTime > 300) {
-        popupCountInGesture = 0;
-      }
-      lastUserGestureTime = now;
-      lastUserGestureType = e.type;
-    };
-    
-    ['mousedown', 'mouseup', 'keydown', 'touchstart', 'touchend', 'click'].forEach(evt => {
-      document.addEventListener(evt, updateGesture, { capture: true, passive: true });
-      window.addEventListener(evt, updateGesture, { capture: true, passive: true });
-    });
-
-    // Intercept suspicious link clicks (Common Pop-Under technique)
-    document.addEventListener('click', (e) => {
-      // SECURITY: Fail closed if config isn't loaded yet
-      if (!CONFIG.enabled || !CONFIG.blockPopUnders) return;
-
-      const link = e.target.closest('a');
-      if (link && (link.target === '_blank' || e.ctrlKey || e.shiftKey || e.metaKey)) {
-        const rect = link.getBoundingClientRect();
-        
-        // DETECTION: Ad-networks often use 1x1 invisible pixels or full-page 
-        // transparent overlays to hijack clicks for pop-unders.
-        const isTiny = rect.width > 0 && rect.width < 5 || rect.height > 0 && rect.height < 5;
-        const isOverlay = rect.width > window.innerWidth * 0.8 && rect.height > window.innerHeight * 0.8;
-        
-        if (isTiny || isOverlay) {
-          if (DEBUG) console.warn('[Chroma Ad-Blocker] Proactively blocked suspicious pop-under click.');
-          
-          // ACTION: Kill the event before the browser can open a new tab/window
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          
-          // REPORT: Update stats and log activity
-          if (secretToken) {
-            notifyBackground({
-              type: MSG.SUSPICIOUS_ACTIVITY,
-              token: secretToken,
-              activity: 'BLOCKED_SUSPICIOUS_CLICK',
-              context: `Link: ${link.href.substring(0, 100)}...`
-            });
-          }
-        }
-      }
-    }, { capture: true, passive: false });
-  }
 
   /**
    * Processes messages from the interceptor (via the secure MessagePort)
@@ -94,37 +37,6 @@
 
 
     // LEGACY: Handle existing message types that aren't yet using action/payload
-    if (data.type === 'WINDOW_OPEN_ATTEMPT') {
-      const now = Date.now();
-      const timeSinceGesture = now - lastUserGestureTime;
-      popupCountInGesture++;
-      
-      const isSuspicious = timeSinceGesture > 300 || popupCountInGesture > 1;
-
-      notifyBackground({
-        type: MSG.WINDOW_OPEN_NOTIFY,
-        token: data.token,
-        url: data.url,
-        isSuspicious,
-        timeSinceGesture,
-        popupCount: popupCountInGesture,
-        gestureType: lastUserGestureType,
-        stack: data.stack
-      });
-      return;
-    }
-
-    if (data.type === 'SUSPICIOUS_FOCUS_ATTEMPT' || data.type === 'SUSPICIOUS_BLUR_ATTEMPT') {
-      if (DEBUG) console.log(`[Chroma Ad-Blocker] Blocked suspicious pop-under attempt (${data.type})`);
-      notifyBackground({
-        type: MSG.SUSPICIOUS_ACTIVITY,
-        token: data.token,
-        activity: data.type,
-        context: data.context
-      });
-      return;
-    }
-
     if (data.type === 'NOTIFICATION_ATTEMPT') {
       if (DEBUG) console.log('[Chroma Ad-Blocker] Blocked notification attempt');
       notifyBackground({
@@ -220,11 +132,9 @@
     const savedConfig = data.config;
     if (savedConfig) {
       CONFIG.enabled = isWhitelisted ? false : (savedConfig.enabled !== false);
-      CONFIG.blockPopUnders = isWhitelisted ? false : (savedConfig.blockPopUnders !== false);
       CONFIG.blockPushNotifications = isWhitelisted ? false : (savedConfig.blockPushNotifications !== false);
     } else if (isWhitelisted) {
       CONFIG.enabled = false;
-      CONFIG.blockPopUnders = false;
       CONFIG.blockPushNotifications = false;
     }
     
@@ -243,7 +153,6 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === MSG.CONFIG_UPDATE) {
       CONFIG.enabled = msg.config.enabled !== false;
-      CONFIG.blockPopUnders = msg.config.blockPopUnders !== false;
       CONFIG.blockPushNotifications = msg.config.blockPushNotifications !== false;
       // Forward to MAIN world if port is active
       if (isolatedPort) {
@@ -255,8 +164,6 @@
     }
   });
 
-  // Start tracking
-  initGestureTracking();
 
   if (DEBUG) console.log('[Chroma Ad-Blocker] Protection script active.');
 })();

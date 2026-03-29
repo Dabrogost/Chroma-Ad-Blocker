@@ -7,7 +7,6 @@
 - **Multi-Platform Ad Acceleration**: Automatically detects and accelerates video ads (up to 16x speed) on **YouTube** and **Prime Video**. This fulfills server-side impression requirements instantly without triggering ad-block detections.
 - **Tier-1 Network Blocking (DNR)**: Utilizes a **10-Part ruleset system (300,000+ rules)** to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Global Protection Engine**:
-    - **Gesture-Based Pop-under Blocker**: Distinguishes between legitimate clicks and automated pop-under attempts via millisecond-accurate gesture tracking.
     - **Push Suppression**: Proactively silences intrusive native notification prompts.
     - **Safety Exclusion Protocol**: Automatically bypasses critical infrastructure (Banks, Auth providers, .gov) to ensure no disruption to sensitive workflows.
 - **Privacy-First Architecture**: Features a decentralized, token-gated communication pipeline. Your data never leaves your device; all stats and settings are stored locally.
@@ -42,7 +41,7 @@ graph TD
 
     %% --- LAYER 2: ISOLATED WORLD ---
     subgraph IW["Isolated World (Secure Relay)"]
-        CS_PROT["protection.js<br/>(Gesture Tracking + Relay)"]:::isolated
+        CS_PROT["protection.js<br/>(Push Suppression + Relay)"]:::isolated
         CS_GEN["content.js<br/>(Cosmetic Filter)"]:::isolated
     end
 
@@ -162,7 +161,7 @@ Powered by Chrome’s **Declarative Net Request (DNR)** API. Chroma partitions o
 Uses a `MutationObserver` and dynamic CSS injection to hide ad slots, remove "Ad blockers are not allowed" modals, and clean up the interface (removing Shorts, Merch, and Offers).
 
 ### Layer 4: Universal Protection (`protection.js`, `interceptor.js`)
-A dual-layer approach to blocking pop-unders and push notifications globally. The `interceptor.js` runs in the **Main World** to shadow browser APIs, while `protection.js` relays events to the background via a **Secure Pipeline** for enforcement.
+A proactive approach to blocking intrusive push notification requests globally. The `interceptor.js` runs in the **Main World** to shadow browser APIs, while `protection.js` relays events to the background via a **Secure Pipeline** for enforcement.
 
 ---
 
@@ -172,7 +171,7 @@ Chroma implements several advanced security measures to ensure integrity and pre
 
 - **Immutable API Bridge**: Chroma exposes internal utilities (like `calculateChromaColor`) via a locked `__CHROMA_INTERNAL__` object. This bridge is protected using `Object.defineProperty` with `writable: false` and `configurable: false`, preventing host pages from hijacking or redefining extension-owned logic.
 - **Pristine API Caching**: `interceptor.js` captures and freezes native browser APIs (like `querySelector`, `setTimeout`, and `MutationObserver`) at `document_start`. This ensures that even if a site attempts prototype pollution or API tampering, the extension continues to operate using its own "known good" references.
-- **Strict Message Whitelisting**: The internal messaging bridge only permits a narrow list of authorized actions (e.g., `WINDOW_OPEN_NOTIFY`, `SUSPICIOUS_ACTIVITY`). The Background Service Worker rejects any request that lacks a valid per-tab session token or attempts to execute an unauthorized action.
+- **Strict Message Whitelisting**: The internal messaging bridge only permits a narrow list of authorized actions (e.g., `SUSPICIOUS_ACTIVITY`). The Background Service Worker rejects any request that lacks a valid per-tab session token or attempts to execute an unauthorized action.
 - **Origin Authentication**: The Background Service Worker strictly validates the origin and sender context of all incoming messages, rejecting any sensitive configuration or statistic requests from outside the extension's own verified context.
 
 ---
@@ -197,7 +196,6 @@ Chroma implements several advanced security measures to ensure integrity and pre
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offers. | `true` |
 | `suppressWarnings` | Removes anti-adblock modals/locks. | `true` |
-| `blockPopUnders` | Intercepts unauthorized new windows. | `true` |
 | `blockPushNotifications` | Blocks web notification requests. | `true` |
 | `whitelist` | Toggles blocking for the current active site. | `false` |
 

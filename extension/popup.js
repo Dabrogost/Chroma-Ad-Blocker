@@ -18,7 +18,6 @@ async function init() {
     ['toggleMerch',        'hideMerch',                true],
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
-    ['togglePopUnders',    'blockPopUnders',           true],
     ['togglePush',         'blockPushNotifications',   true],
   ];
 
