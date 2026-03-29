@@ -404,7 +404,5 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
-  globalThis.MSG = MSG;
-  globalThis.updateDNRState = updateDNRState;
   globalThis.syncDynamicRules = syncDynamicRules;
 }

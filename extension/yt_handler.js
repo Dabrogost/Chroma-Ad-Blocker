@@ -628,6 +628,5 @@
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;
     globalThis.updateAdOverlay = updateAdOverlay;
-    globalThis.cleanupVideoState = cleanupVideoState;
   }
 })();

@@ -694,11 +694,9 @@ init();
 // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   globalThis.CONFIG = CONFIG;
-  if (typeof window.MSG !== "undefined") globalThis.MSG = window.MSG;
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
   globalThis.isAdShowing = isAdShowing;
   globalThis.findActiveVideo = findActiveVideo;
-  globalThis.setIsAdActive = (val) => { isAdActive = val; };
   globalThis.getIsAdActive = () => isAdActive;
 }
 })();

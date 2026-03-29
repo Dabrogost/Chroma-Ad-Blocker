@@ -402,12 +402,10 @@
   // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
   if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
     globalThis.CONFIG = CONFIG;
-    globalThis.MSG = MSG;
     globalThis.injectAllCSS = injectAllCSS;
     globalThis.suppressAdblockWarnings = suppressAdblockWarnings;
     globalThis.removeLeftoverAdContainers = removeLeftoverAdContainers;
     globalThis.startObserver = startObserver;
-    globalThis.onYTNavigate = onYTNavigate;
     globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
     globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = val; };
   }
