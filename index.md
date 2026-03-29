@@ -198,7 +198,7 @@ graph TD
     VIDEO --> USER
     CONTENT --> USER
 
-    style CHROMA fill:none,stroke:#01579b,stroke-dasharray: 5 5
+    style CHROMA fill:none,stroke:none
     </div>
   </div>
 </section>
