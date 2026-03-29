@@ -38,6 +38,7 @@
   let targetAdVideo = null;
   let adOverlayHost = null; // The Shadow Host
   let adOverlayRoot = null; // The Closed Shadow Root
+  let skipListenerAdded = false;
 
   // ─── AD ACCELERATION ─────────────────────────────────────────────────────────
   function initAdOverlay() {
@@ -439,7 +440,7 @@
         }
       }
 
-      if (DEBUG) console.log('[Chroma] yt_handler updated config:', CONFIG);
+      if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
       
       if (!CONFIG.enabled || !CONFIG.acceleration) {
         if (pollingInterval) {
@@ -469,11 +470,15 @@
       } else {
         injectChromaCSS();
         startPolling();
+        initSkipButtonListener();
       }
     }
   });
 
   function initSkipButtonListener() {
+    if (skipListenerAdded) return;
+    skipListenerAdded = true;
+
     API.addDocEventListener('click', (e) => {
       if (!window.chromaAdSessionActive) return;
       if (!e || !e.target || typeof e.target.closest !== 'function') return;
@@ -573,24 +578,7 @@
       }
     }
 
-    // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
-    API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
-      if (e.detail) {
-        // SECURE ASSIGNMENT: Only accept known configuration keys (VULN-07)
-        for (const key of VALID_CONFIG_KEYS) {
-          if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
-            CONFIG[key] = e.detail[key];
-          }
-        }
 
-        if (DEBUG) console.log('[Chroma] YouTube handler activated via handshake:', CONFIG);
-        
-        if (CONFIG.enabled && !pollingInterval) {
-          startPolling();
-          initSkipButtonListener();
-        }
-      }
-    });
 
     // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
     if (CONFIG.enabled) {

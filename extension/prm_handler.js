@@ -627,16 +627,7 @@ function init() {
   }
 
   // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
-  API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
-    if (e.detail) {
-      Object.assign(CONFIG, e.detail);
-      if (DEBUG) console.log('[Chroma] Prime handler activated via handshake:', CONFIG);
-      
-      if (CONFIG.enabled && !pollingInterval) {
-        startPolling();
-      }
-    }
-  });
+
 
   // Handle SPA transitions
   API.addEventListener('popstate', resetSession);
@@ -666,7 +657,7 @@ function init() {
 API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
   if (e.detail) {
     Object.assign(CONFIG, e.detail);
-    if (DEBUG) console.log('[Chroma] prm_handler updated config:', CONFIG);
+    if (DEBUG) console.log('[Chroma] Prime handler updated config:', CONFIG);
     
     if (!CONFIG.enabled || !CONFIG.acceleration) {
       if (pollingInterval) {
@@ -682,6 +673,7 @@ API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       document.body.classList.remove('chroma-prime-session');
       if (adOverlayHost) adOverlayHost.classList.remove('active');
     } else {
+      injectChromaCSS();
       startPolling();
     }
   }

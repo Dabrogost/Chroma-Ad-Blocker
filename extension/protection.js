@@ -138,10 +138,8 @@
       CONFIG.blockPushNotifications = false;
     }
     
-    // Cache selectors to pass to MAIN world
+    // Cache only necessary state to pass to MAIN world
     const selectors = {
-      HIDE_SELECTORS: isWhitelisted ? [] : (data.HIDE_SELECTORS || []),
-      WARNING_SELECTORS: isWhitelisted ? [] : (data.WARNING_SELECTORS || []),
       enabled: CONFIG.enabled
     };
 
