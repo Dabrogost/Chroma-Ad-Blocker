@@ -4,6 +4,9 @@
  * going through the extension store review process. This is to prevent
  * YouTube from blocking the extension.
  */
+/**
+ * @returns {chrome.declarativeNetRequest.Rule[]}
+ */
 export function getDefaultDynamicRules() {
   return [
     // Allow YouTube's ad measurement ping endpoints (Exemption)

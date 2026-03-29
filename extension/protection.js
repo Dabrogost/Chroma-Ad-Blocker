@@ -8,10 +8,11 @@
 (function() {
   const DEBUG = false;
   const MSG = window.MSG; // Provided by messaging.js
-  let isolatedPort; // This will hold our secure pipe
+  let isolatedPort;
+  let secretToken;
 
-  // Token-Based Authorization: Request a unique session token from the background script.
-  let secretToken = null;
+  // SECURITY: Request a unique session token from the background script.
+  /** @returns {Promise<boolean>} */
   const getTokenFromBackground = async () => {
     const response = await chrome.runtime.sendMessage({ type: 'GET_TOKEN' });
     if (response && response.token) {
@@ -28,15 +29,13 @@
 
 
 
-  /**
-   * Processes messages from the interceptor (via the secure MessagePort)
-   * and routes them to the background script.
-   */
+  // ─── MESSAGE PROCESSING ─────
+  /** @param {Object} data */
   function processInterceptorMessage(data) {
     if (!data || data.source !== 'chroma-interceptor') return;
 
 
-    // LEGACY: Handle existing message types that aren't yet using action/payload
+    // Legacy: Handle existing message types that aren't yet using action/payload.
     if (data.type === 'NOTIFICATION_ATTEMPT') {
       if (DEBUG) console.log('[Chroma Ad-Blocker] Blocked notification attempt');
       notifyBackground({
@@ -53,24 +52,22 @@
    * Listen for messages from the MAIN world interceptor
    */
 
+  // ─── SECURE HANDSHAKE ─────
   /**
-   * Securely transfers the secret token to the MAIN world using
-   * a two-way CustomEvent handshake with stopImmediatePropagation.
+   * Securely transfers the secret token to the MAIN world.
+   * SECURITY: Establish a private communication channel between worlds.
    */
   function initHandshake() {
-    // If background script failed to provide a token, abort handshake.
     if (!secretToken) {
       if (DEBUG) console.error('[Chroma Ad-Blocker] Token generation failed. Aborting handshake.');
       return; 
     }
 
     const handleMainReady = (e) => {
-      // Stop the host page from knowing the extension is initializing
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
       
-      // Clean up the listener so it only fires once
       document.removeEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
       
       if (DEBUG) console.log('[Chroma Ad-Blocker] MAIN world ready. Delivering token.');
@@ -78,17 +75,14 @@
       // Dispatch the token securely via CustomEvent
       document.dispatchEvent(new CustomEvent('__CHROMA_TOKEN_DELIVERY__'));
 
-      // Create the secure pipe (MessagePort)
       const channel = new MessageChannel();
       isolatedPort = channel.port1;
 
-      // Set up a listener for messages coming FROM interceptor.js
       isolatedPort.onmessage = (e) => {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Received via secure pipe:', e.data);
         processInterceptorMessage(e.data);
       };
 
-      // Send port2 to the MAIN world via MessageEvent
       try {
         window.dispatchEvent(new MessageEvent('__CHROMA_PORT_TRANSFER__', {
           ports: [channel.port2]
@@ -109,7 +103,6 @@
       if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
     };
 
-    // Attach the listener to catch the ping from interceptor.js
     document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
   }
 
@@ -138,20 +131,17 @@
       CONFIG.blockPushNotifications = false;
     }
     
-    // Securely pass initial configuration to the MAIN world bridge.
-
-    
+    // SECURITY: Authenticate and establish the secure bridge.
     await getTokenFromBackground();
-    initHandshake(); // Use CONFIG within handshake
-    document.documentElement.setAttribute('data-chroma-init', 'complete');
+    initHandshake();
+    document.documentElement.setAttribute('data-chroma-init', 'complete'); // SECURITY: Informs site-specific handlers that security context is established.
   });
 
-  // Listen for config updates
+  // ─── CONFIGURATION UPDATES ─────
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === MSG.CONFIG_UPDATE) {
       CONFIG.enabled = msg.config.enabled !== false;
       CONFIG.blockPushNotifications = msg.config.blockPushNotifications !== false;
-      // Forward to MAIN world if port is active
       if (isolatedPort) {
         isolatedPort.postMessage({
           type: 'BACKGROUND_RESPONSE',

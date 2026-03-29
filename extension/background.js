@@ -12,10 +12,9 @@ import { getDefaultDynamicRules } from './defaultDynamicRules.js';
 
 const DEBUG = false;
 
-// ─── INSTALL / STARTUP ────────────────────────────────────────────────────────
+// ─── INSTALL / STARTUP ─────
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') {
-    // Set default config on first install
     await chrome.storage.local.set({
       config: {
         networkBlocking: true,
@@ -25,7 +24,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         hideMerch: true,
         hideOffers: true,
         suppressWarnings: true,
-        accelerationSpeed: 16,
+        accelerationSpeed: 16, // Maximum playback rate supported for ad acceleration
         blockPushNotifications: true,
         enabled: true,
       },
@@ -62,7 +61,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
 
-  // Load any saved dynamic rules on startup
   const { config: storedConfig } = await chrome.storage.local.get('config');
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
@@ -76,7 +74,7 @@ chrome.runtime.onStartup.addListener(async () => {
   await updateDNRState(isEnabled && isNetworkBlocking);
 });
 
-// ─── DYNAMIC RULE UPDATES ─────────────────────────────────────────────────────
+// ─── DYNAMIC RULE UPDATES ─────
 const STATIC_RULESETS = [
   'yt_original_rules',
   'yt_ad_rules_part1',
@@ -111,15 +109,15 @@ async function updateDNRState(isEnabled) {
  * Dynamic rules let us update blocking patterns WITHOUT a Chrome Web Store
  * review cycle — critical because YouTube changes ad delivery domains rapidly.
  * Up to 30,000 "safe" dynamic rules (block/allow) are supported.
+ * @returns {Promise<void>}
  */
 async function syncDynamicRules() {
   try {
     const stored = await chrome.storage.local.get('dynamicRules');
     const rules = stored.dynamicRules || getDefaultDynamicRules();
 
-    // Only remove rules that are NOT whitelist rules (whitelist is 9,000,000+)
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeIds = existing.filter(r => r.id < 9000000).map(r => r.id);
+    const removeIds = existing.filter(r => r.id < 9000000).map(r => r.id); // Exclude whitelist range (9,000,000+)
 
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: removeIds,
@@ -144,13 +142,12 @@ async function syncWhitelistRules() {
     // Whitelist rules use a safe high range (9,000,000+)
     const WHITELIST_START_ID = 9000000;
     
-    // Remove all existing whitelist rules
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const removeIds = existing.filter(r => r.id >= WHITELIST_START_ID).map(r => r.id);
     
     const addRules = whitelist.map((domain, index) => ({
       id: WHITELIST_START_ID + index,
-      priority: 999999, // Absolute priority
+      priority: 999999, // Absolute Priority
       action: { type: 'allow' },
       condition: {
         initiatorDomains: [domain],
@@ -185,7 +182,7 @@ async function updateSessionData(key, value) {
 
 
 
-// ─── MESSAGE TYPES ──────────────────────────────────────────────────────────
+// ─── MESSAGE TYPES ─────
 /**
  * Maintain parity with messaging.js. Content scripts and background workers 
  * operate in isolated scopes, requiring manual synchronization of constants.
@@ -202,7 +199,7 @@ const MSG = {
   SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
 };
 
-// ─── CONFIGURATION VALIDATION ───────────────────────────────────────────────
+// ─── CONFIGURATION VALIDATION ─────
 function validateConfig(inputConfig) {
   const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'blockPushNotifications', 'enabled'];
   const validatedConfig = {};
@@ -226,14 +223,14 @@ function validateConfig(inputConfig) {
 }
 
 
-// ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
+// ─── MESSAGE HANDLER ─────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const handler = async () => {
     try {
       const sessionData = await getSessionData();
       const tabId = _sender.tab?.id;
 
-      // SECURITY: ORIGIN AUTHENTICATION
+      // SECURITY: Origin Authentication
       const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
       const isFromInternal = _sender.origin === extensionOrigin;
 
@@ -281,7 +278,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             if (sessionData.tokenRetrievalLocked[tabId]) return sendResponse({ error: 'Locked' });
             sessionData.tokenRetrievalLocked[tabId] = true;
             await updateSessionData('tokenRetrievalLocked', sessionData.tokenRetrievalLocked);
-            const buffer = new Uint8Array(16);
+            const buffer = new Uint8Array(16); // 128-bit entropy for session token generation
             crypto.getRandomValues(buffer);
             const token = Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
             sessionData.sessionTokens[tabId] = token;
@@ -332,7 +329,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 
-// ─── NETWORK BLOCK TRACKING (DNR) ───────────────────────────────────────────
+// ─── NETWORK BLOCK TRACKING (DNR) ─────
 /**
  * Developer Mode Check: onRuleMatchedDebug only provides real-time updates 
  * when the extension is loaded as an unpacked directory.
@@ -348,7 +345,6 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
 
 
 
-// Clean up tab data on removal
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const sessionData = await getSessionData();
   let changed = false;
@@ -369,5 +365,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
+  /** @type {Function} */
   globalThis.syncDynamicRules = syncDynamicRules;
 }

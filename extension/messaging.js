@@ -1,7 +1,7 @@
 /**
  * Chroma Ad-Blocker Shared Messaging Utilities
  *
- * NOTE: Script is multi-injected. window property assignment bypasses
+ * Note: Script is multi-injected. window property assignment bypasses
  * const/let declaration conflicts across injections.
  */
 
@@ -38,7 +38,6 @@ if (typeof window.notifyBackground === 'undefined') {
         return null;
       });
     } catch (err) {
-      // Catching synchronous errors (e.g. extension context invalidated)
       return Promise.resolve(null);
     }
   };

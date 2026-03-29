@@ -3,14 +3,14 @@
 
   const DEBUG = false;
 
-  // ─── CONFIG ──────────────────────────────────────────────────────────────────
+  // ─── CONFIG ─────
   // Use Object.create(null) to protect against Prototype Pollution
   const CONFIG = Object.create(null);
   Object.assign(CONFIG, {
     enabled: false, // Default to disabled until handshake (KILL SWITCH)
     acceleration: false,
-    accelerationSpeed: 16,
-    checkIntervalMs: 300,
+    accelerationSpeed: 16, // Maximum playback rate supported by Chrome for ad acceleration
+    checkIntervalMs: 300,  // Interval between ad state checks (ms)
   });
 
   // Whitelist of allowed config keys for secure updates (VULN-07 Hardening)
@@ -34,34 +34,42 @@
   const sI = (f, t) => API.setInterval(f, t);
   const cI = (i) => API.clearInterval(i);
 
-  // ─── STATE ────────────────────────────────────────────────────────────────────
+  // ─── STATE ─────
   let targetAdVideo = null;
-  let adOverlayHost = null; // The Shadow Host
-  let adOverlayRoot = null; // The Closed Shadow Root
+  let adOverlayHost = null;
+  let adOverlayRoot = null;
   let skipListenerAdded = false;
 
-  // ─── AD ACCELERATION ─────────────────────────────────────────────────────────
+  // ─── AD ACCELERATION ─────
   function initAdOverlay() {
     if (adOverlayHost) return;
     
     adOverlayHost = cE('div');
-    // Unique session ID to prevent detection by host-page scripts while 
-    // remaining logic-addressable.
-    adOverlayHost.id = 'chroma-host-' + Math.random().toString(36).substring(2, 9);
+    // SECURITY: Unique session ID to prevent detection by host-page scripts while remaining logic-addressable.
+    adOverlayHost.id = 'chroma-host-' + Math.random().toString(36).substring(2, 9); // Random 7-char suffix to evade detector scripts
     
-    // Shadow DOM isolation: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
+    // SECURITY: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
     adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
     
-    // Inject Styles into ShadowRoot
     const style = cE('style');
     style.textContent = `
       :host {
+        display: block !important;
         position: absolute !important;
         top: 0 !important; left: 0 !important; 
         width: 100% !important; height: 100% !important;
+        z-index: 2147483640 !important;
+        pointer-events: none !important;
+        contain: strict !important;
+        margin: 0 !important; padding: 0 !important;
+        box-sizing: border-box !important;
+      }
+      .chroma-screen {
+        position: absolute !important;
+        top: 0 !important; left: 0 !important;
+        width: 100% !important; height: 100% !important;
         background: rgba(15, 15, 18, 0.8) !important;
         backdrop-filter: blur(12px) !important;
-        z-index: 2147483640 !important;
         display: flex !important;
         flex-direction: column !important;
         align-items: center !important;
@@ -70,9 +78,10 @@
         font-family: 'YouTube Noto', Roboto, Arial, sans-serif !important;
         opacity: 0 !important;
         transition: opacity 0.2s ease !important;
+        box-sizing: border-box !important;
         pointer-events: none !important;
       }
-      :host(.active) {
+      :host(.active) .chroma-screen {
         opacity: 1 !important;
         pointer-events: all !important;
       }
@@ -107,9 +116,10 @@
       }
       .chroma-subtitle {
         font-size: 15px; color: #eee;
-        position: absolute;
-        bottom: 18%;
         text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+        margin-top: 8px !important;
+        text-align: center !important;
+        max-width: 80% !important;
       }
       .chroma-progress-container {
         position: absolute;
@@ -129,6 +139,9 @@
       }
     `;
     
+    const screen = cE('div');
+    screen.className = 'chroma-screen';
+
     const spinner = cE('div');
     spinner.className = 'chroma-spinner';
     
@@ -147,11 +160,13 @@
     progressBar.className = 'chroma-progress-bar';
     progressContainer.appendChild(progressBar);
     
+    screen.appendChild(spinner);
+    screen.appendChild(title);
+    screen.appendChild(subtitle);
+    screen.appendChild(progressContainer);
+
     adOverlayRoot.appendChild(style);
-    adOverlayRoot.appendChild(spinner);
-    adOverlayRoot.appendChild(title);
-    adOverlayRoot.appendChild(subtitle);
-    adOverlayRoot.appendChild(progressContainer);
+    adOverlayRoot.appendChild(screen);
 
     const playerContainer = qS('.html5-video-player') || qS('#movie_player');
     if (playerContainer && !playerContainer.contains(adOverlayHost)) {
@@ -218,7 +233,7 @@
 
     // Heuristic completion check: Terminal state reached if the final ad in a sequence finishes or a manual skip is detected.
     const isOnFinalAd = (window.cachedCurrentAd || 1) >= (window.cachedTotalAds || 1);
-    const isAdMediaFinished = video && video.duration > 0 && video.currentTime >= video.duration - 0.5;
+    const isAdMediaFinished = video && video.duration > 0 && video.currentTime >= video.duration - 0.5; // 0.5s end-of-ad threshold
     const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || window.chromaAdSkipped;
     
     const spinner = adOverlayRoot.querySelector('.chroma-spinner, .chroma-checkmark');
@@ -324,6 +339,12 @@
     const video = currentAdVideo || targetAdVideo || qS('#movie_player video, .html5-main-video');
     if (!video) return;
 
+    // Heuristics: Calculate time since last ad detection and verify main video readiness for session release.
+    const now = Date.now();
+    const timeSinceAd = window.lastAdDetectTime ? now - window.lastAdDetectTime : 0;
+    const mainVideo = qS('.html5-main-video');
+    const isMainVideoReady = mainVideo && mainVideo.readyState >= 3;
+
     if (rawAdShowing && currentAdVideo) {
       targetAdVideo = currentAdVideo;
     }
@@ -335,8 +356,7 @@
       if (!window.chromaAdSessionActive) {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Ad Session Detected');
         window.chromaAdSkipped = false; 
-        // Performance Optimization: Switches to rAF-synced watcher during active
-        // ads for frame-perfect acceleration and overlay synchronization.
+        // Performance Optimization: Switches to rAF-synced watcher during active ads for frame-perfect acceleration and overlay synchronization.
         startFastAdWatcher(); 
       }
       window.chromaAdSessionActive = true;
@@ -344,14 +364,13 @@
     }
 
     if (!rawAdShowing) {
+      const now = Date.now();
+      const timeSinceAd = window.lastAdDetectTime ? now - window.lastAdDetectTime : 0;
+      const mainVideo = qS('.html5-main-video');
+      const isMainVideoReady = mainVideo && mainVideo.readyState >= 3;
+
       // Session release logic:
-      // 1. End session IMMEDIATELY if the main video has started playing (readyState 3+, currentTime > 0).
-      // 2. Otherwise, wait 500ms to bridge gaps between ads in a pod.
-      // 3. 5000ms watchdog for edge cases.
-      const timeSinceAd = Date.now() - window.lastAdDetectTime;
-      const isMainVideoReady = video && video.readyState >= 3 && !video.paused && video.currentTime > 0;
-      
-      if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) {
+      if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) { // 500ms pod gap bridge; 5000ms watchdog timeout
         window.chromaAdSessionActive = false;
       }
     }
@@ -415,7 +434,7 @@
   }
 
 
-
+  // ─── POLLING & INITIALIZATION ─────
   function onYTNavigate() {
     cleanupVideoState();
     window.chromaAdSessionActive = false;
@@ -433,7 +452,7 @@
   // We now handle config updates via a custom event from interceptor.js or direct property update
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
-      // Configuration Lockdown: Validating update keys against a strict allowlist to prevent arbitrary property injection.
+      // SECURITY: Validating update keys against a strict allowlist to prevent arbitrary property injection.
       for (const key of VALID_CONFIG_KEYS) {
         if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
           CONFIG[key] = e.detail[key];
@@ -530,7 +549,7 @@
       body.chroma-session-active .ytp-skip-ad-button,
       body.chroma-session-active .videoAdUiSkipButton,
       body.chroma-session-active [id^="skip-button:"] {
-        border: 1.5px solid #FE0034 !important;
+        border: 1.5px solid #FE0034 !important; // Consistent border width for UI highlighting
         border-radius: 24px !important;
         box-shadow: 0 0 15px rgba(254, 0, 52, 0.4), 
                     inset 0 0 6px rgba(254, 0, 52, 0.2) !important;
@@ -553,9 +572,9 @@
       }
       
     `;
-    // Lockdown: Attempt to freeze the style object properties to mitigate potential host-page tampering.
+    // SECURITY: Attempt to freeze the style object properties to mitigate potential host-page tampering.
     try {
-      Object.freeze(style);
+      Object.freeze(style); // SECURITY: Mitigation against host-page style property tampering.
     } catch (e) {}
     (document.head || document.documentElement).appendChild(style);
   }
@@ -569,7 +588,7 @@
 
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
     if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-      // Initial state validation: Enforcing allowlist on configuration received during the secure handshake.
+      // SECURITY: Enforcing allowlist on configuration received during the secure handshake.
       const remoteConfig = window.__CHROMA_INTERNAL__.config;
       for (const key of VALID_CONFIG_KEYS) {
         if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
@@ -586,17 +605,17 @@
       startPolling();
       initSkipButtonListener();
     } else {
-      // SAFETY FALLBACK: Poll for isolated-world sentinel before activating.
+      // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = API.setInterval(() => {
         const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
         const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
         _pollCount++;
 
-        if (initDone || _pollCount >= 40) {
+        if (initDone || _pollCount >= 40) { // Limit retry attempts (2 seconds) to prevent infinite polling
           API.clearInterval(_pollId);
           if (!CONFIG.enabled && !whitelisted) {
-            // SAFETY FALLBACK: protection.js finished (or timed out) and domain is not whitelisted.
+            // Safety Fallback: protection.js finished (or timed out) and domain is not whitelisted.
             if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up YouTube handler with defaults.');
             CONFIG.enabled = true;
             CONFIG.acceleration = true;
@@ -605,17 +624,21 @@
             initSkipButtonListener();
           }
         }
-      }, 50);
+      }, 50); // Polling frequency (50ms) for initialization check
     }
   }
 
   init();
 
-  // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
+  // ─── TESTING EXPORTS ─────
   if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
+    /** @returns {void} */
     globalThis.CONFIG = CONFIG;
+    /** @returns {void} */
     globalThis.initAdOverlay = initAdOverlay;
+    /** @returns {void} */
     globalThis.handleAdAcceleration = handleAdAcceleration;
+    /** @returns {void} */
     globalThis.updateAdOverlay = updateAdOverlay;
   }
 })();

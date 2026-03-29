@@ -5,7 +5,7 @@
   const MSG = window.MSG; // Provided by messaging.js
 
 
-  // ─── CONFIG ──────────────────────────────────────────────────────────────────
+  // ─── CONFIG ─────
   const CONFIG = {
     enabled: true,
     networkBlocking: true,
@@ -18,15 +18,15 @@
 
   const isYouTube = window.location.hostname.includes('youtube.com');
 
-  // ─── STATE ────────────────────────────────────────────────────────────────────
+  // ─── STATE ─────
   let observer = null;
   let HIDE_SELECTORS = [];
   let WARNING_SELECTOR_COMBINED = '';
   
   // Track our adopted stylesheets to allow toggling without clobbering other extensions
-  const chromaSheets = new Map(); // id -> CSSStyleSheet
+  const chromaSheets = new Map();
 
-  // ─── COSMETIC FILTERING ───────────────────────────────────────────────────────
+  // ─── COSMETIC FILTERING ─────
   function injectAllCSS() {
     const styles = [
       {
@@ -52,10 +52,10 @@
           .ytp-skip-ad-button, 
           .videoAdUiSkipButton,
           [id^="skip-button:"] {
-            z-index: 2147483647 !important;
+            z-index: 2147483647 !important; // Maximum 32-bit signed integer for absolute top-layer positioning
           }
           .ytp-chrome-bottom {
-            z-index: 9999999 !important;
+            z-index: 9999999 !important; // High layer for player controls
           }
         `,
         isEnabled: () => CONFIG.enabled && CONFIG.cosmetic
@@ -128,14 +128,13 @@
   }
 
 
-  // ─── ANTI-ADBLOCK WARNING SUPPRESSION ────────────────────────────────────────
+  // ─── ANTI-ADBLOCK WARNING SUPPRESSION ─────
   function suppressAdblockWarnings(nodes) {
     if (!CONFIG.enabled || !CONFIG.suppressWarnings || !WARNING_SELECTOR_COMBINED) return;
 
     let removedAny = false;
 
     if (!nodes) {
-      // Fallback for full document checks (e.g. init, navigation)
       if (!WARNING_SELECTOR_COMBINED) return; 
       const els = document.querySelectorAll(WARNING_SELECTOR_COMBINED);
       if (els.length > 0) {
@@ -143,7 +142,6 @@
         els.forEach(el => el.remove());
       }
     } else {
-      // Fast path for MutationObserver: process only added nodes
       const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes];
       for (const node of nodesToProcess) {
         if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
@@ -175,11 +173,10 @@
     }
   }
 
-  // ─── DOM OBSERVER ─────────────────────────────────────────────────────────────
+  // ─── DOM OBSERVER ─────
   function startObserver() {
     if (observer) observer.disconnect();
 
-    // State trackers for batched DOM processing via requestAnimationFrame to maintain UI performance.
     let pendingNodes = new Set();
     let pendingFrame = false;
 
@@ -223,16 +220,16 @@
 
       const isElement = node.nodeType === Node.ELEMENT_NODE;
 
-      // Heuristic-based container removal: Targeting ad-specific IDs while protecting core UI components.
+      // Heuristic-Based Container Removal: Targeting ad-specific IDs while protecting core UI components.
       const processAdContainer = (el) => {
         if (!el || !el.id) return;
         
-        // 1. Exclude internal extension styles and critical site elements
+        // Exclusion: Internal extension styles and critical site elements
         const id = el.id.toLowerCase();
         const EXCLUDE_IDS = ['chroma', 'masthead', 'player', 'content', 'columns', 'guide', 'secondary', 'primary'];
         if (EXCLUDE_IDS.some(ex => id.includes(ex))) return;
 
-        // 2. More restrictive matching for ad-like IDs
+        // Matching: Restrictive ad-like ID patterns
         // We look for patterns that are typical of ad injections but not general UI.
         const isAdPattern = /^(ad[_-]container|ad[_-]slot|google_ads_iframe|taboola-|outbrain-)/i.test(id) || 
                            (id.includes('ad-container') && !id.includes('video-ad-container'));
@@ -248,16 +245,15 @@
         processAdContainer(node);
       }
       if (typeof node.querySelectorAll === 'function') {
-        // Only target specific suspicious patterns to avoid over-matching
         node.querySelectorAll('[id*="ad-container"], [id*="ad_container"], [id*="ad-slot"]').forEach(processAdContainer);
       }
     }
   }
 
-  // ─── NAVIGATION HANDLING (SPA) ────────────────────────────────────────────────
+  // ─── NAVIGATION HANDLING (SPA) ─────
   function onYTNavigate() {
-    // Multi-stage cleanup: Accounts for both early DOM mounting and late-loading ad scripts during SPA navigation.
-    [500, 1500].forEach(delay => {
+    // Multi-Stage Cleanup: Accounts for both early DOM mounting and late-loading ad scripts.
+    [500, 1500].forEach(delay => { // Multi-stage timeouts for SPA navigation to catch late-mounting ads
       setTimeout(() => {
         suppressAdblockWarnings();
         removeLeftoverAdContainers();
@@ -270,7 +266,7 @@
     document.addEventListener('yt-page-data-updated', onYTNavigate);
   }
 
-  // ─── MESSAGE LISTENER ────────────────────────────────────────────────────────
+  // ─── MESSAGE LISTENER ─────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === MSG.CONFIG_UPDATE) {
       Object.assign(CONFIG, msg.config);
@@ -288,12 +284,12 @@
     }
   });
 
-  // ─── INIT ─────────────────────────────────────────────────────────────────────
+  // ─── INIT ─────
   async function init() {
     try {
       const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']);
       
-      // Domain Exclusion: Terminate initialization for whitelisted domains to ensure zero overhead and interference.
+      // Domain Exclusion: Terminate initialization for whitelisted domains.
       const whitelist = data.whitelist || [];
       const hostname = window.location.hostname;
       if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {
@@ -329,14 +325,23 @@
 
   init();
 
-  // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
+  // ─── TESTING EXPORTS ─────
   if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
+    /** @type {Object} */
     globalThis.CONFIG = CONFIG;
+    /** @returns {void} */
     globalThis.injectAllCSS = injectAllCSS;
+    /** @param {NodeList|Element[]|Element} [nodes] */
     globalThis.suppressAdblockWarnings = suppressAdblockWarnings;
+    /** @param {NodeList|Element[]|Element} [nodes] */
     globalThis.removeLeftoverAdContainers = removeLeftoverAdContainers;
+    /** @returns {void} */
     globalThis.startObserver = startObserver;
+    /** @param {string} val */
+    /** @param {string} val */
     globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
+    /** @param {string[]} val */
+    /** @param {string[]} val */
     globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = val; };
   }
 })();

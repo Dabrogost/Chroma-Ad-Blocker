@@ -12,7 +12,7 @@
     /* ── Custom Properties (from website) ─────────────────────────── */
     :root {
       --bg-void:       #04020c;
-      --bg-glass:      rgba(10, 5, 25, 0.65);
+      --bg-glass:      rgba(10, 5, 25, 0.58);
       --bg-card:       rgba(14, 7, 32, 0.75);
       --border-glass:  rgba(108, 92, 231, 0.25);
       --border-hover:  rgba(0, 136, 255, 0.5);
@@ -52,21 +52,47 @@
 
     /* ── Background Layers ── */
     .aurora {
-      position: fixed; inset: 0; z-index: -5;
+      position: fixed; inset: 0; z-index: -4;
       pointer-events: none; overflow: hidden;
     }
-    .aurora__blob { position: absolute; border-radius: 50%; will-change: transform; filter: blur(40px); opacity: 0.5; }
-    .aurora__blob-1 { width: 200px; height: 200px; background: radial-gradient(circle, rgba(255, 0, 85, 0.15), transparent); top: -10%; left: -10%; animation: blob-move 15s infinite alternate; }
-    .aurora__blob-2 { width: 180px; height: 180px; background: radial-gradient(circle, rgba(153, 0, 255, 0.12), transparent); bottom: 10%; right: -5%; animation: blob-move 18s infinite alternate-reverse; }
-    
-    @keyframes blob-move { 
-      from { transform: translate(0, 0) scale(1); } 
-      to { transform: translate(20px, 30px) scale(1.1); } 
+    .aurora__blob {
+      position: absolute; border-radius: 50%; will-change: transform;
     }
 
+    .aurora__blob--1 {
+      width: 75vmax; height: 75vmax;
+      background: radial-gradient(circle at center, rgba(255, 0, 85, 0.18) 0%, transparent 68%);
+      top: -25%; left: -20%;
+      animation: blob-1 20s ease-in-out infinite alternate;
+    }
+    .aurora__blob--2 {
+      width: 65vmax; height: 65vmax;
+      background: radial-gradient(circle at center, rgba(153, 0, 255, 0.16) 0%, transparent 68%);
+      top: 15%; left: 25%;
+      animation: blob-2 26s ease-in-out infinite alternate;
+    }
+    .aurora__blob--3 {
+      width: 60vmax; height: 60vmax;
+      background: radial-gradient(circle at center, rgba(0, 136, 255, 0.15) 0%, transparent 68%);
+      bottom: -15%; right: -15%;
+      animation: blob-3 18s ease-in-out infinite alternate;
+    }
+    .aurora__blob--4 {
+      width: 45vmax; height: 45vmax;
+      background: radial-gradient(circle at center, rgba(0, 255, 204, 0.09) 0%, transparent 68%);
+      bottom: 25%; left: 5%;
+      animation: blob-4 30s ease-in-out infinite alternate;
+    }
+
+    @keyframes blob-1 { from { transform: translate(0, 0) scale(1); } to { transform: translate(8vw, 7vh) scale(1.18); } }
+    @keyframes blob-2 { from { transform: translate(0, 0) scale(1.08); } to { transform: translate(-7vw, 9vh) scale(0.92); } }
+    @keyframes blob-3 { from { transform: translate(0, 0) scale(1); } to { transform: translate(-9vw, -7vh) scale(1.22); } }
+    @keyframes blob-4 { from { transform: translate(0, 0) scale(1); } to { transform: translate(7vw, -9vh) scale(1.12); } }
+
     .grain {
-      position: fixed; inset: 0; z-index: -4; pointer-events: none; opacity: 0.04;
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      position: fixed; inset: 0; z-index: -5; pointer-events: none; opacity: 0.032;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 256px 256px;
     }
 
     /* ── PILL NAV (Header) ── */
@@ -83,10 +109,13 @@
       gap: 10px;
       padding: 6px 12px 6px 8px;
       background: var(--bg-glass);
-      backdrop-filter: blur(20px) saturate(160%);
+      backdrop-filter: blur(28px) saturate(160%);
+      -webkit-backdrop-filter: blur(28px) saturate(160%);
       border-radius: var(--r-pill);
       border: 1px solid var(--border-glass);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(255, 255, 255, 0.025) inset;
       animation: border-cycle 16s linear infinite;
     }
 
@@ -189,16 +218,21 @@
       font-size: 10px; font-weight: 700; color: var(--text-muted);
       text-transform: uppercase; letter-spacing: 0.1em;
       padding: 0 16px 8px;
+      text-align: center;
     }
 
     .protection-list {
       margin: 0 12px 16px;
       background: var(--bg-glass);
-      backdrop-filter: blur(16px);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
       border: 1px solid var(--border-glass);
       border-radius: var(--r-md);
       overflow: hidden;
       animation: border-cycle 16s linear infinite;
+      box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.02) inset;
     }
 
     .toggle-row {
@@ -310,9 +344,11 @@
 </head>
 <body>
 
-  <div class="aurora">
-    <div class="aurora__blob aurora__blob-1"></div>
-    <div class="aurora__blob aurora__blob-2"></div>
+  <div class="aurora" aria-hidden="true">
+    <div class="aurora__blob aurora__blob--1"></div>
+    <div class="aurora__blob aurora__blob--2"></div>
+    <div class="aurora__blob aurora__blob--3"></div>
+    <div class="aurora__blob aurora__blob--4"></div>
   </div>
   <div class="grain"></div>
 

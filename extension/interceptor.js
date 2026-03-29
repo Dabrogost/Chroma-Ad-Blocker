@@ -9,11 +9,9 @@
 
   const DEBUG = false;
 
-  // =========================================================================
-  // 0. THE DO-NO-HARM EXCLUSION LIST (User Safety First)
+  // ─── DO-NO-HARM EXCLUSION LIST ─────
   // Bypasses all MAIN world interception for critical infrastructure,
   // financial institutions, and core authentication providers.
-  // =========================================================================
 
   const CRITICAL_EXCLUSIONS = [
     // --- Authentication & Identity (Heavy reliance on popups/tokens) ---
@@ -52,33 +50,27 @@
     'lastpass.com'
   ];
 
-  // Top-Level Domains that should never be tampered with
   const CRITICAL_TLDS = ['.gov', '.mil', '.edu', '.int'];
 
+  /** @param {string} hostname */
   function isSafetyExcluded(hostname) {
     hostname = hostname.toLowerCase();
 
-    // 1. Check strict TLD matches
     if (CRITICAL_TLDS.some(tld => hostname.endsWith(tld))) return true;
 
-    // 2. Check root domains and subdomains
     return CRITICAL_EXCLUSIONS.some(domain => 
       hostname === domain || hostname.endsWith('.' + domain)
     );
   }
 
-  // EXECUTE SAFETY CHECK BEFORE ANY API CAPTURE
   if (isSafetyExcluded(window.location.hostname)) {
     // Terminate execution immediately for excluded domains to ensure zero interference.
     return; 
   }
 
-  // =========================================================================
-  // 1. THE PRISTINE CACHE (Mitigates Late-Binding Attacks)
+  // ─── PRISTINE CACHE ─────
   // Capture native APIs immediately to prevent host-page scripts from 
   // bypassing blockers by overwriting globals later.
-  // Effectiveness depends on injection timing (document_start).
-  // =========================================================================
   const pristineSetTimeout = window.setTimeout.bind(window);
   const pristineSetInterval = window.setInterval.bind(window);
   const pristineClearInterval = window.clearInterval.bind(window);
@@ -92,14 +84,7 @@
   const pristineAddDocEventListener = document.addEventListener.bind(document);
   const pristineRemoveDocEventListener = document.removeEventListener.bind(document);
 
-  // SECURE REFERENCE CACHE: Protect against Prototype Pollution hijacking (VULN-01)
-  const pristineFnToString = Function.prototype.toString;
-  const pristineCall = Function.prototype.call;
-  const pristineIncludes = String.prototype.includes;
-
-  // =========================================================================
-  // 1.5 IDENTIFY HOSTILE DOMAINS (Blast Radius Isolation)
-  // =========================================================================
+  // SECURITY: Protect against Prototype Pollution hijacking (VULN-01)
   const HOSTILE_DOMAINS = [
     'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',
     'amazon.co.jp', 'amazon.ca', 'amazon.fr', 'amazon.it',
@@ -108,16 +93,14 @@
   
   const isHostileDomain = HOSTILE_DOMAINS.some(d => window.location.hostname.endsWith(d));
 
-  // =========================================================================
-  // 3. THE DEAD MAN'S SWITCH (Detects Hijacked Environment)
+  // ─── DEAD MAN'S SWITCH ─────
   // Emergency disconnect: If core primitives are hijacked, the secure relay is
-  // disabled to prevent spoofing, which may degrade blocking capabilities.
-  // =========================================================================
+  // disabled to prevent spoofing.
   let isEnvironmentCompromised = false;
   try {
     const isNative = (fn) => {
       try {
-        // SECURITY BYPASS: Allow unit tests to skip native code verification in non-browser environments.
+        // SECURITY: Allow unit tests to skip native code verification.
         if (window.__CHROMA_TEST_ENVIRONMENT__ === true) return true;
 
         return typeof fn === 'function' && 
@@ -127,7 +110,6 @@
       }
     };
     
-    // Check core primitives
     if (!isNative(pristineCreateElement) || 
         !isNative(pristineDispatchEvent)) {
       isEnvironmentCompromised = true;
@@ -138,15 +120,15 @@
   }
 
   // =========================================================================
-  // 4. THE API LOCKDOWN (Prevents future host-page hijacking)
-  // =========================================================================
-  let chromaPort; // This will hold our secure pipe
+  // ─── API LOCKDOWN ─────
+  let chromaPort;
   let pingInterval;
 
   /**
    * Helper to send messages only via the secure pipe.
    * Fails closed if the port is not established or env is compromised.
    */
+  /** @param {Object} message */
   function sendToProtection(message) {
     if (isEnvironmentCompromised || !chromaPort) {
       if (DEBUG) console.error("[Chroma Ad-Blocker] Secure pipe not available/compromised. Dropping message.");
@@ -155,34 +137,32 @@
     chromaPort.postMessage(message);
   }
 
-  // =========================================================================
-  // 4. THE INTERCEPTOR (Logic for blocking and notifying)
-  // =========================================================================
+  // ─── INTERCEPTOR ─────
   let isInitialized = false;
 
   /**
-   * Initializes the interceptor with the secure token and selectors.
-   * This is called only after the secure handshake completes.
+   * @param {string} token
+   * @param {Object} [selectors]
    */
   function initChromaInterceptor(token, selectors = {}) {
     if (isInitialized) return;
     isInitialized = true;
 
-    // SECURE CONFIG STATE: Use local variables instead of HTML datasets to prevent host-page tampering.
+    // Secure Config State: Use local variables to prevent host-page tampering.
     const localConfig = {
       blockPushNotifications: selectors.blockPushNotifications !== false,
       enabled: selectors.enabled !== false
     };
 
-    // BRIDGE: Provisioning of secure messaging and configuration for authorized streaming domains (YouTube, Amazon/Prime Video).
+    // SECURITY: Provisioning of secure messaging for authorized domains.
     if (isHostileDomain) {
       // SECURITY: We NO LONGER expose the token on the window object (VULN-02 Fix).
       // Site-specific handlers (yt_handler, prm_handler) must use the exposed 'send' function
       // which automatically injects the token from this closure.
-      const internalBridge = Object.create(null);
+      const internalBridge = Object.create(null); // SECURITY: Rationale - Prevent property lookup via Prototype Chain.
       Object.assign(internalBridge, {
         config: Object.freeze({ ...selectors }),
-        // API Passthrough: Provide handlers with pre-cached, unpolluted native methods for DOM manipulation.
+        // API Passthrough: Provide handlers with pre-cached, unpolluted native methods.
         api: Object.freeze({
           querySelector: pristineQuerySelector,
           getElementById: pristineGetElementById,
@@ -195,7 +175,8 @@
         })
       });
 
-      // Immutable Bridge: Using Object.defineProperty to prevent host-page scripts from overwriting or intercepting the internal API.
+      // Immutable Bridge: Prevent host-page scripts from overwriting the internal API.
+      // SECURITY: Ensures critical API access cannot be hijacked by the site.
       try {
         Object.defineProperty(window, '__CHROMA_INTERNAL__', {
           value: Object.freeze(internalBridge),
@@ -210,10 +191,9 @@
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Hostile Domain: ${isHostileDomain}`);
 
-    // SECURITY: Use localConfig instead of insecure datasets (VULN-01/02 Hardening)
+    // SECURITY: Use localConfig instead of insecure datasets (VULN-01/02 Hardening).
     const checkPushBlocking = () => localConfig.enabled && localConfig.blockPushNotifications;
 
-    // Listen for config updates via the secure MessagePort
     pristineAddDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       if (e.detail) {
         Object.assign(localConfig, {
@@ -224,15 +204,14 @@
     }, true);
 
 
-    /**
-     * PUSH NOTIFICATION BLOCKING
-     */
+    // ─── PUSH NOTIFICATION BLOCKING ─────
     if (typeof window.Notification !== 'undefined') {
       const OriginalNotification = window.Notification;
       const originalRequestPermission = OriginalNotification.requestPermission;
 
       class ShadowNotification extends OriginalNotification {
         constructor(title, options) {
+          // SECURITY: Prevents sites from spawning non-consensual notification prompts.
           if (checkPushBlocking()) {
             if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked Notification construction:', title);
             sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
@@ -246,7 +225,7 @@
               if (typeof instance.onshow === 'function') {
                 try { instance.onshow(); } catch (e) {}
               }
-            }, 50);
+            }, 50); // Grace period for event listener attachment
             return instance;
           }
           return new OriginalNotification(title, options);
@@ -282,7 +261,8 @@
       window.Notification = ShadowNotification;
     }
 
-    // Deep Notification Blocking: Overriding ServiceWorkerRegistration prototype to catch background push notifications.
+    // Deep Notification Blocking: Overriding ServiceWorkerRegistration prototype.
+    // SECURITY: Blocks background push triggers that bypass window-level Notification API.
     if (typeof ServiceWorkerRegistration !== 'undefined' && ServiceWorkerRegistration.prototype) {
       const originalShowNotification = ServiceWorkerRegistration.prototype.showNotification;
       ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
@@ -297,6 +277,7 @@
     if (typeof navigator.permissions !== 'undefined' && typeof navigator.permissions.query === 'function') {
       const originalQuery = navigator.permissions.query;
       navigator.permissions.query = function(parameters) {
+        // SECURITY: Spoofs permission state to 'denied' to suppress repeat requests.
         if (parameters && parameters.name === 'notifications' && checkPushBlocking()) {
           return Promise.resolve({ state: 'denied', onchange: null, name: 'notifications' });
         }
@@ -321,8 +302,7 @@
       }
     }
 
-    // SECURITY: Freeze the overridden APIs (VULN-06)
-    // ONLY apply permanent prototype locks to known hostile domains.
+    // SECURITY: Freeze the overridden APIs (VULN-06).
     if (isHostileDomain) {
       try {
         const lock = (obj, prop) => {
@@ -340,33 +320,28 @@
   }
 
 
-  /**
-   * Secure Synchronization: Capture-phase handshake to establish the MessagePort.
-   * Repeats 'ready' signal to handle variable script injection order between worlds.
-   */
+  // ─── SECURE SYNCHRONIZATION ─────
+  /** @param {Event} e */
   const handleTokenDelivery = (e) => {
-    // IMMEDIATELY stop the event from reaching any host page listeners
     if (typeof e.stopImmediatePropagation === 'function') {
       e.stopImmediatePropagation();
     }
     
-    // Clear the ping interval immediately upon receipt
     if (pingInterval) {
       pristineClearInterval(pingInterval);
       pingInterval = null;
     }
     
-    // Clean up the listener immediately
     pristineRemoveDocEventListener('__CHROMA_TOKEN_DELIVERY__', handleTokenDelivery, true);
     
-    // SECURE HANDSHAKE: Use Capture-Phase CustomEvent to transfer the port (VULN-01 Hardening)
+    // SECURITY: Use Capture-Phase CustomEvent to transfer the port (VULN-01 Hardening).
     pristineAddEventListener('__CHROMA_PORT_TRANSFER__', function portCatcher(e) {
-      // 1. Kill the event immediately so the host page never knows it occurred
+      // SECURITY: Port Acquisition Capture Phase Logic
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
       
-      // 2. Grab the port from the event ports (MessageEvent compatibility)
+      // SECURITY: Grab the port from the event ports (MessageEvent compatibility).
       chromaPort = e.ports ? e.ports[0] : null;
       if (!chromaPort) {
         // Fallback for CustomEvent delivery if MessageEvent wasn't used/available
@@ -377,9 +352,7 @@
       
       if (!chromaPort) return;
 
-      // 3. Secure the port listeners
       chromaPort.onmessage = (msgEvent) => {
-        // Verify it's the INIT message or a CONFIG update
         if (msgEvent.data?.type === 'INIT_CHROMA') {
            const initData = msgEvent.data;
            if (initData.token) {
@@ -395,14 +368,12 @@
         }
       };
       
-      // 4. Clean up the listener
       pristineRemoveEventListener('__CHROMA_PORT_TRANSFER__', portCatcher, true);
     }, true); // MUST be true for Capture Phase!
   };
 
   pristineAddDocEventListener('__CHROMA_TOKEN_DELIVERY__', handleTokenDelivery, true);
   
-  // Ping 'READY' every 5 milliseconds until the token is received
   // DO NOT ping if compromised or if the site is whitelisted
   if (!isEnvironmentCompromised) {
     if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
@@ -410,9 +381,8 @@
       return;
     }
     
-    // Aggressive polling (5ms) for hostile domains to beat obfuscated scripts.
-    // Relaxed polling (50ms) for the rest of the web to save CPU cycles.
-    const pingRate = isHostileDomain ? 5 : 50;
+    // Aggressive polling (5ms) for hostile domains; relaxed polling (50ms) for general web.
+    const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web.
     
     pingInterval = pristineSetInterval(() => {
       pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__'));
@@ -420,4 +390,4 @@
   } else {
     initChromaInterceptor(null, {});
   }
-})(); // Execute immediately
+})();

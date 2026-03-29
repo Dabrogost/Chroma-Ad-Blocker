@@ -13,11 +13,11 @@ const CONFIG = Object.create(null);
 Object.assign(CONFIG, {
   enabled: false, // Default to disabled until handshake (KILL SWITCH)
   acceleration: false,
-  accelerationSpeed: 16,
-  checkIntervalMs: 400,
+  accelerationSpeed: 16, // Maximum playback rate supported for ad acceleration
+  checkIntervalMs: 400,  // Interval between ad state checks (ms)
 });
 
-// ─── PRISTINE API BRIDGE ──────────────────────────────────────────────────────
+// ─── PRISTINE API BRIDGE ─────
 // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
 const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
             window.__CHROMA_INTERNAL__.api : 
@@ -74,7 +74,7 @@ let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
 let savedVolume = 1;
 let lastAdEndTime = 0;
-const AD_COOLDOWN_MS = 2000;
+const AD_COOLDOWN_MS = 2000; // Cooldown to bridge ad-to-content transitions (ms)
 let consecutiveFalseCount = 0;
 
 /**
@@ -86,19 +86,29 @@ function initAdOverlay(video) {
   adOverlayHost = cE('div');
   adOverlayHost.id = 'prime-chroma-overlay';
   
-  // Shadow DOM isolation: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
+  // SECURITY: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
   adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
   
   // Inject Styles into ShadowRoot
   const style = cE('style');
   style.textContent = `
     :host {
+      display: block !important;
       position: absolute !important;
       top: 0 !important; left: 0 !important; 
       width: 100% !important; height: 100% !important;
+      z-index: 2147483647 !important;
+      pointer-events: none !important;
+      contain: strict !important;
+      margin: 0 !important; padding: 0 !important;
+      box-sizing: border-box !important;
+    }
+    .chroma-screen {
+      position: absolute !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important;
       background: rgba(0, 0, 0, 0.7) !important;
       backdrop-filter: blur(12px) !important;
-      z-index: 2147483647 !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
@@ -106,11 +116,10 @@ function initAdOverlay(video) {
       font-family: 'Amazon Ember', Arial, sans-serif !important;
       opacity: 0 !important;
       transition: opacity 0.5s ease-out !important;
+      box-sizing: border-box !important;
       pointer-events: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
     }
-    :host(.active) {
+    :host(.active) .chroma-screen {
       opacity: 1 !important;
       pointer-events: all !important;
     }
@@ -182,6 +191,9 @@ function initAdOverlay(video) {
     }
   `;
   
+  const screen = cE('div');
+  screen.className = 'chroma-screen';
+
   const contentBox = cE('div');
   contentBox.className = 'chroma-content-box';
   
@@ -208,8 +220,10 @@ function initAdOverlay(video) {
   contentBox.appendChild(subtitle);
   contentBox.appendChild(progressContainer);
   
+  screen.appendChild(contentBox);
+  
   adOverlayRoot.appendChild(style);
-  adOverlayRoot.appendChild(contentBox);
+  adOverlayRoot.appendChild(screen);
 
   // Target the best container: the SDK player container or the UI container
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
@@ -269,7 +283,7 @@ function updateAdOverlay(video, isActive) {
         const duration = video.duration;
         const currentTime = video.currentTime;
         
-        if (duration > 0 && duration < 600 && isFinite(duration) && isFinite(currentTime)) {
+        if (duration > 0 && duration < 600 && isFinite(duration) && isFinite(currentTime)) { // 10-minute threshold for sane ad duration
           percent = (currentTime / duration) * 100;
           currentAdRemainingStart = 0; // Reset estimation
         } else if (adTimer) {
@@ -297,7 +311,7 @@ function updateAdOverlay(video, isActive) {
             }
           } else {
             // Indeterminate progress (pulsating)
-            percent = (Date.now() % 2000) / 20; 
+            percent = (Date.now() % 2000) / 20; // Pulsating indeterminate progress (2000ms period)
           }
         }
       }
@@ -319,13 +333,23 @@ function injectChromaCSS() {
   const style = cE('style');
   style.id = 'prime-chroma-styles';
   style.textContent = `
-    #prime-chroma-overlay {
+    :host {
+      display: block !important;
       position: absolute !important;
       top: 0 !important; left: 0 !important; 
       width: 100% !important; height: 100% !important;
+      z-index: 2147483647 !important;
+      pointer-events: none !important;
+      contain: strict !important;
+      margin: 0 !important; padding: 0 !important;
+      box-sizing: border-box !important;
+    }
+    .chroma-screen {
+      position: absolute !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important;
       background: rgba(0, 0, 0, 0.7) !important;
       backdrop-filter: blur(12px) !important;
-      z-index: 2147483647 !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
@@ -333,11 +357,10 @@ function injectChromaCSS() {
       font-family: 'Amazon Ember', Arial, sans-serif !important;
       opacity: 0 !important;
       transition: opacity 0.5s ease-out !important;
+      box-sizing: border-box !important;
       pointer-events: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
     }
-    #prime-chroma-overlay.active {
+    .chroma-screen.active {
       opacity: 1 !important;
       pointer-events: all !important;
     }
@@ -361,7 +384,7 @@ function injectChromaCSS() {
       flex-grow: 0 !important;
       flex-shrink: 0 !important;
     }
-    #prime-chroma-overlay.active .chroma-content-box {
+    .chroma-screen.active .chroma-content-box {
       transform: translateY(-8px) !important;
     }
     .chroma-spinner {
@@ -419,7 +442,7 @@ function injectChromaCSS() {
     }
   `;
   // Lockdown: Attempt to freeze the style object properties to mitigate potential host-page tampering.
-  Object.freeze(style);
+  Object.freeze(style); // SECURITY: Mitigation against host-page style property tampering.
   (document.head || document.documentElement).appendChild(style);
 }
 
@@ -511,7 +534,7 @@ function findActiveVideo() {
 
 function handlePrimeAdAcceleration() {
   try {
-    // Critical Ordering: Capture ad state and video reference BEFORE the configuration guard 
+    // PERFORMANCE OPTIMIZATION: Capture ad state and video reference BEFORE the configuration guard 
     // to prevent UI 'flicker' caused by the MutationObserver/visibility-toggle race condition.
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
@@ -550,7 +573,7 @@ function handlePrimeAdAcceleration() {
     }
 
     if (rawAdShowing) {
-      consecutiveFalseCount = 0; // RESET
+      consecutiveFalseCount = 0;
       if (!isAdActive) {
         isAdActive = true;
         document.body.classList.add('chroma-prime-session');
@@ -568,9 +591,9 @@ function handlePrimeAdAcceleration() {
       }
       
     } else {
-      consecutiveFalseCount++; // INCREMENT
-      // Restore normal playback with DEBOUNCE (Fix 3)
-      if (isAdActive && consecutiveFalseCount >= 4) {
+      consecutiveFalseCount++;
+      // PERFORMANCE OPTIMIZATION: Restore normal playback with debounce.
+      if (isAdActive && consecutiveFalseCount >= 4) { // Require 4 consecutive negative detections (~1.6s)
         
         video.playbackRate = 1;
         video.volume = savedVolume;
@@ -592,7 +615,7 @@ function handlePrimeAdAcceleration() {
   }
 }
 
-// ─── POLLING & INITIALIZATION ────────────────────────────────────────────────
+// ─── POLLING & INITIALIZATION ─────
 let pollingInterval = null;
 
 function startPolling() {
@@ -602,7 +625,7 @@ function startPolling() {
 
 function resetSession() {
   isAdActive = false;
-  lastAdEndTime = 0; // Reset cooldown on explicit session reset
+  lastAdEndTime = 0;
   lastAcceleratedSrc = null;
   consecutiveFalseCount = 0;
   document.body.classList.remove('chroma-prime-session');
@@ -646,7 +669,7 @@ function init() {
       const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
       _pollCount++;
 
-      if (initDone || _pollCount >= 40) {
+      if (initDone || _pollCount >= 40) { // Limit retry attempts (2 seconds) to prevent infinite polling
         cI(_pollId);
         if (!CONFIG.enabled && !whitelisted) {
           // SAFETY FALLBACK: protection.js finished (or timed out) and domain is not whitelisted.
@@ -657,7 +680,7 @@ function init() {
           startPolling();
         }
       }
-    }, 50);
+    }, 50); // Polling frequency (50ms) for initialization check
   }
 }
 
@@ -689,12 +712,20 @@ API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
 
 init();
 
-// ─── TESTING EXPORTS ────────────────────────────────────────────────────────
+// ─── TESTING EXPORTS ─────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
+  /** @returns {void} */
+  /** @type {Object} */
   globalThis.CONFIG = CONFIG;
+  /** @returns {void} */
+  /** @returns {void} */
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
+  /** @returns {boolean} */
   globalThis.isAdShowing = isAdShowing;
+  /** @returns {Element|null} */
   globalThis.findActiveVideo = findActiveVideo;
+  /** @returns {boolean} */
+  /** @returns {boolean} */
   globalThis.getIsAdActive = () => isAdActive;
 }
 })();
