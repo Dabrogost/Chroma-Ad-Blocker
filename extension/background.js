@@ -286,64 +286,12 @@ function validateConfig(inputConfig) {
 }
 
 
-
-/**
- * Handle CLOSE_TAB request from content script.
- * SECURITY RULE: Only ever close the tab that the message originated from.
- */
-function handleCloseTab(sender, sendResponse) {
-  const targetTabId = sender.tab?.id;
-  if (!targetTabId) {
-    if (DEBUG) console.error('[Chroma] Cannot close tab: Sender tab ID undefined.');
-    sendResponse({ ok: false, error: 'No tabId found' });
-    return;
-  }
-
-  chrome.tabs.remove(targetTabId)
-    .then(() => {
-      sendResponse({ ok: true, action: 'TAB_CLOSED' });
-    })
-    .catch(err => {
-      if (DEBUG) console.error(`[Chroma] Failed to close tab ${targetTabId}:`, err);
-      sendResponse({ ok: false, error: err.message });
-    });
-}
-
-
 // ─── MESSAGE HANDLER ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const handler = async () => {
     try {
       const sessionData = await getSessionData();
       const tabId = _sender.tab?.id;
-
-      // ROUTER: Handle messages forwarded by protection.js from the Main World
-      if (msg.source === 'chroma_interceptor') {
-        if (DEBUG) console.log('[Chroma Ad-Blocker] Routed action from interceptor:', msg.action, msg.payload);
-        
-        // SECURITY: Verify the token for all MAIN world commands
-        const storedToken = tabId ? sessionData.sessionTokens[tabId] : null;
-        if (!storedToken || msg.token !== storedToken) {
-          if (DEBUG) console.error('[Chroma Security] Rejected MAIN world command: Invalid Token.');
-          sendResponse({ ok: false, error: 'Unauthorized' });
-          return;
-        }
-
-        // SECURITY: Whitelist allowed bridge actions
-        const ALLOWED_INTERCEPTOR_ACTIONS = ['CLOSE_TAB'];
-        if (!ALLOWED_INTERCEPTOR_ACTIONS.includes(msg.action)) {
-          if (DEBUG) console.error(`[Chroma Security] Rejected unauthorized action from interceptor: ${msg.action}`);
-          sendResponse({ ok: false, error: 'Unauthorized Action' });
-          return;
-        }
-
-        switch (msg.action) {
-          case 'CLOSE_TAB':
-            handleCloseTab(_sender, sendResponse);
-            break;
-        }
-        return;
-      }
 
       // SECURITY: ORIGIN AUTHENTICATION
       const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;

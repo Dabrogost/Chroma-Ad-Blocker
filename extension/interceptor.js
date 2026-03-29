@@ -194,23 +194,6 @@
       // which automatically injects the token from this closure.
       const internalBridge = Object.create(null);
       Object.assign(internalBridge, {
-        send: (payload) => {
-          // SECURITY: Whitelist allowed bridge actions (VULN: Messaging Bridge Abuse)
-          const ALLOWED_ACTIONS = ['CLOSE_TAB', 'WINDOW_OPEN_ATTEMPT'];
-          const action = (payload && payload.action) ? payload.action : (payload && payload.type);
-          
-          if (!ALLOWED_ACTIONS.includes(action)) {
-            if (DEBUG) console.error(`[Chroma Security] Blocked unauthorized bridge action: ${action}`);
-            return;
-          }
-
-          // Automatically inject token and source for site-specific handlers
-          sendToProtection({
-            ...payload,
-            token: token,
-            source: 'chroma-interceptor'
-          });
-        },
         config: Object.freeze({ ...selectors }),
         // API Passthrough: Provide handlers with pre-cached, unpolluted native methods for DOM manipulation.
         api: Object.freeze({

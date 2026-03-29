@@ -135,28 +135,6 @@
       return;
     }
 
-    // NEW: Generic Routing to Background
-    const payload = {
-      source: 'chroma_interceptor',
-      token: data.token,
-      action: data.action || data.type,
-      payload: data.payload || data
-    };
-
-    try {
-      chrome.runtime.sendMessage(payload, (response) => {
-        if (chrome.runtime.lastError) {
-          if (DEBUG) console.error("Background script unreachable:", chrome.runtime.lastError.message);
-          return;
-        }
-        // Optional: Send the response back down the secure pipe to the MAIN world
-        if (isolatedPort && response) {
-           isolatedPort.postMessage({ type: 'BACKGROUND_RESPONSE', data: response });
-        }
-      });
-    } catch (error) {
-      if (DEBUG) console.error("Failed to route message to background:", error);
-    }
   }
 
   /**

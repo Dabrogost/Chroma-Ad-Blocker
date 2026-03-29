@@ -9,13 +9,11 @@
   const CONFIG = {
     enabled: true,
     networkBlocking: true,
-    acceleration: true,
     cosmetic: true,
     hideShorts: false,
     hideMerch: true,
     hideOffers: true,
     suppressWarnings: true,
-    accelerationSpeed: 16,
   };
 
   const isYouTube = window.location.hostname.includes('youtube.com');

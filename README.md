@@ -172,7 +172,7 @@ Chroma implements several advanced security measures to ensure integrity and pre
 
 - **Immutable API Bridge**: Chroma exposes internal utilities (like `calculateChromaColor`) via a locked `__CHROMA_INTERNAL__` object. This bridge is protected using `Object.defineProperty` with `writable: false` and `configurable: false`, preventing host pages from hijacking or redefining extension-owned logic.
 - **Pristine API Caching**: `interceptor.js` captures and freezes native browser APIs (like `querySelector`, `setTimeout`, and `MutationObserver`) at `document_start`. This ensures that even if a site attempts prototype pollution or API tampering, the extension continues to operate using its own "known good" references.
-- **Strict Message Whitelisting**: The internal messaging bridge only permits a narrow list of authorized actions (e.g., `STATS_UPDATE`, `CLOSE_TAB`). The Background Service Worker rejects any request that lacks a valid per-tab session token or attempts to execute an unauthorized action.
+- **Strict Message Whitelisting**: The internal messaging bridge only permits a narrow list of authorized actions (e.g., `WINDOW_OPEN_NOTIFY`, `SUSPICIOUS_ACTIVITY`). The Background Service Worker rejects any request that lacks a valid per-tab session token or attempts to execute an unauthorized action.
 - **Origin Authentication**: The Background Service Worker strictly validates the origin and sender context of all incoming messages, rejecting any sensitive configuration or statistic requests from outside the extension's own verified context.
 
 ---
