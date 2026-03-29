@@ -36,21 +36,12 @@ The Extension requires specific permissions to function effectively. Below is a 
 ## 3. Data Sharing
 We do not share any data with third parties. There are no analytics, tracking, or telemetry scripts included in the Extension that communicate with external servers.
 
-## 3a. Anti-Detection Layer & Third-Party Tracking
+## 3a. Selective Network Permissions
+To maintain compatibility with certain websites, Chroma's ruleset permits a limited set of standard network requests to reach their intended destinations. These are called Allow Rules and apply only on specific domains where full blocking would impair page functionality.
 
-To remain functional on some Third-Party sites, Chroma permits a small set 
-of standard ad-measurement network requests to reach servers. These 
-are known as **Allow Rules** and apply only when you are browsing specific trusted 
-website domains. The affected endpoints include DoubleClick pixel tracking and 
-conversion-measurement pings.
+Chroma does not intercept, read, modify, or store any data from these requests. They originate from the site's own scripts and are sent directly to that site's servers.
 
-**What this means for you:** These requests originate from the Third-Party's own page 
-scripts and are sent directly to the Third-Party's servers. Chroma does not intercept, read, or 
-store any data from these requests. This tradeoff is necessary because blocking 
-them entirely causes some Third-Party sites to identify and counteract the extension.
-
-If you require a stricter privacy posture, you can disable the extension on 
-these websites entirely using the **Whitelist this site** toggle in the popup.
+If you require stricter network filtering, you can disable the extension on any site using the **Whitelist this site** toggle in the popup.
 
 ## 4. Third-Party Websites
 The Extension interacts with websites you visit to provide ad-blocking services. This interaction is limited to modifying the site's code locally to hide ads or accelerate video playback. We do not have access to your accounts or private data on those websites.
