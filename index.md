@@ -179,13 +179,19 @@ graph TD
     classDef actor fill:#1a1040,color:#ede8ff,stroke:#8b949e,stroke-width:2px
     classDef engine fill:#1a1040,color:#ede8ff,stroke:#01579b,stroke-width:2px
     classDef action fill:#1a0a35,color:#ede8ff,stroke:#f57f17,stroke-width:2px
+    classDef title fill:none,stroke:none,color:#ede8ff,font-size:16px,font-weight:bold
 
     INTERNET["The Internet (Ads & Content)"]:::actor
 
-    subgraph CHROMA["Chroma Ad-Blocker Engine<br/><br/>"]
+    subgraph CHROMA[" "]
+        TITLE["Chroma Ad-Blocker Engine"]:::title
         NETWORK["Network Shield (Blocks Trackers & Banners)"]:::action
         VIDEO["Video Accelerator (Speeds Through Video Ads)"]:::action
         CONTENT["Content Cleaner (Removes Overlays & Symbols)"]:::action
+        
+        TITLE ~~~ NETWORK
+        TITLE ~~~ VIDEO
+        TITLE ~~~ CONTENT
     end
 
     USER["The User (Cleaned Experience)"]:::actor
