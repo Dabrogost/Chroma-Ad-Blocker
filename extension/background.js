@@ -407,5 +407,4 @@ if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   globalThis.MSG = MSG;
   globalThis.updateDNRState = updateDNRState;
   globalThis.syncDynamicRules = syncDynamicRules;
-  globalThis.harvestNetworkStats = harvestNetworkStats;
 }

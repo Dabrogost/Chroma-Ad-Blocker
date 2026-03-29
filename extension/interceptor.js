@@ -94,9 +94,6 @@
   const pristineRemoveDocEventListener = document.removeEventListener.bind(document);
 
   // SECURE REFERENCE CACHE: Protect against Prototype Pollution hijacking (VULN-01)
-  
-  
-  // Integrity Verification: Cache prototype methods to prevent 'isNative' spoofing via host-page prototype pollution
   const pristineFnToString = Function.prototype.toString;
   const pristineCall = Function.prototype.call;
   const pristineIncludes = String.prototype.includes;
@@ -145,10 +142,6 @@
   // =========================================================================
   // 4. THE API LOCKDOWN (Prevents future host-page hijacking)
   // =========================================================================
-  if (isHostileDomain) {
-    // API Lockdown: Conditionals for potential future hardening
-  }
-
   let chromaPort; // This will hold our secure pipe
   let pingInterval;
 
@@ -241,37 +234,9 @@
      * PUSH NOTIFICATION BLOCKING
      */
     if (typeof window.Notification !== 'undefined') {
-      const originalRequestPermission = window.Notification.requestPermission;
-      
-      window.Notification.requestPermission = function(callback) {
-        if (checkPushBlocking()) {
-          if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked notification permission request.');
-          sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
-          
-          const denied = 'denied';
-          if (typeof callback === 'function') {
-            try { callback(denied); } catch (e) {}
-          }
-          return Promise.resolve(denied);
-        }
-        
-        if (typeof callback === 'function') {
-          return originalRequestPermission.call(this, (result) => callback(result));
-        }
-        return originalRequestPermission.apply(this, arguments);
-      };
-
-      if (!Object.getOwnPropertyDescriptor(window.Notification, 'permission')) {
-        Object.defineProperty(window.Notification, 'permission', {
-          get: function() {
-            if (checkPushBlocking()) return 'denied';
-            return 'default';
-          },
-          configurable: true
-        });
-      }
-
       const OriginalNotification = window.Notification;
+      const originalRequestPermission = OriginalNotification.requestPermission;
+
       class ShadowNotification extends OriginalNotification {
         constructor(title, options) {
           if (checkPushBlocking()) {
@@ -298,8 +263,25 @@
           return OriginalNotification.permission;
         }
 
-        static requestPermission(...args) {
-          return OriginalNotification.requestPermission(...args);
+        static requestPermission(callback) {
+          if (checkPushBlocking()) {
+            if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked notification permission request.');
+            sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
+            
+            const denied = 'denied';
+            if (typeof callback === 'function') {
+              try { callback(denied); } catch (e) {}
+            }
+            return Promise.resolve(denied);
+          }
+          
+          if (typeof originalRequestPermission === 'function') {
+            if (typeof callback === 'function') {
+               return originalRequestPermission.call(OriginalNotification, (result) => callback(result));
+            }
+            return originalRequestPermission.apply(OriginalNotification, arguments);
+          }
+          return Promise.resolve('default');
         }
       }
 

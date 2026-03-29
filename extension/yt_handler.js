@@ -626,7 +626,6 @@
   // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
   if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
     globalThis.CONFIG = CONFIG;
-    if (typeof window.MSG !== "undefined") globalThis.MSG = window.MSG;
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;
     globalThis.updateAdOverlay = updateAdOverlay;

@@ -80,10 +80,6 @@ let lastAdEndTime = 0;
 const AD_COOLDOWN_MS = 2000;
 let consecutiveFalseCount = 0;
 
-
-
-
-
 /**
  * Initializes the visual overlay for Prime Video.
  */
