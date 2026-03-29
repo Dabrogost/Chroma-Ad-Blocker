@@ -176,74 +176,29 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
 
     <div class="mermaid">
 graph TD
-    classDef sw fill:#1a1040,color:#ede8ff,stroke:#01579b,stroke-width:2px
-    classDef storage fill:#0a2040,color:#ede8ff,stroke:#00aaff,stroke-width:2px
-    classDef isolated fill:#1a0a35,color:#ede8ff,stroke:#1b5e20,stroke-width:2px
-    classDef main fill:#2a0a10,color:#ede8ff,stroke:#880e4f,stroke-width:2px
-    classDef dnr fill:#1a1040,color:#ede8ff,stroke:#311b92,stroke-width:2px
-    classDef dom fill:#1a0a35,color:#ede8ff,stroke:#f57f17,stroke-width:2px
-    classDef secure fill:#2a0a10,color:#ede8ff,stroke:#4a148c,stroke-width:2px
-    classDef actor fill:#161b22,color:#ede8ff,stroke:#8b949e,stroke-width:2px
+    classDef actor fill:#1a1040,color:#ede8ff,stroke:#8b949e,stroke-width:2px
+    classDef engine fill:#1a1040,color:#ede8ff,stroke:#01579b,stroke-width:2px
+    classDef action fill:#1a0a35,color:#ede8ff,stroke:#f57f17,stroke-width:2px
 
-    %% --- LAYER 0: ENTRANCE ---
-    INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
+    INTERNET["The Internet (Ads & Content)"]:::actor
 
-    %% --- LAYER 1: MAIN WORLD (Execution Context) ---
-    subgraph MW["Main World (Page Context)"]
-        INTERCEPT["interceptor.js (API Protection)"]:::main
-        YT_H["yt_handler.js (YouTube)"]:::main
-        PRM_H["prm_handler.js (Prime Video)"]:::main
-        BRIDGE["__CHROMA_INTERNAL__ (Secure Bridge)"]:::secure
+    subgraph CHROMA["Chroma Ad-Blocker Engine"]
+        NETWORK["Network Shield (Blocks Trackers & Banners)"]:::action
+        VIDEO["Video Accelerator (Speeds Through Video Ads)"]:::action
+        CONTENT["Content Cleaner (Removes Overlays & Symbols)"]:::action
     end
 
-    %% --- LAYER 2: ISOLATED WORLD (Extension Context) ---
-    subgraph IW["Isolated World (Relay Layer)"]
-        PROT["protection.js (Push Blocker)"]:::isolated
-        CONT["content.js (Cosmetic & Warnings)"]:::isolated
-    end
-
-    %% --- LAYER 3: SERVICE WORKER CORE ---
-    subgraph SW["Extension Core (Service Worker)"]
-        BG["background.js (Router & Rules)"]:::sw
-        TOKEN_G["Token Generator"]:::secure
-    end
-
-    %% --- LAYER 4: INFRASTRUCTURE ---
-    subgraph System["Resource & Network Layer"]
-        STORAGE[("chrome.storage (Local/Session)")]:::storage
-        DNR["Multi-Part DNR System (Rulesets)"]:::dnr
-        PLAYER["Media Players (YT/Prime)"]:::dom
-    end
-
-    %% --- LAYER 5: UI ---
-    POPUP["popup.js (UI & Stats)"]:::sw
     USER["The User (Cleaned Experience)"]:::actor
 
-    %% --- PIPELINE FLOW ---
-    INTERNET -- "Scripts" --> INTERCEPT
-    INTERNET -- "Network Traffic" --> DNR
-    
-    INTERCEPT ==>|"Session Handshake"| PROT
-    PROT ==>|"Message Relay"| BG
-    BG -- "Store Tokens" --> STORAGE
-    
-    BRIDGE --- YT_H
-    BRIDGE --- PRM_H
-    YT_H ==>|"Accelerated Playback"| PLAYER
-    PRM_H ==>|"Accelerated Playback"| PLAYER
-    
-    CONT ==>|"Inject CSS / Mutate"| PLAYER
-    DNR -- "Filter Stream" --> USER
-    PLAYER -- "Clean View" --> USER
-    
-    POPUP <-->|"Sync Config"| STORAGE
-    BG <-->|"Sync Rules"| DNR
+    INTERNET --> NETWORK
+    INTERNET --> VIDEO
+    INTERNET --> CONTENT
 
-    %% Style Tweaks
-    style MW fill:none,stroke:#880e4f,stroke-dasharray: 5 5
-    style IW fill:none,stroke:#1b5e20,stroke-dasharray: 5 5
-    style SW fill:none,stroke:#01579b,stroke-dasharray: 5 5
-    style System fill:none,stroke:#8b949e,stroke-dasharray: 5 5
+    NETWORK --> USER
+    VIDEO --> USER
+    CONTENT --> USER
+
+    style CHROMA fill:none,stroke:#01579b,stroke-dasharray: 5 5
     </div>
   </div>
 </section>
