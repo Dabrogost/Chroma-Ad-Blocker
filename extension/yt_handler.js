@@ -586,17 +586,26 @@
       startPolling();
       initSkipButtonListener();
     } else {
-      // Liveness watchdog: Fallback initialization for scenarios where the secure handshake is delayed or blocked by browser-level race conditions.
-      setTimeout(() => {
-        if (!CONFIG.enabled && !document.documentElement.getAttribute('data-chroma-whitelisted')) {
-          if (DEBUG) console.log('[Chroma] Handshake timeout. Waking up YouTube handler with defaults.');
-          CONFIG.enabled = true;
-          CONFIG.acceleration = true;
-          injectChromaCSS();
-          startPolling();
-          initSkipButtonListener();
+      // SAFETY FALLBACK: Poll for isolated-world sentinel before activating.
+      let _pollCount = 0;
+      const _pollId = API.setInterval(() => {
+        const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
+        const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
+        _pollCount++;
+
+        if (initDone || _pollCount >= 40) {
+          API.clearInterval(_pollId);
+          if (!CONFIG.enabled && !whitelisted) {
+            // SAFETY FALLBACK: protection.js finished (or timed out) and domain is not whitelisted.
+            if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up YouTube handler with defaults.');
+            CONFIG.enabled = true;
+            CONFIG.acceleration = true;
+            injectChromaCSS();
+            startPolling();
+            initSkipButtonListener();
+          }
         }
-      }, 1200);
+      }, 50);
     }
   }
 

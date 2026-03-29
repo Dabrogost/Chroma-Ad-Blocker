@@ -143,6 +143,7 @@
     
     await getTokenFromBackground();
     initHandshake(); // Use CONFIG within handshake
+    document.documentElement.setAttribute('data-chroma-init', 'complete');
   });
 
   // Listen for config updates

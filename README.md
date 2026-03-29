@@ -109,6 +109,20 @@ A proactive security layer that blocks intrusive push notification requests and 
 
 ---
 
+## Privacy & Transparency
+
+Chroma processes everything locally — no data is ever sent to Chroma's servers 
+because there are none. However, to maintain functionality on YouTube without 
+triggering anti-adblock detection, Chroma includes a small set of **Allow 
+Rules** that permit specific, standard ad-measurement requests (such as 
+DoubleClick pixels) to reach Google's servers. These rules are scoped 
+exclusively to `youtube.com` as the initiator domain.
+
+Chroma does not intercept or store any data from these requests. For a full 
+explanation of this tradeoff, see the [Privacy Policy](PRIVACY_POLICY.md).
+
+---
+
 ### Security Hardening
 
 Chroma implements several advanced security measures to ensure extension integrity and prevent bypass by third-party scripts:

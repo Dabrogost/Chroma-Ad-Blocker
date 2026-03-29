@@ -17,12 +17,16 @@ export function getDefaultDynamicRules() {
         resourceTypes: ['xmlhttprequest', 'image', 'ping'],
       },
     },
+    // Allow YouTube conversion-tracking pings (Anti-Detection: YouTube-only)
+    // PRIVACY TRADEOFF: Permits Google conversion measurement on youtube.com to
+    // prevent detection. Chroma does not receive or store this data.
     {
       id: 1002,
       priority: 1,
       action: { type: 'allow' },
       condition: {
         urlFilter: '/pagead/viewthroughconversion',
+        initiatorDomains: ['youtube.com', 'www.youtube.com'],
         resourceTypes: ['image', 'xmlhttprequest', 'ping'],
       },
     },
@@ -37,22 +41,29 @@ export function getDefaultDynamicRules() {
         resourceTypes: ['xmlhttprequest'],
       },
     },
-    // Allow DoubleClick pixel tracking (Exemption)
+    // Allow DoubleClick measurement pixel — YouTube-only (Anti-Detection)
+    // PRIVACY TRADEOFF: Permits standard ad-measurement infrastructure on
+    // youtube.com to prevent detection. Restricted to YouTube initiator only.
     {
       id: 1004,
       priority: 1,
       action: { type: 'allow' },
       condition: {
         urlFilter: '||cm.g.doubleclick.net^',
+        initiatorDomains: ['youtube.com', 'www.youtube.com'],
         resourceTypes: ['image', 'ping', 'xmlhttprequest'],
       },
     },
+    // Allow DoubleClick ad-serving domain — YouTube-only (Anti-Detection)
+    // PRIVACY TRADEOFF: Permits ad.doubleclick.net on youtube.com to prevent
+    // detection. Restricted to YouTube initiator only.
     {
       id: 1005,
       priority: 1,
       action: { type: 'allow' },
       condition: {
         urlFilter: '||ad.doubleclick.net^',
+        initiatorDomains: ['youtube.com', 'www.youtube.com'],
         resourceTypes: ['image', 'ping', 'xmlhttprequest', 'script'],
       },
     },

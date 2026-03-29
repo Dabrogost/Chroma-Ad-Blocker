@@ -639,17 +639,25 @@ function init() {
     injectChromaCSS();
     startPolling();
   } else {
-    // 4. SAFETY FALLBACK: If handshake fails to arrive but site is NOT whitelisted
-    // and we are NOT in a compromised environment, we wake up after a delay.
-    setTimeout(() => {
-      if (!CONFIG.enabled && !document.documentElement.getAttribute('data-chroma-whitelisted')) {
-        if (DEBUG) console.log('[Chroma] Handshake timeout. Waking up Prime handler with defaults.');
-        CONFIG.enabled = true;
-        CONFIG.acceleration = true;
-        injectChromaCSS();
-        startPolling();
+    // SAFETY FALLBACK: Poll for isolated-world sentinel before activating.
+    let _pollCount = 0;
+    const _pollId = sI(() => {
+      const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
+      const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
+      _pollCount++;
+
+      if (initDone || _pollCount >= 40) {
+        cI(_pollId);
+        if (!CONFIG.enabled && !whitelisted) {
+          // SAFETY FALLBACK: protection.js finished (or timed out) and domain is not whitelisted.
+          if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up Prime handler with defaults.');
+          CONFIG.enabled = true;
+          CONFIG.acceleration = true;
+          injectChromaCSS();
+          startPolling();
+        }
       }
-    }, 1200);
+    }, 50);
   }
 }
 

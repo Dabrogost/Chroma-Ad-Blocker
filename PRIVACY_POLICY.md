@@ -36,6 +36,22 @@ The Extension requires specific permissions to function effectively. Below is a 
 ## 3. Data Sharing
 We do not share any data with third parties. There are no analytics, tracking, or telemetry scripts included in the Extension that communicate with external servers.
 
+## 3a. Anti-Detection Layer & Third-Party Tracking
+
+To remain functional on platforms such as YouTube, Chroma permits a small set 
+of standard ad-measurement network requests to reach Google's servers. These 
+are known as **Allow Rules** and apply only when you are browsing YouTube 
+(`youtube.com`). The affected endpoints include DoubleClick pixel tracking and 
+Google conversion-measurement pings.
+
+**What this means for you:** These requests originate from YouTube's own page 
+scripts and are sent directly to Google. Chroma does not intercept, read, or 
+store any data from these requests. This tradeoff is necessary because blocking 
+them entirely causes YouTube to identify and counteract the extension.
+
+If you require a stricter privacy posture, you can disable the extension on 
+YouTube entirely using the **Whitelist this site** toggle in the popup.
+
 ## 4. Third-Party Websites
 The Extension interacts with websites you visit to provide ad-blocking services. This interaction is limited to modifying the site's code locally to hide ads or accelerate video playback. We do not have access to your accounts or private data on those websites.
 
