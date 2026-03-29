@@ -31,7 +31,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         enabled: true,
       },
       stats: { networkBlocked: 0 },
-      ruleCounter: 5000000,
       lastHarvestTime: Date.now(),
       HIDE_SELECTORS: [
         '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
@@ -255,7 +254,6 @@ const MSG = {
   CONFIG_SET: 'CONFIG_SET',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
   STATS_RESET: 'STATS_RESET',
-  STATS_UPDATE: 'STATS_UPDATE',
   WINDOW_OPEN_NOTIFY: 'WINDOW_OPEN_NOTIFY',
   SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
   GET_TOKEN: 'GET_TOKEN',
@@ -363,12 +361,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       }
 
       switch (msg.type) {
-        case MSG.STATS_UPDATE:
-          if (!isFromInternal) return;
-          const { config: storedConfig, stats: currentStats = {} } = await chrome.storage.local.get(['config', 'stats']);
-          if (storedConfig && storedConfig.enabled === false) return;
-          // Note: MSG.STATS_UPDATE for accelerated is now dead code.
-          break;
 
         case MSG.WINDOW_OPEN_NOTIFY:
           const winToken = tabId ? sessionData.sessionTokens[tabId] : null;

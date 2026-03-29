@@ -28,6 +28,15 @@ async function init() {
     }
   };
 
+  // Fetch configuration and stats on load
+  const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+  const isEnabled = config.enabled !== false;
+  
+  if ($('toggleEnabled')) {
+    $('toggleEnabled').checked = isEnabled;
+    updateStatusDot(isEnabled);
+  }
+  
   syncUI(config, isEnabled);
 
   // Load stats initially

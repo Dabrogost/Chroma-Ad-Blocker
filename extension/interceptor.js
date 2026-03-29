@@ -196,7 +196,7 @@
       Object.assign(internalBridge, {
         send: (payload) => {
           // SECURITY: Whitelist allowed bridge actions (VULN: Messaging Bridge Abuse)
-          const ALLOWED_ACTIONS = ['STATS_UPDATE', 'CLOSE_TAB', 'WINDOW_OPEN_ATTEMPT'];
+          const ALLOWED_ACTIONS = ['CLOSE_TAB', 'WINDOW_OPEN_ATTEMPT'];
           const action = (payload && payload.action) ? payload.action : (payload && payload.type);
           
           if (!ALLOWED_ACTIONS.includes(action)) {
