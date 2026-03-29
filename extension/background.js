@@ -170,27 +170,6 @@ async function syncWhitelistRules() {
   }
 }
 
-// Initial load and listen for updates
-let config = { 
-  enabled: true, 
-  networkBlocking: true,
-  hideShorts: false,
-  hideMerch: true,
-  hideOffers: true,
-  blockPushNotifications: true 
-};
-
-
-
-chrome.storage.local.get(['config']).then((data) => {
-  if (data.config) config = { ...config, ...data.config };
-});
-
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.config) {
-    config = { ...config, ...changes.config.newValue };
-  }
-});
 
 
 async function getSessionData() {
@@ -425,7 +404,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
-  globalThis.CONFIG = config;
   globalThis.MSG = MSG;
   globalThis.updateDNRState = updateDNRState;
   globalThis.syncDynamicRules = syncDynamicRules;

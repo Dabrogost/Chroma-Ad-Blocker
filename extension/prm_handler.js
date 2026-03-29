@@ -488,28 +488,6 @@ function isAdShowing() {
   return false;
 }
 
-// ─── MUTATION OBSERVER ───────────────────────────────────────────────────────
-let adMutationObserver = null;
-
-/**
- * Starts a MutationObserver to detect ads instantly when DOM changes occur.
- */
-function startMutationObserver() {
-  if (adMutationObserver) return;
-  
-  adMutationObserver = new API.MutationObserver((mutations) => {
-  });
-  
-  // Observe document.documentElement instead of document.body to avoid null errors at document_start
-  const target = document.body || document.documentElement || document;
-  
-  adMutationObserver.observe(target, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['class', 'style', 'data-testid']
-  });
-}
 
 /**
  * Finds the most likely active video element.
@@ -663,7 +641,6 @@ function init() {
       
       if (CONFIG.enabled && !pollingInterval) {
         startPolling();
-        startMutationObserver();
       }
     }
   });
@@ -677,7 +654,6 @@ function init() {
   if (CONFIG.enabled) {
     injectChromaCSS();
     startPolling();
-    startMutationObserver();
   } else {
     // 4. SAFETY FALLBACK: If handshake fails to arrive but site is NOT whitelisted
     // and we are NOT in a compromised environment, we wake up after a delay.
@@ -688,7 +664,6 @@ function init() {
         CONFIG.acceleration = true;
         injectChromaCSS();
         startPolling();
-        startMutationObserver();
       }
     }, 1200);
   }
