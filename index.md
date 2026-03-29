@@ -26,8 +26,8 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
 
   <p class="hero__tagline">
     Multi-layered protection built for the modern web. Accelerate, block,
-    and filter ads&nbsp;&mdash; all locally on your device, zero data collected.
-    <br/><strong>Always 100% free and open-source.</strong>
+    and filter ads &mdash; all locally on your device, zero data collected.
+    <br/><strong>Always free and open-source.</strong>
   </p>
 
   <div class="hero__ctas">
@@ -82,10 +82,10 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
       </svg>
       <h3 class="card__title">Ad Acceleration</h3>
       <p class="card__desc">
-        Ads play at 16&times; speed with audio muted. Fulfills impression requirements
-        server-side without triggering detection&nbsp;&mdash; the cleanest bypass available.
+        Automatically identifies and accelerates video ads to 16x speed with audio muted. 
+        Maintains server-side impression integrity without interrupting the user experience.
       </p>
-      <span class="card__tag">YT &middot; APV</span>
+      <span class="card__tag">YouTube &middot; Prime Video</span>
     </div>
 
     <!-- Card 2: Network Blocking -->
@@ -96,10 +96,10 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
       </svg>
       <h3 class="card__title">Network Blocking</h3>
       <p class="card__desc">
-        300,000 declarative net request rules block tracker pings, analytics
-        beacons, and banner ads at the browser level before they ever load.
+        A multi-part Declarative Net Request (DNR) system blocks tracker pings, analytics 
+        beacons, and traditional banner ads at the browser level before they load.
       </p>
-      <span class="card__tag">300k+ DNR Rules</span>
+      <span class="card__tag">Multi-part DNR ruleset</span>
     </div>
 
     <!-- Card 3: Cosmetic Filtering -->
@@ -110,26 +110,26 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
       </svg>
       <h3 class="card__title">Cosmetic Filtering</h3>
       <p class="card__desc">
-        MutationObserver-driven CSS injection surgically removes ad placeholders,
+        MutationObserver-driven CSS injection surgically removes ad placeholders, 
         empty slots, and layout artifacts in real time as pages load and navigate.
       </p>
       <span class="card__tag">MutationObserver</span>
     </div>
 
-    <!-- Card 4: YT Power Tools -->
+    <!-- Card 4: Global Protection -->
     <div class="card card--blue fade-up">
       <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
       </svg>
-      <h3 class="card__title">YT Power Tools</h3>
+      <h3 class="card__title">Global Components</h3>
       <p class="card__desc">
-        Hide Shorts shelves, remove merchandise carousels, suppress movie rental
-        offers, and silently delete anti-adblock enforcement modals as they appear.
+        Hide non-video components like YouTube Shorts, merchandise carousels, and 
+        rental offers, while silently suppressing anti-adblock enforcement modals.
       </p>
       <span class="card__tag">Shorts &middot; Merch &middot; Offers</span>
     </div>
 
-    <!-- Card 6: Push Suppression -->
+    <!-- Card 5: Push Suppression -->
     <div class="card card--cyan fade-up">
       <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -138,8 +138,8 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
       </svg>
       <h3 class="card__title">Push Suppression</h3>
       <p class="card__desc">
-        Overrides the Notification API, PushManager, and ServiceWorker registration
-        in the Main World to silently deny intrusive permission requests globally.
+        Overrides the Notification API and PushManager registration in the Main World 
+        to silently deny intrusive permission requests globally.
       </p>
       <span class="card__tag">Notification API</span>
     </div>
@@ -162,34 +162,74 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
 
     <div class="mermaid">
 graph TD
-    classDef main fill:#2a0a10,color:#ede8ff,stroke:#ff0055,stroke-width:2px
-    classDef shield fill:#1a1040,color:#ede8ff,stroke:#0088ff,stroke-width:2px
-    classDef logic fill:#1a0a35,color:#ede8ff,stroke:#9900ff,stroke-width:2px
+    classDef sw fill:#1a1040,color:#ede8ff,stroke:#01579b,stroke-width:2px
     classDef storage fill:#0a2040,color:#ede8ff,stroke:#00aaff,stroke-width:2px
+    classDef isolated fill:#1a0a35,color:#ede8ff,stroke:#1b5e20,stroke-width:2px
+    classDef main fill:#2a0a10,color:#ede8ff,stroke:#880e4f,stroke-width:2px
+    classDef dnr fill:#1a1040,color:#ede8ff,stroke:#311b92,stroke-width:2px
+    classDef dom fill:#1a0a35,color:#ede8ff,stroke:#f57f17,stroke-width:2px
+    classDef secure fill:#2a0a10,color:#ede8ff,stroke:#4a148c,stroke-width:2px
     classDef actor fill:#161b22,color:#ede8ff,stroke:#8b949e,stroke-width:2px
-    INTERNET["The Internet (Ads & Trackers)"]:::actor
-    subgraph Engine["Chroma Protection Engine"]
-        SHIELD["Network Shield (300,000 Rules)"]:::shield
-        CORE["Smart Security Handshake"]:::logic
-        FILTER["Video Accelerator & Smart Filter"]:::main
+
+    %% --- LAYER 0: ENTRANCE ---
+    INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
+
+    %% --- LAYER 1: MAIN WORLD (Execution Context) ---
+    subgraph MW["Main World (Page Context)"]
+        INTERCEPT["interceptor.js (API Protection)"]:::main
+        YT_H["yt_handler.js (YouTube)"]:::main
+        PRM_H["prm_handler.js (Prime Video)"]:::main
+        BRIDGE["__CHROMA_INTERNAL__ (Secure Bridge)"]:::secure
     end
-    STORAGE[(Local Settings - 0 Data Collected)]:::storage
-    POPUP["Control Panel (UI & Stats)"]:::logic
-    USER["The User (Clean & Accelerated UI)"]:::actor
-    INTERNET--"Scripts"-->CORE
-    INTERNET--"Requests"-->SHIELD
-    CORE<-->STORAGE
-    CORE==>FILTER
-    SHIELD==>|"Blocks Ads"|USER
-    FILTER==>|"Accelerates Content"|USER
-    POPUP<-->STORAGE
-    POPUP--"Real-time Stats"-->USER
-    linkStyle 0,1 stroke:#8b949e,stroke-width:2px;
-    linkStyle 2,3 stroke:#9900ff,stroke-width:2px;
-    linkStyle 4 stroke:#0088ff,stroke-width:2px;
-    linkStyle 5 stroke:#ff0055,stroke-width:2px;
-    linkStyle 6,7 stroke:#9900ff,stroke-width:2px;
-    style Engine fill:none,stroke:none
+
+    %% --- LAYER 2: ISOLATED WORLD (Extension Context) ---
+    subgraph IW["Isolated World (Relay Layer)"]
+        PROT["protection.js (Push Blocker)"]:::isolated
+        CONT["content.js (Cosmetic & Warnings)"]:::isolated
+    end
+
+    %% --- LAYER 3: SERVICE WORKER CORE ---
+    subgraph SW["Extension Core (Service Worker)"]
+        BG["background.js (Router & Rules)"]:::sw
+        TOKEN_G["Token Generator"]:::secure
+    end
+
+    %% --- LAYER 4: INFRASTRUCTURE ---
+    subgraph System["Resource & Network Layer"]
+        STORAGE[("chrome.storage (Local/Session)")]:::storage
+        DNR["Multi-Part DNR System (Rulesets)"]:::dnr
+        PLAYER["Media Players (YT/Prime)"]:::dom
+    end
+
+    %% --- LAYER 5: UI ---
+    POPUP["popup.js (UI & Stats)"]:::sw
+    USER["The User (Cleaned Experience)"]:::actor
+
+    %% --- PIPELINE FLOW ---
+    INTERNET -- "Scripts" --> INTERCEPT
+    INTERNET -- "Network Traffic" --> DNR
+    
+    INTERCEPT ==>|"Session Handshake"| PROT
+    PROT ==>|"Message Relay"| BG
+    BG -- "Store Tokens" --> STORAGE
+    
+    BRIDGE --- YT_H
+    BRIDGE --- PRM_H
+    YT_H ==>|"Accelerated Playback"| PLAYER
+    PRM_H ==>|"Accelerated Playback"| PLAYER
+    
+    CONT ==>|"Inject CSS / Mutate"| PLAYER
+    DNR -- "Filter Stream" --> USER
+    PLAYER -- "Clean View" --> USER
+    
+    POPUP <-->|"Sync Config"| STORAGE
+    BG <-->|"Sync Rules"| DNR
+
+    %% Style Tweaks
+    style MW fill:none,stroke:#880e4f,stroke-dasharray: 5 5
+    style IW fill:none,stroke:#1b5e20,stroke-dasharray: 5 5
+    style SW fill:none,stroke:#01579b,stroke-dasharray: 5 5
+    style System fill:none,stroke:#8b949e,stroke-dasharray: 5 5
     </div>
   </div>
 </section>
