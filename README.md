@@ -66,7 +66,8 @@ graph TD
     USER["The User (Cleaned Experience)"]:::actor
 
     %% --- PIPELINE FLOW ---
-    INTERNET -- "Scripts" --> INTERCEPT
+    INTERNET -- "Host Page & Assets" --> MW
+    INTERNET -- "Third-Party Scripts" --> INTERCEPT
     INTERNET -- "Network Traffic" --> DNR
     
     INTERCEPT <==>|"Handshake (Token/Port)"| PROT
