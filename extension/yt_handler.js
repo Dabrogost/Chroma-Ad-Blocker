@@ -413,12 +413,7 @@
     pollingInterval = sI(handleAdAcceleration, CONFIG.checkIntervalMs);
   }
 
-  sI(() => {
-    if (!CONFIG.enabled || !CONFIG.acceleration) return;
-    if (!pollingInterval) {
-      startPolling();
-    }
-  }, 5000);
+
 
   function onYTNavigate() {
     cleanupVideoState();

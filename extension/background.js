@@ -30,7 +30,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         enabled: true,
       },
       stats: { networkBlocked: 0 },
-      lastHarvestTime: Date.now(),
       HIDE_SELECTORS: [
         '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
         'ytd-banner-promo-renderer', '#banner-ad', '#player-ads',
@@ -347,41 +346,9 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   });
 }
 
-/**
- * Production Path: Accumulate matches via getMatchedRules since 
- * onRuleMatchedDebug is limited to developer installs.
- */
-async function harvestNetworkStats() {
-  try {
-    const { stats = {}, lastHarvestTime = 0 } = await chrome.storage.local.get(['stats', 'lastHarvestTime']);
-    
-    // Use the native minTimeStamp filter (requires declarativeNetRequestFeedback)
-    // We add +1 to avoid re-counting the exact same match at the boundary
-    const matchedRules = await chrome.declarativeNetRequest.getMatchedRules({
-      minTimeStamp: lastHarvestTime + 1
-    });
-    
-    const newMatches = matchedRules.rulesMatched || [];
-    
-    if (newMatches.length > 0) {
-      const latestMatchTime = Math.max(...newMatches.map(m => m.timeStamp));
-      stats.networkBlocked = (stats.networkBlocked || 0) + newMatches.length;
-      
-      await chrome.storage.local.set({ 
-        stats, 
-        lastHarvestTime: latestMatchTime 
-      });
-      if (DEBUG) console.log(`[Chroma Ad-Blocker] Harvested ${newMatches.length} network blocks. Total: ${stats.networkBlocked}`);
-    }
-  } catch (err) {
-    if (DEBUG) console.warn('[Chroma Ad-Blocker] Error harvesting network stats:', err);
-  }
-}
 
-// PERIODIC HARVEST: Every 2 minutes while active
-setInterval(harvestNetworkStats, 120000);
 
-// Clean up and final harvest
+// Clean up tab data on removal
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const sessionData = await getSessionData();
   let changed = false;
@@ -398,8 +365,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (changed) {
     await chrome.storage.session.set(sessionData);
   }
-  
-  harvestNetworkStats().catch(() => {});
 });
 
 // ─── TESTING EXPORTS ────────────────────────────────────────────────────────
