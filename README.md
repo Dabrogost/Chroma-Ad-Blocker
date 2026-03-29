@@ -185,11 +185,10 @@ For information on how to report security vulnerabilities, please see our [Secur
 
 Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. It is 100% free for everyone, forever. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
 
-  <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker">GitHub Repository</a>
-
-<br/>
-
 <div align="center">
+  <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker">GitHub Repository</a>
+  <br/>
+  <br/>
   <a href="https://buymeacoffee.com/dabrogost">
     <img src="https://img.shields.io/badge/Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee">
   </a>
