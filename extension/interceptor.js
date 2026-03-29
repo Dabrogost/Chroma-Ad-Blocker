@@ -79,7 +79,6 @@
   // bypassing blockers by overwriting globals later.
   // Effectiveness depends on injection timing (document_start).
   // =========================================================================
-  const pristineWindowOpen = window.open;
   const pristineSetTimeout = window.setTimeout.bind(window);
   const pristineSetInterval = window.setInterval.bind(window);
   const pristineClearInterval = window.clearInterval.bind(window);
@@ -129,8 +128,7 @@
     };
     
     // Check core primitives
-    if (!isNative(pristineWindowOpen) || 
-        !isNative(pristineCreateElement) || 
+    if (!isNative(pristineCreateElement) || 
         !isNative(pristineDispatchEvent)) {
       isEnvironmentCompromised = true;
       if (DEBUG) console.error("[Chroma Security] Environment compromised. Severing secure port.");
@@ -194,10 +192,8 @@
           setTimeout: pristineSetTimeout,
           setInterval: pristineSetInterval,
           clearInterval: pristineClearInterval,
-          dispatchEvent: pristineDispatchEvent,
           addDocEventListener: pristineAddDocEventListener,
-          removeDocEventListener: pristineRemoveDocEventListener,
-          MutationObserver: window.MutationObserver
+          removeDocEventListener: pristineRemoveDocEventListener
         })
       });
 

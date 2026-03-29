@@ -28,7 +28,6 @@
                 setTimeout: window.setTimeout.bind(window),
                 setInterval: window.setInterval.bind(window),
                 clearInterval: window.clearInterval.bind(window),
-                dispatchEvent: document.dispatchEvent.bind(document),
                 addDocEventListener: document.addEventListener.bind(document),
                 removeDocEventListener: document.removeEventListener.bind(document)
               };

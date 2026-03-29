@@ -4,9 +4,10 @@
  * Specifically tuned for Prime Video's web player.
  */
 
-'use strict';
+(function() {
+  'use strict';
 
-const DEBUG = false;
+  const DEBUG = false;
 
 const CONFIG = Object.create(null);
 Object.assign(CONFIG, {
@@ -29,10 +30,8 @@ const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ?
               setTimeout: window.setTimeout.bind(window),
               setInterval: window.setInterval.bind(window),
               clearInterval: window.clearInterval.bind(window),
-              dispatchEvent: document.dispatchEvent.bind(document),
               addDocEventListener: document.addEventListener.bind(document),
-              removeDocEventListener: document.removeEventListener.bind(document),
-              MutationObserver: window.MutationObserver
+              removeDocEventListener: document.removeEventListener.bind(document)
             };
 
 const qS = (s) => API.querySelector(s);
@@ -702,3 +701,4 @@ if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   globalThis.setIsAdActive = (val) => { isAdActive = val; };
   globalThis.getIsAdActive = () => isAdActive;
 }
+})();
