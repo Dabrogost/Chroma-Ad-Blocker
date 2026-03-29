@@ -229,6 +229,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     try {
       const sessionData = await getSessionData();
       const tabId = _sender.tab?.id;
+      const docId = _sender.documentId;
 
       // SECURITY: Origin Authentication
       const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
@@ -274,14 +275,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
         case MSG.GET_TOKEN:
           if (!_sender.tab || !_sender.url) return sendResponse({ error: 'Invalid Sender' });
-          if (tabId) {
-            if (sessionData.tokenRetrievalLocked[tabId]) return sendResponse({ error: 'Locked' });
-            sessionData.tokenRetrievalLocked[tabId] = true;
+          
+          // Use documentId as primary identifier (MV3 best practice); fallback to tabId for compatibility.
+          const sessionKey = docId || (tabId ? `${tabId}:${_sender.frameId || 0}` : null);
+
+          if (sessionKey) {
+            if (sessionData.tokenRetrievalLocked[sessionKey]) return sendResponse({ error: 'Locked' });
+            sessionData.tokenRetrievalLocked[sessionKey] = true;
             await updateSessionData('tokenRetrievalLocked', sessionData.tokenRetrievalLocked);
+            
             const buffer = new Uint8Array(16); // 128-bit entropy for session token generation
             crypto.getRandomValues(buffer);
             const token = Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-            sessionData.sessionTokens[tabId] = token;
+            
+            // Store both token and tabId to allow for precise cleanup on tab removal.
+            sessionData.sessionTokens[sessionKey] = { token, tabId };
             await updateSessionData('sessionTokens', sessionData.sessionTokens);
             sendResponse({ token });
           }
@@ -312,8 +320,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
         case MSG.SUSPICIOUS_ACTIVITY:
-          if (tabId && sessionData.sessionTokens[tabId] === msg.token) {
-            if (DEBUG) console.warn(`[Chroma Security] Suspicious Activity on tab ${tabId}:`, msg.activity);
+          const actSessionKey = docId || (tabId ? `${tabId}:${_sender.frameId || 0}` : null);
+          const sessionEntry = sessionData.sessionTokens[actSessionKey];
+          if (sessionEntry && sessionEntry.token === msg.token) {
+            if (DEBUG) console.warn(`[Chroma Security] Suspicious Activity on session ${actSessionKey}:`, msg.activity);
           }
           sendResponse({ ok: true });
           break;
@@ -349,13 +359,16 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   const sessionData = await getSessionData();
   let changed = false;
 
-  if (sessionData.sessionTokens[tabId]) {
-    delete sessionData.sessionTokens[tabId];
-    changed = true;
-  }
-  if (sessionData.tokenRetrievalLocked[tabId]) {
-    delete sessionData.tokenRetrievalLocked[tabId];
-    changed = true;
+  // Cleanup all sessions (documentId or fallback keys) belonging to this tabId
+  for (const key in sessionData.sessionTokens) {
+    const entry = sessionData.sessionTokens[key];
+    // Check if it's a new-style object entry or an old-style tabId fallback key
+    if ((entry && entry.tabId === tabId) || key === String(tabId) || key.startsWith(`${tabId}:`)) {
+      delete sessionData.sessionTokens[key];
+      // Also clear corresponding lock
+      delete sessionData.tokenRetrievalLocked[key];
+      changed = true;
+    }
   }
 
   if (changed) {
