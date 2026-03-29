@@ -4,7 +4,7 @@
 
 ## Key Features
 
-- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads (up to 16x speed) on YouTube and Amazon Prime Video. This maintains server-side impression integrity while minimizing user interruption.
+- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads (up to 16x speed) on supported streaming platforms. This maintains server-side impression integrity while minimizing user interruption.
 - **Multi-Part DNR Network Blocking**: Utilizes a 10-part Declarative Net Request (DNR) system to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Global Component Filtering**:
     - **Push Suppression**: Proactively blocks intrusive native notification and permission prompts.
@@ -36,8 +36,8 @@ graph TD
     %% --- LAYER 1: MAIN WORLD (Execution Context) ---
     subgraph MW["Main World (Page Context)"]
         INTERCEPT["interceptor.js (API Protection)"]:::main
-        YT_H["yt_handler.js (YouTube)"]:::main
-        PRM_H["prm_handler.js (Prime Video)"]:::main
+        YT_H["yt_handler.js"]:::main
+        PRM_H["prm_handler.js"]:::main
         BRIDGE["__CHROMA_INTERNAL__ (Secure Bridge)"]:::secure
     end
 
@@ -58,7 +58,7 @@ graph TD
     subgraph System["Resource & Network Layer"]
         STORAGE[("chrome.storage (Local/Session)")]:::storage
         DNR["10-Part DNR System (Rulesets)"]:::dnr
-        PLAYER["Media Players (YT/Prime)"]:::dom
+        PLAYER["Media Players"]:::dom
     end
 
     %% --- LAYER 5: UI ---
@@ -82,7 +82,7 @@ graph TD
     YT_H ==>|"Accelerated Playback"| PLAYER
     PRM_H ==>|"Accelerated Playback"| PLAYER
     
-    CONT ==>|"Inject CSS / Mutate (YT)"| PLAYER
+    CONT ==>|"Inject CSS / Mutate"| PLAYER
     DNR -- "Filter Stream" --> USER
     PLAYER -- "Clean View" --> USER
     
@@ -116,12 +116,7 @@ A proactive security layer that blocks intrusive push notification requests and 
 
 ## Privacy & Transparency
 
-Chroma processes everything locally — no data is ever sent to Chroma's servers 
-because there are none. However, to maintain functionality on YouTube without 
-triggering anti-adblock detection, Chroma includes a small set of **Allow 
-Rules** that permit specific, standard ad-measurement requests (such as 
-DoubleClick pixels) to reach Google's servers. These rules are scoped 
-exclusively to `youtube.com` as the initiator domain.
+Chroma processes everything locally — no data is ever sent to Chroma's servers because there are none. However, to maintain functionality on streaming sites without triggering anti-adblock detection, Chroma includes a small set of **Allow Rules** that permit specific, standard ad-measurement requests (such as DoubleClick pixels) to reach analytics servers. These rules are scoped exclusively to the streaming provider as the initiator domain.
 
 Chroma does not intercept or store any data from these requests. For a full 
 explanation of this tradeoff, see the [Privacy Policy](PRIVACY_POLICY.md).
@@ -153,9 +148,9 @@ Chroma implements several advanced security measures to ensure extension integri
 |---------|-------------|---------|
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR ruleset blocking. | `true` |
-| `acceleration` | Enables 16x ad playback (YouTube/Prime). | `true` |
+| `acceleration` | Enables 16x ad playback. | `true` |
 | `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
-| `hideShorts` | Removes YouTube Shorts components. | `false` |
+| `hideShorts` | Removes component modules (Shorts). | `false` |
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offer modules. | `true` |
 | `suppressWarnings` | Removes anti-adblock modals and locks. | `true` |
