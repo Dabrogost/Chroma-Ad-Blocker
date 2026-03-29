@@ -28,8 +28,9 @@ The Extension requires specific permissions to function effectively. Below is a 
 
 - **`storage`**: To save your extension settings and block statistics locally.
 - **`tabs`**: To manage and apply protection scripts across your open browser tabs.
-- **Host Permissions (`<all_urls>`)**: This broad permission is used **strictly** to inject "Protection Scripts" (`protection.js` and `interceptor.js`). These scripts are necessary to:
-  - Intercept and suppress intrusive push notification requests on any website you visit.
+- **Host Permissions (`<all_urls>`)**: This broad permission is used for two main purposes:
+  - **Protection Injection**: To inject "Protection Scripts" (`protection.js` and `interceptor.js`) globally, allowing the extension to intercept and suppress intrusive push notification requests on any website.
+  - **Network Statistics Tracking**: To enable the extension to accurately count blocked requests via the `declarativeNetRequest` API. Due to browser security constraints, host permissions are required to provide real-time stats (displayed in the popup) for the sites you visit.
 - **`declarativeNetRequest` & `declarativeNetRequestFeedback`**: These permissions allow the extension to block ad-related network requests (like tracking pings and banner ads) and aggregate those events into the local statistics displayed in the extension popup.
 
 ## 3. Data Sharing

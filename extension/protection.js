@@ -57,7 +57,7 @@
    * Securely transfers the secret token to the MAIN world using
    * a two-way CustomEvent handshake with stopImmediatePropagation.
    */
-  function initHandshake(selectors = {}) {
+  function initHandshake() {
     // If background script failed to provide a token, abort handshake.
     if (!secretToken) {
       if (DEBUG) console.error('[Chroma Ad-Blocker] Token generation failed. Aborting handshake.');
@@ -103,7 +103,7 @@
       isolatedPort.postMessage({
         type: 'INIT_CHROMA',
         token: secretToken,
-        selectors: { ...selectors, ...CONFIG }
+        selectors: { ...CONFIG }
       });
 
       if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
@@ -138,14 +138,11 @@
       CONFIG.blockPushNotifications = false;
     }
     
-    // Cache only necessary state to pass to MAIN world
-    const selectors = {
-      enabled: CONFIG.enabled
-    };
+    // Securely pass initial configuration to the MAIN world bridge.
 
     
     await getTokenFromBackground();
-    initHandshake(selectors); // Pass selectors to handshake
+    initHandshake(); // Use CONFIG within handshake
   });
 
   // Listen for config updates

@@ -1,7 +1,7 @@
 /**
  * Chroma Ad-Blocker - Generic Interceptor
  * Runs in the page's execution context (MAIN world) for all sites.
- * Overrides window.open and Notification APIs to detect and notify about popup attempts.
+ * Overrides Notification APIs to detect and notify about push attempts.
  */
 
 (() => {

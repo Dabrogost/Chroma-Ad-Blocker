@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; object-src 'none';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chroma Ad-Blocker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:ital,wght@0,300;0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     /* ── Custom Properties (from website) ─────────────────────────── */
     :root {
@@ -113,6 +117,7 @@
 
     .title-group { flex: 1; min-width: 0; }
     .title-group h1 {
+      font-family: 'Outfit', sans-serif;
       font-size: 13px; font-weight: 800; letter-spacing: -0.01em;
       background: var(--grad-chroma);
       background-size: 320px 100%;
@@ -155,6 +160,7 @@
     .stat-card:hover { transform: translateY(-2px); }
 
     .stat-value {
+      font-family: 'Outfit', sans-serif;
       font-size: 26px; font-weight: 800; line-height: 1.2;
       background: var(--grad-chroma); background-size: 320px 100%;
       -webkit-background-clip: text;
@@ -165,6 +171,7 @@
     }
 
     .stat-label { 
+      font-family: 'Outfit', sans-serif;
       font-size: 20px; 
       font-weight: 800; 
       letter-spacing: -0.01em;
@@ -258,7 +265,7 @@
     }
     .reset-btn:hover { color: var(--text); border-color: var(--c-blue); background: rgba(0, 136, 255, 0.1); transform: translateY(-1px); }
 
-    .version { font-size: 10px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .version { font-size: 10px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
 
     .footer-right {
       display: flex;
