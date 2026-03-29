@@ -45,6 +45,7 @@ graph TD
     subgraph IW["Isolated World (Relay Layer)"]
         PROT["protection.js (Push Blocker)"]:::isolated
         CONT["content.js (Cosmetic & Warnings)"]:::isolated
+        MSG_U["messaging.js (Shared Utils)"]:::isolated
     end
 
     %% --- LAYER 3: SERVICE WORKER CORE ---
@@ -68,16 +69,20 @@ graph TD
     INTERNET -- "Scripts" --> INTERCEPT
     INTERNET -- "Network Traffic" --> DNR
     
-    INTERCEPT ==>|"Session Handshake"| PROT
+    INTERCEPT <==>|"Handshake (Token/Port)"| PROT
     PROT ==>|"Message Relay"| BG
     BG -- "Store Tokens" --> STORAGE
+    
+    PROT -- "Set data-chroma-init" --> PLAYER
+    YT_H -- "Poll Sentinel" --> PLAYER
+    PRM_H -- "Poll Sentinel" --> PLAYER
     
     BRIDGE --- YT_H
     BRIDGE --- PRM_H
     YT_H ==>|"Accelerated Playback"| PLAYER
     PRM_H ==>|"Accelerated Playback"| PLAYER
     
-    CONT ==>|"Inject CSS / Mutate"| PLAYER
+    CONT ==>|"Inject CSS / Mutate (YT)"| PLAYER
     DNR -- "Filter Stream" --> USER
     PLAYER -- "Clean View" --> USER
     
