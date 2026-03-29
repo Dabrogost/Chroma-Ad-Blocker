@@ -23,7 +23,7 @@ Chroma Ad-Blocker provides tools to manage your browsing experience, including:
 - **Ad Acceleration**: Speeding up video advertisements to minimize interruption while fulfilling platform impression requirements.
 - **Network Blocking**: Preventing requests to known advertising and tracking domains.
 - **Cosmetic Filtering**: Hiding ad-related elements on Website interfaces.
-- **Warning Suppression**: Removing anti-adblock modals and enforcement messages.
+- **Overlay Removal**: Removing unsolicited overlay dialogs that restrict content access based on browser configuration.
 
 ## 4. Third-Party Services
 The Extension is designed to interact with Third-Party Services. You acknowledge that:
@@ -35,13 +35,13 @@ The Extension is designed to interact with Third-Party Services. You acknowledge
 THE EXTENSION IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. THE DEVELOPER DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
 
 ## 6. Limitation of Liability
-IN NO EVENT SHALL THE DEVELOPER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF THE USE OF OR INABILITY TO USE THE EXTENSION, even if advised of the possibility of such damage.
+IN NO EVENT SHALL THE DEVELOPER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF THE USE OF OR INABILITY TO USE THE EXTENSION, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## 7. Privacy
 Your use of the Extension is also governed by our [Privacy Policy]({{ '/PRIVACY_POLICY/' | relative_url }}), which explains that all data stays on your local device and no personal information is collected or transmitted.
 
 ## 8. Changes to Terms
-We reserve the right to modify these Terms of Service at any time. Any changes will be effective immediately upon posting the updated terms within the Extension's repository.
+We reserve the right to modify these Terms of Service at any time. Changes will be effective upon posting to the Extension's repository. Continued use of the Extension following any update constitutes acceptance of the revised Terms.
 
 ## 9. Contact
 For questions regarding these Terms, please contact the developer at dabrogost@gmail.com.

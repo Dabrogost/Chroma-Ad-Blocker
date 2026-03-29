@@ -1,6 +1,6 @@
 # Chroma Ad-Blocker
 
-**Chroma Ad-Blocker** is a professional-grade, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to bypass modern anti-adblock systems while maintaining a minimal resource footprint. Chroma is free, open-source, and privacy-focused. For optimal performance, it is recommended to disable other ad-blocking extensions while using Chroma.
+**Chroma Ad-Blocker** is a professional-grade, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to maintain functionality across a wide range of websites while maintaining a minimal resource footprint. Chroma is free, open-source, and privacy-focused. For optimal performance, it is recommended to disable other ad-blocking extensions while using Chroma.
 
 ## Key Features
 
@@ -9,7 +9,7 @@
 - **Global Component Filtering**:
     - **Push Suppression**: Proactively blocks intrusive native notification and permission prompts.
     - **Cosmetic Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring.
-- **Safety Exclusion Protocol**: Automatically bypasses critical infrastructure, including financial institutions (Banks), authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
+- **Safety Exclusion Protocol**: Automatically excludes critical infrastructure, including financial institutions (Banks), authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
 - **Security-Hardened Architecture**: Features a session-token gated communication pipeline and pristine API caching to prevent host-page interference and script hijacking.
 - **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of Google Chrome (and other Chromium-based browsers).
 
@@ -103,13 +103,13 @@ graph TD
 ## System Layers
 
 ### Layer 1: Ad Acceleration (yt_handler.js, prm_handler.js)
-The primary defense against server-side ad detection. Instead of blocking the video stream (which often triggers anti-adblock modals), Chroma accelerates detected ads to 16x speed and synchronizes with a custom overlay. This fulfills impression requirements instantly without intrusive interruptions.
+The primary defense against server-side ad detection. Instead of blocking the video stream, Chroma accelerates detected ads to 16x speed and synchronizes with a custom overlay. This fulfills impression requirements instantly without intrusive interruptions.
 
 ### Layer 2: Network-Level Blocking (rules/, background.js)
 Powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into a 10-part system of static rulesets, augmented by dynamic rules loaded at runtime for rapid response to new ad domains. The Service Worker coordinates these rulesets and collects blocking statistics.
 
 ### Layer 3: Cosmetic & Warning Suppression (content.js)
-Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes anti-adblock warning modals ("Ad blockers are not allowed"), and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
+Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
 
 ### Layer 4: Universal Protection (protection.js, interceptor.js)
 A proactive security layer that blocks intrusive push notification requests and permission prompts globally. The `interceptor.js` runs in the Main World to shadow sensitive browser APIs, while `protection.js` relays events to the extension background for enforcement via a secure pipeline.
@@ -118,7 +118,7 @@ A proactive security layer that blocks intrusive push notification requests and 
 
 ## Privacy & Transparency
 
-Chroma processes everything locally — no data is ever sent to Chroma's servers because there are none. However, to maintain functionality on streaming sites without triggering anti-adblock detection, Chroma includes a small set of **Allow Rules** that permit specific, standard ad-measurement requests (such as DoubleClick pixels) to reach analytics servers. These rules are scoped exclusively to the streaming provider as the initiator domain.
+Chroma processes everything locally — no data is ever sent to Chroma's servers because there are none. However, to maintain compatibility with certain websites, Chroma includes a small set of **Allow Rules** that permit specific, standard ad-measurement requests to reach their intended destinations. These rules are scoped exclusively to the streaming provider as the initiator domain.
 
 Chroma does not intercept or store any data from these requests. For a full 
 explanation of this tradeoff, see the [Privacy Policy](PRIVACY_POLICY.md).
@@ -155,7 +155,7 @@ Chroma implements several advanced security measures to ensure extension integri
 | `hideShorts` | Removes component modules (Shorts). | `false` |
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offer modules. | `true` |
-| `suppressWarnings` | Removes anti-adblock modals and locks. | `true` |
+| `suppressWarnings` | Removes unsolicited overlay dialogs that restrict content access. | `true` |
 | `blockPushNotifications` | Blocks browser notification prompts. | `true` |
 | `whitelist` | Toggles blocking for the current domain. | `false` |
 

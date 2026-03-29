@@ -46,6 +46,8 @@ description: Chroma Ad-Blocker security policy — reporting vulnerabilities and
 
 </div>
 
+## Safe Harbor
+Chroma Ad-Blocker supports responsible security research. We will not pursue legal action against researchers who discover and report vulnerabilities in good faith, provided they: make a reasonable effort to avoid privacy violations or disruption to other users, do not exploit the vulnerability beyond what is necessary to demonstrate it, and report the issue privately before any public disclosure.
 ## Disclosure Process
 
 We value the work of developers and security researchers. Once a report is received:

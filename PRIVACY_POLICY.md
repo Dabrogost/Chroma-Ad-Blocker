@@ -29,25 +29,25 @@ The Extension requires specific permissions to function effectively. Below is a 
 - **`storage`**: To save your extension settings and block statistics locally.
 - **`tabs`**: To manage and apply protection scripts across your open browser tabs.
 - **Host Permissions (`<all_urls>`)**: This broad permission is used for two main purposes:
-  - **Protection Injection**: To inject "Protection Scripts" (`protection.js` and `interceptor.js`) globally, allowing the extension to intercept and suppress intrusive push notification requests on any website.
+  - **Protection Injection**: To inject "Protection Scripts" (`protection.js` and `interceptor.js`) globally, allowing the extension to block unsolicited push notification permission requests on any website.
   - **Network Statistics Tracking**: To enable the extension to accurately count blocked requests via the `declarativeNetRequest` API. Due to browser security constraints, host permissions are required to provide real-time stats (displayed in the popup) for the sites you visit.
 - **`declarativeNetRequest` & `declarativeNetRequestFeedback`**: These permissions allow the extension to block ad-related network requests (like tracking pings and banner ads) and aggregate those events into the local statistics displayed in the extension popup.
 
 ## 3. Data Sharing
 We do not share any data with third parties. There are no analytics, tracking, or telemetry scripts included in the Extension that communicate with external servers.
 
-## 3a. Selective Network Permissions
+## 4. Selective Network Permissions
 To maintain compatibility with certain websites, Chroma's ruleset permits a limited set of standard network requests to reach their intended destinations. These are called Allow Rules and apply only on specific domains where full blocking would impair page functionality.
 
 Chroma does not intercept, read, modify, or store any data from these requests. They originate from the site's own scripts and are sent directly to that site's servers.
 
 If you require stricter network filtering, you can disable the extension on any site using the **Whitelist this site** toggle in the popup.
 
-## 4. Third-Party Websites
+## 5. Third-Party Websites
 The Extension interacts with websites you visit to provide ad-blocking services. This interaction is limited to modifying the site's code locally to hide ads or accelerate video playback. We do not have access to your accounts or private data on those websites.
 
-## 5. Changes to This Policy
-We may update this Privacy Policy from time to time. Any changes will be reflected in the "Effective Date" at the top of this document.
+## 6. Changes to This Policy
+We may update this Privacy Policy from time to time. Changes will be reflected in the Effective Date at the top of this document. Continued use of the Extension following any update constitutes acceptance of the revised Policy.
 
-## 6. Contact
+## 7. Contact
 If you have any questions about this Privacy Policy, please contact the developer via email @ dabrogost@gmail.com.
