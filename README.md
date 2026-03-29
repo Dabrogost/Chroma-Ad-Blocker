@@ -89,6 +89,7 @@ graph TD
     
     POPUP <-->|"Sync Config"| STORAGE
     BG <-->|"Sync Rules"| DNR
+    POPUP ==>|"Display Stats"| USER
 
     %% Style Tweaks
     style MW fill:none,stroke:none
