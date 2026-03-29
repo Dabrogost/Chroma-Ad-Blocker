@@ -180,19 +180,15 @@ let config = {
   blockPushNotifications: true 
 };
 
-let whitelist = [];
 
-chrome.storage.local.get(['config', 'whitelist']).then((data) => {
+
+chrome.storage.local.get(['config']).then((data) => {
   if (data.config) config = { ...config, ...data.config };
-  if (data.whitelist) whitelist = data.whitelist;
 });
 
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.config) {
     config = { ...config, ...changes.config.newValue };
-  }
-  if (changes.whitelist) {
-    whitelist = changes.whitelist.newValue || [];
   }
 });
 

@@ -146,6 +146,7 @@
     };
 
     
+    await getTokenFromBackground();
     initHandshake(selectors); // Pass selectors to handshake
   });
 

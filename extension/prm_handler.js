@@ -76,11 +76,9 @@ let adOverlayRoot = null;
 let currentAdRemainingStart = 0;
 let lastAdTimerText = null;
 let savedVolume = 1;
-let lastAdDetectTime = 0;
 let lastAdEndTime = 0;
 const AD_COOLDOWN_MS = 2000;
 let consecutiveFalseCount = 0;
-let mutationPending = false;
 
 
 
@@ -500,7 +498,6 @@ function startMutationObserver() {
   if (adMutationObserver) return;
   
   adMutationObserver = new API.MutationObserver((mutations) => {
-    mutationPending = true;
   });
   
   // Observe document.documentElement instead of document.body to avoid null errors at document_start
@@ -547,7 +544,6 @@ function handlePrimeAdAcceleration() {
     // to prevent UI 'flicker' caused by the MutationObserver/visibility-toggle race condition.
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
-    mutationPending = false;
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
     // Cooldown check: Prevents rapid re-triggering during the playback transition.

@@ -80,7 +80,6 @@
   // Effectiveness depends on injection timing (document_start).
   // =========================================================================
   const pristineWindowOpen = window.open;
-  const pristineFetch = window.fetch;
   const pristineSetTimeout = window.setTimeout.bind(window);
   const pristineSetInterval = window.setInterval.bind(window);
   const pristineClearInterval = window.clearInterval.bind(window);
@@ -95,9 +94,7 @@
   const pristineRemoveDocEventListener = document.removeEventListener.bind(document);
 
   // SECURE REFERENCE CACHE: Protect against Prototype Pollution hijacking (VULN-01)
-  const hasOwn = Object.prototype.hasOwnProperty;
-  const toString = Object.prototype.toString;
-  const slice = Array.prototype.slice;
+  
   
   // Integrity Verification: Cache prototype methods to prevent 'isNative' spoofing via host-page prototype pollution
   const pristineFnToString = Function.prototype.toString;
