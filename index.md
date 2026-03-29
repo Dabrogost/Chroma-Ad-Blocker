@@ -189,16 +189,14 @@ graph TD
         VIDEO["Video Accelerator (Speeds Through Video Ads)"]:::action
         CONTENT["Content Cleaner (Removes Overlays & Symbols)"]:::action
         
-        TITLE ~~~ NETWORK
-        TITLE ~~~ VIDEO
-        TITLE ~~~ CONTENT
+        TITLE --> NETWORK
+        TITLE --> VIDEO
+        TITLE --> CONTENT
     end
 
     USER["The User (Cleaned Experience)"]:::actor
 
-    INTERNET --> NETWORK
-    INTERNET --> VIDEO
-    INTERNET --> CONTENT
+    INTERNET --> TITLE
 
     NETWORK --> USER
     VIDEO --> USER
