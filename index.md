@@ -123,8 +123,8 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
       </svg>
       <h3 class="card__title">Global Components</h3>
       <p class="card__desc">
-        Hide non-video components like YouTube Shorts, merchandise carousels, and 
-        rental offers, while silently suppressing anti-adblock enforcement modals.
+        Hide non-video components like Shorts, merchandise carousels, and 
+        rental offers, while removing unsolicited overlay dialogs that restrict content access based on browser configuration.
       </p>
       <span class="card__tag">Shorts &middot; Merch &middot; Offers</span>
     </div>
