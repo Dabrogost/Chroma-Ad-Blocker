@@ -3,7 +3,7 @@ layout: default
 title: Home
 layout-class: layout-home
 mermaid: true
-description: Multi-layered ad blocking built for Manifest V3. Block ads, accelerate them away, and protect your privacy — all locally on your device.
+description: Multi-layered ad blocking built for Manifest V3. Works on Windows, macOS, and Linux. Block ads, accelerate them away, and protect your privacy — all locally on your device.
 ---
 
 <!-- ═══════════════════════════════════════ HERO ════════════════════════════════════════ -->
@@ -27,7 +27,7 @@ description: Multi-layered ad blocking built for Manifest V3. Block ads, acceler
   <p class="hero__tagline">
     Multi-layered protection built for the modern web. Accelerate, block,
     and filter ads &mdash; all locally on your device, zero data collected.
-    <br/><strong>Always free and open-source.</strong>
+    <br/><strong>Always free, open-source, and compatible with Windows, Mac, and Linux.</strong>
   </p>
 
   <div class="hero__ctas">

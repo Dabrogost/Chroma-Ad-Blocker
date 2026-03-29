@@ -188,12 +188,10 @@
           getElementById: pristineGetElementById,
           createElement: pristineCreateElement,
           addEventListener: pristineAddEventListener,
-          removeEventListener: pristineRemoveEventListener,
           setTimeout: pristineSetTimeout,
           setInterval: pristineSetInterval,
           clearInterval: pristineClearInterval,
-          addDocEventListener: pristineAddDocEventListener,
-          removeDocEventListener: pristineRemoveDocEventListener
+          addDocEventListener: pristineAddDocEventListener
         })
       });
 

@@ -26,12 +26,10 @@ const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ?
               getElementById: document.getElementById.bind(document),
               createElement: document.createElement.bind(document),
               addEventListener: window.addEventListener.bind(window),
-              removeEventListener: window.removeEventListener.bind(window),
               setTimeout: window.setTimeout.bind(window),
               setInterval: window.setInterval.bind(window),
               clearInterval: window.clearInterval.bind(window),
-              addDocEventListener: document.addEventListener.bind(document),
-              removeDocEventListener: document.removeEventListener.bind(document)
+              addDocEventListener: document.addEventListener.bind(document)
             };
 
 const qS = (s) => API.querySelector(s);
@@ -641,9 +639,9 @@ function init() {
   });
 
   // Handle SPA transitions
-  window.addEventListener('popstate', resetSession);
-  window.addEventListener('hashchange', resetSession);
-  document.addEventListener('atv-navigation-complete', resetSession);
+  API.addEventListener('popstate', resetSession);
+  API.addEventListener('hashchange', resetSession);
+  API.addDocEventListener('atv-navigation-complete', resetSession);
 
   // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
   if (CONFIG.enabled) {

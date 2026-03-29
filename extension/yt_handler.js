@@ -23,13 +23,10 @@
                 querySelector: document.querySelector.bind(document),
                 getElementById: document.getElementById.bind(document),
                 createElement: document.createElement.bind(document),
-                addEventListener: window.addEventListener.bind(window),
-                removeEventListener: window.removeEventListener.bind(window),
                 setTimeout: window.setTimeout.bind(window),
                 setInterval: window.setInterval.bind(window),
                 clearInterval: window.clearInterval.bind(window),
-                addDocEventListener: document.addEventListener.bind(document),
-                removeDocEventListener: document.removeEventListener.bind(document)
+                addDocEventListener: document.addEventListener.bind(document)
               };
 
   const qS = (s) => API.querySelector(s);

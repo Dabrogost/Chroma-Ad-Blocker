@@ -11,6 +11,7 @@
     - **Cosmetic Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring.
 - **Safety Exclusion Protocol**: Automatically bypasses critical infrastructure, including financial institutions (Banks), authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
 - **Security-Hardened Architecture**: Features a session-token gated communication pipeline and pristine API caching to prevent host-page interference and script hijacking.
+- **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of Google Chrome (and other Chromium-based browsers).
 
 ---
 
