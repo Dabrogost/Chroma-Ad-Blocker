@@ -1517,6 +1517,16 @@ ul  { list-style: none; }
   z-index: 1;
 }
 
+.tools-disclaimer {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  opacity: 0.8;
+  text-align: center;
+  max-width: 600px;
+  margin-top: 36px;
+}
+
 /* ── Responsive ─────────────────────────────────────────────── */
 
 @media (max-width: 960px) {

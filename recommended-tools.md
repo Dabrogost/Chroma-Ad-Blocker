@@ -112,5 +112,7 @@ description: Tools we recommend alongside Chroma Ad-Blocker — Privacy Badger a
       </a>
     </div>
 
-  </div>
+  <p class="tools-disclaimer fade-up">
+    Chroma is not affiliated with, endorsed by, or sponsored by the Electronic Frontier Foundation or Ajay Ramachandran. These tools are recommended solely on their own merit.
+  </p>
 </section>
