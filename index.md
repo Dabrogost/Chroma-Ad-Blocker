@@ -87,18 +87,19 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
       <span class="card__tag">YouTube &middot; Prime Video</span>
     </div>
 
-    <!-- Card 2: Network Blocking -->
-    <div class="card card--magenta fade-up">
+    <!-- Card 2: Push Suppression -->
+    <div class="card card--cyan fade-up">
       <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-        <line x1="8" y1="12" x2="16" y2="12"/>
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        <line x1="1" y1="1" x2="23" y2="23"/>
       </svg>
-      <h3 class="card__title">Network Blocking</h3>
+      <h3 class="card__title">Push Suppression</h3>
       <p class="card__desc">
-        A multi-part Declarative Net Request (DNR) system blocks tracker pings, analytics 
-        beacons, and traditional banner ads at the browser level before they load.
+        Overrides the Notification API and PushManager registration in the Main World 
+        to silently deny intrusive permission requests globally.
       </p>
-      <span class="card__tag">Multi-part DNR ruleset</span>
+      <span class="card__tag">Notification API</span>
     </div>
 
     <!-- Card 3: Cosmetic Filtering -->
@@ -115,7 +116,7 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
       <span class="card__tag">MutationObserver</span>
     </div>
 
-    <!-- Card 4: Global Protection -->
+    <!-- Card 4: Global Components -->
     <div class="card card--blue fade-up">
       <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
@@ -128,19 +129,18 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
       <span class="card__tag">Shorts &middot; Merch &middot; Offers</span>
     </div>
 
-    <!-- Card 5: Push Suppression -->
-    <div class="card card--cyan fade-up">
+    <!-- Card 5: Network Blocking -->
+    <div class="card card--magenta fade-up">
       <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-        <line x1="1" y1="1" x2="23" y2="23"/>
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
       </svg>
-      <h3 class="card__title">Push Suppression</h3>
+      <h3 class="card__title">Network Blocking</h3>
       <p class="card__desc">
-        Overrides the Notification API and PushManager registration in the Main World 
-        to silently deny intrusive permission requests globally.
+        A multi-part Declarative Net Request (DNR) system blocks tracker pings, analytics 
+        beacons, and traditional banner ads at the browser level before they load.
       </p>
-      <span class="card__tag">Notification API</span>
+      <span class="card__tag">Multi-part DNR ruleset</span>
     </div>
 
     <!-- Card 6: Hardened Security -->
