@@ -73,7 +73,8 @@ test('Security Hardening - background.js', async (t) => {
       updateDynamicRules: async (args) => {
         if (args.addRules) dynamicRulesAdded.push(...args.addRules);
         return Promise.resolve();
-      }
+      },
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
@@ -122,6 +123,7 @@ test('Security Hardening - background.js', async (t) => {
   sandbox.__TESTING__ = true;
   chromeMock.tabs.get = (id) => Promise.resolve({ id, url: 'https://www.youtube.com/' });
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
   sandbox.DEBUG = true;
   sandbox.__TESTING__ = true;
 

@@ -2,67 +2,7 @@
 
 const $ = id => document.getElementById(id);
 
-// ─── UPDATE CHECK ─────
-const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
-const RELEASES_URL = 'https://api.github.com/repos/Dabrogost/Chroma-Ad-Blocker/releases/latest';
 const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
-
-/**
- * Compares two semver strings. Returns true if remote > local.
- * @param {string} local  e.g. '1.0.0'
- * @param {string} remote e.g. '1.1.0'
- * @returns {boolean}
- */
-function isNewerVersion(local, remote) {
-  const parse = v => v.replace(/^v/, '').split('.').map(Number);
-  const [lMaj, lMin, lPat] = parse(local);
-  const [rMaj, rMin, rPat] = parse(remote);
-  if (rMaj !== lMaj) return rMaj > lMaj;
-  if (rMin !== lMin) return rMin > lMin;
-  return rPat > lPat;
-}
-
-/**
- * Checks GitHub Releases API for a newer version.
- * Uses a cache to avoid redundant fetches within the TTL window.
- * Returns the latest version string if an update is available, otherwise null.
- * @returns {Promise<string|null>}
- */
-async function checkForUpdate() {
-  try {
-    const { updateCheckCache: cache } = await chrome.storage.local.get('updateCheckCache');
-    const now = Date.now();
-
-    // Return cached result if still fresh
-    if (cache && (now - cache.checkedAt) < UPDATE_CHECK_TTL_MS) {
-      const local = chrome.runtime.getManifest().version;
-      return (cache.latestVersion && isNewerVersion(local, cache.latestVersion))
-        ? cache.latestVersion
-        : null;
-    }
-
-    const res = await fetch(RELEASES_URL, {
-      headers: { Accept: 'application/vnd.github+json' },
-      cache: 'no-cache'
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    const latestVersion = (data.tag_name || '').replace(/^v/, '');
-    if (!latestVersion) return null;
-
-    await chrome.storage.local.set({
-      updateCheckCache: { latestVersion, checkedAt: now }
-    });
-
-    const local = chrome.runtime.getManifest().version;
-    return isNewerVersion(local, latestVersion) ? latestVersion : null;
-
-  } catch {
-    return null;
-  }
-}
 
 async function init() {
   const manifest = chrome.runtime.getManifest();
@@ -71,8 +11,9 @@ async function init() {
   }
 
   // Update check — runs async, inserts banner if update available
-  checkForUpdate().then(latestVersion => {
-    if (!latestVersion) return;
+  notifyBackground({ type: MSG.UPDATE_CHECK }).then(result => {
+    if (!result || !result.updateAvailable) return;
+    const latestVersion = result.latestVersion;
 
     const banner = document.createElement('div');
     banner.id = 'updateBanner';
@@ -315,7 +256,79 @@ async function init() {
     });
   }
 
-  loadSubscriptionUI();
+  await loadSubscriptionUI();
+
+  // ─── REQUEST LOG UI ─────
+  const RT_BADGE = {
+    script:           { label: 'JS',  color: 'rgba(0,255,204,0.15)',  text: 'var(--c-cyan)' },
+    xmlhttprequest:   { label: 'XHR', color: 'rgba(0,136,255,0.15)', text: 'var(--c-blue)' },
+    image:            { label: 'IMG', color: 'rgba(153,0,255,0.15)', text: '#b388ff' },
+    sub_frame:        { label: 'FRM', color: 'rgba(230,126,34,0.15)', text: '#e67e22' },
+    main_frame:       { label: 'DOC', color: 'rgba(231,76,60,0.15)',  text: '#e74c3c' },
+    stylesheet:       { label: 'CSS', color: 'rgba(39,174,96,0.15)',  text: '#2ecc71' },
+    media:            { label: 'MED', color: 'rgba(243,156,18,0.15)', text: '#f39c12' },
+    websocket:        { label: 'WS',  color: 'rgba(26,188,156,0.15)', text: '#1abc9c' },
+    ping:             { label: 'PNG', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+  };
+
+  function formatLogUrl(url) {
+    try {
+      const u = new URL(url);
+      const path = u.hostname.length > 22 ? u.hostname.slice(0, 20) + '…' : u.hostname; // User requested u.hostname + path, but also path manipulation. 
+      // User prompt: "const path = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname; return u.hostname + path;"
+      const userPath = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname;
+      return u.hostname + userPath;
+    } catch {
+      return url.slice(0, 40);
+    }
+  }
+
+  function formatTimeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60)   return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    return `${Math.floor(s / 3600)}h`;
+  }
+
+  async function loadRequestLog() {
+    const toggleRow = $('logToggleRow');
+    const toggleBtn = $('logToggleBtn');
+    const entries   = $('logEntries');
+    if (!toggleRow || !entries) return;
+
+    let isOpen = false;
+
+    async function renderLog() {
+      const log = await notifyBackground({ type: MSG.LOG_GET }) || [];
+      entries.innerHTML = '';
+
+      if (log.length === 0) {
+        entries.innerHTML = '<div class="log-empty">No entries yet.</div>';
+        return;
+      }
+
+      for (const entry of log) {
+        const badge = RT_BADGE[entry.rt] || { label: '???', color: 'rgba(255,255,255,0.05)', text: 'var(--text-muted)' };
+        const row = document.createElement('div');
+        row.className = 'log-entry';
+        row.innerHTML = `
+          <span class="log-rt" style="background:${badge.color};color:${badge.text};">${badge.label}</span>
+          <span class="log-url" title="${entry.url}">${formatLogUrl(entry.url)}</span>
+          <span class="log-time">${formatTimeAgo(entry.ts)}</span>
+        `;
+        entries.appendChild(row);
+      }
+    }
+
+    toggleRow.addEventListener('click', async () => {
+      isOpen = !isOpen;
+      toggleBtn.classList.toggle('open', isOpen);
+      entries.classList.toggle('visible', isOpen);
+      if (isOpen) await renderLog();
+    });
+  }
+
+  loadRequestLog();
 }
 
 init();

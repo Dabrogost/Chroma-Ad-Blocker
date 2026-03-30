@@ -46,7 +46,8 @@ test('getDefaultDynamicRules', async (t) => {
     },
     declarativeNetRequest: {
       getDynamicRules: () => Promise.resolve([]),
-      updateDynamicRules: () => Promise.resolve()
+      updateDynamicRules: () => Promise.resolve(),
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
@@ -73,8 +74,11 @@ test('getDefaultDynamicRules', async (t) => {
   sandbox.chrome = chromeMock;
   sandbox.console = console;
   sandbox.setInterval = () => {};
+  sandbox.setTimeout = setTimeout;
+  sandbox.clearTimeout = clearTimeout;
 
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
  
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
@@ -149,7 +153,8 @@ test('syncDynamicRules successful syncing', async (t) => {
       updateDynamicRules: async (args) => {
         updateDynamicRulesArgs = args;
         return Promise.resolve();
-      }
+      },
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
@@ -181,7 +186,10 @@ test('syncDynamicRules successful syncing', async (t) => {
     warn: () => {}
   };
   sandbox.setInterval = () => {};
+  sandbox.setTimeout = setTimeout;
+  sandbox.clearTimeout = clearTimeout;
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
 
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
@@ -242,7 +250,8 @@ test('syncDynamicRules error handling', async (t) => {
     },
     declarativeNetRequest: {
       getDynamicRules: () => Promise.resolve([]),
-      updateDynamicRules: () => Promise.reject(new Error('Simulated update error'))
+      updateDynamicRules: () => Promise.reject(new Error('Simulated update error')),
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
@@ -277,8 +286,11 @@ test('syncDynamicRules error handling', async (t) => {
     warn: () => {}
   };
   sandbox.setInterval = () => {};
+  sandbox.setTimeout = setTimeout;
+  sandbox.clearTimeout = clearTimeout;
   sandbox.DEBUG = true;
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
 
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
