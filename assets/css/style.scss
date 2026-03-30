@@ -20,6 +20,7 @@
   --c-purple:      #6c5ce7;
   --c-blue:        #0088ff;
   --c-bblue:       #00aaff;
+  --c-fuchsia:     #ea00ff;
   --c-teal:        #00d1b2;
   --c-cyan:        #00ffcc;
 
@@ -41,6 +42,7 @@
   --glow-purple:   rgba(108, 92, 231, 0.28);
   --glow-blue:     rgba(0, 136, 255, 0.28);
   --glow-bblue:    rgba(0, 170, 255, 0.28);
+  --glow-fuchsia:  rgba(234, 0, 255, 0.28);
   --glow-teal:     rgba(0, 209, 178, 0.28);
   --glow-cyan:     rgba(0, 255, 204, 0.25);
 
@@ -942,6 +944,11 @@ ul  { list-style: none; }
   --card-color:        var(--c-cyan);
   --card-glow:         var(--glow-cyan);
   --card-border-hover: rgba(0, 255, 204, 0.38);
+}
+.card--fuchsia {
+  --card-color:        var(--c-fuchsia);
+  --card-glow:         var(--glow-fuchsia);
+  --card-border-hover: rgba(234, 0, 255, 0.42);
 }
 
 .card__icon {
