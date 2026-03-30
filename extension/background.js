@@ -9,6 +9,16 @@
 'use strict';
 
 import { getDefaultDynamicRules } from './defaultDynamicRules.js';
+import {
+  initSubscriptions,
+  ensureAlarm,
+  refreshAllStale,
+  refreshSubscription,
+  getSubscriptions,
+  setSubscriptionEnabled,
+  addSubscription,
+  removeSubscription
+} from './subscriptions/manager.js';
 
 const DEBUG = false;
 
@@ -65,6 +75,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await updateDNRState(isEnabled && isNetworkBlocking);
+  await initSubscriptions();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -72,6 +83,7 @@ chrome.runtime.onStartup.addListener(async () => {
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await updateDNRState(isEnabled && isNetworkBlocking);
+  await ensureAlarm();
 });
 
 // ─── DYNAMIC RULE UPDATES ─────
@@ -196,7 +208,12 @@ const MSG = {
   WHITELIST_GET: 'WHITELIST_GET',
   WHITELIST_ADD: 'WHITELIST_ADD',
   WHITELIST_REMOVE: 'WHITELIST_REMOVE',
-  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
+  SUBSCRIPTION_GET:     'SUBSCRIPTION_GET',
+  SUBSCRIPTION_SET:     'SUBSCRIPTION_SET',
+  SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
+  SUBSCRIPTION_ADD:     'SUBSCRIPTION_ADD',
+  SUBSCRIPTION_REMOVE:  'SUBSCRIPTION_REMOVE'
 };
 
 // ─── CONFIGURATION VALIDATION ─────
@@ -328,6 +345,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
           sendResponse({ ok: true });
           break;
+
+        case MSG.SUBSCRIPTION_GET:
+          sendResponse(await getSubscriptions());
+          break;
+
+        case MSG.SUBSCRIPTION_SET:
+          sendResponse(await setSubscriptionEnabled(msg.id, msg.enabled));
+          break;
+
+        case MSG.SUBSCRIPTION_REFRESH:
+          sendResponse(await refreshSubscription(msg.id));
+          break;
+
+        case MSG.SUBSCRIPTION_ADD:
+          sendResponse(await addSubscription(msg.subscription));
+          break;
+
+        case MSG.SUBSCRIPTION_REMOVE:
+          sendResponse(await removeSubscription(msg.id));
+          break;
       }
     } catch (err) {
       if (DEBUG) console.error('[Chroma] Error in message handler:', err);
@@ -373,6 +410,15 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
   if (changed) {
     await chrome.storage.session.set(sessionData);
+  }
+});
+
+// ─── SUBSCRIPTION ALARM ─────
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'chroma-subscription-check') {
+    refreshAllStale().catch(err => {
+      if (DEBUG) console.error('[Chroma Subscriptions] Alarm refresh failed:', err);
+    });
   }
 });
 

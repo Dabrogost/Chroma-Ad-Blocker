@@ -139,6 +139,80 @@ async function init() {
     await notifyBackground({ type: MSG.STATS_RESET });
     if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = '0';
   });
+
+  // ─── SUBSCRIPTION UI ─────
+  async function loadSubscriptionUI() {
+    const list = document.getElementById('subscriptionList');
+    if (!list) return;
+
+    const subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+
+    if (subscriptions.length === 0) {
+      list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No subscriptions configured.</span></div>';
+      return;
+    }
+
+    list.innerHTML = '';
+
+    for (const sub of subscriptions) {
+      const row = document.createElement('div');
+      row.className = 'toggle-row';
+
+      const lastUpdatedText = sub.lastUpdated
+        ? new Date(sub.lastUpdated).toLocaleDateString()
+        : 'Never';
+
+      const countText = sub.ruleCount
+        ? `${sub.ruleCount.network.toLocaleString()} network · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
+        : '';
+
+      const errorText = sub.lastError
+        ? `<div style="font-size:10px;color:var(--c-red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${sub.lastError}">Error: ${sub.lastError}</div>`
+        : '';
+
+      row.innerHTML = `
+        <div class="toggle-info">
+          <div class="name">${sub.name}</div>
+          <div class="desc">Updated: ${lastUpdatedText}${countText ? ' · ' + countText : ''}</div>
+          ${errorText}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <button data-id="${sub.id}" class="sub-refresh-btn reset-btn" style="font-size:9px;padding:3px 8px;" title="Force refresh">↻</button>
+          <label class="switch">
+            <input type="checkbox" class="sub-toggle" data-id="${sub.id}" ${sub.enabled ? 'checked' : ''} />
+            <span class="slider"></span>
+          </label>
+        </div>
+      `;
+
+      list.appendChild(row);
+    }
+
+    // Toggle handler
+    list.querySelectorAll('.sub-toggle').forEach(input => {
+      input.addEventListener('change', async (e) => {
+        await notifyBackground({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
+      });
+    });
+
+    // Refresh button handler
+    list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = e.target.dataset.id;
+        e.target.textContent = '…';
+        e.target.disabled = true;
+        const result = await notifyBackground({ type: MSG.SUBSCRIPTION_REFRESH, id });
+        e.target.textContent = result && result.ok ? '✓' : '✗';
+        setTimeout(() => {
+          e.target.textContent = '↻';
+          e.target.disabled = false;
+          loadSubscriptionUI();
+        }, 1500);
+      });
+    });
+  }
+
+  loadSubscriptionUI();
 }
 
 init();

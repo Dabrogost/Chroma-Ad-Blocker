@@ -290,7 +290,7 @@
   // ─── INIT ─────
   async function init() {
     try {
-      const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']);
+      const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist', 'subscriptionCosmeticRules']);
       
       // Performance Optimization: Domain Exclusion
       const whitelist = data.whitelist || [];
@@ -306,6 +306,29 @@
       
       if (data.HIDE_SELECTORS) {
         HIDE_SELECTORS = data.HIDE_SELECTORS;
+      }
+
+      // Merge subscription cosmetic rules applicable to the current hostname
+      if (data.subscriptionCosmeticRules && Array.isArray(data.subscriptionCosmeticRules)) {
+        const h = window.location.hostname;
+
+        // Collect exception selectors for this domain first
+        const exceptionSelectors = new Set(
+          data.subscriptionCosmeticRules
+            .filter(r => r.isException && (r.domains === null || r.domains.some(d => h === d || h.endsWith('.' + d))))
+            .map(r => r.selector)
+        );
+
+        // Merge non-excepted selectors into HIDE_SELECTORS
+        const additional = data.subscriptionCosmeticRules
+          .filter(r =>
+            !r.isException &&
+            !exceptionSelectors.has(r.selector) &&
+            (r.domains === null || r.domains.some(d => h === d || h.endsWith('.' + d)))
+          )
+          .map(r => r.selector);
+
+        HIDE_SELECTORS = [...HIDE_SELECTORS, ...additional];
       }
       
       if (data.WARNING_SELECTORS) {
