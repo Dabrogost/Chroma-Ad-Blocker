@@ -47,7 +47,7 @@
           }
           body.chroma-session-active .ytp-ad-player-overlay,
           body.chroma-session-active .ytp-ad-player-overlay-instream-info {
-            z-index: 2147483647 !important;
+            z-index: 2147483647 !important; // Maximum 32-bit signed integer
             pointer-events: none !important;
           }
           body.chroma-session-active .ytp-ad-skip-button-container, 
@@ -55,7 +55,7 @@
           body.chroma-session-active .ytp-skip-ad-button, 
           body.chroma-session-active .videoAdUiSkipButton,
           body.chroma-session-active [id^="skip-button:"] {
-            z-index: 2147483647 !important;
+            z-index: 2147483647 !important; // Maximum 32-bit signed integer
           }
           .ytp-chrome-bottom {
             z-index: 9999999 !important; // High layer for player controls

@@ -159,7 +159,7 @@
       // SECURITY: Token Exposure Prevention (VULN-02 Fix)
       // Site-specific handlers (yt_handler, prm_handler) must use the exposed 'send' function
       // which automatically injects the token from this closure.
-      const internalBridge = Object.create(null); // SECURITY: Rationale - Prevent property lookup via Prototype Chain.
+      const internalBridge = Object.create(null); // SECURITY: Property Lookup Prevention via Prototype Chain
       Object.assign(internalBridge, {
         config: Object.freeze({ ...selectors }),
         // Integrity Layer: API Passthrough
@@ -209,7 +209,7 @@
 
       class ShadowNotification extends OriginalNotification {
         constructor(title, options) {
-          // SECURITY: Prevents sites from spawning non-consensual notification prompts.
+          // SECURITY: Notification Prompt Prevention
           if (checkPushBlocking()) {
             if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked Notification construction:', title);
             sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
@@ -273,7 +273,7 @@
     if (typeof navigator.permissions !== 'undefined' && typeof navigator.permissions.query === 'function') {
       const originalQuery = navigator.permissions.query;
       navigator.permissions.query = function(parameters) {
-        // SECURITY: Spoofs permission state to 'denied' to suppress repeat requests.
+        // SECURITY: Permission State Spoofing
         if (parameters && parameters.name === 'notifications' && checkPushBlocking()) {
           return Promise.resolve({ state: 'denied', onchange: null, name: 'notifications' });
         }
@@ -298,7 +298,7 @@
       }
     }
 
-    // SECURITY: Freeze the overridden APIs (VULN-06).
+    // SECURITY: API Lockdown
     if (isHostileDomain) {
       try {
         const lock = (obj, prop) => {
@@ -381,6 +381,7 @@
     const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web.
     
     pingInterval = pristineSetInterval(() => {
+      // SECURITY: Secure Handshake Initiation
       pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__'));
     }, pingRate);
   } else {

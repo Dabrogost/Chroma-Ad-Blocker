@@ -733,7 +733,6 @@ init();
 
 // ─── TESTING EXPORTS ─────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
-  /** @returns {void} */
   /** @type {Object} */
   globalThis.CONFIG = CONFIG;
   /** @returns {void} */

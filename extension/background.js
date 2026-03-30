@@ -323,6 +323,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const actSessionKey = docId || (tabId ? `${tabId}:${_sender.frameId || 0}` : null);
           const sessionEntry = sessionData.sessionTokens[actSessionKey];
           if (sessionEntry && sessionEntry.token === msg.token) {
+            // SECURITY: Session Token Validation
             if (DEBUG) console.warn(`[Chroma Security] Suspicious Activity on session ${actSessionKey}:`, msg.activity);
           }
           sendResponse({ ok: true });
@@ -365,7 +366,6 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     // Check if it's a new-style object entry or an old-style tabId fallback key
     if ((entry && entry.tabId === tabId) || key === String(tabId) || key.startsWith(`${tabId}:`)) {
       delete sessionData.sessionTokens[key];
-      // Also clear corresponding lock
       delete sessionData.tokenRetrievalLocked[key];
       changed = true;
     }
