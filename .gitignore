@@ -26,6 +26,3 @@ descriptions.txt
 tmp/
 *.log
 *.local
-
-# Tests
-tests/
