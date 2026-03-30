@@ -45,14 +45,17 @@
           #player-theater-container, #player-container-id {
             max-width: unset !important;
           }
-          .ytp-ad-player-overlay,
-          .ytp-ad-player-overlay-instream-info,
-          .ytp-ad-skip-button-container, 
-          .ytp-ad-skip-button-slot,
-          .ytp-skip-ad-button, 
-          .videoAdUiSkipButton,
-          [id^="skip-button:"] {
-            z-index: 2147483647 !important; // Maximum 32-bit signed integer for absolute top-layer positioning
+          body.chroma-session-active .ytp-ad-player-overlay,
+          body.chroma-session-active .ytp-ad-player-overlay-instream-info {
+            z-index: 2147483647 !important;
+            pointer-events: none !important;
+          }
+          body.chroma-session-active .ytp-ad-skip-button-container, 
+          body.chroma-session-active .ytp-ad-skip-button-slot,
+          body.chroma-session-active .ytp-skip-ad-button, 
+          body.chroma-session-active .videoAdUiSkipButton,
+          body.chroma-session-active [id^="skip-button:"] {
+            z-index: 2147483647 !important;
           }
           .ytp-chrome-bottom {
             z-index: 9999999 !important; // High layer for player controls
@@ -105,7 +108,7 @@
     styles.forEach(styleDef => {
       let sheet = chromaSheets.get(styleDef.id);
       if (!sheet) {
-        // Constructable Stylesheets: Prevents HTML injection by keeping styles isolated from the DOM string parser.
+        // Performance Optimization: Constructable Stylesheets (isolate from DOM string parser)
         sheet = new CSSStyleSheet();
         try {
           sheet.replaceSync(styleDef.content);
@@ -220,7 +223,7 @@
 
       const isElement = node.nodeType === Node.ELEMENT_NODE;
 
-      // Heuristic-Based Container Removal: Targeting ad-specific IDs while protecting core UI components.
+      // Performance Optimization: Heuristic Container Removal
       const processAdContainer = (el) => {
         if (!el || !el.id) return;
         
@@ -252,7 +255,7 @@
 
   // ─── NAVIGATION HANDLING (SPA) ─────
   function onYTNavigate() {
-    // Multi-Stage Cleanup: Accounts for both early DOM mounting and late-loading ad scripts.
+    // Performance Optimization: Multi-Stage SPA Cleanup
     [500, 1500].forEach(delay => { // Multi-stage timeouts for SPA navigation to catch late-mounting ads
       setTimeout(() => {
         suppressAdblockWarnings();
@@ -289,7 +292,7 @@
     try {
       const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']);
       
-      // Domain Exclusion: Terminate initialization for whitelisted domains.
+      // Performance Optimization: Domain Exclusion
       const whitelist = data.whitelist || [];
       const hostname = window.location.hostname;
       if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {
@@ -331,17 +334,15 @@
     globalThis.CONFIG = CONFIG;
     /** @returns {void} */
     globalThis.injectAllCSS = injectAllCSS;
-    /** @param {NodeList|Element[]|Element} [nodes] */
+    /** @param {NodeList|Element[]|Element} [nodes] @returns {void} */
     globalThis.suppressAdblockWarnings = suppressAdblockWarnings;
-    /** @param {NodeList|Element[]|Element} [nodes] */
+    /** @param {NodeList|Element[]|Element} [nodes] @returns {void} */
     globalThis.removeLeftoverAdContainers = removeLeftoverAdContainers;
     /** @returns {void} */
     globalThis.startObserver = startObserver;
-    /** @param {string} val */
-    /** @param {string} val */
+    /** @param {string} val @returns {void} */
     globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
-    /** @param {string[]} val */
-    /** @param {string[]} val */
+    /** @param {string[]} val @returns {void} */
     globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = val; };
   }
 })();

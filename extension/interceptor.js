@@ -100,7 +100,7 @@
   try {
     const isNative = (fn) => {
       try {
-        // SECURITY: Allow unit tests to skip native code verification.
+        // SECURITY: Test Environment Pass-through
         if (window.__CHROMA_TEST_ENVIRONMENT__ === true) return true;
 
         return typeof fn === 'function' && 
@@ -156,13 +156,13 @@
 
     // SECURITY: Provisioning of secure messaging for authorized domains.
     if (isHostileDomain) {
-      // SECURITY: We NO LONGER expose the token on the window object (VULN-02 Fix).
+      // SECURITY: Token Exposure Prevention (VULN-02 Fix)
       // Site-specific handlers (yt_handler, prm_handler) must use the exposed 'send' function
       // which automatically injects the token from this closure.
       const internalBridge = Object.create(null); // SECURITY: Rationale - Prevent property lookup via Prototype Chain.
       Object.assign(internalBridge, {
         config: Object.freeze({ ...selectors }),
-        // API Passthrough: Provide handlers with pre-cached, unpolluted native methods.
+        // Integrity Layer: API Passthrough
         api: Object.freeze({
           querySelector: pristineQuerySelector,
           getElementById: pristineGetElementById,
@@ -175,8 +175,7 @@
         })
       });
 
-      // Immutable Bridge: Prevent host-page scripts from overwriting the internal API.
-      // SECURITY: Ensures critical API access cannot be hijacked by the site.
+      // SECURITY: Immutable Bridge
       try {
         Object.defineProperty(window, '__CHROMA_INTERNAL__', {
           value: Object.freeze(internalBridge),
@@ -190,8 +189,7 @@
     }
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Hostile Domain: ${isHostileDomain}`);
-
-    // SECURITY: Use localConfig instead of insecure datasets (VULN-01/02 Hardening).
+    // SECURITY: Local Configuration Access (VULN-01/02 Hardening)
     const checkPushBlocking = () => localConfig.enabled && localConfig.blockPushNotifications;
 
     pristineAddDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
@@ -260,9 +258,7 @@
 
       window.Notification = ShadowNotification;
     }
-
-    // Deep Notification Blocking: Overriding ServiceWorkerRegistration prototype.
-    // SECURITY: Blocks background push triggers that bypass window-level Notification API.
+    // SECURITY: Deep Notification Blocking
     if (typeof ServiceWorkerRegistration !== 'undefined' && ServiceWorkerRegistration.prototype) {
       const originalShowNotification = ServiceWorkerRegistration.prototype.showNotification;
       ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
@@ -334,14 +330,14 @@
     
     pristineRemoveDocEventListener('__CHROMA_TOKEN_DELIVERY__', handleTokenDelivery, true);
     
-    // SECURITY: Use Capture-Phase CustomEvent to transfer the port (VULN-01 Hardening).
+    // SECURITY: Capture Phase Port Transfer (VULN-01 Hardening)
     pristineAddEventListener('__CHROMA_PORT_TRANSFER__', function portCatcher(e) {
       // SECURITY: Port Acquisition Capture Phase Logic
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
       
-      // SECURITY: Grab the port from the event ports (MessageEvent compatibility).
+      // SECURITY: Port Acquisition (MessageEvent compatibility)
       chromaPort = e.ports ? e.ports[0] : null;
       if (!chromaPort) {
         // Fallback for CustomEvent delivery if MessageEvent wasn't used/available

@@ -3,7 +3,6 @@
 const $ = id => document.getElementById(id);
 
 async function init() {
-  /** @returns {Promise<void>} */
   const manifest = chrome.runtime.getManifest();
   if ($('versionText')) {
     $('versionText').textContent = `v${manifest.version} · MV3`;
@@ -82,7 +81,6 @@ async function init() {
     }
   });
 
-  /** @param {boolean} active */
   function updateStatusDot(active) {
     if (active) {
       $('statusDot').classList.remove('off');

@@ -100,11 +100,19 @@ function initAdOverlay(video) {
       position: absolute !important;
       top: 0 !important; left: 0 !important; 
       width: 100% !important; height: 100% !important;
-      z-index: 2147483647 !important;
+      z-index: 2147483647 !important; // Maximum 32-bit signed integer for absolute top-layer positioning
       pointer-events: none !important;
       contain: strict !important;
       margin: 0 !important; padding: 0 !important;
       box-sizing: border-box !important;
+      
+      /* UX: Visibility delay allows the 0.5s fade-out to complete before interaction handling is removed. */
+      visibility: hidden !important;
+      transition: visibility 0s 0.5s;
+    }
+    :host(.active) {
+      visibility: visible !important;
+      transition: none;
     }
     .chroma-screen {
       position: absolute !important;
@@ -336,16 +344,8 @@ function injectChromaCSS() {
   const style = cE('style');
   style.id = 'prime-chroma-styles';
   style.textContent = `
-    :host {
-      display: block !important;
-      position: absolute !important;
-      top: 0 !important; left: 0 !important; 
-      width: 100% !important; height: 100% !important;
-      z-index: 2147483647 !important;
+    #prime-chroma-overlay {
       pointer-events: none !important;
-      contain: strict !important;
-      margin: 0 !important; padding: 0 !important;
-      box-sizing: border-box !important;
     }
     .chroma-screen {
       position: absolute !important;
@@ -537,7 +537,7 @@ function findActiveVideo() {
 
 function handlePrimeAdAcceleration() {
   try {
-    // PERFORMANCE OPTIMIZATION: Capture ad state and video reference BEFORE the configuration guard 
+    // Performance Optimization: Capture ad state and video reference BEFORE the configuration guard 
     // to prevent UI 'flicker' caused by the MutationObserver/visibility-toggle race condition.
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
@@ -582,7 +582,6 @@ function handlePrimeAdAcceleration() {
         document.body.classList.add('chroma-prime-session');
       }
       
-      // FIX: Ensure lastAcceleratedSrc is tracked
       lastAcceleratedSrc = currentSrc;
 
       // Apply acceleration
@@ -595,7 +594,7 @@ function handlePrimeAdAcceleration() {
       
     } else {
       consecutiveFalseCount++;
-      // PERFORMANCE OPTIMIZATION: Restore normal playback with debounce.
+      // Performance Optimization: Restore normal playback with debounce.
       if (isAdActive && consecutiveFalseCount >= 4) { // Require 4 consecutive negative detections (~1.6s)
         
         video.playbackRate = 1;
@@ -677,7 +676,7 @@ function init() {
 
       _pollCount++;
 
-      if (initDone || killEnabled || killAccel || _pollCount >= 40) { 
+      if (initDone || killEnabled || killAccel || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
         cI(_pollId);
 
         if (killEnabled || killAccel || whitelisted) {
@@ -738,13 +737,11 @@ if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   /** @type {Object} */
   globalThis.CONFIG = CONFIG;
   /** @returns {void} */
-  /** @returns {void} */
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
   /** @returns {boolean} */
   globalThis.isAdShowing = isAdShowing;
   /** @returns {Element|null} */
   globalThis.findActiveVideo = findActiveVideo;
-  /** @returns {boolean} */
   /** @returns {boolean} */
   globalThis.getIsAdActive = () => isAdActive;
 }

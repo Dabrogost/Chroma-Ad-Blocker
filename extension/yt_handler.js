@@ -45,10 +45,10 @@
     if (adOverlayHost) return;
     
     adOverlayHost = cE('div');
-    // SECURITY: Unique session ID to prevent detection by host-page scripts while remaining logic-addressable.
+    // SECURITY: Session Isolation (evade detector scripts)
     adOverlayHost.id = 'chroma-host-' + Math.random().toString(36).substring(2, 9); // Random 7-char suffix to evade detector scripts
-    
-    // SECURITY: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
+
+    // SECURITY: Shadow DOM Lockdown (prevent host-page tampering)
     adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
     
     const style = cE('style');
@@ -58,11 +58,19 @@
         position: absolute !important;
         top: 0 !important; left: 0 !important; 
         width: 100% !important; height: 100% !important;
-        z-index: 2147483640 !important;
+        z-index: 2147483640 !important; // Stack-safe absolute overlay layer (below browser defaults)
         pointer-events: none !important;
         contain: strict !important;
         margin: 0 !important; padding: 0 !important;
         box-sizing: border-box !important;
+        
+        /* UX: Visibility delay allows the 0.2s fade-out to complete before interaction handling is removed. */
+        visibility: hidden !important;
+        transition: visibility 0s 0.2s;
+      }
+      :host(.active) {
+        visibility: visible !important;
+        transition: none;
       }
       .chroma-screen {
         position: absolute !important;
@@ -452,7 +460,7 @@
   // We now handle config updates via a custom event from interceptor.js or direct property update
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
-      // SECURITY: Validating update keys against a strict allowlist to prevent arbitrary property injection.
+      // SECURITY: Configuration Validation Allowlist
       for (const key of VALID_CONFIG_KEYS) {
         if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
           CONFIG[key] = e.detail[key];
@@ -572,9 +580,9 @@
       }
       
     `;
-    // SECURITY: Attempt to freeze the style object properties to mitigate potential host-page tampering.
+    // SECURITY: Style Object Lockdown (VULN-06)
     try {
-      Object.freeze(style); // SECURITY: Mitigation against host-page style property tampering.
+      Object.freeze(style); // SECURITY: Host-Page Tampering Mitigation
     } catch (e) {}
     (document.head || document.documentElement).appendChild(style);
   }
@@ -588,7 +596,7 @@
 
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
     if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-      // SECURITY: Enforcing allowlist on configuration received during the secure handshake.
+      // SECURITY: Handshake Configuration Validation
       const remoteConfig = window.__CHROMA_INTERNAL__.config;
       for (const key of VALID_CONFIG_KEYS) {
         if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
@@ -611,13 +619,13 @@
         const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
         const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
         
-        // KILL SWITCH: Check for explicit disable signal from protection.js
+        // Kill Switch: Check for explicit disable signal from protection.js
         const killEnabled = document.documentElement.getAttribute('data-chroma-enabled') === 'false';
         const killAccel = document.documentElement.getAttribute('data-chroma-acceleration') === 'false';
         
         _pollCount++;
 
-        if (initDone || killEnabled || killAccel || _pollCount >= 40) { 
+        if (initDone || killEnabled || killAccel || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
           API.clearInterval(_pollId);
           
           if (killEnabled || killAccel || whitelisted) {
@@ -644,12 +652,13 @@
   // ─── TESTING EXPORTS ─────
   if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
     /** @returns {void} */
+    /** @type {Object} */
     globalThis.CONFIG = CONFIG;
     /** @returns {void} */
     globalThis.initAdOverlay = initAdOverlay;
     /** @returns {void} */
     globalThis.handleAdAcceleration = handleAdAcceleration;
-    /** @returns {void} */
+    /** @param {HTMLVideoElement} video @param {boolean} isActive @param {boolean} rawAdShowing @param {Element|null} [adUIElement] @returns {void} */
     globalThis.updateAdOverlay = updateAdOverlay;
   }
 })();

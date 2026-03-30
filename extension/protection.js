@@ -11,7 +11,7 @@
   let isolatedPort;
   let secretToken;
 
-  // SECURITY: Request a unique session token from the background script.
+  // SECURITY: Session Token Retrieval
   /** @returns {Promise<boolean>} */
   const getTokenFromBackground = async () => {
     const response = await chrome.runtime.sendMessage({ type: 'GET_TOKEN' });
@@ -56,7 +56,7 @@
   // ─── SECURE HANDSHAKE ─────
   /**
    * Securely transfers the secret token to the MAIN world.
-   * SECURITY: Establish a private communication channel between worlds.
+   * SECURITY: Private Communication Channel Generation
    */
   function initHandshake() {
     if (!secretToken) {
@@ -138,10 +138,10 @@
     document.documentElement.setAttribute('data-chroma-enabled', CONFIG.enabled);
     document.documentElement.setAttribute('data-chroma-acceleration', CONFIG.acceleration);
 
-    // SECURITY: Authenticate and establish the secure bridge.
+    // SECURITY: Secure Bridge Handshake
     await getTokenFromBackground();
     initHandshake();
-    document.documentElement.setAttribute('data-chroma-init', 'complete'); // SECURITY: Informs site-specific handlers that security context is established.
+    document.documentElement.setAttribute('data-chroma-init', 'complete'); // SECURITY: Security Context Initialization
   });
 
   // ─── CONFIGURATION UPDATES ─────
