@@ -2,11 +2,107 @@
 
 const $ = id => document.getElementById(id);
 
+// ─── UPDATE CHECK ─────
+const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const RELEASES_URL = 'https://api.github.com/repos/Dabrogost/Chroma-Ad-Blocker/releases/latest';
+const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
+
+/**
+ * Compares two semver strings. Returns true if remote > local.
+ * @param {string} local  e.g. '1.0.0'
+ * @param {string} remote e.g. '1.1.0'
+ * @returns {boolean}
+ */
+function isNewerVersion(local, remote) {
+  const parse = v => v.replace(/^v/, '').split('.').map(Number);
+  const [lMaj, lMin, lPat] = parse(local);
+  const [rMaj, rMin, rPat] = parse(remote);
+  if (rMaj !== lMaj) return rMaj > lMaj;
+  if (rMin !== lMin) return rMin > lMin;
+  return rPat > lPat;
+}
+
+/**
+ * Checks GitHub Releases API for a newer version.
+ * Uses a cache to avoid redundant fetches within the TTL window.
+ * Returns the latest version string if an update is available, otherwise null.
+ * @returns {Promise<string|null>}
+ */
+async function checkForUpdate() {
+  try {
+    const { updateCheckCache: cache } = await chrome.storage.local.get('updateCheckCache');
+    const now = Date.now();
+
+    // Return cached result if still fresh
+    if (cache && (now - cache.checkedAt) < UPDATE_CHECK_TTL_MS) {
+      const local = chrome.runtime.getManifest().version;
+      return (cache.latestVersion && isNewerVersion(local, cache.latestVersion))
+        ? cache.latestVersion
+        : null;
+    }
+
+    const res = await fetch(RELEASES_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-cache'
+    });
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    const latestVersion = (data.tag_name || '').replace(/^v/, '');
+    if (!latestVersion) return null;
+
+    await chrome.storage.local.set({
+      updateCheckCache: { latestVersion, checkedAt: now }
+    });
+
+    const local = chrome.runtime.getManifest().version;
+    return isNewerVersion(local, latestVersion) ? latestVersion : null;
+
+  } catch {
+    return null;
+  }
+}
+
 async function init() {
   const manifest = chrome.runtime.getManifest();
   if ($('versionText')) {
     $('versionText').textContent = `v${manifest.version} · MV3`;
   }
+
+  // Update check — runs async, inserts banner if update available
+  checkForUpdate().then(latestVersion => {
+    if (!latestVersion) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'updateBanner';
+    banner.innerHTML = `
+      <a href="${RELEASES_PAGE}" target="_blank" style="color:var(--c-cyan);text-decoration:none;font-weight:600;">
+        ↑ v${latestVersion} available
+      </a>
+      <span style="color:var(--text-muted);margin-left:4px;font-size:9px;">on GitHub</span>
+      <button id="dismissUpdate" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0 2px;line-height:1;" title="Dismiss">✕</button>
+    `;
+    banner.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 7px 14px;
+      font-size: 11px;
+      background: rgba(0, 255, 204, 0.06);
+      border-top: 1px solid rgba(0, 255, 204, 0.15);
+      border-bottom: 1px solid rgba(0, 255, 204, 0.15);
+      font-family: 'JetBrains Mono', monospace;
+    `;
+
+    // Insert before the Protection Layers section title
+    const sectionTitle = document.querySelector('.section-title');
+    if (sectionTitle) sectionTitle.before(banner);
+
+    document.getElementById('dismissUpdate')?.addEventListener('click', () => {
+      banner.remove();
+    });
+  });
 
   const TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],

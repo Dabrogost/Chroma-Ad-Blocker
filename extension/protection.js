@@ -14,7 +14,7 @@
   // SECURITY: Session Token Retrieval
   /** @returns {Promise<boolean>} */
   const getTokenFromBackground = async () => {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_TOKEN' });
+    const response = await window.notifyBackground({ type: MSG.GET_TOKEN });
     if (response && response.token) {
       secretToken = response.token;
       return true;
