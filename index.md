@@ -82,8 +82,7 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
       </svg>
       <h3 class="card__title">Ad Acceleration</h3>
       <p class="card__desc">
-        Automatically identifies and accelerates video ads to 16x speed with audio muted. 
-        Maintains server-side impression integrity without interrupting the user experience.
+        Automatically identifies and accelerates video ads to 16x speed with audio muted, delivering a seamless experience without intrusive interruptions.
       </p>
       <span class="card__tag">YouTube &middot; Prime Video</span>
     </div>

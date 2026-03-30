@@ -20,7 +20,7 @@ The Extension is licensed under the **PolyForm Noncommercial License 1.0.0**.
 
 ## 3. Description of Service
 Chroma Ad-Blocker provides tools to manage your browsing experience, including:
-- **Ad Acceleration**: Speeding up video advertisements to minimize interruption while fulfilling platform impression requirements.
+- **Ad Acceleration**: Speeding up video advertisements to minimize interruption and deliver a seamless experience.
 - **Network Blocking**: Preventing requests to known advertising and tracking domains.
 - **Cosmetic Filtering**: Hiding ad-related elements on Website interfaces.
 - **Overlay Removal**: Removing unsolicited overlay dialogs that restrict content access based on browser configuration.

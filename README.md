@@ -4,7 +4,7 @@
 
 ## Key Features
 
-- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads (up to 16x speed) on supported streaming platforms. This maintains server-side impression integrity while minimizing user interruption.
+- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads (up to 16x speed) on supported streaming platforms, minimizing user interruption.
 - **Multi-Part DNR Network Blocking**: Utilizes a 10-part Declarative Net Request (DNR) system to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Global Component Filtering**:
     - **Push Suppression**: Proactively blocks intrusive native notification and permission prompts.
@@ -103,7 +103,7 @@ graph TD
 ## System Layers
 
 ### Layer 1: Ad Acceleration (yt_handler.js, prm_handler.js)
-The primary defense against server-side ad detection. Instead of blocking the video stream, Chroma accelerates detected ads to 16x speed and synchronizes with a custom overlay. This fulfills impression requirements instantly without intrusive interruptions.
+The primary defense against server-side ad detection. Instead of blocking the video stream, Chroma accelerates detected ads to 16x speed and synchronizes with a custom overlay, delivering a seamless experience without intrusive interruptions.
 
 ### Layer 2: Network-Level Blocking (rules/, background.js)
 Powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into a 10-part system of static rulesets, augmented by dynamic rules loaded at runtime for rapid response to new ad domains. The Service Worker coordinates these rulesets and collects blocking statistics.
