@@ -239,7 +239,59 @@ graph TD
       <p class="qs-step__label">Done &mdash; Chroma is active on all tabs</p>
     </div>
   </div>
+
+  <div class="qs-download-wrap fade-up">
+    <button id="open-download-modal" class="btn-primary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Download Current Version
+    </button>
+  </div>
 </section>
+
+<!-- ═════════════════════════════════ DOWNLOAD MODAL ════════════════════════════════════ -->
+<div id="download-modal" class="modal" aria-hidden="true">
+  <div class="modal__overlay" data-close-modal></div>
+  <div class="modal__container" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal__header">
+      <h2 id="modal-title" class="modal__title">Confirm Download</h2>
+      <button class="modal__close" aria-label="Close modal" data-close-modal>&times;</button>
+    </div>
+    
+    <div class="modal__body">
+      <p class="modal__text">Please review and agree to our policies before downloading the extension.</p>
+      
+      <div class="modal__agreements">
+        <label class="checkbox-label">
+          <input type="checkbox" id="agree-tos" class="checkbox-input">
+          <span class="checkbox-custom"></span>
+          <span class="checkbox-text">I have read and agree to the <a href="{{ '/ToS/' | relative_url }}" target="_blank">Terms of Service</a></span>
+        </label>
+        
+        <label class="checkbox-label">
+          <input type="checkbox" id="agree-privacy" class="checkbox-input">
+          <span class="checkbox-custom"></span>
+          <span class="checkbox-text">I have read and agree to the <a href="{{ '/PRIVACY_POLICY/' | relative_url }}" target="_blank">Privacy Policy</a></span>
+        </label>
+      </div>
+    </div>
+    
+    <div class="modal__footer">
+      <button id="cancel-download" class="btn-ghost" data-close-modal>Cancel</button>
+      <a 
+        id="final-download-btn" 
+        href="https://github.com/user-attachments/files/26338494/Chroma_Ad_Blocker.zip" 
+        class="btn-primary btn-disabled"
+        download
+      >
+        Download
+      </a>
+    </div>
+  </div>
+</div>
 <!-- ════════════════════════════════════ SUPPORT ═══════════════════════════════════════ -->
 <section class="support-section fade-up">
   <h2 class="section__title">Support the Project</h2>

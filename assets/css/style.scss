@@ -1618,3 +1618,227 @@ ul  { list-style: none; }
     display: none;
   }
 }
+
+/* ── Download Modal ────────────────────────────────────────── */
+.qs-download-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 48px;
+  padding-bottom: 20px;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.modal.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modal__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 2, 12, 0.85);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.modal__container {
+  position: relative;
+  width: 92%;
+  max-width: 500px;
+  background: var(--bg-card);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--r-lg);
+  box-shadow: 
+    0 24px 60px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 0 30px rgba(153, 0, 255, 0.15);
+  padding: 32px;
+  transform: scale(0.9) translateY(20px);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.modal.active .modal__container {
+  transform: scale(1) translateY(0);
+}
+
+/* Modal header glow */
+.modal__container::before {
+  content: '';
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 250px;
+  height: 150px;
+  background: radial-gradient(circle at center, rgba(153, 0, 255, 0.25), transparent 70%);
+  pointer-events: none;
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.modal__title {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 24px;
+  background: linear-gradient(135deg, #fff 0%, #9b91b9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.modal__close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s, transform 0.2s;
+  padding: 4px;
+  margin-top: -12px;
+  margin-right: -8px;
+}
+
+.modal__close:hover {
+  color: var(--text);
+  transform: rotate(90deg);
+}
+
+.modal__body {
+  margin-bottom: 32px;
+}
+
+.modal__text {
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.modal__agreements {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Custom Checkboxes */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.2s;
+}
+
+.checkbox-label:hover {
+  opacity: 0.9;
+}
+
+.checkbox-input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.checkbox-custom {
+  position: relative;
+  height: 22px;
+  width: 22px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.checkbox-input:checked ~ .checkbox-custom {
+  background: linear-gradient(135deg, var(--c-magenta), var(--c-blue));
+  border-color: transparent;
+  box-shadow: 0 0 12px rgba(153, 0, 255, 0.4);
+}
+
+.checkbox-custom::after {
+  content: "";
+  position: absolute;
+  display: none;
+  left: 7.5px;
+  top: 3.5px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.checkbox-input:checked ~ .checkbox-custom::after {
+  display: block;
+}
+
+.checkbox-text {
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.checkbox-text a {
+  color: var(--c-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 0.2s;
+}
+
+.checkbox-text a:hover {
+  color: var(--c-cyan);
+}
+
+.modal__footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* Disabled state handling for link button */
+.btn-disabled {
+  opacity: 0.4;
+  filter: grayscale(0.8) brightness(0.8);
+  pointer-events: none;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+@media (max-width: 480px) {
+  .modal__container {
+    padding: 24px;
+  }
+  
+  .modal__footer {
+    flex-direction: column-reverse;
+  }
+  
+  .modal__footer button,
+  .modal__footer a {
+    width: 100%;
+    justify-content: center;
+  }
+}

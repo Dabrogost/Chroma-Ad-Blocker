@@ -151,6 +151,53 @@
       });
     }
 
+    // Download Modal Logic
+    (function() {
+      var modal = document.getElementById('download-modal');
+      var openBtn = document.getElementById('open-download-modal');
+      var closeBtns = document.querySelectorAll('[data-close-modal]');
+      var agreeTos = document.getElementById('agree-tos');
+      var agreePrivacy = document.getElementById('agree-privacy');
+      var downloadBtn = document.getElementById('final-download-btn');
+
+      if (!modal || !openBtn) return;
+
+      function updateBtnState() {
+        if (agreeTos.checked && agreePrivacy.checked) {
+          downloadBtn.classList.remove('btn-disabled');
+        } else {
+          downloadBtn.classList.add('btn-disabled');
+        }
+      }
+
+      openBtn.addEventListener('click', function() {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden'; // Prevent scroll
+      });
+
+      closeBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          modal.classList.remove('active');
+          document.body.style.overflow = '';
+        });
+      });
+
+      if (agreeTos && agreePrivacy) {
+        agreeTos.addEventListener('change', updateBtnState);
+        agreePrivacy.addEventListener('change', updateBtnState);
+      }
+
+      if (downloadBtn) {
+        downloadBtn.addEventListener('click', function() {
+          // Close modal after a short delay when downloading starts
+          setTimeout(function() {
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+          }, 1000);
+        });
+      }
+    })();
+
     // Scroll progress JS fallback for non-supporting browsers
     (function() {
       if (CSS.supports('animation-timeline', 'scroll()')) return;
