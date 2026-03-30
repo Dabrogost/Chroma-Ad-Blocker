@@ -146,13 +146,20 @@ async function init() {
     if (!list) return;
 
     const subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+    const { appliedNetworkRuleCount = 0 } = await chrome.storage.local.get('appliedNetworkRuleCount');
+    const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
     if (subscriptions.length === 0) {
       list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No subscriptions configured.</span></div>';
       return;
     }
 
+    const summaryBar = document.createElement('div');
+    summaryBar.style.cssText = 'padding: 8px 14px 4px; font-size: 10px; color: var(--text-muted); text-align: center; letter-spacing: 0.03em;';
+    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied to network filter`;
+
     list.innerHTML = '';
+    list.appendChild(summaryBar);
 
     for (const sub of subscriptions) {
       const row = document.createElement('div');

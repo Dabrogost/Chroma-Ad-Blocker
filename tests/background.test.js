@@ -7,7 +7,18 @@ const vm = require('vm');
 const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.js'), 'utf8');
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
-  .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;");
+  .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/subscriptions\/manager\.js['"];?/s, `
+    var initSubscriptions   = globalThis._mockInitSubscriptions;
+    var ensureAlarm          = globalThis._mockEnsureAlarm;
+    var refreshAllStale      = globalThis._mockRefreshAllStale;
+    var refreshSubscription  = globalThis._mockRefreshSubscription;
+    var getSubscriptions     = globalThis._mockGetSubscriptions;
+    var setSubscriptionEnabled = globalThis._mockSetSubscriptionEnabled;
+    var addSubscription      = globalThis._mockAddSubscription;
+    var removeSubscription   = globalThis._mockRemoveSubscription;
+  `)
+  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'defaultDynamicRules.js'), 'utf8');
 const defaultDynamicRulesCode = defaultDynamicRulesCodeRaw.replace('export function getDefaultDynamicRules', 'globalThis.getDefaultDynamicRules = function');
@@ -42,8 +53,23 @@ test('getDefaultDynamicRules', async (t) => {
       sendMessage: () => Promise.resolve(),
       onCreated: { addListener: () => {} },
       onRemoved: { addListener: () => {} }
-    }
+    },
+    alarms: {
+      create: () => {},
+      get: () => Promise.resolve(null),
+      onAlarm: { addListener: () => {} }
+    },
   };
+  sandbox._mockInitSubscriptions    = async () => {};
+  sandbox._mockEnsureAlarm          = async () => {};
+  sandbox._mockRefreshAllStale      = async () => {};
+  sandbox._mockRefreshSubscription  = async () => ({ ok: true });
+  sandbox._mockGetSubscriptions     = async () => [];
+  sandbox._mockSetSubscriptionEnabled = async () => ({ ok: true });
+  sandbox._mockAddSubscription      = async () => ({ ok: true });
+  sandbox._mockRemoveSubscription   = async () => ({ ok: true });
+  sandbox._mockInitScriptletEngine  = async () => {};
+
   sandbox.chrome = chromeMock;
   sandbox.console = console;
   sandbox.setInterval = () => {};
@@ -130,8 +156,23 @@ test('syncDynamicRules successful syncing', async (t) => {
       sendMessage: () => Promise.resolve(),
       onCreated: { addListener: () => {} },
       onRemoved: { addListener: () => {} }
-    }
+    },
+    alarms: {
+      create: () => {},
+      get: () => Promise.resolve(null),
+      onAlarm: { addListener: () => {} }
+    },
   };
+
+  sandbox._mockInitSubscriptions    = async () => {};
+  sandbox._mockEnsureAlarm          = async () => {};
+  sandbox._mockRefreshAllStale      = async () => {};
+  sandbox._mockRefreshSubscription  = async () => ({ ok: true });
+  sandbox._mockGetSubscriptions     = async () => [];
+  sandbox._mockSetSubscriptionEnabled = async () => ({ ok: true });
+  sandbox._mockAddSubscription      = async () => ({ ok: true });
+  sandbox._mockRemoveSubscription   = async () => ({ ok: true });
+  sandbox._mockInitScriptletEngine  = async () => {};
 
   sandbox.chrome = chromeMock;
   sandbox.console = {
@@ -208,8 +249,23 @@ test('syncDynamicRules error handling', async (t) => {
       sendMessage: () => Promise.resolve(),
       onCreated: { addListener: () => {} },
       onRemoved: { addListener: () => {} }
-    }
+    },
+    alarms: {
+      create: () => {},
+      get: () => Promise.resolve(null),
+      onAlarm: { addListener: () => {} }
+    },
   };
+
+  sandbox._mockInitSubscriptions    = async () => {};
+  sandbox._mockEnsureAlarm          = async () => {};
+  sandbox._mockRefreshAllStale      = async () => {};
+  sandbox._mockRefreshSubscription  = async () => ({ ok: true });
+  sandbox._mockGetSubscriptions     = async () => [];
+  sandbox._mockSetSubscriptionEnabled = async () => ({ ok: true });
+  sandbox._mockAddSubscription      = async () => ({ ok: true });
+  sandbox._mockRemoveSubscription   = async () => ({ ok: true });
+  sandbox._mockInitScriptletEngine  = async () => {};
 
   sandbox.chrome = chromeMock;
   sandbox.console = {

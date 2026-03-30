@@ -80,6 +80,7 @@ async function rebuildNetworkRules(subscriptions) {
   }
 
   await applySubscriptionRules(allocated);
+  await chrome.storage.local.set({ appliedNetworkRuleCount: allocated.length });
 }
 
 /**

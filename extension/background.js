@@ -19,6 +19,7 @@ import {
   addSubscription,
   removeSubscription
 } from './subscriptions/manager.js';
+import { initScriptletEngine } from './scriptlets/engine.js';
 
 const DEBUG = false;
 
@@ -76,6 +77,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await updateDNRState(isEnabled && isNetworkBlocking);
   await initSubscriptions();
+  await initScriptletEngine();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -84,6 +86,7 @@ chrome.runtime.onStartup.addListener(async () => {
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await updateDNRState(isEnabled && isNetworkBlocking);
   await ensureAlarm();
+  await initScriptletEngine();
 });
 
 // ─── DYNAMIC RULE UPDATES ─────
