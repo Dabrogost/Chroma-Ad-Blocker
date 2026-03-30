@@ -121,7 +121,7 @@ A proactive security layer that blocks intrusive push notification requests and 
 Chroma processes everything locally — no data is ever sent to Chroma's servers because there are none. However, to maintain compatibility with certain websites, Chroma includes a small set of **Allow Rules** that permit specific, standard ad-measurement requests to reach their intended destinations. These rules are scoped exclusively to the streaming provider as the initiator domain.
 
 Chroma does not intercept or store any data from these requests. For a full 
-explanation of this tradeoff, see the [Privacy Policy](PRIVACY_POLICY.md).
+explanation of this tradeoff, see the [Privacy Policy](docs/PRIVACY_POLICY.md).
 
 ---
 
@@ -177,7 +177,7 @@ Portions of this codebase, including initial logic structures and documentation,
 
 ## Security Policy
 
-For information on how to report security vulnerabilities, please see our [Security Policy](SECURITY.md).
+For information on how to report security vulnerabilities, please see our [Security Policy](docs/SECURITY.md).
 
 ---
 
