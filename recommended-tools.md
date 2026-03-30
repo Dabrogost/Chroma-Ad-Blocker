@@ -17,9 +17,9 @@ description: Tools we recommend alongside Chroma Ad-Blocker — Privacy Badger a
 <section class="section" style="padding-top: 0;">
   <div class="tool-cards-grid">
 
-    <div class="tool-card card--red fade-up">
+    <div class="tool-card card--orange fade-up">
       <div class="tool-card__header">
-        <div class="tool-card__icon-wrap tool-card__icon-wrap--red">
+        <div class="tool-card__icon-wrap tool-card__icon-wrap--orange">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="28" height="28">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             <line x1="8" y1="12" x2="16" y2="12"/>
@@ -64,9 +64,9 @@ description: Tools we recommend alongside Chroma Ad-Blocker — Privacy Badger a
       </a>
     </div>
 
-    <div class="tool-card card--cyan fade-up">
+    <div class="tool-card card--red fade-up">
       <div class="tool-card__header">
-        <div class="tool-card__icon-wrap tool-card__icon-wrap--cyan">
+        <div class="tool-card__icon-wrap tool-card__icon-wrap--red">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="28" height="28">
             <circle cx="12" cy="12" r="10"/>
             <line x1="12" y1="8" x2="12" y2="12"/>
@@ -111,8 +111,9 @@ description: Tools we recommend alongside Chroma Ad-Blocker — Privacy Badger a
         Install from Chrome Web Store
       </a>
     </div>
+  </div>
 
-  <p class="tools-disclaimer fade-up">
-    Chroma is not affiliated with, endorsed by, or sponsored by the Electronic Frontier Foundation or Ajay Ramachandran. These tools are recommended solely on their own merit.
-  </p>
+<p class="tools-disclaimer fade-up">
+  Chroma is not affiliated with, endorsed by, or sponsored by the Electronic Frontier Foundation or Ajay Ramachandran. These tools are recommended solely on their own merit.
+</p>
 </section>
