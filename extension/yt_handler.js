@@ -23,7 +23,6 @@
                 querySelector: document.querySelector.bind(document),
                 getElementById: document.getElementById.bind(document),
                 createElement: document.createElement.bind(document),
-                setTimeout: window.setTimeout.bind(window),
                 setInterval: window.setInterval.bind(window),
                 clearInterval: window.clearInterval.bind(window),
                 addDocEventListener: document.addEventListener.bind(document)
@@ -657,7 +656,5 @@
     globalThis.initAdOverlay = initAdOverlay;
     /** @returns {void} */
     globalThis.handleAdAcceleration = handleAdAcceleration;
-    /** @param {HTMLVideoElement} video @param {boolean} isActive @param {boolean} rawAdShowing @param {Element|null} [adUIElement] @returns {void} */
-    globalThis.updateAdOverlay = updateAdOverlay;
   }
 })();

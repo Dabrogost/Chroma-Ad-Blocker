@@ -168,7 +168,6 @@
           getElementById: pristineGetElementById,
           createElement: pristineCreateElement,
           addEventListener: pristineAddEventListener,
-          setTimeout: pristineSetTimeout,
           setInterval: pristineSetInterval,
           clearInterval: pristineClearInterval,
           addDocEventListener: pristineAddDocEventListener

@@ -338,8 +338,6 @@
     globalThis.suppressAdblockWarnings = suppressAdblockWarnings;
     /** @param {NodeList|Element[]|Element} [nodes] @returns {void} */
     globalThis.removeLeftoverAdContainers = removeLeftoverAdContainers;
-    /** @returns {void} */
-    globalThis.startObserver = startObserver;
     /** @param {string} val @returns {void} */
     globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
     /** @param {string[]} val @returns {void} */

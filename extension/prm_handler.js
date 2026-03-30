@@ -29,7 +29,6 @@ const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ?
               getElementById: document.getElementById.bind(document),
               createElement: document.createElement.bind(document),
               addEventListener: window.addEventListener.bind(window),
-              setTimeout: window.setTimeout.bind(window),
               setInterval: window.setInterval.bind(window),
               clearInterval: window.clearInterval.bind(window),
               addDocEventListener: document.addEventListener.bind(document)
