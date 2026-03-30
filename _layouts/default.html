@@ -179,6 +179,13 @@
         btn.addEventListener('click', function() {
           modal.classList.remove('active');
           document.body.style.overflow = '';
+          
+          // Reset UI state for next time
+          setTimeout(function() {
+            if (agreeTos) agreeTos.checked = false;
+            if (agreePrivacy) agreePrivacy.checked = false;
+            if (downloadBtn) downloadBtn.classList.add('btn-disabled');
+          }, 400); // Wait for transition out
         });
       });
 
