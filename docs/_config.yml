@@ -15,15 +15,8 @@ kramdown:
 permalink: pretty
 
 exclude:
-  - node_modules/
-  - package.json
-  - package-lock.json
-  - README.md
-  - extension/
   - Gemfile
   - Gemfile.lock
-  - "*.crx"
-  - "*.pem"
 
 defaults:
   - scope:

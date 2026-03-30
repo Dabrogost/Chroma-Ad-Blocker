@@ -15,10 +15,10 @@ _metadata/
 *.pem
 
 # Jekyll / GitHub Pages (Build Artifacts)
-_site/
-.jekyll-cache/
-.jekyll-metadata
-.sass-cache/
+docs/_site/
+docs/.jekyll-cache/
+docs/.jekyll-metadata
+docs/.sass-cache/
 
 # Project Specific
 gemini.md
