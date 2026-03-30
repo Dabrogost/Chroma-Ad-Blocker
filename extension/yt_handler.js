@@ -600,7 +600,7 @@
 
 
     // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
-    if (CONFIG.enabled) {
+    if (CONFIG.enabled && CONFIG.acceleration) {
       injectChromaCSS();
       startPolling();
       initSkipButtonListener();
@@ -610,11 +610,22 @@
       const _pollId = API.setInterval(() => {
         const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
         const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
+        
+        // KILL SWITCH: Check for explicit disable signal from protection.js
+        const killEnabled = document.documentElement.getAttribute('data-chroma-enabled') === 'false';
+        const killAccel = document.documentElement.getAttribute('data-chroma-acceleration') === 'false';
+        
         _pollCount++;
 
-        if (initDone || _pollCount >= 40) { // Limit retry attempts (2 seconds) to prevent infinite polling
+        if (initDone || killEnabled || killAccel || _pollCount >= 40) { 
           API.clearInterval(_pollId);
-          if (!CONFIG.enabled && !whitelisted) {
+          
+          if (killEnabled || killAccel || whitelisted) {
+            if (DEBUG) console.log('[Chroma] Kill switch or whitelist detected. Accelerator silenced.');
+            return;
+          }
+
+          if (!CONFIG.enabled) {
             // Safety Fallback: protection.js finished (or timed out) and domain is not whitelisted.
             if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up YouTube handler with defaults.');
             CONFIG.enabled = true;

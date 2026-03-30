@@ -17,6 +17,9 @@ Object.assign(CONFIG, {
   checkIntervalMs: 400,  // Interval between ad state checks (ms)
 });
 
+// Whitelist of allowed config keys for secure updates
+const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
+
 // ─── PRISTINE API BRIDGE ─────
 // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
 const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
@@ -658,7 +661,7 @@ function init() {
   API.addDocEventListener('atv-navigation-complete', resetSession);
 
   // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
-  if (CONFIG.enabled) {
+  if (CONFIG.enabled && CONFIG.acceleration) {
     injectChromaCSS();
     startPolling();
   } else {
@@ -667,11 +670,22 @@ function init() {
     const _pollId = sI(() => {
       const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
       const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
+
+      // KILL SWITCH: Check for explicit disable signal from protection.js
+      const killEnabled = document.documentElement.getAttribute('data-chroma-enabled') === 'false';
+      const killAccel = document.documentElement.getAttribute('data-chroma-acceleration') === 'false';
+
       _pollCount++;
 
-      if (initDone || _pollCount >= 40) { // Limit retry attempts (2 seconds) to prevent infinite polling
+      if (initDone || killEnabled || killAccel || _pollCount >= 40) { 
         cI(_pollId);
-        if (!CONFIG.enabled && !whitelisted) {
+
+        if (killEnabled || killAccel || whitelisted) {
+          if (DEBUG) console.log('[Chroma] Kill switch or whitelist detected. Prime handler silenced.');
+          return;
+        }
+
+        if (!CONFIG.enabled) {
           // SAFETY FALLBACK: protection.js finished (or timed out) and domain is not whitelisted.
           if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up Prime handler with defaults.');
           CONFIG.enabled = true;
@@ -687,7 +701,13 @@ function init() {
 // Listen for config updates via custom event from handshake logic
 API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
   if (e.detail) {
-    Object.assign(CONFIG, e.detail);
+    // SECURITY: Validating update keys against a strict allowlist.
+    for (const key of VALID_CONFIG_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
+        CONFIG[key] = e.detail[key];
+      }
+    }
+
     if (DEBUG) console.log('[Chroma] Prime handler updated config:', CONFIG);
     
     if (!CONFIG.enabled || !CONFIG.acceleration) {

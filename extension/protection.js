@@ -24,7 +24,8 @@
 
   const CONFIG = {
     blockPushNotifications: true,
-    enabled: true
+    enabled: true,
+    acceleration: true
   };
 
 
@@ -126,11 +127,17 @@
     if (savedConfig) {
       CONFIG.enabled = isWhitelisted ? false : (savedConfig.enabled !== false);
       CONFIG.blockPushNotifications = isWhitelisted ? false : (savedConfig.blockPushNotifications !== false);
+      CONFIG.acceleration = isWhitelisted ? false : (savedConfig.acceleration !== false);
     } else if (isWhitelisted) {
       CONFIG.enabled = false;
       CONFIG.blockPushNotifications = false;
+      CONFIG.acceleration = false;
     }
     
+    // Set DOM attributes for immediate kill-switch access in MAIN world
+    document.documentElement.setAttribute('data-chroma-enabled', CONFIG.enabled);
+    document.documentElement.setAttribute('data-chroma-acceleration', CONFIG.acceleration);
+
     // SECURITY: Authenticate and establish the secure bridge.
     await getTokenFromBackground();
     initHandshake();
@@ -142,6 +149,12 @@
     if (msg.type === MSG.CONFIG_UPDATE) {
       CONFIG.enabled = msg.config.enabled !== false;
       CONFIG.blockPushNotifications = msg.config.blockPushNotifications !== false;
+      CONFIG.acceleration = msg.config.acceleration !== false;
+
+      // Update DOM attributes for live kill-switch response
+      document.documentElement.setAttribute('data-chroma-enabled', CONFIG.enabled);
+      document.documentElement.setAttribute('data-chroma-acceleration', CONFIG.acceleration);
+
       if (isolatedPort) {
         isolatedPort.postMessage({
           type: 'BACKGROUND_RESPONSE',
