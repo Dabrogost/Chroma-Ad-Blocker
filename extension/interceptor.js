@@ -83,6 +83,9 @@
   const pristineDispatchEvent = document.dispatchEvent.bind(document);
   const pristineAddDocEventListener = document.addEventListener.bind(document);
   const pristineRemoveDocEventListener = document.removeEventListener.bind(document);
+  const pristineFnToString = Function.prototype.toString.bind(Function.prototype);
+  const pristineCall = Function.prototype.call.bind(Function.prototype.call);
+  const pristineIncludes = String.prototype.includes.bind(String.prototype);
 
   // SECURITY: Protect against Prototype Pollution hijacking (VULN-01)
   const HOSTILE_DOMAINS = [

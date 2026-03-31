@@ -2,7 +2,6 @@
   'use strict';
 
   const DEBUG = false;
-  const MSG = window.MSG; // Provided by messaging.js
 
 
   // ─── CONFIG ─────
@@ -271,7 +270,8 @@
 
   // ─── MESSAGE LISTENER ─────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === MSG.CONFIG_UPDATE) {
+    const MSG = window.MSG;
+    if (MSG && msg.type === MSG.CONFIG_UPDATE) {
       Object.assign(CONFIG, msg.config);
       
       if (!CONFIG.enabled) {
