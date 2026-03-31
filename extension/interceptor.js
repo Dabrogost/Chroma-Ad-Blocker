@@ -139,6 +139,7 @@
 
   // ─── INTERCEPTOR ─────
   let isInitialized = false;
+  let localConfig = null;
 
   /**
    * @param {string} token
@@ -149,7 +150,7 @@
     isInitialized = true;
 
     // Secure Config State: Use local variables to prevent host-page tampering.
-    const localConfig = {
+    localConfig = {
       blockPushNotifications: selectors.blockPushNotifications !== false,
       enabled: selectors.enabled !== false
     };
@@ -314,7 +315,6 @@
     }
   }
 
-
   // ─── SECURE SYNCHRONIZATION ─────
   /** @param {Event} e */
   const handleTokenDelivery = (e) => {
@@ -385,5 +385,13 @@
     }, pingRate);
   } else {
     initChromaInterceptor(null, {});
+  }
+  // ─── TESTING EXPORTS ─────
+  if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
+    globalThis.__CHROMA_STATE_BRIDGE__ = {
+      get isInitialized() { return isInitialized; },
+      get isEnvironmentCompromised() { return isEnvironmentCompromised; },
+      get localConfig() { return localConfig; }
+    };
   }
 })();

@@ -678,12 +678,19 @@
   init();
 
   // ─── TESTING EXPORTS ─────
-  if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
-    /** @type {Object} */
+  if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
     globalThis.CONFIG = CONFIG;
-    /** @returns {void} */
     globalThis.initAdOverlay = initAdOverlay;
-    /** @returns {void} */
     globalThis.handleAdAcceleration = handleAdAcceleration;
+    
+    // EXPOSE STATE FOR LEGACY TESTS VIA BRIDGE (Node/VM safe only)
+    globalThis.__CHROMA_STATE_BRIDGE__ = {
+      get chromaAdSessionActive() { return chromaAdSessionActive; },
+      set chromaAdSessionActive(v) { chromaAdSessionActive = v; },
+      get chromaAdSkipped() { return chromaAdSkipped; },
+      set chromaAdSkipped(v) { chromaAdSkipped = v; },
+      get lastAdDetectTime() { return lastAdDetectTime; },
+      set lastAdDetectTime(v) { lastAdDetectTime = v; }
+    };
   }
 })();

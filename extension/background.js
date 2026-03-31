@@ -131,6 +131,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await updateDNRState(isEnabled && isNetworkBlocking);
   await initSubscriptions();
+  await refreshAllStale();
   await initScriptletEngine();
 });
 

@@ -69,6 +69,7 @@ const createSandbox = () => {
     },
     Notification: makeNative(function() {}),
     location: { hostname: 'www.youtube.com' },
+    __CHROMA_INTERNAL_TEST_STRICT__: true,
     __CHROMA_TEST_ENVIRONMENT__: true
   };
 
@@ -89,6 +90,9 @@ const createSandbox = () => {
   sandbox.window.Notification.permission = 'default';
   
   // Integrity Layer: Pre-capture global initialization.
+  sandbox.globalThis = sandbox;
+  sandbox.__CHROMA_INTERNAL_TEST_STRICT__ = true;
+  sandbox.__CHROMA_TEST_ENVIRONMENT__ = true;
   sandbox.setTimeout = sandbox.window.setTimeout;
   sandbox.clearTimeout = sandbox.window.clearTimeout;
   sandbox.setInterval = sandbox.window.setInterval;

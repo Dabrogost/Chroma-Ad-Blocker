@@ -143,7 +143,7 @@ test('YouTube ad acceleration', async (t) => {
         open() {}
         send() {}
       },
-      __TESTING__: true,
+      __CHROMA_INTERNAL_TEST_STRICT__: true,
     };
 
     sandbox.globalThis = sandbox;
@@ -166,7 +166,7 @@ test('YouTube ad acceleration', async (t) => {
         removeDocEventListener: (e, f, o) => sandbox.document.removeEventListener(e, f, o),
         MutationObserver: sandbox.window.MutationObserver
       },
-      config: { enabled: true, acceleration: true, accelerationSpeed: 16 }
+      config: { enabled: true, acceleration: true, accelerationSpeed: 10 }
     };
 
     vm.createContext(sandbox);
@@ -221,9 +221,9 @@ test('YouTube ad acceleration', async (t) => {
     });
 
     sandbox.handleAdAcceleration();
-    assert.strictEqual(sandbox.window.chromaAdSessionActive, true);
+    assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, true);
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(mockVideo.playbackRate, 16);
+    assert.strictEqual(mockVideo.playbackRate, 10);
     assert.strictEqual(mockVideo.muted, true);
   });
 
@@ -250,15 +250,15 @@ test('YouTube ad acceleration', async (t) => {
     });
 
 
-    sandbox.window.chromaAdSessionActive = true;
-    sandbox.window.lastAdDetectTime = Date.now();
+    sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive = true;
+    sandbox.__CHROMA_STATE_BRIDGE__.lastAdDetectTime = Date.now();
     mockVideo.muted = true;
     mockVideo.dataset.ytChromaMuted = 'true';
 
     // Debounce Override: Immediate unmute on main content detection.
     sandbox.handleAdAcceleration();
     
-    assert.strictEqual(sandbox.window.chromaAdSessionActive, false, 'Session should be deactivated when main content is ready');
+    assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, false, 'Session should be deactivated when main content is ready');
     assert.strictEqual(mockVideo.muted, false, 'Video should be unmuted');
   });
 });

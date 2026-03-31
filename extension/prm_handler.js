@@ -742,16 +742,16 @@ API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
 init();
 
 // ─── TESTING EXPORTS ─────
-if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
-  /** @type {Object} */
+if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
   globalThis.CONFIG = CONFIG;
-  /** @returns {void} */
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
-  /** @returns {boolean} */
   globalThis.isAdShowing = isAdShowing;
-  /** @returns {Element|null} */
   globalThis.findActiveVideo = findActiveVideo;
-  /** @returns {boolean} */
-  globalThis.getIsAdActive = () => isAdActive;
+  
+  // EXPOSE STATE FOR LEGACY TESTS VIA BRIDGE (Node/VM safe only)
+  globalThis.__CHROMA_STATE_BRIDGE__ = {
+    get isAdActive() { return isAdActive; },
+    set isAdActive(v) { isAdActive = v; }
+  };
 }
 })();
