@@ -4,13 +4,15 @@
 
 ## Key Features
 
-- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads (up to 16x speed) on supported streaming platforms, minimizing user interruption.
-- **Multi-Part DNR Network Blocking**: Utilizes a 10-part Declarative Net Request (DNR) system to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
+- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on supported streaming platforms, minimizing user interruption with minimal detection exposure.
+- **Multi-Part DNR Network Blocking**: Utilizes a 10-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
+- **Live Filter List Subscriptions**: Subscribes to external filter lists (EasyPrivacy, Chroma Hotfix) that refresh automatically every 24 hours. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
+- **Scriptlet Injection Engine**: Injects targeted scriptlets into page context on navigation to neutralize anti-adblock scripts, abort property reads, prevent timers, and intercept fetch and XHR calls.
 - **Global Component Filtering**:
     - **Push Suppression**: Proactively blocks intrusive native notification and permission prompts.
     - **Cosmetic Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring.
-- **Safety Exclusion Protocol**: Automatically excludes critical infrastructure, including financial institutions (Banks), authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
-- **Security-Hardened Architecture**: Features a session-token gated communication pipeline and pristine API caching to prevent host-page interference and script hijacking.
+- **Safety Exclusion Protocol**: Automatically excludes critical infrastructure, including financial institutions, authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
+- **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of Google Chrome (and other Chromium-based browsers).
 
 ---
@@ -21,81 +23,82 @@ Chroma utilizes a multi-layered execution model designed to survive the ephemera
 
 ```mermaid
 graph TD
-    classDef sw fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
-    classDef storage fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
+    classDef sw       fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
+    classDef storage  fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
     classDef isolated fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
-    classDef main fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
-    classDef dnr fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
-    classDef dom fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
-    classDef secure fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
-    classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
+    classDef main     fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
+    classDef dnr      fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
+    classDef dom      fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
+    classDef secure   fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
+    classDef actor    fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
-    %% --- LAYER 0: ENTRANCE ---
+    %% ── TOP ──
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
-    %% --- LAYER 1: MAIN WORLD (Execution Context) ---
+    %% ── ROW 1: ENTRY POINTS ──
     subgraph MW["Main World (Page Context)"]
-        INTERCEPT["interceptor.js (API Protection)"]:::main
+        INTERCEPT["interceptor.js"]:::main
+        BRIDGE["__CHROMA_INTERNAL__"]:::secure
         YT_H["yt_handler.js"]:::main
         PRM_H["prm_handler.js"]:::main
-        BRIDGE["__CHROMA_INTERNAL__ (Secure Bridge)"]:::secure
     end
 
-    %% --- LAYER 2: ISOLATED WORLD (Extension Context) ---
-    subgraph IW["Isolated World (Relay Layer)"]
-        PROT["protection.js (Push Blocker)"]:::isolated
-        CONT["content.js (Cosmetic & Warnings)"]:::isolated
-        MSG_U["messaging.js (Shared Utils)"]:::isolated
+    %% ── ROW 2: ISOLATED WORLD ──
+    subgraph IW["Isolated World"]
+        PROT["protection.js"]:::isolated
+        CONT["content.js"]:::isolated
+        MSG_U["messaging.js"]:::isolated
     end
 
-    %% --- LAYER 3: SERVICE WORKER CORE ---
-    subgraph SW["Extension Core (Service Worker)"]
-        BG["background.js (Router & Rules)"]:::sw
-        TOKEN_G["Token Generator"]:::secure
+    %% ── ROW 3: SERVICE WORKER ──
+    subgraph SW["Service Worker"]
+        BG["background.js"]:::sw
+        SUBS["subscriptions/"]:::sw
+        SCRPT["scriptlets/engine.js"]:::sw
+        POPUP["popup.js"]:::sw
     end
 
-    %% --- LAYER 4: INFRASTRUCTURE ---
-    subgraph System["Resource & Network Layer"]
-        STORAGE[("chrome.storage (Local/Session)")]:::storage
-        DNR["10-Part DNR System (Rulesets)"]:::dnr
+    %% ── ROW 4: INFRASTRUCTURE ──
+    subgraph SYS["Infrastructure"]
+        STORAGE[("chrome.storage")]:::storage
+        DNR["DNR Rulesets"]:::dnr
         PLAYER["Media Players"]:::dom
     end
 
-    %% --- LAYER 5: UI ---
-    POPUP["popup.js (UI & Stats)"]:::sw
+    %% ── BOTTOM ──
     USER["The User (Cleaned Experience)"]:::actor
 
-    %% --- PIPELINE FLOW ---
-    INTERNET -- "Host Page & Assets" --> MW
-    INTERNET -- "Third-Party Scripts" --> INTERCEPT
+    %% ── FLOW ──
+    INTERNET --> MW
     INTERNET -- "Network Traffic" --> DNR
-    
-    INTERCEPT <==>|"Handshake (Token/Port)"| PROT
-    PROT ==>|"Message Relay"| BG
-    BG -- "Store Tokens" --> STORAGE
-    
-    PROT -- "Set data-chroma-init" --> PLAYER
-    YT_H -- "Poll Sentinel" --> PLAYER
-    PRM_H -- "Poll Sentinel" --> PLAYER
-    
+
+    INTERCEPT <-->|"Handshake"| PROT
+    PROT --> BG
+    PROT --> CONT
+    PROT -->|"Config Update"| MW
+
+    BG --> STORAGE
+    SUBS -->|"Block Rules"| DNR
+    SUBS <--> STORAGE
+    SCRPT -->|"Inject Scriptlets"| MW
+
     BRIDGE --- YT_H
     BRIDGE --- PRM_H
-    YT_H ==>|"Accelerated Playback"| PLAYER
-    PRM_H ==>|"Accelerated Playback"| PLAYER
-    
-    CONT ==>|"Inject CSS / Mutate"| PLAYER
-    DNR -- "Filter Stream" --> USER
-    PLAYER -- "Clean View" --> USER
-    
-    POPUP <-->|"Sync Config"| STORAGE
-    BG <-->|"Sync Rules"| DNR
-    POPUP ==>|"Display Stats"| USER
+    YT_H --> PLAYER
+    PRM_H --> PLAYER
+    CONT --> PLAYER
 
-    %% Style Tweaks
-    style MW fill:none,stroke:none
-    style IW fill:none,stroke:none
-    style SW fill:none,stroke:none
-    style System fill:none,stroke:none
+    POPUP <--> STORAGE
+    BG <--> DNR
+
+    DNR --> USER
+    PLAYER --> USER
+    POPUP --> USER
+
+    style MW   fill:none,stroke:#880e4f,stroke-width:1px,stroke-dasharray:4
+    style IW   fill:none,stroke:#1b5e20,stroke-width:1px,stroke-dasharray:4
+    style SW   fill:none,stroke:#01579b,stroke-width:1px,stroke-dasharray:4
+    style SYS  fill:none,stroke:#f57f17,stroke-width:1px,stroke-dasharray:4
 ```
 
 ---
@@ -103,46 +106,52 @@ graph TD
 ## System Layers
 
 ### Layer 1: Ad Acceleration (yt_handler.js, prm_handler.js)
-The primary defense against server-side ad detection. Instead of blocking the video stream, Chroma accelerates detected ads to 16x speed and synchronizes with a custom overlay, delivering a seamless experience without intrusive interruptions.
+The primary defense against server-side ad detection. Instead of blocking the video stream, Chroma accelerates detected ads at a configurable speed (×4–×16, default ×8) and synchronizes with a custom overlay, delivering a seamless experience without intrusive interruptions. Session state is fully private to the handler closure — host-page scripts cannot observe or tamper with acceleration state. Anti-detection exemption rules allow standard ad-measurement beacons to reach their destinations during active ad sessions while suppressing post-session observer floods.
 
-### Layer 2: Network-Level Blocking (rules/, background.js)
-Powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into a 10-part system of static rulesets, augmented by dynamic rules loaded at runtime for rapid response to new ad domains. The Service Worker coordinates these rulesets and collects blocking statistics.
+### Layer 2: Network-Level Blocking (rules/, background.js, subscriptions/)
+Powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into a 10-part system of static rulesets covering over 299,000 domain-level block rules, augmented by dynamic rules for anti-detection exemptions and runtime filter list subscriptions. Subscription rules are automatically deduplicated against the static ruleset on each refresh, and scored by a priority budget allocator before being applied. The Service Worker coordinates these rulesets and collects blocking statistics.
 
 ### Layer 3: Cosmetic & Warning Suppression (content.js)
 Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
 
-### Layer 4: Universal Protection (protection.js, interceptor.js)
-A proactive security layer that blocks intrusive push notification requests and permission prompts globally. The `interceptor.js` runs in the Main World to shadow sensitive browser APIs, while `protection.js` relays events to the extension background for enforcement via a secure pipeline.
+### Layer 4: Scriptlet Injection (scriptlets/engine.js)
+On every navigation commit, the scriptlet engine matches the current hostname against stored subscription scriptlet rules and injects matching scriptlet functions directly into the page's MAIN world context via `chrome.scripting.executeScript`. Scriptlets can abort property reads, neutralize anti-adblock timers, intercept fetch and XHR calls, and remove specific CSS classes.
+
+### Layer 5: Universal Protection (protection.js, interceptor.js)
+A proactive security layer that blocks intrusive push notification requests and permission prompts globally. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, writes the initialization sentinel to `document.documentElement`, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
 
 ---
 
 ## Privacy & Transparency
 
-Chroma processes everything locally — no data is ever sent to Chroma's servers because there are none. However, to maintain compatibility with certain websites, Chroma includes a small set of **Allow Rules** that permit specific, standard ad-measurement requests to reach their intended destinations. These rules are scoped exclusively to the streaming provider as the initiator domain.
+Chroma processes everything locally — no data is ever sent to Chroma's servers because there are none. However, to maintain compatibility with certain websites, Chroma includes a small set of **Allow Rules** that permit specific, standard ad-measurement requests to reach their intended destinations. These rules are scoped exclusively to the supported streaming platform as the initiator domain.
 
-Chroma does not intercept or store any data from these requests. For a full 
-explanation of this tradeoff, see the [Privacy Policy](docs/PRIVACY_POLICY.md).
+Chroma does not intercept or store any data from these requests. For a full explanation of this tradeoff, see the [Privacy Policy](docs/PRIVACY_POLICY.md).
 
 ---
 
-### Security Hardening
+## Security Hardening
 
 Chroma implements several advanced security measures to ensure extension integrity and prevent bypass by third-party scripts:
 
+- **Closure-Scoped Session State**: All session tracking variables in the acceleration handlers are private to the IIFE closure. Host-page scripts cannot read or modify acceleration state, session flags, or ad counters.
+- **Config Update Validation**: All incoming configuration updates — whether from the popup or a `__CHROMA_CONFIG_UPDATE__` CustomEvent — are validated against a strict key allowlist with type and range checks. Invalid values are silently rejected before reaching the internal config object.
 - **Immutable API Bridge**: Exposes internal utilities via a locked `__CHROMA_INTERNAL__` object. This bridge is protected using `Object.defineProperty` with `writable: false` and `configurable: false`, preventing host pages from hijacking extension logic.
-- **Pristine API Caching**: `interceptor.js` captures and freezes native browser APIs (such as `querySelector`, `setTimeout`, and `MutationObserver`) immediately at `document_start`. This ensures that even if a site attempts prototype pollution, the extension operates using trusted, original functions.
-- **Session-Token Handshake**: A secure, capture-phase handshake establishes a private communication pipeline between the Main World and the extension background. Sensitive actions (like notification blocking reports) require a valid, tab-specific session token.
+- **Pristine API Caching**: `interceptor.js` captures and freezes native browser APIs (such as `querySelector`, `setTimeout`, and `Function.prototype.toString`) immediately at `document_start`. This ensures that even if a site attempts prototype pollution, the extension operates using trusted, original functions.
+- **Dead Man's Switch**: If core native APIs fail integrity checks at startup, the interceptor severs its secure port and falls back to safe defaults rather than operating in a potentially compromised environment.
+- **Sentinel Hardening**: The `data-chroma-*` initialization attributes are read exactly once at handler startup. Subsequent writes to those attributes by page scripts have no effect on handler behavior.
+- **Session-Token Handshake**: A secure, capture-phase handshake is designed to establish a private communication pipeline between the Main World and the extension background. Sensitive actions require a valid, tab-specific session token.
 - **Origin Authentication**: The Background Service Worker strictly validates the origin and sender context of all incoming messages, rejecting sensitive data or configuration requests from outside the extension's verified context.
 
 ---
 
 ## Quick Start
 
-1. Download the repository as a ZIP or clone it locally.
-2. Navigate to `chrome://extensions` in your browser.
-3. Enable "Developer mode" in the upper-right corner.
-4. Click "Load unpacked" and select the `extension/` directory.
-5. Chroma is now active. You can manage settings and view stats via the extension popup.
+1. Click **Download Current Version** above, or get the latest release from [GitHub](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest). Extract the ZIP, or clone the repository locally.
+2. Open `chrome://extensions` in Chrome.
+3. Toggle on **Developer Mode** in the top-right corner.
+4. Click **Load unpacked** and select the `extension/` folder inside the extracted directory.
+5. Done — Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
 
 ## Configuration
 
@@ -150,9 +159,10 @@ Chroma implements several advanced security measures to ensure extension integri
 |---------|-------------|---------|
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR ruleset blocking. | `true` |
-| `acceleration` | Enables 16x ad playback. | `true` |
+| `acceleration` | Enables accelerated ad playback. | `true` |
+| `accelerationSpeed` | Playback rate multiplier for accelerated ads (×4, ×8, ×12, or ×16). | `8` |
 | `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
-| `hideShorts` | Removes component modules (Shorts). | `false` |
+| `hideShorts` | Removes Shorts component modules. | `false` |
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offer modules. | `true` |
 | `suppressWarnings` | Removes unsolicited overlay dialogs that restrict content access. | `true` |

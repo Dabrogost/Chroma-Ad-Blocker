@@ -178,6 +178,7 @@ graph TD
     classDef actor fill:#1a1040,color:#ede8ff,stroke:#8b949e,stroke-width:2px
     classDef engine fill:#1a1040,color:#ede8ff,stroke:#01579b,stroke-width:2px
     classDef action fill:#1a0a35,color:#ede8ff,stroke:#f57f17,stroke-width:2px
+    classDef support fill:#1a0a35,color:#ede8ff,stroke:#6c5ce7,stroke-width:2px
     classDef title fill:none,stroke:none,color:#ede8ff,font-size:16px,font-weight:bold
 
     INTERNET["The Internet (Ads & Content)"]:::actor
@@ -185,12 +186,18 @@ graph TD
     subgraph CHROMA[" "]
         TITLE["Chroma Ad-Blocker Engine"]:::title
         NETWORK["Network Shield (Blocks Trackers & Banners)"]:::action
+        LISTS["Live Filter Lists (Refreshed Every 24 Hours)"]:::support
         VIDEO["Video Accelerator (Speeds Through Video Ads)"]:::action
-        CONTENT["Content Cleaner (Removes Overlays & Symbols)"]:::action
-        
+        CONTENT["Content Cleaner (Removes Overlays & Placeholders)"]:::action
+        SCRIPTLETS["Script Neutralizer (Disables Anti-Adblock Scripts)"]:::action
+        PUSH["Push Suppressor (Blocks Notification Prompts)"]:::action
+
         TITLE --> NETWORK
         TITLE --> VIDEO
         TITLE --> CONTENT
+        TITLE --> SCRIPTLETS
+        TITLE --> PUSH
+        LISTS -.->|"supplements"| NETWORK
     end
 
     USER["The User (Cleaned Experience)"]:::actor
@@ -200,6 +207,8 @@ graph TD
     NETWORK --> USER
     VIDEO --> USER
     CONTENT --> USER
+    SCRIPTLETS --> USER
+    PUSH --> USER
 
     style CHROMA fill:none,stroke:none
     </div>
