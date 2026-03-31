@@ -599,6 +599,14 @@ function handlePrimeAdAcceleration() {
         video.playbackRate = 1;
         video.volume = savedVolume;
         video.muted = false;
+
+        // Explicit reset of previously accelerated element in case findActiveVideo()
+        // switched to the content video during the ad-to-content DOM transition.
+        if (targetVideo && targetVideo !== video) {
+          targetVideo.playbackRate = 1;
+          targetVideo.muted = false;
+          targetVideo.volume = savedVolume;
+        }
         
         isAdActive = false;
         lastAdEndTime = Date.now();
