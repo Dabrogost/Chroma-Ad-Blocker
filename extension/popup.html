@@ -340,6 +340,68 @@
     }
 
     .toggle-row.disabled { opacity: 0.4; pointer-events: none; filter: grayscale(0.8); }
+
+    /* ── REQUEST LOG ── */
+    .log-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; cursor: pointer;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .log-header:hover { background: rgba(108, 92, 231, 0.08); }
+    .log-toggle-btn {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 10px; cursor: pointer; padding: 0; line-height: 1;
+      transition: transform 0.2s;
+    }
+    .log-toggle-btn.open { transform: rotate(180deg); }
+    .log-entries {
+      display: none;
+      max-height: 180px; overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
+    }
+    .log-entries.visible { display: block; }
+    .log-entry {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+      font-family: 'JetBrains Mono', monospace; font-size: 9.5px;
+    }
+    .log-entry:last-child { border-bottom: none; }
+    .log-rt {
+      font-size: 8px; font-weight: 700; padding: 1px 4px;
+      border-radius: 3px; flex-shrink: 0; min-width: 26px;
+      text-align: center; text-transform: uppercase;
+    }
+    .log-url { flex: 1; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-time { color: var(--text-muted); font-size: 8.5px; flex-shrink: 0; }
+    .log-empty { padding: 12px 14px; font-size: 10px; color: var(--text-muted); text-align: center; }
+    #speedSelectorRow.disabled {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+    .speed-btn {
+      flex: 1;
+      padding: 5px 0;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(108, 92, 231, 0.25);
+      border-radius: 6px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .speed-btn:hover {
+      background: rgba(108, 92, 231, 0.15);
+      border-color: rgba(108, 92, 231, 0.5);
+      color: var(--text);
+    }
+    .speed-btn.active {
+      background: rgba(108, 92, 231, 0.25);
+      border-color: var(--c-purple);
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
@@ -393,12 +455,23 @@
     <div class="toggle-row">
       <div class="toggle-info">
         <div class="name">Ad Acceleration</div>
-        <div class="desc">Mute + 16× speed — bypasses detection</div>
+        <div class="desc">Mute + accelerate ads — bypasses detection</div>
       </div>
       <label class="switch">
         <input type="checkbox" id="toggleAcceleration" />
         <span class="slider"></span>
       </label>
+    </div>
+    <div class="toggle-row" id="speedSelectorRow" style="flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 14px;">
+      <div class="toggle-info">
+        <div class="name" style="font-size: 11px; color: var(--text-dim); font-weight: 500;">Acceleration Speed</div>
+      </div>
+      <div id="speedButtons" style="display: flex; gap: 6px; width: 100%;">
+        <button class="speed-btn" data-speed="4">×4</button>
+        <button class="speed-btn" data-speed="8">×8</button>
+        <button class="speed-btn" data-speed="12">×12</button>
+        <button class="speed-btn" data-speed="16">×16</button>
+      </div>
     </div>
 
     <div class="toggle-row">
@@ -477,6 +550,26 @@
         <input type="checkbox" id="toggleWhitelist" />
         <span class="slider"></span>
       </label>
+    </div>
+  <div class="section-title" style="margin-top: 16px;">Filter Lists</div>
+
+  <div class="protection-list" id="subscriptionList">
+    <div class="toggle-row" style="justify-content: center; padding: 14px;">
+      <span style="font-size: 11px; color: var(--text-muted);">Loading subscriptions...</span>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top: 16px;">Request Log</div>
+  <div class="protection-list" id="requestLogPanel">
+    <div class="log-header" id="logToggleRow">
+      <div class="toggle-info">
+        <div class="name">Matched Requests</div>
+        <div class="desc">Rules fired on this session</div>
+      </div>
+      <button class="log-toggle-btn" id="logToggleBtn" title="Expand log">▼</button>
+    </div>
+    <div class="log-entries" id="logEntries">
+      <div class="log-empty">No entries yet.</div>
     </div>
   </div>
 

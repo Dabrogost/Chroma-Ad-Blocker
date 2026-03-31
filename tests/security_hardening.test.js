@@ -7,7 +7,18 @@ const vm = require('vm');
 const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.js'), 'utf8');
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
-  .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = () => [];");
+  .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = () => [];")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/subscriptions\/manager\.js['"];?/s, `
+    var initSubscriptions      = async () => {};
+    var ensureAlarm             = async () => {};
+    var refreshAllStale         = async () => {};
+    var refreshSubscription     = async () => ({ ok: true });
+    var getSubscriptions        = async () => [];
+    var setSubscriptionEnabled  = async () => ({ ok: true });
+    var addSubscription         = async () => ({ ok: true });
+    var removeSubscription      = async () => ({ ok: true });
+  `)
+  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = async () => {};");
 
 // ─── SECURITY HARDENING - BACKGROUND.JS ─────
 test('Security Hardening - background.js', async (t) => {
@@ -62,7 +73,8 @@ test('Security Hardening - background.js', async (t) => {
       updateDynamicRules: async (args) => {
         if (args.addRules) dynamicRulesAdded.push(...args.addRules);
         return Promise.resolve();
-      }
+      },
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
@@ -75,7 +87,12 @@ test('Security Hardening - background.js', async (t) => {
       onRemoved: { 
         addListener: (fn) => { sandbox._onRemovedListener = fn; } 
       }
-    }
+    },
+    alarms: {
+      create: () => {},
+      get: () => Promise.resolve(null),
+      onAlarm: { addListener: () => {} }
+    },
   };
   sandbox.chrome = chromeMock;
   sandbox.crypto = {
@@ -95,6 +112,7 @@ test('Security Hardening - background.js', async (t) => {
   sandbox.setTimeout = setTimeout;
   sandbox.clearInterval = clearInterval;
   sandbox.clearTimeout = clearTimeout;
+  sandbox.initScriptletEngine = async () => {};
   sandbox.Promise = Promise;
   sandbox.Object = Object;
   sandbox.Array = Array;
@@ -105,6 +123,7 @@ test('Security Hardening - background.js', async (t) => {
   sandbox.__TESTING__ = true;
   chromeMock.tabs.get = (id) => Promise.resolve({ id, url: 'https://www.youtube.com/' });
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
   sandbox.DEBUG = true;
   sandbox.__TESTING__ = true;
 

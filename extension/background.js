@@ -9,8 +9,72 @@
 'use strict';
 
 import { getDefaultDynamicRules } from './defaultDynamicRules.js';
+import {
+  initSubscriptions,
+  ensureAlarm,
+  refreshAllStale,
+  refreshSubscription,
+  getSubscriptions,
+  setSubscriptionEnabled,
+  addSubscription,
+  removeSubscription
+} from './subscriptions/manager.js';
+import { initScriptletEngine } from './scriptlets/engine.js';
 
 const DEBUG = false;
+
+// ─── UPDATE CHECK ─────
+const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
+const RELEASES_URL = 'https://api.github.com/repos/Dabrogost/Chroma-Ad-Blocker/releases/latest';
+
+function isNewerVersion(local, remote) {
+  const parse = v => v.replace(/^v/, '').split('.').map(Number);
+  const [lMaj, lMin, lPat] = parse(local);
+  const [rMaj, rMin, rPat] = parse(remote);
+  if (rMaj !== lMaj) return rMaj > lMaj;
+  if (rMin !== lMin) return rMin > lMin;
+  return rPat > lPat;
+}
+
+async function checkForUpdate() {
+  try {
+    const { updateCheckCache: cache } = await chrome.storage.local.get('updateCheckCache');
+    const now = Date.now();
+    const local = chrome.runtime.getManifest().version;
+
+    if (cache && (now - cache.checkedAt) < UPDATE_CHECK_TTL_MS) {
+      return (cache.latestVersion && isNewerVersion(local, cache.latestVersion))
+        ? { updateAvailable: true, latestVersion: cache.latestVersion }
+        : { updateAvailable: false, latestVersion: null };
+    }
+
+    const res = await fetch(RELEASES_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-cache'
+    });
+
+    if (!res.ok) return { updateAvailable: false, latestVersion: null };
+
+    const data = await res.json();
+    const latestVersion = (data.tag_name || '').replace(/^v/, '');
+    if (!latestVersion) return { updateAvailable: false, latestVersion: null };
+
+    await chrome.storage.local.set({ updateCheckCache: { latestVersion, checkedAt: now } });
+
+    return isNewerVersion(local, latestVersion)
+      ? { updateAvailable: true, latestVersion }
+      : { updateAvailable: false, latestVersion: null };
+  } catch {
+    return { updateAvailable: false, latestVersion: null };
+  }
+}
+
+
+// ─── REQUEST LOG BUFFER ─────
+const LOG_MAX_ENTRIES = 500;
+let _logBuffer = [];
+let _pendingBlocked = 0;
+let _flushTimer = null;
 
 // ─── INSTALL / STARTUP ─────
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
@@ -24,11 +88,12 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         hideMerch: true,
         hideOffers: true,
         suppressWarnings: true,
-        accelerationSpeed: 16, // Maximum playback rate supported for ad acceleration
+        accelerationSpeed: 8, // Default acceleration speed
         blockPushNotifications: true,
         enabled: true,
       },
       stats: { networkBlocked: 0 },
+      requestLog: [],
       HIDE_SELECTORS: [
         '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
         'ytd-banner-promo-renderer', '#banner-ad', '#player-ads',
@@ -65,6 +130,9 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await updateDNRState(isEnabled && isNetworkBlocking);
+  await initSubscriptions();
+  await refreshAllStale();
+  await initScriptletEngine();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -72,6 +140,9 @@ chrome.runtime.onStartup.addListener(async () => {
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await updateDNRState(isEnabled && isNetworkBlocking);
+  await chrome.storage.local.set({ requestLog: [] });
+  await ensureAlarm();
+  await initScriptletEngine();
 });
 
 // ─── DYNAMIC RULE UPDATES ─────
@@ -87,6 +158,10 @@ const STATIC_RULESETS = [
   'yt_ad_rules_part8',
   'yt_ad_rules_part9'
 ];
+
+// Range 1000 - 99999 reserved for local/default dynamic rules (Anti-Detection/Acceleration)
+const DEFAULT_RULE_ID_START = 1000;
+const DEFAULT_RULE_ID_END   = 99999;
 
 async function updateDNRState(isEnabled) {
   try {
@@ -113,18 +188,34 @@ async function updateDNRState(isEnabled) {
  */
 async function syncDynamicRules() {
   try {
+    const { config } = await chrome.storage.local.get('config');
+    const isAccelerationEnabled = config?.acceleration !== false;
+
     const stored = await chrome.storage.local.get('dynamicRules');
-    const rules = stored.dynamicRules || getDefaultDynamicRules();
+    let rules = stored.dynamicRules || getDefaultDynamicRules();
+
+    if (!isAccelerationEnabled) {
+      // Reverse logic: Change 'allow' (Anti-Detection) to 'block'
+      // when Acceleration is disabled, so ads are blocked by dynamic rules.
+      rules = rules.map(r => ({
+        ...r,
+        action: { ...r.action, type: 'block' }
+      }));
+    }
 
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeIds = existing.filter(r => r.id < 9000000).map(r => r.id); // Exclude whitelist range (9,000,000+)
+    const removeIds = existing
+      .filter(r => r.id >= DEFAULT_RULE_ID_START && r.id <= DEFAULT_RULE_ID_END)
+      .map(r => r.id);
 
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: removeIds,
       addRules: rules,
     });
 
-    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules.`);
+    if (DEBUG) {
+      console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
+    }
   } catch (err) {
     if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }
@@ -196,7 +287,14 @@ const MSG = {
   WHITELIST_GET: 'WHITELIST_GET',
   WHITELIST_ADD: 'WHITELIST_ADD',
   WHITELIST_REMOVE: 'WHITELIST_REMOVE',
-  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
+  SUBSCRIPTION_GET:     'SUBSCRIPTION_GET',
+  SUBSCRIPTION_SET:     'SUBSCRIPTION_SET',
+  SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
+  SUBSCRIPTION_ADD:     'SUBSCRIPTION_ADD',
+  SUBSCRIPTION_REMOVE:  'SUBSCRIPTION_REMOVE',
+  LOG_GET: 'LOG_GET',
+  UPDATE_CHECK: 'UPDATE_CHECK'
 };
 
 // ─── CONFIGURATION VALIDATION ─────
@@ -261,7 +359,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await chrome.storage.local.set({ config: newConfig });
           const wasDNRActive = cCurr.enabled !== false && cCurr.networkBlocking !== false;
           const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
-          if (isDNRActive !== wasDNRActive) await updateDNRState(isDNRActive);
+          if (isDNRActive !== wasDNRActive) {
+            await updateDNRState(isDNRActive);
+          } else if (isDNRActive && (cCurr.acceleration !== newConfig.acceleration)) {
+            // Acceleration toggle requires re-syncing default dynamic rules
+            await syncDynamicRules();
+          }
           const tabs = await chrome.tabs.query({});
           await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})));
           sendResponse({ ok: true });
@@ -269,7 +372,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 
         case MSG.STATS_RESET:
-          await chrome.storage.local.set({ stats: { networkBlocked: 0 } });
+          _logBuffer = [];
+          _pendingBlocked = 0;
+          if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+          await chrome.storage.local.set({ stats: { networkBlocked: 0 }, requestLog: [] });
           sendResponse({ ok: true });
           break;
 
@@ -328,6 +434,38 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
           sendResponse({ ok: true });
           break;
+
+        case MSG.SUBSCRIPTION_GET:
+          sendResponse(await getSubscriptions());
+          break;
+
+        case MSG.SUBSCRIPTION_SET:
+          sendResponse(await setSubscriptionEnabled(msg.id, msg.enabled));
+          break;
+
+        case MSG.SUBSCRIPTION_REFRESH:
+          sendResponse(await refreshSubscription(msg.id));
+          break;
+
+        case MSG.SUBSCRIPTION_ADD:
+          sendResponse(await addSubscription(msg.subscription));
+          break;
+
+        case MSG.SUBSCRIPTION_REMOVE:
+          sendResponse(await removeSubscription(msg.id));
+          break;
+
+        case MSG.LOG_GET: {
+          // Merge in-memory buffer with stored log so unflushed entries are visible
+          const { requestLog: storedLog = [] } = await chrome.storage.local.get('requestLog');
+          const merged = [..._logBuffer, ...storedLog].slice(0, LOG_MAX_ENTRIES);
+          sendResponse(merged);
+          break;
+        }
+
+        case MSG.UPDATE_CHECK:
+          sendResponse(await checkForUpdate());
+          break;
       }
     } catch (err) {
       if (DEBUG) console.error('[Chroma] Error in message handler:', err);
@@ -342,15 +480,47 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // ─── NETWORK BLOCK TRACKING (DNR) ─────
 /**
- * Developer Mode Check: onRuleMatchedDebug only provides real-time updates 
- * when the extension is loaded as an unpacked directory.
+ * Developer Mode Check: onRuleMatchedDebug only fires when the extension
+ * is loaded unpacked. Chroma is exclusively distributed unpacked via GitHub,
+ * so this is the authoritative source for both stats and the request log.
+ * Stats and log writes are batched to avoid excessive storage churn.
  */
+async function flushLog() {
+  _flushTimer = null;
+  const batch = _logBuffer.splice(0);
+  const blocked = _pendingBlocked;
+  _pendingBlocked = 0;
+
+  if (batch.length === 0 && blocked === 0) return;
+
+  try {
+    const { requestLog = [], stats = {} } = await chrome.storage.local.get(['requestLog', 'stats']);
+    const updates = {};
+    if (batch.length > 0) {
+      updates.requestLog = [...batch, ...requestLog].slice(0, LOG_MAX_ENTRIES);
+    }
+    if (blocked > 0) {
+      updates.stats = { ...stats, networkBlocked: (stats.networkBlocked || 0) + blocked };
+    }
+    await chrome.storage.local.set(updates);
+  } catch (err) {
+    if (DEBUG) console.error('[Chroma] Log flush failed:', err);
+  }
+}
+
 if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
-    chrome.storage.local.get('stats').then(({ stats = {} }) => {
-      stats.networkBlocked = (stats.networkBlocked || 0) + 1;
-      chrome.storage.local.set({ stats });
+    _logBuffer.push({
+      ts:  Date.now(),
+      url: info.request.url,
+      rt:  info.request.type,
+      rid: info.rule.ruleId
     });
+    _pendingBlocked++;
+
+    if (!_flushTimer) {
+      _flushTimer = setTimeout(flushLog, 500);
+    }
   });
 }
 
@@ -373,6 +543,15 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
   if (changed) {
     await chrome.storage.session.set(sessionData);
+  }
+});
+
+// ─── SUBSCRIPTION ALARM ─────
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'chroma-subscription-check') {
+    refreshAllStale().catch(err => {
+      if (DEBUG) console.error('[Chroma Subscriptions] Alarm refresh failed:', err);
+    });
   }
 });
 

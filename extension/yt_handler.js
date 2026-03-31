@@ -9,12 +9,28 @@
   Object.assign(CONFIG, {
     enabled: false, // Default to disabled until handshake (KILL SWITCH)
     acceleration: false,
-    accelerationSpeed: 16, // Maximum playback rate supported by Chrome for ad acceleration
+    accelerationSpeed: 10, // Maximum playback rate supported for ad acceleration
     checkIntervalMs: 300,  // Interval between ad state checks (ms)
   });
 
   // Whitelist of allowed config keys for secure updates (VULN-07 Hardening)
   const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
+
+  const CONFIG_VALIDATORS = Object.freeze({
+    enabled:           (v) => typeof v === 'boolean',
+    acceleration:      (v) => typeof v === 'boolean',
+    accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 16,
+    checkIntervalMs:   (v) => typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 5000
+  });
+
+  function applyConfig(source) {
+    for (const key of VALID_CONFIG_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        const val = source[key];
+        if (CONFIG_VALIDATORS[key](val)) CONFIG[key] = val;
+      }
+    }
+  }
 
   // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
   const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
@@ -33,11 +49,45 @@
   const sI = (f, t) => API.setInterval(f, t);
   const cI = (i) => API.clearInterval(i);
 
+
   // ─── STATE ─────
   let targetAdVideo = null;
   let adOverlayHost = null;
   let adOverlayRoot = null;
   let skipListenerAdded = false;
+
+  let chromaAdSessionActive = false;
+  let chromaAdSkipped = false;
+  let lastAdDetectTime = 0;
+  let cachedCurrentAd = 1;
+  let cachedTotalAds = 1;
+  let chromaAdSessionEndedAt = 0;
+  let lastVideoDuration = 0;
+  let _chromaFastWatcher = false;
+
+  // ─── ACTIVEVIEW / PTRACKING BEACON SUPPRESSION ─────
+  // Suppresses activeview and ptracking beacons when no ad session is active,
+  // preventing post-session observer floods. Beacons fire normally during
+  // active ad playback.
+  (function() {
+    const _origOpen = XMLHttpRequest.prototype.open;
+
+    XMLHttpRequest.prototype.open = function(method, url) {
+      if (typeof url === 'string' &&
+          !chromaAdSessionActive &&
+          (url.includes('/pcs/activeview') || url.includes('/ptracking'))) {
+        this._chromaSuppressed = true;
+        return;
+      }
+      return _origOpen.apply(this, arguments);
+    };
+
+    const _origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function() {
+      if (this._chromaSuppressed) return;
+      return _origSend.apply(this, arguments);
+    };
+  })();
 
   // ─── AD ACCELERATION ─────
   function initAdOverlay() {
@@ -186,9 +236,9 @@
       if (adOverlayHost && adOverlayHost.classList.contains('active')) {
         adOverlayHost.classList.remove('active');
         
-        window.cachedCurrentAd = 1;
-        window.cachedTotalAds = 1;
-        window.lastVideoDuration = 0;
+        cachedCurrentAd = 1;
+        cachedTotalAds = 1;
+        lastVideoDuration = 0;
       }
       return;
     }
@@ -206,20 +256,15 @@
       adOverlayHost.classList.add('active');
     }
     
-    if (typeof window.cachedCurrentAd === 'undefined') {
-      window.cachedCurrentAd = 1;
-      window.cachedTotalAds = 1;
-      window.lastVideoDuration = 0;
-    }
 
     if (rawAdShowing) {
       if (video && video.duration > 0) {
-        if (window.lastVideoDuration > 0 && Math.abs(video.duration - window.lastVideoDuration) > 1) {
-          if (window.cachedCurrentAd < window.cachedTotalAds) {
-            window.cachedCurrentAd++;
+        if (lastVideoDuration > 0 && Math.abs(video.duration - lastVideoDuration) > 1) {
+          if (cachedCurrentAd < cachedTotalAds) {
+            cachedCurrentAd++;
           }
         }
-        window.lastVideoDuration = video.duration;
+        lastVideoDuration = video.duration;
       }
 
       const adTextSource = adUIElement || playerContainer;
@@ -231,17 +276,17 @@
           const parsedCurrent = parseInt(parsedTextMatch[1], 10);
           const parsedTotal = parseInt(parsedTextMatch[2], 10);
           if (parsedTotal > 1 && parsedCurrent <= parsedTotal) {
-            window.cachedCurrentAd = Math.max(window.cachedCurrentAd, parsedCurrent);
-            window.cachedTotalAds = Math.max(window.cachedTotalAds, parsedTotal);
+            cachedCurrentAd = Math.max(cachedCurrentAd, parsedCurrent);
+            cachedTotalAds = Math.max(cachedTotalAds, parsedTotal);
           }
         }
       }
     }
 
     // Heuristic completion check: Terminal state reached if the final ad in a sequence finishes or a manual skip is detected.
-    const isOnFinalAd = (window.cachedCurrentAd || 1) >= (window.cachedTotalAds || 1);
+    const isOnFinalAd = (cachedCurrentAd || 1) >= (cachedTotalAds || 1);
     const isAdMediaFinished = video && video.duration > 0 && video.currentTime >= video.duration - 0.5; // 0.5s end-of-ad threshold
-    const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || window.chromaAdSkipped;
+    const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || chromaAdSkipped;
     
     const spinner = adOverlayRoot.querySelector('.chroma-spinner, .chroma-checkmark');
     const titleEl = adOverlayRoot.querySelector('.chroma-title');
@@ -259,8 +304,8 @@
       if (titleEl) titleEl.textContent = 'Chroma Active';
       
       if (subtitleEl) {
-        if (window.cachedTotalAds > 1) {
-          subtitleEl.textContent = `Accelerating Ad (${window.cachedCurrentAd} of ${window.cachedTotalAds})...`;
+        if (cachedTotalAds > 1) {
+          subtitleEl.textContent = `Accelerating Ad (${cachedCurrentAd} of ${cachedTotalAds})...`;
         } else {
           subtitleEl.textContent = 'Accelerating Ad...';
         }
@@ -271,10 +316,10 @@
         if (videoPercent > 100) videoPercent = 100;
         
         let totalPercent = videoPercent;
-        if (window.cachedTotalAds > 1 && window.cachedCurrentAd <= window.cachedTotalAds) {
-          const segmentSize = 100 / window.cachedTotalAds;
-          const basePercent = (window.cachedCurrentAd - 1) * segmentSize;
-          totalPercent = basePercent + (videoPercent / window.cachedTotalAds);
+        if (cachedTotalAds > 1 && cachedCurrentAd <= cachedTotalAds) {
+          const segmentSize = 100 / cachedTotalAds;
+          const basePercent = (cachedCurrentAd - 1) * segmentSize;
+          totalPercent = basePercent + (videoPercent / cachedTotalAds);
         }
         
         if (progressBar) progressBar.style.width = `${totalPercent}%`;
@@ -283,7 +328,7 @@
   }
 
   const enforceMuteHandler = () => {
-    if (window.chromaAdSessionActive && targetAdVideo) {
+    if (chromaAdSessionActive && targetAdVideo) {
       // Safety check: Only enforce mute if ad-specific UI is still present or if the player is in ad-showing mode.
       // This prevents the 'sticky mute' bug where content starts but the session hasn't cleared yet.
       const isAdDetected = qS('.ad-showing, .ad-interrupting') || 
@@ -346,49 +391,44 @@
     const video = currentAdVideo || targetAdVideo || qS('#movie_player video, .html5-main-video');
     if (!video) return;
 
-    // Heuristics: Calculate time since last ad detection and verify main video readiness for session release.
-    const now = Date.now();
-    const timeSinceAd = window.lastAdDetectTime ? now - window.lastAdDetectTime : 0;
-    const mainVideo = qS('.html5-main-video');
-    const isMainVideoReady = mainVideo && mainVideo.readyState >= 3;
 
     if (rawAdShowing && currentAdVideo) {
       targetAdVideo = currentAdVideo;
     }
 
-    if (typeof window.chromaAdSkipped === 'undefined') window.chromaAdSkipped = false;
-    if (typeof window.chromaAdSessionActive === 'undefined') window.chromaAdSessionActive = false;
     
     if (rawAdShowing) {
-      if (!window.chromaAdSessionActive) {
+      if (!chromaAdSessionActive) {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Ad Session Detected');
-        window.chromaAdSkipped = false; 
+        chromaAdSkipped = false;
         // Performance Optimization: Switches to rAF-synced watcher during active ads for frame-perfect acceleration and overlay synchronization.
         startFastAdWatcher(); 
       }
-      window.chromaAdSessionActive = true;
-      window.lastAdDetectTime = Date.now();
+      chromaAdSessionActive = true;
+      lastAdDetectTime = Date.now();
     }
 
     if (!rawAdShowing) {
       const now = Date.now();
-      const timeSinceAd = window.lastAdDetectTime ? now - window.lastAdDetectTime : 0;
+      const timeSinceAd = lastAdDetectTime ? now - lastAdDetectTime : 0;
       const mainVideo = qS('.html5-main-video');
       const isMainVideoReady = mainVideo && mainVideo.readyState >= 3;
 
       // Session release logic:
       if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) { // 500ms pod gap bridge; 5000ms watchdog timeout
-        window.chromaAdSessionActive = false;
+        chromaAdSessionActive = false;
+        chromaAdSessionEndedAt = Date.now();
+
       }
     }
     
-    if (window.chromaAdSessionActive) {
+    if (chromaAdSessionActive) {
       document.body.classList.add('chroma-session-active');
     } else {
       document.body.classList.remove('chroma-session-active');
     }
     
-    updateAdOverlay(video, window.chromaAdSessionActive, rawAdShowing, hasAdUI);
+    updateAdOverlay(video, chromaAdSessionActive, rawAdShowing, hasAdUI);
 
     if (!video.dataset.chromaListenersAdded) {
       video.dataset.chromaListenersAdded = 'true';
@@ -396,7 +436,7 @@
       video.addEventListener('play', enforceMuteHandler);
     }
 
-    if (window.chromaAdSessionActive) {
+    if (chromaAdSessionActive) {
       if (!video.muted) {
         video.muted = true;
       }
@@ -426,7 +466,7 @@
       }
     }
 
-    if (window.chromaAdSessionActive) {
+    if (chromaAdSessionActive) {
       video.dataset.ytChromaMuted = 'true';
     } else {
       delete video.dataset.ytChromaMuted;
@@ -444,11 +484,12 @@
   // ─── POLLING & INITIALIZATION ─────
   function onYTNavigate() {
     cleanupVideoState();
-    window.chromaAdSessionActive = false;
-    window.chromaAdSkipped = false;
-    window.lastAdDetectTime = 0;
-    window.cachedCurrentAd = 1;
-    window.cachedTotalAds = 1;
+    chromaAdSessionActive = false;
+    chromaAdSessionEndedAt = Date.now();
+    chromaAdSkipped = false;
+    lastAdDetectTime = 0;
+    cachedCurrentAd = 1;
+    cachedTotalAds = 1;
 
     startPolling();
   }
@@ -460,11 +501,7 @@
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
       // SECURITY: Configuration Validation Allowlist
-      for (const key of VALID_CONFIG_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
-          CONFIG[key] = e.detail[key];
-        }
-      }
+      applyConfig(e.detail);
 
       if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
       
@@ -489,8 +526,9 @@
         const overlay = adOverlayHost;
         if (overlay) overlay.classList.remove('active');
         
-        window.chromaAdSessionActive = false;
-        window._chromaFastWatcher = false;
+        chromaAdSessionActive = false;
+        chromaAdSessionEndedAt = Date.now();
+        _chromaFastWatcher = false;
         cleanupVideoState();
         
       } else {
@@ -506,7 +544,7 @@
     skipListenerAdded = true;
 
     API.addDocEventListener('click', (e) => {
-      if (!window.chromaAdSessionActive) return;
+      if (!chromaAdSessionActive) return;
       if (!e || !e.target || typeof e.target.closest !== 'function') return;
 
       try {
@@ -519,7 +557,7 @@
         ].join(','));
 
         if (skipButton) {
-          window.chromaAdSkipped = true;
+          chromaAdSkipped = true;
           if (targetAdVideo) {
             const rawAdShowing = document.getElementsByClassName('ad-showing').length > 0;
             updateAdOverlay(targetAdVideo, true, rawAdShowing);
@@ -532,12 +570,12 @@
   }
 
   function startFastAdWatcher() {
-    if (window._chromaFastWatcher) return;
-    window._chromaFastWatcher = true;
+    if (_chromaFastWatcher) return;
+    _chromaFastWatcher = true;
 
     function check() {
-      if (!window.chromaAdSessionActive) {
-        window._chromaFastWatcher = false;
+      if (!chromaAdSessionActive) {
+        _chromaFastWatcher = false;
         return;
       }
       handleAdAcceleration();
@@ -587,8 +625,10 @@
   }
 
   function init() {
+    const isWhitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
+
     // 0. Whitelist shortcut for MAIN world
-    if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
+    if (isWhitelisted) {
       if (DEBUG) console.log('[Chroma] YouTube handler disabled by whitelist.');
       return;
     }
@@ -596,12 +636,7 @@
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
     if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
       // SECURITY: Handshake Configuration Validation
-      const remoteConfig = window.__CHROMA_INTERNAL__.config;
-      for (const key of VALID_CONFIG_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
-          CONFIG[key] = remoteConfig[key];
-        }
-      }
+      applyConfig(window.__CHROMA_INTERNAL__.config);
     }
 
 
@@ -615,19 +650,13 @@
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = API.setInterval(() => {
-        const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
-        const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
-        
-        // Kill Switch: Check for explicit disable signal from protection.js
-        const killEnabled = document.documentElement.getAttribute('data-chroma-enabled') === 'false';
-        const killAccel = document.documentElement.getAttribute('data-chroma-acceleration') === 'false';
-        
+        const initDone = !!window.__CHROMA_INTERNAL__ || document.documentElement.getAttribute('data-chroma-init') === 'complete';
         _pollCount++;
 
-        if (initDone || killEnabled || killAccel || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
+        if (initDone || isWhitelisted || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
           API.clearInterval(_pollId);
           
-          if (killEnabled || killAccel || whitelisted) {
+          if (isWhitelisted) {
             if (DEBUG) console.log('[Chroma] Kill switch or whitelist detected. Accelerator silenced.');
             return;
           }
@@ -649,12 +678,19 @@
   init();
 
   // ─── TESTING EXPORTS ─────
-  if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
-    /** @type {Object} */
+  if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
     globalThis.CONFIG = CONFIG;
-    /** @returns {void} */
     globalThis.initAdOverlay = initAdOverlay;
-    /** @returns {void} */
     globalThis.handleAdAcceleration = handleAdAcceleration;
+    
+    // EXPOSE STATE FOR LEGACY TESTS VIA BRIDGE (Node/VM safe only)
+    globalThis.__CHROMA_STATE_BRIDGE__ = {
+      get chromaAdSessionActive() { return chromaAdSessionActive; },
+      set chromaAdSessionActive(v) { chromaAdSessionActive = v; },
+      get chromaAdSkipped() { return chromaAdSkipped; },
+      set chromaAdSkipped(v) { chromaAdSkipped = v; },
+      get lastAdDetectTime() { return lastAdDetectTime; },
+      set lastAdDetectTime(v) { lastAdDetectTime = v; }
+    };
   }
 })();

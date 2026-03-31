@@ -14,7 +14,7 @@
   // SECURITY: Session Token Retrieval
   /** @returns {Promise<boolean>} */
   const getTokenFromBackground = async () => {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_TOKEN' });
+    const response = await window.notifyBackground({ type: MSG.GET_TOKEN });
     if (response && response.token) {
       secretToken = response.token;
       return true;
@@ -154,6 +154,7 @@
       // Update DOM attributes for live kill-switch response
       document.documentElement.setAttribute('data-chroma-enabled', CONFIG.enabled);
       document.documentElement.setAttribute('data-chroma-acceleration', CONFIG.acceleration);
+      document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: msg.config }));
 
       if (isolatedPort) {
         isolatedPort.postMessage({

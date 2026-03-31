@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const rulesDir = path.join(__dirname, '..', 'extension', 'rules');
+const rulesDir = path.join(__dirname, '..', '..', 'extension', 'rules');
 const ruleFiles = fs.readdirSync(rulesDir).filter(file => file.startsWith('rules') && file.endsWith('.json'));
 
 let currentGlobalId = 1;

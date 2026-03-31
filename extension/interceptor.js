@@ -83,6 +83,9 @@
   const pristineDispatchEvent = document.dispatchEvent.bind(document);
   const pristineAddDocEventListener = document.addEventListener.bind(document);
   const pristineRemoveDocEventListener = document.removeEventListener.bind(document);
+  const pristineFnToString = Function.prototype.toString.bind(Function.prototype);
+  const pristineCall = Function.prototype.call.bind(Function.prototype.call);
+  const pristineIncludes = String.prototype.includes.bind(String.prototype);
 
   // SECURITY: Protect against Prototype Pollution hijacking (VULN-01)
   const HOSTILE_DOMAINS = [
@@ -139,6 +142,7 @@
 
   // ─── INTERCEPTOR ─────
   let isInitialized = false;
+  let localConfig = null;
 
   /**
    * @param {string} token
@@ -149,7 +153,7 @@
     isInitialized = true;
 
     // Secure Config State: Use local variables to prevent host-page tampering.
-    const localConfig = {
+    localConfig = {
       blockPushNotifications: selectors.blockPushNotifications !== false,
       enabled: selectors.enabled !== false
     };
@@ -314,7 +318,6 @@
     }
   }
 
-
   // ─── SECURE SYNCHRONIZATION ─────
   /** @param {Event} e */
   const handleTokenDelivery = (e) => {
@@ -385,5 +388,13 @@
     }, pingRate);
   } else {
     initChromaInterceptor(null, {});
+  }
+  // ─── TESTING EXPORTS ─────
+  if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
+    globalThis.__CHROMA_STATE_BRIDGE__ = {
+      get isInitialized() { return isInitialized; },
+      get isEnvironmentCompromised() { return isEnvironmentCompromised; },
+      get localConfig() { return localConfig; }
+    };
   }
 })();

@@ -2,11 +2,48 @@
 
 const $ = id => document.getElementById(id);
 
+const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
+
 async function init() {
   const manifest = chrome.runtime.getManifest();
   if ($('versionText')) {
     $('versionText').textContent = `v${manifest.version} · MV3`;
   }
+
+  // Update check — runs async, inserts banner if update available
+  notifyBackground({ type: MSG.UPDATE_CHECK }).then(result => {
+    if (!result || !result.updateAvailable) return;
+    const latestVersion = result.latestVersion;
+
+    const banner = document.createElement('div');
+    banner.id = 'updateBanner';
+    banner.innerHTML = `
+      <a href="${RELEASES_PAGE}" target="_blank" style="color:var(--c-cyan);text-decoration:none;font-weight:600;">
+        ↑ v${latestVersion} available
+      </a>
+      <span style="color:var(--text-muted);margin-left:4px;font-size:9px;">on GitHub</span>
+      <button id="dismissUpdate" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0 2px;line-height:1;" title="Dismiss">✕</button>
+    `;
+    banner.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 7px 14px;
+      font-size: 11px;
+      background: rgba(0, 255, 204, 0.06);
+      border-top: 1px solid rgba(0, 255, 204, 0.15);
+      border-bottom: 1px solid rgba(0, 255, 204, 0.15);
+      font-family: 'JetBrains Mono', monospace;
+    `;
+
+    // Insert before the Protection Layers section title
+    const sectionTitle = document.querySelector('.section-title');
+    if (sectionTitle) sectionTitle.before(banner);
+
+    document.getElementById('dismissUpdate')?.addEventListener('click', () => {
+      banner.remove();
+    });
+  });
 
   const TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
@@ -25,6 +62,16 @@ async function init() {
     }
   };
 
+  const SPEED_OPTIONS = [4, 8, 12, 16];
+
+  function syncSpeedUI(speed, accelerationOn) {
+    const row = $('speedSelectorRow');
+    if (row) row.classList.toggle('disabled', !accelerationOn);
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.speed) === speed);
+    });
+  }
+
   const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
   const isEnabled = config.enabled !== false;
   
@@ -34,6 +81,17 @@ async function init() {
   }
   
   syncUI(config, isEnabled);
+
+  const currentSpeed = config.accelerationSpeed ?? 10;
+  syncSpeedUI(currentSpeed, isEnabled && (config.acceleration !== false));
+
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const speed = parseInt(btn.dataset.speed);
+      syncSpeedUI(speed, $('toggleAcceleration').checked);
+      await notifyBackground({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
+    });
+  });
 
   const { stats = { networkBlocked: 0 } } = await chrome.storage.local.get('stats');
   if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
@@ -66,6 +124,11 @@ async function init() {
       });
     }
   }
+
+  $('toggleAcceleration').addEventListener('change', (e) => {
+    const currentActiveSpeed = parseInt(document.querySelector('.speed-btn.active')?.dataset.speed ?? 10);
+    syncSpeedUI(currentActiveSpeed, e.target.checked);
+  });
 
   $('toggleEnabled').addEventListener('change', async (e) => {
     const active = e.target.checked;
@@ -139,6 +202,161 @@ async function init() {
     await notifyBackground({ type: MSG.STATS_RESET });
     if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = '0';
   });
+
+  // ─── SUBSCRIPTION UI ─────
+  async function loadSubscriptionUI() {
+    const list = document.getElementById('subscriptionList');
+    if (!list) return;
+
+    const subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+    const { appliedNetworkRuleCount = 0 } = await chrome.storage.local.get('appliedNetworkRuleCount');
+    const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
+
+    if (subscriptions.length === 0) {
+      list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No subscriptions configured.</span></div>';
+      return;
+    }
+
+    const summaryBar = document.createElement('div');
+    summaryBar.style.cssText = 'padding: 8px 14px 4px; font-size: 10px; color: var(--text-muted); text-align: center; letter-spacing: 0.03em;';
+    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied to network filter`;
+
+    list.innerHTML = '';
+    list.appendChild(summaryBar);
+
+    for (const sub of subscriptions) {
+      const row = document.createElement('div');
+      row.className = 'toggle-row';
+
+      const lastUpdatedText = sub.lastUpdated
+        ? new Date(sub.lastUpdated).toLocaleDateString()
+        : 'Never';
+
+      const countText = sub.ruleCount
+        ? `${sub.ruleCount.network.toLocaleString()} network · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
+        : '';
+
+      const errorText = sub.lastError
+        ? `<div style="font-size:10px;color:var(--c-red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${sub.lastError}">Error: ${sub.lastError}</div>`
+        : '';
+
+      row.innerHTML = `
+        <div class="toggle-info">
+          <div class="name">${sub.name}</div>
+          <div class="desc">Updated: ${lastUpdatedText}${countText ? ' · ' + countText : ''}</div>
+          ${errorText}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <button data-id="${sub.id}" class="sub-refresh-btn reset-btn" style="font-size:9px;padding:3px 8px;" title="Force refresh">↻</button>
+          <label class="switch">
+            <input type="checkbox" class="sub-toggle" data-id="${sub.id}" ${sub.enabled ? 'checked' : ''} />
+            <span class="slider"></span>
+          </label>
+        </div>
+      `;
+
+      list.appendChild(row);
+    }
+
+    // Toggle handler
+    list.querySelectorAll('.sub-toggle').forEach(input => {
+      input.addEventListener('change', async (e) => {
+        await notifyBackground({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
+      });
+    });
+
+    // Refresh button handler
+    list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = e.target.dataset.id;
+        e.target.textContent = '…';
+        e.target.disabled = true;
+        const result = await notifyBackground({ type: MSG.SUBSCRIPTION_REFRESH, id });
+        e.target.textContent = result && result.ok ? '✓' : '✗';
+        setTimeout(() => {
+          e.target.textContent = '↻';
+          e.target.disabled = false;
+          loadSubscriptionUI();
+        }, 1500);
+      });
+    });
+  }
+
+  await loadSubscriptionUI();
+
+  // ─── REQUEST LOG UI ─────
+  const RT_BADGE = {
+    script:         { label: 'JS',  color: 'rgba(0,255,204,0.15)',  text: 'var(--c-cyan)' },
+    xmlhttprequest: { label: 'XHR', color: 'rgba(0,136,255,0.15)', text: 'var(--c-blue)' },
+    image:          { label: 'IMG', color: 'rgba(153,0,255,0.15)', text: '#b388ff' },
+    sub_frame:      { label: 'FRM', color: 'rgba(230,126,34,0.15)', text: '#e67e22' },
+    main_frame:     { label: 'DOC', color: 'rgba(231,76,60,0.15)',  text: '#e74c3c' },
+    stylesheet:     { label: 'CSS', color: 'rgba(39,174,96,0.15)',  text: '#2ecc71' },
+    media:          { label: 'MED', color: 'rgba(243,156,18,0.15)', text: '#f39c12' },
+    websocket:      { label: 'WS',  color: 'rgba(26,188,156,0.15)', text: '#1abc9c' },
+    ping:           { label: 'PNG', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+    other:          { label: 'OTH', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+    object:         { label: 'OBJ', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+  };
+
+  function formatLogUrl(url) {
+    try {
+      const u = new URL(url);
+      const path = u.hostname.length > 22 ? u.hostname.slice(0, 20) + '…' : u.hostname; // User requested u.hostname + path, but also path manipulation. 
+      // User prompt: "const path = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname; return u.hostname + path;"
+      const userPath = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname;
+      return u.hostname + userPath;
+    } catch {
+      return url.slice(0, 40);
+    }
+  }
+
+  function formatTimeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60)   return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m`;
+    return `${Math.floor(s / 3600)}h`;
+  }
+
+  async function loadRequestLog() {
+    const toggleRow = $('logToggleRow');
+    const toggleBtn = $('logToggleBtn');
+    const entries   = $('logEntries');
+    if (!toggleRow || !entries) return;
+
+    let isOpen = false;
+
+    async function renderLog() {
+      const log = await notifyBackground({ type: MSG.LOG_GET }) || [];
+      entries.innerHTML = '';
+
+      if (log.length === 0) {
+        entries.innerHTML = '<div class="log-empty">No entries yet.</div>';
+        return;
+      }
+
+      for (const entry of log) {
+        const badge = RT_BADGE[entry.rt] || { label: '???', color: 'rgba(255,255,255,0.05)', text: 'var(--text-muted)' };
+        const row = document.createElement('div');
+        row.className = 'log-entry';
+        row.innerHTML = `
+          <span class="log-rt" style="background:${badge.color};color:${badge.text};">${badge.label}</span>
+          <span class="log-url" title="${entry.url}">${formatLogUrl(entry.url)}</span>
+          <span class="log-time">${formatTimeAgo(entry.ts)}</span>
+        `;
+        entries.appendChild(row);
+      }
+    }
+
+    toggleRow.addEventListener('click', async () => {
+      isOpen = !isOpen;
+      toggleBtn.classList.toggle('open', isOpen);
+      entries.classList.toggle('visible', isOpen);
+      if (isOpen) await renderLog();
+    });
+  }
+
+  loadRequestLog();
 }
 
 init();

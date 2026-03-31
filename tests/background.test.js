@@ -7,7 +7,18 @@ const vm = require('vm');
 const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.js'), 'utf8');
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
-  .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;");
+  .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/subscriptions\/manager\.js['"];?/s, `
+    var initSubscriptions   = globalThis._mockInitSubscriptions;
+    var ensureAlarm          = globalThis._mockEnsureAlarm;
+    var refreshAllStale      = globalThis._mockRefreshAllStale;
+    var refreshSubscription  = globalThis._mockRefreshSubscription;
+    var getSubscriptions     = globalThis._mockGetSubscriptions;
+    var setSubscriptionEnabled = globalThis._mockSetSubscriptionEnabled;
+    var addSubscription      = globalThis._mockAddSubscription;
+    var removeSubscription   = globalThis._mockRemoveSubscription;
+  `)
+  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'defaultDynamicRules.js'), 'utf8');
 const defaultDynamicRulesCode = defaultDynamicRulesCodeRaw.replace('export function getDefaultDynamicRules', 'globalThis.getDefaultDynamicRules = function');
@@ -35,20 +46,39 @@ test('getDefaultDynamicRules', async (t) => {
     },
     declarativeNetRequest: {
       getDynamicRules: () => Promise.resolve([]),
-      updateDynamicRules: () => Promise.resolve()
+      updateDynamicRules: () => Promise.resolve(),
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
       sendMessage: () => Promise.resolve(),
       onCreated: { addListener: () => {} },
       onRemoved: { addListener: () => {} }
-    }
+    },
+    alarms: {
+      create: () => {},
+      get: () => Promise.resolve(null),
+      onAlarm: { addListener: () => {} }
+    },
   };
+  sandbox._mockInitSubscriptions    = async () => {};
+  sandbox._mockEnsureAlarm          = async () => {};
+  sandbox._mockRefreshAllStale      = async () => {};
+  sandbox._mockRefreshSubscription  = async () => ({ ok: true });
+  sandbox._mockGetSubscriptions     = async () => [];
+  sandbox._mockSetSubscriptionEnabled = async () => ({ ok: true });
+  sandbox._mockAddSubscription      = async () => ({ ok: true });
+  sandbox._mockRemoveSubscription   = async () => ({ ok: true });
+  sandbox._mockInitScriptletEngine  = async () => {};
+
   sandbox.chrome = chromeMock;
   sandbox.console = console;
   sandbox.setInterval = () => {};
+  sandbox.setTimeout = setTimeout;
+  sandbox.clearTimeout = clearTimeout;
 
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
  
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
@@ -65,7 +95,7 @@ test('getDefaultDynamicRules', async (t) => {
     for (const rule of rules) {
       assert.ok(rule.id, 'Rule must have an id');
       assert.strictEqual(typeof rule.id, 'number', 'Rule id must be a number');
-      assert.strictEqual(rule.priority, 1, 'Rule priority should be 1');
+      assert.strictEqual(rule.priority, 4, 'Rule priority should be 4');
 
       // Match the actual code: action.type is 'allow' for these rules
       assert.strictEqual(rule.action.type, 'allow', 'Rule action should be allow');
@@ -90,7 +120,7 @@ test('syncDynamicRules successful syncing', async (t) => {
   let updateDynamicRulesArgs = null;
   let getDynamicRulesCalled = false;
 
-  const mockExistingRules = [{ id: 101 }, { id: 102 }];
+  const mockExistingRules = [{ id: 1001 }, { id: 1002 }];
   const mockStoredRules = [{ id: 999, action: { type: 'block' } }];
 
   const chromeMock = {
@@ -123,15 +153,31 @@ test('syncDynamicRules successful syncing', async (t) => {
       updateDynamicRules: async (args) => {
         updateDynamicRulesArgs = args;
         return Promise.resolve();
-      }
+      },
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
       sendMessage: () => Promise.resolve(),
       onCreated: { addListener: () => {} },
       onRemoved: { addListener: () => {} }
-    }
+    },
+    alarms: {
+      create: () => {},
+      get: () => Promise.resolve(null),
+      onAlarm: { addListener: () => {} }
+    },
   };
+
+  sandbox._mockInitSubscriptions    = async () => {};
+  sandbox._mockEnsureAlarm          = async () => {};
+  sandbox._mockRefreshAllStale      = async () => {};
+  sandbox._mockRefreshSubscription  = async () => ({ ok: true });
+  sandbox._mockGetSubscriptions     = async () => [];
+  sandbox._mockSetSubscriptionEnabled = async () => ({ ok: true });
+  sandbox._mockAddSubscription      = async () => ({ ok: true });
+  sandbox._mockRemoveSubscription   = async () => ({ ok: true });
+  sandbox._mockInitScriptletEngine  = async () => {};
 
   sandbox.chrome = chromeMock;
   sandbox.console = {
@@ -140,7 +186,10 @@ test('syncDynamicRules successful syncing', async (t) => {
     warn: () => {}
   };
   sandbox.setInterval = () => {};
+  sandbox.setTimeout = setTimeout;
+  sandbox.clearTimeout = clearTimeout;
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
 
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
@@ -155,7 +204,7 @@ test('syncDynamicRules successful syncing', async (t) => {
 
     assert.strictEqual(getDynamicRulesCalled, true, 'getDynamicRules should have been called');
     assert.ok(updateDynamicRulesArgs, 'updateDynamicRules should have been called');
-    assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [101, 102], 'Should remove existing rules');
+    assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [1001, 1002], 'Should remove existing rules');
     assert.deepStrictEqual(updateDynamicRulesArgs.addRules, mockStoredRules, 'Should add stored rules');
   });
 
@@ -168,7 +217,7 @@ test('syncDynamicRules successful syncing', async (t) => {
 
     assert.strictEqual(getDynamicRulesCalled, true, 'getDynamicRules should have been called');
     assert.ok(updateDynamicRulesArgs, 'updateDynamicRules should have been called');
-    assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [101, 102], 'Should remove existing rules');
+    assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [1001, 1002], 'Should remove existing rules');
 
     // Add rules should match the default rules
     const defaultRules = sandbox.getDefaultDynamicRules();
@@ -201,15 +250,31 @@ test('syncDynamicRules error handling', async (t) => {
     },
     declarativeNetRequest: {
       getDynamicRules: () => Promise.resolve([]),
-      updateDynamicRules: () => Promise.reject(new Error('Simulated update error'))
+      updateDynamicRules: () => Promise.reject(new Error('Simulated update error')),
+      onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
       query: () => Promise.resolve([]),
       sendMessage: () => Promise.resolve(),
       onCreated: { addListener: () => {} },
       onRemoved: { addListener: () => {} }
-    }
+    },
+    alarms: {
+      create: () => {},
+      get: () => Promise.resolve(null),
+      onAlarm: { addListener: () => {} }
+    },
   };
+
+  sandbox._mockInitSubscriptions    = async () => {};
+  sandbox._mockEnsureAlarm          = async () => {};
+  sandbox._mockRefreshAllStale      = async () => {};
+  sandbox._mockRefreshSubscription  = async () => ({ ok: true });
+  sandbox._mockGetSubscriptions     = async () => [];
+  sandbox._mockSetSubscriptionEnabled = async () => ({ ok: true });
+  sandbox._mockAddSubscription      = async () => ({ ok: true });
+  sandbox._mockRemoveSubscription   = async () => ({ ok: true });
+  sandbox._mockInitScriptletEngine  = async () => {};
 
   sandbox.chrome = chromeMock;
   sandbox.console = {
@@ -221,8 +286,11 @@ test('syncDynamicRules error handling', async (t) => {
     warn: () => {}
   };
   sandbox.setInterval = () => {};
+  sandbox.setTimeout = setTimeout;
+  sandbox.clearTimeout = clearTimeout;
   sandbox.DEBUG = true;
   sandbox.globalThis = sandbox;
+  sandbox.fetch = async () => ({ ok: false });
 
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);

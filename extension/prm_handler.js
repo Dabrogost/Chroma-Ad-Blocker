@@ -1,6 +1,6 @@
 /**
  * Chroma Ad-Blocker - Amazon Prime Video Accelerator
- * Strategy: Ad-Acceleration (16x speed)
+ * Strategy: Ad-Acceleration (10x speed)
  * Specifically tuned for Prime Video's web player.
  */
 
@@ -13,12 +13,28 @@ const CONFIG = Object.create(null);
 Object.assign(CONFIG, {
   enabled: false, // Default to disabled until handshake (KILL SWITCH)
   acceleration: false,
-  accelerationSpeed: 16, // Maximum playback rate supported for ad acceleration
+  accelerationSpeed: 10, // Maximum playback rate supported for ad acceleration
   checkIntervalMs: 400,  // Interval between ad state checks (ms)
 });
 
 // Whitelist of allowed config keys for secure updates
 const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
+
+const CONFIG_VALIDATORS = Object.freeze({
+  enabled:           (v) => typeof v === 'boolean',
+  acceleration:      (v) => typeof v === 'boolean',
+  accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 16,
+  checkIntervalMs:   (v) => typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 5000
+});
+
+function applyConfig(source) {
+  for (const key of VALID_CONFIG_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      const val = source[key];
+      if (CONFIG_VALIDATORS[key](val)) CONFIG[key] = val;
+    }
+  }
+}
 
 // ─── PRISTINE API BRIDGE ─────
 // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
@@ -328,8 +344,6 @@ function updateAdOverlay(video, isActive) {
       
       if (isFinite(percent) && percent > 0) {
         progressBar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
-      } else {
-        progressBar.style.width = '0%';
       }
     }
   }
@@ -599,6 +613,14 @@ function handlePrimeAdAcceleration() {
         video.playbackRate = 1;
         video.volume = savedVolume;
         video.muted = false;
+
+        // Explicit reset of previously accelerated element in case findActiveVideo()
+        // switched to the content video during the ad-to-content DOM transition.
+        if (targetVideo && targetVideo !== video) {
+          targetVideo.playbackRate = 1;
+          targetVideo.muted = false;
+          targetVideo.volume = savedVolume;
+        }
         
         isAdActive = false;
         lastAdEndTime = Date.now();
@@ -634,20 +656,17 @@ function resetSession() {
 }
 
 function init() {
+  const isWhitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
+
   // 0. Whitelist shortcut for MAIN world
-  if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
+  if (isWhitelisted) {
     if (DEBUG) console.log('[Chroma] Prime handler disabled by whitelist.');
     return;
   }
 
   // 1. Initial check (might be ready if handshake was fast)
   if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-    const remoteConfig = window.__CHROMA_INTERNAL__.config;
-    for (const key in remoteConfig) {
-      if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
-        CONFIG[key] = remoteConfig[key];
-      }
-    }
+    applyConfig(window.__CHROMA_INTERNAL__.config);
   }
 
   // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
@@ -666,19 +685,13 @@ function init() {
     // SAFETY FALLBACK: Poll for isolated-world sentinel before activating.
     let _pollCount = 0;
     const _pollId = sI(() => {
-      const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
-      const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
-
-      // KILL SWITCH: Check for explicit disable signal from protection.js
-      const killEnabled = document.documentElement.getAttribute('data-chroma-enabled') === 'false';
-      const killAccel = document.documentElement.getAttribute('data-chroma-acceleration') === 'false';
-
+      const initDone = !!window.__CHROMA_INTERNAL__ || document.documentElement.getAttribute('data-chroma-init') === 'complete';
       _pollCount++;
 
-      if (initDone || killEnabled || killAccel || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
+      if (initDone || isWhitelisted || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
         cI(_pollId);
 
-        if (killEnabled || killAccel || whitelisted) {
+        if (isWhitelisted) {
           if (DEBUG) console.log('[Chroma] Kill switch or whitelist detected. Prime handler silenced.');
           return;
         }
@@ -700,11 +713,7 @@ function init() {
 API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
   if (e.detail) {
     // SECURITY: Validating update keys against a strict allowlist.
-    for (const key of VALID_CONFIG_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
-        CONFIG[key] = e.detail[key];
-      }
-    }
+    applyConfig(e.detail);
 
     if (DEBUG) console.log('[Chroma] Prime handler updated config:', CONFIG);
     
@@ -731,16 +740,16 @@ API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
 init();
 
 // ─── TESTING EXPORTS ─────
-if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
-  /** @type {Object} */
+if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
   globalThis.CONFIG = CONFIG;
-  /** @returns {void} */
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
-  /** @returns {boolean} */
   globalThis.isAdShowing = isAdShowing;
-  /** @returns {Element|null} */
   globalThis.findActiveVideo = findActiveVideo;
-  /** @returns {boolean} */
-  globalThis.getIsAdActive = () => isAdActive;
+  
+  // EXPOSE STATE FOR LEGACY TESTS VIA BRIDGE (Node/VM safe only)
+  globalThis.__CHROMA_STATE_BRIDGE__ = {
+    get isAdActive() { return isAdActive; },
+    set isAdActive(v) { isAdActive = v; }
+  };
 }
 })();
