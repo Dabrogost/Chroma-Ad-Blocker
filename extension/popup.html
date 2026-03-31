@@ -375,6 +375,33 @@
     .log-url { flex: 1; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .log-time { color: var(--text-muted); font-size: 8.5px; flex-shrink: 0; }
     .log-empty { padding: 12px 14px; font-size: 10px; color: var(--text-muted); text-align: center; }
+    #speedSelectorRow.disabled {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+    .speed-btn {
+      flex: 1;
+      padding: 5px 0;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(108, 92, 231, 0.25);
+      border-radius: 6px;
+      color: var(--text-dim);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .speed-btn:hover {
+      background: rgba(108, 92, 231, 0.15);
+      border-color: rgba(108, 92, 231, 0.5);
+      color: var(--text);
+    }
+    .speed-btn.active {
+      background: rgba(108, 92, 231, 0.25);
+      border-color: var(--c-purple);
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
@@ -428,12 +455,23 @@
     <div class="toggle-row">
       <div class="toggle-info">
         <div class="name">Ad Acceleration</div>
-        <div class="desc">Mute + 10× speed — bypasses detection</div>
+        <div class="desc">Mute + accelerate ads — bypasses detection</div>
       </div>
       <label class="switch">
         <input type="checkbox" id="toggleAcceleration" />
         <span class="slider"></span>
       </label>
+    </div>
+    <div class="toggle-row" id="speedSelectorRow" style="flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 14px;">
+      <div class="toggle-info">
+        <div class="name" style="font-size: 11px; color: var(--text-dim); font-weight: 500;">Acceleration Speed</div>
+      </div>
+      <div id="speedButtons" style="display: flex; gap: 6px; width: 100%;">
+        <button class="speed-btn" data-speed="4">×4</button>
+        <button class="speed-btn" data-speed="8">×8</button>
+        <button class="speed-btn" data-speed="12">×12</button>
+        <button class="speed-btn" data-speed="16">×16</button>
+      </div>
     </div>
 
     <div class="toggle-row">

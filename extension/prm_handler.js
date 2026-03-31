@@ -344,8 +344,6 @@ function updateAdOverlay(video, isActive) {
       
       if (isFinite(percent) && percent > 0) {
         progressBar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
-      } else {
-        progressBar.style.width = '0%';
       }
     }
   }
@@ -687,7 +685,7 @@ function init() {
     // SAFETY FALLBACK: Poll for isolated-world sentinel before activating.
     let _pollCount = 0;
     const _pollId = sI(() => {
-      const initDone = !!window.__CHROMA_INTERNAL__;
+      const initDone = !!window.__CHROMA_INTERNAL__ || document.documentElement.getAttribute('data-chroma-init') === 'complete';
       _pollCount++;
 
       if (initDone || isWhitelisted || _pollCount >= 40) { // 2s total wait time at 50ms intervals 

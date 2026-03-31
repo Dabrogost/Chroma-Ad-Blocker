@@ -88,7 +88,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         hideMerch: true,
         hideOffers: true,
         suppressWarnings: true,
-        accelerationSpeed: 10, // Maximum playback rate supported for ad acceleration
+        accelerationSpeed: 8, // Default acceleration speed
         blockPushNotifications: true,
         enabled: true,
       },
@@ -307,7 +307,7 @@ function validateConfig(inputConfig) {
       if (Object.prototype.hasOwnProperty.call(inputConfig, key)) {
         const val = inputConfig[key];
         if (key === 'accelerationSpeed') {
-          if (typeof val === 'number' && val > 0 && val <= 10) {
+          if (typeof val === 'number' && val > 0 && val <= 16) {
             validatedConfig[key] = val;
           }
         } else if (typeof val === 'boolean') {

@@ -62,6 +62,16 @@ async function init() {
     }
   };
 
+  const SPEED_OPTIONS = [4, 8, 12, 16];
+
+  function syncSpeedUI(speed, accelerationOn) {
+    const row = $('speedSelectorRow');
+    if (row) row.classList.toggle('disabled', !accelerationOn);
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.speed) === speed);
+    });
+  }
+
   const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
   const isEnabled = config.enabled !== false;
   
@@ -71,6 +81,17 @@ async function init() {
   }
   
   syncUI(config, isEnabled);
+
+  const currentSpeed = config.accelerationSpeed ?? 10;
+  syncSpeedUI(currentSpeed, isEnabled && (config.acceleration !== false));
+
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const speed = parseInt(btn.dataset.speed);
+      syncSpeedUI(speed, $('toggleAcceleration').checked);
+      await notifyBackground({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
+    });
+  });
 
   const { stats = { networkBlocked: 0 } } = await chrome.storage.local.get('stats');
   if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
@@ -103,6 +124,11 @@ async function init() {
       });
     }
   }
+
+  $('toggleAcceleration').addEventListener('change', (e) => {
+    const currentActiveSpeed = parseInt(document.querySelector('.speed-btn.active')?.dataset.speed ?? 10);
+    syncSpeedUI(currentActiveSpeed, e.target.checked);
+  });
 
   $('toggleEnabled').addEventListener('change', async (e) => {
     const active = e.target.checked;

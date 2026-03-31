@@ -650,7 +650,7 @@
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = API.setInterval(() => {
-        const initDone = !!window.__CHROMA_INTERNAL__;
+        const initDone = !!window.__CHROMA_INTERNAL__ || document.documentElement.getAttribute('data-chroma-init') === 'complete';
         _pollCount++;
 
         if (initDone || isWhitelisted || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
