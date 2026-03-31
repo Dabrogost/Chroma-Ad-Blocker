@@ -54,7 +54,7 @@ graph TD
     INTERNET --> IW
 
     INTERCEPT <-->|"Secure Handshake"| PROT
-    PROT -->|"Config Update"| MW
+    PROT -->|"Dispatch Config Update"| INTERCEPT
     PROT --> CONT
 
     BRIDGE --> YT_H
@@ -97,12 +97,13 @@ graph TD
     USER["The User (Cleaned Experience)"]:::actor
 
     INTERNET -- "Network Requests" --> DNR
+    INTERNET --> BG
 
     BG <--> STORAGE
     BG <--> DNR
     SUBS -->|"Deduplicated Block Rules"| DNR
     SUBS <-->|"Fetch & Cache"| STORAGE
-    SCRPT -->|"Inject into Page Context"| DNR
+    SCRPT -->|"On Navigation: Inject into Page"| BG
     POPUP <-->|"Sync Config & Stats"| STORAGE
 
     DNR -->|"Filtered Traffic"| USER
