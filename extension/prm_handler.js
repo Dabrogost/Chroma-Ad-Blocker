@@ -20,6 +20,22 @@ Object.assign(CONFIG, {
 // Whitelist of allowed config keys for secure updates
 const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
 
+const CONFIG_VALIDATORS = Object.freeze({
+  enabled:           (v) => typeof v === 'boolean',
+  acceleration:      (v) => typeof v === 'boolean',
+  accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 16,
+  checkIntervalMs:   (v) => typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 5000
+});
+
+function applyConfig(source) {
+  for (const key of VALID_CONFIG_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      const val = source[key];
+      if (CONFIG_VALIDATORS[key](val)) CONFIG[key] = val;
+    }
+  }
+}
+
 // ─── PRISTINE API BRIDGE ─────
 // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
 const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
@@ -642,20 +658,17 @@ function resetSession() {
 }
 
 function init() {
+  const isWhitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
+
   // 0. Whitelist shortcut for MAIN world
-  if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
+  if (isWhitelisted) {
     if (DEBUG) console.log('[Chroma] Prime handler disabled by whitelist.');
     return;
   }
 
   // 1. Initial check (might be ready if handshake was fast)
   if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-    const remoteConfig = window.__CHROMA_INTERNAL__.config;
-    for (const key in remoteConfig) {
-      if (Object.prototype.hasOwnProperty.call(remoteConfig, key)) {
-        CONFIG[key] = remoteConfig[key];
-      }
-    }
+    applyConfig(window.__CHROMA_INTERNAL__.config);
   }
 
   // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
@@ -674,19 +687,13 @@ function init() {
     // SAFETY FALLBACK: Poll for isolated-world sentinel before activating.
     let _pollCount = 0;
     const _pollId = sI(() => {
-      const initDone = document.documentElement.getAttribute('data-chroma-init') === 'complete';
-      const whitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
-
-      // KILL SWITCH: Check for explicit disable signal from protection.js
-      const killEnabled = document.documentElement.getAttribute('data-chroma-enabled') === 'false';
-      const killAccel = document.documentElement.getAttribute('data-chroma-acceleration') === 'false';
-
+      const initDone = !!window.__CHROMA_INTERNAL__;
       _pollCount++;
 
-      if (initDone || killEnabled || killAccel || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
+      if (initDone || isWhitelisted || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
         cI(_pollId);
 
-        if (killEnabled || killAccel || whitelisted) {
+        if (isWhitelisted) {
           if (DEBUG) console.log('[Chroma] Kill switch or whitelist detected. Prime handler silenced.');
           return;
         }
@@ -708,11 +715,7 @@ function init() {
 API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
   if (e.detail) {
     // SECURITY: Validating update keys against a strict allowlist.
-    for (const key of VALID_CONFIG_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(e.detail, key)) {
-        CONFIG[key] = e.detail[key];
-      }
-    }
+    applyConfig(e.detail);
 
     if (DEBUG) console.log('[Chroma] Prime handler updated config:', CONFIG);
     
