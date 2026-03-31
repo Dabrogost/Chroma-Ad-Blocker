@@ -487,7 +487,7 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
     _logBuffer.push({
       ts:  Date.now(),
       url: info.request.url,
-      rt:  info.request.requestType,
+      rt:  info.request.type,
       rid: info.rule.ruleId
     });
     _pendingBlocked++;

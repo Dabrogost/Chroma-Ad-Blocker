@@ -30,6 +30,13 @@ function scoreRule(rule) {
   if (rule.condition.resourceTypes && rule.condition.resourceTypes.length > 0)    score += 10;  // resource type
   if (rule.condition.domainType)                                        score += 5;  // third-party / first-party
 
+  // Tiebreaker: earlier position in list gets a small bonus.
+  // Max bonus is 0.999 so it never overrides a structural score difference.
+  if (rule._listPosition !== undefined) {
+    const positionBonus = Math.max(0, 1 - (rule._listPosition / 100000));
+    score += positionBonus;
+  }
+
   return score;
 }
 
@@ -42,14 +49,20 @@ function scoreRule(rule) {
  */
 export function allocate(rules, cap = SUBSCRIPTION_RULE_CAP) {
   if (rules.length <= cap) {
-    return { allocated: rules, trimCount: 0 };
+    return {
+      allocated: rules.map(({ _listPosition, ...rule }) => rule),
+      trimCount: 0
+    };
   }
 
   const scored = rules.map(rule => ({ rule, score: scoreRule(rule) }));
   scored.sort((a, b) => b.score - a.score);
 
   return {
-    allocated: scored.slice(0, cap).map(s => s.rule),
+    allocated: scored.slice(0, cap).map(s => {
+      const { _listPosition, ...rule } = s.rule;
+      return rule;
+    }),
     trimCount: rules.length - cap
   };
 }

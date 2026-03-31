@@ -260,18 +260,17 @@ async function init() {
 
   // ─── REQUEST LOG UI ─────
   const RT_BADGE = {
-    script:           { label: 'JS',  color: 'rgba(0,255,204,0.15)',  text: 'var(--c-cyan)' },
-    xmlhttprequest:   { label: 'XHR', color: 'rgba(0,136,255,0.15)', text: 'var(--c-blue)' },
-    image:            { label: 'IMG', color: 'rgba(153,0,255,0.15)', text: '#b388ff' },
-    sub_frame:        { label: 'FRM', color: 'rgba(230,126,34,0.15)', text: '#e67e22' },
-    main_frame:       { label: 'DOC', color: 'rgba(231,76,60,0.15)',  text: '#e74c3c' },
-    stylesheet:       { label: 'CSS', color: 'rgba(39,174,96,0.15)',  text: '#2ecc71' },
-    media:            { label: 'MED', color: 'rgba(243,156,18,0.15)', text: '#f39c12' },
-    websocket:        { label: 'WS',  color: 'rgba(26,188,156,0.15)', text: '#1abc9c' },
-    ping:             { label: 'PNG', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
-    other:      { label: 'OTH', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
-    main_frame: { label: 'DOC', color: 'rgba(231,76,60,0.15)',  text: '#e74c3c' },
-    object:     { label: 'OBJ', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+    script:         { label: 'JS',  color: 'rgba(0,255,204,0.15)',  text: 'var(--c-cyan)' },
+    xmlhttprequest: { label: 'XHR', color: 'rgba(0,136,255,0.15)', text: 'var(--c-blue)' },
+    image:          { label: 'IMG', color: 'rgba(153,0,255,0.15)', text: '#b388ff' },
+    sub_frame:      { label: 'FRM', color: 'rgba(230,126,34,0.15)', text: '#e67e22' },
+    main_frame:     { label: 'DOC', color: 'rgba(231,76,60,0.15)',  text: '#e74c3c' },
+    stylesheet:     { label: 'CSS', color: 'rgba(39,174,96,0.15)',  text: '#2ecc71' },
+    media:          { label: 'MED', color: 'rgba(243,156,18,0.15)', text: '#f39c12' },
+    websocket:      { label: 'WS',  color: 'rgba(26,188,156,0.15)', text: '#1abc9c' },
+    ping:           { label: 'PNG', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+    other:          { label: 'OTH', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+    object:         { label: 'OBJ', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
   };
 
   function formatLogUrl(url) {

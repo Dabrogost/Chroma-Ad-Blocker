@@ -222,9 +222,9 @@ export async function refreshSubscription(id) {
     const text = await fetchList(sub.url);
     const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(text);
     const staticFilters = await buildStaticUrlFilterSet();
-    const networkRules = parsedNetworkRules.filter(
-      r => !r.condition.urlFilter || !staticFilters.has(r.condition.urlFilter)
-    );
+    const networkRules = parsedNetworkRules
+      .filter(r => !r.condition.urlFilter || !staticFilters.has(r.condition.urlFilter))
+      .map((rule, index) => ({ ...rule, _listPosition: index }));
 
     // Store parsed rules per subscription ID
     const [netStore, cosStore, scrStore] = await Promise.all([
