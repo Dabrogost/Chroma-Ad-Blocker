@@ -57,6 +57,46 @@ function deduplicateCosmeticRules(rules) {
   });
 }
 
+// ─── STATIC RULE DEDUPLICATION ─────
+/**
+ * Builds a Set of urlFilter strings from all bundled static rule files.
+ * Used to exclude subscription rules that are already covered statically.
+ * Called once per refreshSubscription invocation — cost is paid at fetch time.
+ * @returns {Promise<Set<string>>}
+ */
+async function buildStaticUrlFilterSet() {
+  const files = [
+    'rules/rules.json',
+    'rules/rules_1.json',
+    'rules/rules_2.json',
+    'rules/rules_3.json',
+    'rules/rules_4.json',
+    'rules/rules_5.json',
+    'rules/rules_6.json',
+    'rules/rules_7.json',
+    'rules/rules_8.json',
+    'rules/rules_9.json'
+  ];
+
+  const set = new Set();
+  await Promise.all(files.map(async (file) => {
+    try {
+      const res = await fetch(chrome.runtime.getURL(file));
+      if (!res.ok) return;
+      const rules = await res.json();
+      for (const rule of rules) {
+        if (rule.condition && rule.condition.urlFilter) {
+          set.add(rule.condition.urlFilter);
+        }
+      }
+    } catch {
+      // Individual file failure is non-fatal — deduplication is best-effort
+    }
+  }));
+
+  return set;
+}
+
 // ─── REBUILD HELPERS ─────
 /**
  * Reads per-subscription stored network rules, combines enabled subs,
@@ -70,7 +110,7 @@ async function rebuildNetworkRules(subscriptions) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.enabled && perSubRules[sub.id]) {
-      allRules.push(...perSubRules[sub.id]);
+      allRules.push(...perSubRules[sub.id].filter(r => r.action && r.action.type === 'block'));
     }
   }
 
@@ -180,7 +220,11 @@ export async function refreshSubscription(id) {
   try {
     if (DEBUG) console.log(`[Chroma Subscriptions] Fetching: ${sub.name}`);
     const text = await fetchList(sub.url);
-    const { networkRules, cosmeticRules, scriptletRules, skipped } = parseList(text);
+    const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(text);
+    const staticFilters = await buildStaticUrlFilterSet();
+    const networkRules = parsedNetworkRules.filter(
+      r => !r.condition.urlFilter || !staticFilters.has(r.condition.urlFilter)
+    );
 
     // Store parsed rules per subscription ID
     const [netStore, cosStore, scrStore] = await Promise.all([

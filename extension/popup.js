@@ -269,6 +269,9 @@ async function init() {
     media:            { label: 'MED', color: 'rgba(243,156,18,0.15)', text: '#f39c12' },
     websocket:        { label: 'WS',  color: 'rgba(26,188,156,0.15)', text: '#1abc9c' },
     ping:             { label: 'PNG', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+    other:      { label: 'OTH', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+    main_frame: { label: 'DOC', color: 'rgba(231,76,60,0.15)',  text: '#e74c3c' },
+    object:     { label: 'OBJ', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
   };
 
   function formatLogUrl(url) {
