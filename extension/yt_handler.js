@@ -9,7 +9,7 @@
   Object.assign(CONFIG, {
     enabled: false, // Default to disabled until handshake (KILL SWITCH)
     acceleration: false,
-    accelerationSpeed: 16, // Maximum playback rate supported by Chrome for ad acceleration
+    accelerationSpeed: 4, // Reduced for improved viewability measurement signal
     checkIntervalMs: 300,  // Interval between ad state checks (ms)
   });
 
@@ -32,6 +32,31 @@
   const cE = (t) => API.createElement(t);
   const sI = (f, t) => API.setInterval(f, t);
   const cI = (i) => API.clearInterval(i);
+
+  // ─── ACTIVEVIEW / PTRACKING BEACON SUPPRESSION ─────
+  // Suppresses activeview and ptracking beacons when no ad session is active,
+  // preventing post-session observer floods. Beacons fire normally during
+  // active ad playback.
+  (function() {
+    const _origOpen = XMLHttpRequest.prototype.open;
+
+    XMLHttpRequest.prototype.open = function(method, url) {
+      if (typeof url === 'string' &&
+          !window.chromaAdSessionActive &&
+          (url.includes('/pcs/activeview') || url.includes('/ptracking'))) {
+        this._chromaSuppressed = true;
+        return;
+      }
+      return _origOpen.apply(this, arguments);
+    };
+
+    const _origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function() {
+      if (this._chromaSuppressed) return;
+      return _origSend.apply(this, arguments);
+    };
+  })();
+
 
   // ─── STATE ─────
   let targetAdVideo = null;
@@ -362,7 +387,7 @@
     if (rawAdShowing) {
       if (!window.chromaAdSessionActive) {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Ad Session Detected');
-        window.chromaAdSkipped = false; 
+        window.chromaAdSkipped = false;
         // Performance Optimization: Switches to rAF-synced watcher during active ads for frame-perfect acceleration and overlay synchronization.
         startFastAdWatcher(); 
       }
@@ -379,6 +404,8 @@
       // Session release logic:
       if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) { // 500ms pod gap bridge; 5000ms watchdog timeout
         window.chromaAdSessionActive = false;
+        window.chromaAdSessionEndedAt = Date.now();
+
       }
     }
     
@@ -445,6 +472,7 @@
   function onYTNavigate() {
     cleanupVideoState();
     window.chromaAdSessionActive = false;
+    window.chromaAdSessionEndedAt = Date.now();
     window.chromaAdSkipped = false;
     window.lastAdDetectTime = 0;
     window.cachedCurrentAd = 1;
@@ -490,6 +518,7 @@
         if (overlay) overlay.classList.remove('active');
         
         window.chromaAdSessionActive = false;
+        window.chromaAdSessionEndedAt = Date.now();
         window._chromaFastWatcher = false;
         cleanupVideoState();
         

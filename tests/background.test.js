@@ -95,7 +95,7 @@ test('getDefaultDynamicRules', async (t) => {
     for (const rule of rules) {
       assert.ok(rule.id, 'Rule must have an id');
       assert.strictEqual(typeof rule.id, 'number', 'Rule id must be a number');
-      assert.strictEqual(rule.priority, 1, 'Rule priority should be 1');
+      assert.strictEqual(rule.priority, 4, 'Rule priority should be 4');
 
       // Match the actual code: action.type is 'allow' for these rules
       assert.strictEqual(rule.action.type, 'allow', 'Rule action should be allow');

@@ -139,6 +139,10 @@ test('YouTube ad acceleration', async (t) => {
         }
       },
       location: { hostname: 'www.youtube.com' },
+      XMLHttpRequest: class {
+        open() {}
+        send() {}
+      },
       __TESTING__: true,
     };
 
