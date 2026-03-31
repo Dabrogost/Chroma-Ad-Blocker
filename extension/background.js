@@ -88,7 +88,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         hideMerch: true,
         hideOffers: true,
         suppressWarnings: true,
-        accelerationSpeed: 16, // Maximum playback rate supported for ad acceleration
+        accelerationSpeed: 10, // Maximum playback rate supported for ad acceleration
         blockPushNotifications: true,
         enabled: true,
       },
@@ -158,6 +158,10 @@ const STATIC_RULESETS = [
   'yt_ad_rules_part9'
 ];
 
+// Range 1000 - 99999 reserved for local/default dynamic rules (Anti-Detection/Acceleration)
+const DEFAULT_RULE_ID_START = 1000;
+const DEFAULT_RULE_ID_END   = 99999;
+
 async function updateDNRState(isEnabled) {
   try {
     if (isEnabled) {
@@ -183,18 +187,34 @@ async function updateDNRState(isEnabled) {
  */
 async function syncDynamicRules() {
   try {
+    const { config } = await chrome.storage.local.get('config');
+    const isAccelerationEnabled = config?.acceleration !== false;
+
     const stored = await chrome.storage.local.get('dynamicRules');
-    const rules = stored.dynamicRules || getDefaultDynamicRules();
+    let rules = stored.dynamicRules || getDefaultDynamicRules();
+
+    if (!isAccelerationEnabled) {
+      // Reverse logic: Change 'allow' (Anti-Detection) to 'block'
+      // when Acceleration is disabled, so ads are blocked by dynamic rules.
+      rules = rules.map(r => ({
+        ...r,
+        action: { ...r.action, type: 'block' }
+      }));
+    }
 
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeIds = existing.filter(r => r.id < 9000000).map(r => r.id); // Exclude whitelist range (9,000,000+)
+    const removeIds = existing
+      .filter(r => r.id >= DEFAULT_RULE_ID_START && r.id <= DEFAULT_RULE_ID_END)
+      .map(r => r.id);
 
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: removeIds,
       addRules: rules,
     });
 
-    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules.`);
+    if (DEBUG) {
+      console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
+    }
   } catch (err) {
     if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }
@@ -286,7 +306,7 @@ function validateConfig(inputConfig) {
       if (Object.prototype.hasOwnProperty.call(inputConfig, key)) {
         const val = inputConfig[key];
         if (key === 'accelerationSpeed') {
-          if (typeof val === 'number' && val > 0 && val <= 16) {
+          if (typeof val === 'number' && val > 0 && val <= 10) {
             validatedConfig[key] = val;
           }
         } else if (typeof val === 'boolean') {
@@ -338,7 +358,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           await chrome.storage.local.set({ config: newConfig });
           const wasDNRActive = cCurr.enabled !== false && cCurr.networkBlocking !== false;
           const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
-          if (isDNRActive !== wasDNRActive) await updateDNRState(isDNRActive);
+          if (isDNRActive !== wasDNRActive) {
+            await updateDNRState(isDNRActive);
+          } else if (isDNRActive && (cCurr.acceleration !== newConfig.acceleration)) {
+            // Acceleration toggle requires re-syncing default dynamic rules
+            await syncDynamicRules();
+          }
           const tabs = await chrome.tabs.query({});
           await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})));
           sendResponse({ ok: true });

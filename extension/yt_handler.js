@@ -9,7 +9,7 @@
   Object.assign(CONFIG, {
     enabled: false, // Default to disabled until handshake (KILL SWITCH)
     acceleration: false,
-    accelerationSpeed: 8, // Reduced for improved viewability measurement signal
+    accelerationSpeed: 10, // Maximum playback rate supported for ad acceleration
     checkIntervalMs: 300,  // Interval between ad state checks (ms)
   });
 
