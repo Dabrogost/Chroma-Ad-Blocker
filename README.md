@@ -23,88 +23,82 @@ Chroma utilizes a multi-layered execution model designed to survive the ephemera
 
 ```mermaid
 graph TD
-    classDef sw fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
-    classDef storage fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
+    classDef sw       fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
+    classDef storage  fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
     classDef isolated fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
-    classDef main fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
-    classDef dnr fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
-    classDef dom fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
-    classDef secure fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
-    classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
+    classDef main     fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
+    classDef dnr      fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
+    classDef dom      fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
+    classDef secure   fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
+    classDef actor    fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
-    %% --- LAYER 0: ENTRANCE ---
+    %% ── TOP ──
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
-    %% --- LAYER 1: MAIN WORLD (Execution Context) ---
+    %% ── ROW 1: ENTRY POINTS ──
     subgraph MW["Main World (Page Context)"]
-        INTERCEPT["interceptor.js (API Protection)"]:::main
-        YT_H["yt_handler.js (Video Acceleration)"]:::main
-        PRM_H["prm_handler.js (Video Acceleration)"]:::main
-        BRIDGE["__CHROMA_INTERNAL__ (Secure Bridge)"]:::secure
+        INTERCEPT["interceptor.js"]:::main
+        BRIDGE["__CHROMA_INTERNAL__"]:::secure
+        YT_H["yt_handler.js"]:::main
+        PRM_H["prm_handler.js"]:::main
     end
 
-    %% --- LAYER 2: ISOLATED WORLD (Extension Context) ---
-    subgraph IW["Isolated World (Relay Layer)"]
-        PROT["protection.js (Push Blocker & Config Relay)"]:::isolated
-        CONT["content.js (Cosmetic & Warnings)"]:::isolated
-        MSG_U["messaging.js (Shared Utils)"]:::isolated
+    %% ── ROW 2: ISOLATED WORLD ──
+    subgraph IW["Isolated World"]
+        PROT["protection.js"]:::isolated
+        CONT["content.js"]:::isolated
+        MSG_U["messaging.js"]:::isolated
     end
 
-    %% --- LAYER 3: SERVICE WORKER CORE ---
-    subgraph SW["Extension Core (Service Worker)"]
-        BG["background.js (Router & Rules)"]:::sw
-        SUBS["subscriptions/ (Filter Lists)"]:::sw
-        SCRPT["scriptlets/engine.js (Scriptlet Injector)"]:::sw
+    %% ── ROW 3: SERVICE WORKER ──
+    subgraph SW["Service Worker"]
+        BG["background.js"]:::sw
+        SUBS["subscriptions/"]:::sw
+        SCRPT["scriptlets/engine.js"]:::sw
+        POPUP["popup.js"]:::sw
     end
 
-    %% --- LAYER 4: INFRASTRUCTURE ---
-    subgraph System["Resource & Network Layer"]
-        STORAGE[("chrome.storage (Local/Session)")]:::storage
-        DNR["Static + Dynamic DNR System"]:::dnr
+    %% ── ROW 4: INFRASTRUCTURE ──
+    subgraph SYS["Infrastructure"]
+        STORAGE[("chrome.storage")]:::storage
+        DNR["DNR Rulesets"]:::dnr
         PLAYER["Media Players"]:::dom
-        DOM["document.documentElement (Sentinel)"]:::dom
     end
 
-    %% --- LAYER 5: UI ---
-    POPUP["popup.js (UI & Stats)"]:::sw
+    %% ── BOTTOM ──
     USER["The User (Cleaned Experience)"]:::actor
 
-    %% --- PIPELINE FLOW ---
-    INTERNET -- "Host Page & Assets" --> MW
-    INTERNET -- "Third-Party Scripts" --> INTERCEPT
+    %% ── FLOW ──
+    INTERNET --> MW
     INTERNET -- "Network Traffic" --> DNR
 
-    INTERCEPT <==>|"Handshake (Token/Port)"| PROT
-    PROT ==>|"Message Relay"| BG
-    BG -- "Store Tokens" --> STORAGE
+    INTERCEPT <-->|"Handshake"| PROT
+    PROT --> BG
+    PROT --> CONT
+    PROT -->|"Config Update"| MW
 
-    PROT -- "Set data-chroma-init" --> DOM
-    PROT -- "Dispatch __CHROMA_CONFIG_UPDATE__" --> MW
-    YT_H -- "Poll data-chroma-init / __CHROMA_INTERNAL__" --> DOM
-    PRM_H -- "Poll data-chroma-init / __CHROMA_INTERNAL__" --> DOM
+    BG --> STORAGE
+    SUBS -->|"Block Rules"| DNR
+    SUBS <--> STORAGE
+    SCRPT -->|"Inject Scriptlets"| MW
 
     BRIDGE --- YT_H
     BRIDGE --- PRM_H
-    YT_H ==>|"Accelerated Playback"| PLAYER
-    PRM_H ==>|"Accelerated Playback"| PLAYER
+    YT_H --> PLAYER
+    PRM_H --> PLAYER
+    CONT --> PLAYER
 
-    SCRPT ==>|"Inject Scriptlets (MAIN world)"| MW
-    SUBS --> DNR
-    SUBS <-->|"Fetch & Store Rules"| STORAGE
+    POPUP <--> STORAGE
+    BG <--> DNR
 
-    CONT ==>|"Inject CSS / Mutate"| PLAYER
-    DNR -- "Filter Stream" --> USER
-    PLAYER -- "Clean View" --> USER
+    DNR --> USER
+    PLAYER --> USER
+    POPUP --> USER
 
-    POPUP <-->|"Sync Config"| STORAGE
-    BG <-->|"Sync Rules"| DNR
-    POPUP ==>|"Display Stats"| USER
-
-    %% Style Tweaks
-    style MW fill:none,stroke:none
-    style IW fill:none,stroke:none
-    style SW fill:none,stroke:none
-    style System fill:none,stroke:none
+    style MW   fill:none,stroke:#880e4f,stroke-width:1px,stroke-dasharray:4
+    style IW   fill:none,stroke:#1b5e20,stroke-width:1px,stroke-dasharray:4
+    style SW   fill:none,stroke:#01579b,stroke-width:1px,stroke-dasharray:4
+    style SYS  fill:none,stroke:#f57f17,stroke-width:1px,stroke-dasharray:4
 ```
 
 ---
