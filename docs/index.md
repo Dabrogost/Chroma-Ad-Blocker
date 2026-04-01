@@ -225,27 +225,27 @@ graph TD
 
     <div class="qs-step">
       <div class="qs-step__num">1</div>
-      <p class="qs-step__label">Download the ZIP from GitHub and extract it (or clone the repo)</p>
+      <p class="qs-step__label">Click <strong>Download Current Version</strong> or get the latest release from <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest">GitHub</a>. Extract the ZIP, or clone the repository locally.</p>
     </div>
 
     <div class="qs-step">
       <div class="qs-step__num">2</div>
-      <p class="qs-step__label">Open <code style="font-size:11px">chrome://extensions</code> in Chrome</p>
+      <p class="qs-step__label">Open <code style="font-size:11px">chrome://extensions</code> in Chrome.</p>
     </div>
 
     <div class="qs-step">
       <div class="qs-step__num">3</div>
-      <p class="qs-step__label">Toggle on Developer Mode (top-right corner)</p>
+      <p class="qs-step__label">Toggle on <strong>Developer Mode</strong> in the top-right corner.</p>
     </div>
 
     <div class="qs-step">
       <div class="qs-step__num">4</div>
-      <p class="qs-step__label">Click "Load unpacked" &rarr; select the <code style="font-size:11px">extension/</code> folder (inside the extracted repo)</p>
+      <p class="qs-step__label">Click <strong>Load unpacked</strong> and select the <code style="font-size:11px">extension/</code> folder inside the extracted directory.</p>
     </div>
 
     <div class="qs-step">
       <div class="qs-step__num">5</div>
-      <p class="qs-step__label">Done &mdash; Chroma is active on all tabs</p>
+      <p class="qs-step__label">Done — Chroma is active on all tabs. Pin it from the extensions menu to access the popup.</p>
     </div>
   </div>
 
