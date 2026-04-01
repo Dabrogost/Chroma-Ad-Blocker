@@ -226,7 +226,7 @@
               if (typeof instance.onshow === 'function') {
                 try { instance.onshow(); } catch (e) {}
               }
-            }, 50); // Grace period for event listener attachment
+            }, 50); // 50ms grace period for event listener attachment before firing onshow
             return instance;
           }
           return new OriginalNotification(title, options);
@@ -264,6 +264,7 @@
     // SECURITY: Deep Notification Blocking
     if (typeof ServiceWorkerRegistration !== 'undefined' && ServiceWorkerRegistration.prototype) {
       const originalShowNotification = ServiceWorkerRegistration.prototype.showNotification;
+      // SECURITY: Prototype Reassignment to intercept SW-based push notifications
       ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
         if (checkPushBlocking()) {
           sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
@@ -292,6 +293,7 @@
       
       const originalSubscribe = PushManager.prototype.subscribe;
       if (typeof originalSubscribe === 'function') {
+        // SECURITY: Prototype Reassignment to block push subscription enrollment
         PushManager.prototype.subscribe = function() {
           if (checkPushBlocking()) {
             return Promise.reject(new DOMException('Registration failed - push service not available', 'AbortError'));
@@ -304,6 +306,7 @@
     // SECURITY: API Lockdown
     if (isHostileDomain) {
       try {
+        // SECURITY: Freeze writable+configurable to prevent host-page re-override
         const lock = (obj, prop) => {
           const desc = Object.getOwnPropertyDescriptor(obj, prop);
           if (desc && desc.configurable) {
@@ -334,12 +337,10 @@
     
     // SECURITY: Capture Phase Port Transfer (VULN-01 Hardening)
     pristineAddEventListener('__CHROMA_PORT_TRANSFER__', function portCatcher(e) {
-      // SECURITY: Port Acquisition Capture Phase Logic
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
       
-      // SECURITY: Port Acquisition (MessageEvent compatibility)
       chromaPort = e.ports ? e.ports[0] : null;
       if (!chromaPort) {
         // Fallback for CustomEvent delivery if MessageEvent wasn't used/available
@@ -379,8 +380,7 @@
       return;
     }
     
-    // Aggressive polling (5ms) for hostile domains; relaxed polling (50ms) for general web.
-    const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web.
+    const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web
     
     pingInterval = pristineSetInterval(() => {
       // SECURITY: Secure Handshake Initiation

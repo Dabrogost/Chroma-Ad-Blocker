@@ -107,10 +107,6 @@
     document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
   }
 
-  /**
-   * Signals the interceptor script whether protections should be active.
-   */
-
   // Initial sync with storage
   chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']).then(async (data) => {
     let isWhitelisted = false;
