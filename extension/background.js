@@ -567,7 +567,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // ─── TESTING EXPORTS ─────
-if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
+if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
   /** @returns {Promise<void>} */
   globalThis.syncDynamicRules = syncDynamicRules;
 }
