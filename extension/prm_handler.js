@@ -1,6 +1,6 @@
 /**
  * Chroma Ad-Blocker - Amazon Prime Video Accelerator
- * Strategy: Ad-Acceleration (10x speed)
+ * Strategy: Ad-Acceleration (8x speed)
  * Specifically tuned for Prime Video's web player.
  */
 
@@ -13,7 +13,7 @@ const CONFIG = Object.create(null);
 Object.assign(CONFIG, {
   enabled: false, // Default to disabled until handshake (KILL SWITCH)
   acceleration: false,
-  accelerationSpeed: 10, // Maximum playback rate supported for ad acceleration
+  accelerationSpeed: 8, // Default playback rate supported for ad acceleration
   checkIntervalMs: 400,  // Interval between ad state checks (ms)
 });
 

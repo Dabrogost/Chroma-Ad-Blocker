@@ -82,7 +82,7 @@ async function init() {
   
   syncUI(config, isEnabled);
 
-  const currentSpeed = config.accelerationSpeed ?? 10;
+  const currentSpeed = config.accelerationSpeed ?? 8;
   syncSpeedUI(currentSpeed, isEnabled && (config.acceleration !== false));
 
   document.querySelectorAll('.speed-btn').forEach(btn => {
@@ -126,7 +126,7 @@ async function init() {
   }
 
   $('toggleAcceleration').addEventListener('change', (e) => {
-    const currentActiveSpeed = parseInt(document.querySelector('.speed-btn.active')?.dataset.speed ?? 10);
+    const currentActiveSpeed = parseInt(document.querySelector('.speed-btn.active')?.dataset.speed ?? 8);
     syncSpeedUI(currentActiveSpeed, e.target.checked);
   });
 
