@@ -150,7 +150,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     storage: {
       local: {
         // Acceleration Speed Cap: Maximum browser playback rate.
-        get: () => Promise.resolve({ config: { enabled: true, accelerationSpeed: 10 } })
+        get: () => Promise.resolve({ config: { enabled: true, accelerationSpeed: 8 } })
       }
     }
   };
@@ -264,7 +264,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
 
     sandbox.handlePrimeAdAcceleration();
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(mockVideo.playbackRate, 10, 'Playback rate should be 10 during ad');
+    assert.strictEqual(mockVideo.playbackRate, 8, 'Playback rate should be 8 during ad');
   });
 
   await t.test('should accelerate when ad-related text is present', () => {
@@ -285,7 +285,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
 
     sandbox.handlePrimeAdAcceleration();
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(mockVideo.playbackRate, 10, 'Should accelerate based on innerText');
+    assert.strictEqual(mockVideo.playbackRate, 8, 'Should accelerate based on innerText');
   });
 
   await t.test('should target the visible video element if multiple exist', () => {
@@ -309,7 +309,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
 
     sandbox.handlePrimeAdAcceleration();
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(visibleVideo.playbackRate, 10, 'Visible video should be accelerated');
+    assert.strictEqual(visibleVideo.playbackRate, 8, 'Visible video should be accelerated');
     assert.strictEqual(hiddenVideo.playbackRate, 1, 'Hidden video should remain normal');
   });
   await t.test('should create and activate visual overlay during ad', () => {
@@ -442,7 +442,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     
     sandbox.handlePrimeAdAcceleration();
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(mockVideo.playbackRate, 10, 'First ad should be accelerated');
+    assert.strictEqual(mockVideo.playbackRate, 8, 'First ad should be accelerated');
     
     // The overlay is now injected into container
     const overlay = container.children.find(c => c.id === 'prime-chroma-overlay');
@@ -467,7 +467,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     
     sandbox.handlePrimeAdAcceleration();
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(mockVideo.playbackRate, 10, 'Second ad should be accelerated even with overlay present');
+    assert.strictEqual(mockVideo.playbackRate, 8, 'Second ad should be accelerated even with overlay present');
   });
 
   await t.test('should reset state when video source changes without an active ad', () => {
@@ -490,7 +490,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     sandbox.handlePrimeAdAcceleration();
     assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.isAdActive, true, 'Ad should be active');
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(mockVideo.playbackRate, 10, 'Accelerated');
+    assert.strictEqual(mockVideo.playbackRate, 8, 'Accelerated');
 
     // 2. Ad ends (indicator gone), but source changes to something else (e.g. main video)
     sandbox.document.querySelector = createMockQuerySelector({

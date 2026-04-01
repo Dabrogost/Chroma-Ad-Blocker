@@ -166,7 +166,7 @@ test('YouTube ad acceleration', async (t) => {
         removeDocEventListener: (e, f, o) => sandbox.document.removeEventListener(e, f, o),
         MutationObserver: sandbox.window.MutationObserver
       },
-      config: { enabled: true, acceleration: true, accelerationSpeed: 10 }
+      config: { enabled: true, acceleration: true, accelerationSpeed: 8 }
     };
 
     vm.createContext(sandbox);
@@ -223,7 +223,7 @@ test('YouTube ad acceleration', async (t) => {
     sandbox.handleAdAcceleration();
     assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, true);
     // Acceleration Speed Cap: Maximum browser playback rate.
-    assert.strictEqual(mockVideo.playbackRate, 10);
+    assert.strictEqual(mockVideo.playbackRate, 8);
     assert.strictEqual(mockVideo.muted, true);
   });
 
