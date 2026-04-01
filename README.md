@@ -158,7 +158,7 @@ Chroma implements several advanced security measures to ensure extension integri
 
 ## Quick Start
 
-1. Click **Download Current Version** above, or get the latest release from [GitHub](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest). Extract the ZIP, or clone the repository locally.
+1. Click **Download Current Version** or get the latest release from [GitHub](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest). Extract the ZIP, or clone the repository locally.
 2. Open `chrome://extensions` in Chrome.
 3. Toggle on **Developer Mode** in the top-right corner.
 4. Click **Load unpacked** and select the `extension/` folder inside the extracted directory.
