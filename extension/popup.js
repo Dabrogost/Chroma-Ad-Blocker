@@ -309,7 +309,6 @@ async function init() {
   function formatLogUrl(url) {
     try {
       const u = new URL(url);
-      const path = u.hostname.length > 22 ? u.hostname.slice(0, 20) + '…' : u.hostname;
       const userPath = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname;
       return u.hostname + userPath;
     } catch {

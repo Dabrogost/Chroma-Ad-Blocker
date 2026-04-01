@@ -765,7 +765,6 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
   globalThis.CONFIG = CONFIG;
   globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
   globalThis.isAdShowing = isAdShowing;
-  globalThis.findActiveVideo = findActiveVideo;
   
   // State Bridge: Expose internal state for legacy tests (Node/VM safe only)
   globalThis.__CHROMA_STATE_BRIDGE__ = {
