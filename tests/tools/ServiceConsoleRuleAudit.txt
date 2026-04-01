@@ -1,0 +1,52 @@
+// Run in Service Worker Console
+(async () => {
+  const { 
+    config, 
+    stats, 
+    subscriptions = [], 
+    appliedNetworkRuleCount = 0,
+    subscriptionCosmeticRules = [],
+    subscriptionScriptletRules = []
+  } = await chrome.storage.local.get(null);
+  const dynamicDNR = await chrome.declarativeNetRequest.getDynamicRules();
+  const enabledRulesets = await chrome.declarativeNetRequest.getEnabledRulesets();
+
+  const antiDetectionRules = dynamicDNR.filter(r => r.id >= 1001 && r.id <= 1999);
+  const subscriptionDNR = dynamicDNR.filter(r => r.id >= 100000 && r.id < 9000000);
+  const whitelistRules = dynamicDNR.filter(r => r.id >= 9000000);
+
+  console.group("%c📊 Chroma Ad-Blocker - Rule Audit", "color: #00ffcc; font-weight: bold; font-size: 14px;");
+
+  console.log("%c1. Network Layer (DNR)", "font-weight: bold; color: #ffcc00;");
+  console.table({
+    "Static Rulesets Enabled": enabledRulesets.length,
+    "Anti-Detection Exemptions": antiDetectionRules.length,
+    "Subscription Block Rules (Applied)": appliedNetworkRuleCount,
+    "Whitelist Rules": whitelistRules.length,
+    "Total Dynamic Rules": dynamicDNR.length
+  });
+
+  console.log("%c2. Scriptlet Engine", "font-weight: bold; color: #ffcc00;");
+  console.table({
+    "Total Active Scriptlets": subscriptionScriptletRules.length,
+    "Unique Patterns": new Set(subscriptionScriptletRules.map(r => r.scriptlet)).size
+  });
+
+  console.log("%c3. Cosmetic Layer", "font-weight: bold; color: #ffcc00;");
+  console.table({
+    "Subscription Cosmetic Rules": subscriptionCosmeticRules.length,
+    "Extension Internal Hiders": (await chrome.storage.local.get('HIDE_SELECTORS')).HIDE_SELECTORS.length
+  });
+
+  console.log("%c4. Subscription Health", "font-weight: bold; color: #ffcc00;");
+  console.table(subscriptions.map(s => ({
+    "Name": s.name,
+    "Status": s.enabled ? "✅ Enabled" : "❌ Disabled",
+    "Net": s.ruleCount.network,
+    "Cos": s.ruleCount.cosmetic,
+    "Scr": s.ruleCount.scriptlet,
+    "Last Update": new Date(s.lastUpdated).toLocaleString()
+  })));
+
+  console.groupEnd();
+})();

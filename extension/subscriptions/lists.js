@@ -6,9 +6,9 @@
 
 export const DEFAULT_SUBSCRIPTIONS = [
   {
-    id: 'easyprivacy',
-    name: 'EasyPrivacy',
-    url: 'https://easylist.to/easylist/easyprivacy.txt',
+    id: 'hagezi-pro-mini',
+    name: 'Hagezi Pro Mini',
+    url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.mini.txt',
     enabled: true,
     intervalHours: 24,
     lastUpdated: 0,
