@@ -73,6 +73,18 @@ async function checkForUpdate() {
 // ─── REQUEST LOG BUFFER ─────
 const LOG_MAX_ENTRIES = 500;
 let _logBuffer = [];
+// State Bridge: Exposes in-memory log access for automated testing.
+// Without this, background request log tests would be slow and timing-dependent
+// due to the 500ms batched storage flush timer.
+if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
+  globalThis.__CHROMA_STATE_BRIDGE__ = {
+    flushLog: () => {
+      const log = [..._logBuffer];
+      _logBuffer = [];
+      return log;
+    }
+  };
+}
 let _pendingBlocked = 0;
 let _flushTimer = null;
 
@@ -473,7 +485,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   };
 
   const p = handler();
-  if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) return p;
+  if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) return p;
   return true;
 });
 

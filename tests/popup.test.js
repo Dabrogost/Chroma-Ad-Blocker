@@ -23,15 +23,29 @@ test('popup.js functionality', async (t) => {
           checked: false,
           textContent: '',
           listeners: {},
+          dataset: {},
           classList: {
-            add: (cls) => { elements[id].classList.current = cls; },
-            remove: (cls) => { if (elements[id].classList.current === cls) elements[id].classList.current = ''; },
+            add: (cls) => { if (!elements[id].classList.current.includes(cls)) elements[id].classList.current += ' ' + cls; },
+            remove: (cls) => { elements[id].classList.current = elements[id].classList.current.replace(cls, '').trim(); },
+            toggle: (cls, force) => {
+              const has = elements[id].classList.current.includes(cls);
+              const want = force !== undefined ? force : !has;
+              if (want && !has) elements[id].classList.current += ' ' + cls;
+              else if (!want && has) elements[id].classList.current = elements[id].classList.current.replace(cls, '').trim();
+            },
             current: ''
           },
           parentElement: parent,
           title: '',
           addEventListener(event, fn) {
-            this.listeners[event] = fn;
+            if (!this.listeners[event]) this.listeners[event] = [];
+            this.listeners[event].push(fn);
+          },
+          async dispatchEvent(event) {
+            const type = typeof event === 'string' ? event : event.type;
+            if (this.listeners[type]) {
+              await Promise.all(this.listeners[type].map(fn => fn({ target: this })));
+            }
           }
         };
       }
@@ -90,6 +104,10 @@ test('popup.js functionality', async (t) => {
       chrome: chromeMock,
       document: {
         getElementById: getElement,
+        querySelector: (sel) => {
+          if (sel.startsWith('#')) return getElement(sel.slice(1));
+          return null;
+        },
         querySelectorAll: () => []
       },
       MutationObserver: class {
@@ -157,7 +175,7 @@ test('popup.js functionality', async (t) => {
     messages.length = 0;
 
     elements['toggleAcceleration'].checked = true;
-    await elements['toggleAcceleration'].listeners['change']({ target: elements['toggleAcceleration'] });
+    await elements['toggleAcceleration'].dispatchEvent('change');
 
     assert.ok(messages.some(m => m.type === 'CONFIG_SET' && m.config.acceleration === true));
   });
@@ -171,7 +189,7 @@ test('popup.js functionality', async (t) => {
 
     messages.length = 0;
 
-    await elements['resetStats'].listeners['click']();
+    await elements['resetStats'].dispatchEvent('click');
 
     assert.ok(messages.some(m => m.type === 'STATS_RESET'));
 

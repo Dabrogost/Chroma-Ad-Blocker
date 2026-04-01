@@ -110,7 +110,7 @@ test('Content script generic functionality', async (t) => {
         innerWidth: 1000
       },
       location: { hostname: 'www.youtube.com' },
-      __TESTING__: true,
+      __CHROMA_INTERNAL_TEST_STRICT__: true,
       Node: { ELEMENT_NODE: 1 },
       MSG: {
         CONFIG_GET: 'CONFIG_GET',
