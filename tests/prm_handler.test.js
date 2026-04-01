@@ -212,8 +212,14 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     },
     globalThis: { __CHROMA_INTERNAL_TEST_STRICT__: true },
     addEventListener: () => {},
-    removeEventListener: () => {}
+    removeEventListener: () => {},
+    // Mock browser-native CSSStyleSheet API for adoptedStyleSheets-based session management
+    CSSStyleSheet: class {
+      constructor() { this._css = ''; }
+      replaceSync(css) { this._css = css; }
+    }
   };
+  sandbox.document.adoptedStyleSheets = [];
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   sandbox.__CHROMA_INTERNAL_TEST_STRICT__ = true;
@@ -351,7 +357,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     const progressBar = createdOverlay && createdOverlay.shadowRoot ? createdOverlay.shadowRoot.querySelector('.chroma-progress-bar') : null;
     assert.ok(progressBar, 'Progress bar should exist');
     assert.strictEqual(progressBar.style.width, '50%', 'Progress bar width should be 50%');
-    assert.strictEqual(sandbox.document.body.classList.contains('chroma-prime-session'), true, 'Body should have chroma-prime-session class');
+    assert.ok(sandbox.document.adoptedStyleSheets.length > 0, 'Session sheet should be adopted during ad');
   });
 
   await t.test('should NOT detect ad if only chroma overlay text is present', () => {

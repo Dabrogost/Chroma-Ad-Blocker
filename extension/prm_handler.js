@@ -95,6 +95,40 @@ let lastAdEndTime = 0;
 const AD_COOLDOWN_MS = 2000; // Cooldown to bridge ad-to-content transitions (ms)
 let consecutiveFalseCount = 0;
 
+// Anti-Detection: Session stylesheet toggle (replaces observable body class mutations)
+let primeSessionSheet = null;
+
+function ensurePrimeSessionSheet() {
+  if (primeSessionSheet) return;
+  primeSessionSheet = new CSSStyleSheet();
+  primeSessionSheet.replaceSync(`
+    .atvwebplayersdk-ad-skip-button,
+    .adSkipButton,
+    [class*="skip-button"],
+    [class*="ad-skip"] {
+      border: 2px solid #00A8E1 !important;
+      box-shadow: 0 0 25px rgba(0, 168, 225, 0.4) !important;
+      transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
+    }
+  `);
+}
+
+function activatePrimeSessionSheet() {
+  ensurePrimeSessionSheet();
+  const sheets = document.adoptedStyleSheets;
+  if (!sheets.includes(primeSessionSheet)) {
+    document.adoptedStyleSheets = [...sheets, primeSessionSheet];
+  }
+}
+
+function deactivatePrimeSessionSheet() {
+  if (!primeSessionSheet) return;
+  const sheets = document.adoptedStyleSheets;
+  if (sheets.includes(primeSessionSheet)) {
+    document.adoptedStyleSheets = sheets.filter(s => s !== primeSessionSheet);
+  }
+}
+
 /**
  * Initializes the visual overlay for Prime Video.
  */
@@ -443,16 +477,6 @@ function injectChromaCSS() {
       background: #00A8E1 !important;
       transition: width 0.1s linear, background 0.3s linear !important;
     }
-    
-    /* Highlight Prime's skip buttons with high specificity */
-    body.chroma-prime-session .atvwebplayersdk-ad-skip-button,
-    body.chroma-prime-session .adSkipButton,
-    body.chroma-prime-session [class*="skip-button"],
-    body.chroma-prime-session [class*="ad-skip"] {
-      border: 2px solid #00A8E1 !important;
-      box-shadow: 0 0 25px rgba(0, 168, 225, 0.4) !important;
-      transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
-    }
   `;
   // SECURITY: Freeze style object to mitigate host-page property tampering
   Object.freeze(style);
@@ -565,7 +589,7 @@ function handlePrimeAdAcceleration() {
     if (!video) {
         if (isAdActive) {
             isAdActive = false;
-            document.body.classList.remove('chroma-prime-session');
+            deactivatePrimeSessionSheet();
             updateAdOverlay(null, false);
             if (targetVideo) targetVideo.playbackRate = 1;
         }
@@ -589,7 +613,7 @@ function handlePrimeAdAcceleration() {
       consecutiveFalseCount = 0;
       if (!isAdActive) {
         isAdActive = true;
-        document.body.classList.add('chroma-prime-session');
+        activatePrimeSessionSheet();
       }
       
       lastAcceleratedSrc = currentSrc;
@@ -621,7 +645,7 @@ function handlePrimeAdAcceleration() {
         
         isAdActive = false;
         lastAdEndTime = Date.now();
-        document.body.classList.remove('chroma-prime-session');
+        deactivatePrimeSessionSheet();
         lastAcceleratedSrc = null;
         currentAdRemainingStart = 0;
         lastAdTimerText = null;
@@ -648,7 +672,7 @@ function resetSession() {
   lastAdEndTime = 0;
   lastAcceleratedSrc = null;
   consecutiveFalseCount = 0;
-  document.body.classList.remove('chroma-prime-session');
+  deactivatePrimeSessionSheet();
   if (adOverlayHost) adOverlayHost.classList.remove('active');
 }
 
@@ -725,7 +749,7 @@ API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
         targetVideo.muted = false;
       }
       isAdActive = false;
-      document.body.classList.remove('chroma-prime-session');
+      deactivatePrimeSessionSheet();
       if (adOverlayHost) adOverlayHost.classList.remove('active');
     } else {
       injectChromaCSS();
