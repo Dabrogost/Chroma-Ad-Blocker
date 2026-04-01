@@ -225,7 +225,7 @@ graph TD
 
     <div class="qs-step">
       <div class="qs-step__num">1</div>
-      <p class="qs-step__label">Click <strong>Download Current Version</strong> or get the latest release from <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest">GitHub</a>. Extract the ZIP, or clone the repository locally.</p>
+      <p class="qs-step__label">Click <strong>Download Current Version</strong> or get the latest release from <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest">GitHub</a>, and extract the ZIP file.</p>
     </div>
 
     <div class="qs-step">
