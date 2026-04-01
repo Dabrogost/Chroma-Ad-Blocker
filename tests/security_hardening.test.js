@@ -120,12 +120,12 @@ test('Security Hardening - background.js', async (t) => {
   sandbox.Date = Date;
   sandbox.Map = Map;
   sandbox.Set = Set;
-  sandbox.__TESTING__ = true;
+  sandbox.__CHROMA_INTERNAL_TEST_STRICT__ = true;
   chromeMock.tabs.get = (id) => Promise.resolve({ id, url: 'https://www.youtube.com/' });
   sandbox.globalThis = sandbox;
   sandbox.fetch = async () => ({ ok: false });
   sandbox.DEBUG = true;
-  sandbox.__TESTING__ = true;
+  sandbox.__CHROMA_INTERNAL_TEST_STRICT__ = true;
 
   vm.createContext(sandbox);
   vm.runInContext(backgroundJsCode, sandbox);

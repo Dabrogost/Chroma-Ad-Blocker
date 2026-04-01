@@ -21,84 +21,95 @@
 
 Chroma utilizes a multi-layered execution model designed to survive the ephemeral lifecycle of Manifest V3 service workers while maintaining maximum performance and security.
 
+**Diagram 1 — Page Execution Flow**
+
+How Chroma operates inside the browser tab on every page load.
+
 ```mermaid
 graph TD
-    classDef sw       fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
-    classDef storage  fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
-    classDef isolated fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
     classDef main     fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
-    classDef dnr      fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
-    classDef dom      fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
     classDef secure   fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
+    classDef isolated fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
+    classDef dom      fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
     classDef actor    fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
-    %% ── TOP ──
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
-    %% ── ROW 1: ENTRY POINTS ──
     subgraph MW["Main World (Page Context)"]
-        INTERCEPT["interceptor.js"]:::main
-        BRIDGE["__CHROMA_INTERNAL__"]:::secure
-        YT_H["yt_handler.js"]:::main
-        PRM_H["prm_handler.js"]:::main
+        INTERCEPT["interceptor.js — API Protection & Notification Blocking"]:::main
+        BRIDGE["__CHROMA_INTERNAL__ — Secure API Bridge"]:::secure
+        YT_H["yt_handler.js — Video Ad Acceleration"]:::main
+        PRM_H["prm_handler.js — Video Ad Acceleration"]:::main
     end
 
-    %% ── ROW 2: ISOLATED WORLD ──
-    subgraph IW["Isolated World"]
-        PROT["protection.js"]:::isolated
-        CONT["content.js"]:::isolated
-        MSG_U["messaging.js"]:::isolated
+    subgraph IW["Isolated World (Extension Context)"]
+        PROT["protection.js — Config Relay & Push Blocking"]:::isolated
+        CONT["content.js — Cosmetic Filtering & Warning Suppression"]:::isolated
     end
 
-    %% ── ROW 3: SERVICE WORKER ──
-    subgraph SW["Service Worker"]
-        BG["background.js"]:::sw
-        SUBS["subscriptions/"]:::sw
-        SCRPT["scriptlets/engine.js"]:::sw
-        POPUP["popup.js"]:::sw
-    end
-
-    %% ── ROW 4: INFRASTRUCTURE ──
-    subgraph SYS["Infrastructure"]
-        STORAGE[("chrome.storage")]:::storage
-        DNR["DNR Rulesets"]:::dnr
-        PLAYER["Media Players"]:::dom
-    end
-
-    %% ── BOTTOM ──
+    PLAYER["Media Players"]:::dom
     USER["The User (Cleaned Experience)"]:::actor
 
-    %% ── FLOW ──
     INTERNET --> MW
-    INTERNET -- "Network Traffic" --> DNR
+    INTERNET --> IW
 
-    INTERCEPT <-->|"Handshake"| PROT
-    PROT --> BG
+    INTERCEPT <-->|"Secure Handshake"| PROT
+    PROT -->|"Dispatch Config Update"| INTERCEPT
     PROT --> CONT
-    PROT -->|"Config Update"| MW
 
-    BG --> STORAGE
-    SUBS -->|"Block Rules"| DNR
-    SUBS <--> STORAGE
-    SCRPT -->|"Inject Scriptlets"| MW
+    BRIDGE --> YT_H
+    BRIDGE --> PRM_H
+    YT_H -->|"Accelerated Playback"| PLAYER
+    PRM_H -->|"Accelerated Playback"| PLAYER
+    CONT -->|"Inject CSS / Remove Elements"| PLAYER
 
-    BRIDGE --- YT_H
-    BRIDGE --- PRM_H
-    YT_H --> PLAYER
-    PRM_H --> PLAYER
-    CONT --> PLAYER
-
-    POPUP <--> STORAGE
-    BG <--> DNR
-
-    DNR --> USER
     PLAYER --> USER
-    POPUP --> USER
 
-    style MW   fill:none,stroke:#880e4f,stroke-width:1px,stroke-dasharray:4
-    style IW   fill:none,stroke:#1b5e20,stroke-width:1px,stroke-dasharray:4
-    style SW   fill:none,stroke:#01579b,stroke-width:1px,stroke-dasharray:4
-    style SYS  fill:none,stroke:#f57f17,stroke-width:1px,stroke-dasharray:4
+    style MW fill:none,stroke:#880e4f,stroke-width:1px,stroke-dasharray:4
+    style IW fill:none,stroke:#1b5e20,stroke-width:1px,stroke-dasharray:4
+```
+
+---
+
+**Diagram 2 — Background & Network Flow**
+
+How Chroma manages rules, storage, and network-level blocking from the service worker.
+
+```mermaid
+graph TD
+    classDef sw      fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
+    classDef storage fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
+    classDef dnr     fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
+    classDef actor   fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
+
+    INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
+
+    subgraph SW["Service Worker"]
+        BG["background.js — Router, Stats & Rule Coordinator"]:::sw
+        SUBS["subscriptions/ — Filter List Manager"]:::sw
+        SCRPT["scriptlets/engine.js — Scriptlet Injector"]:::sw
+        POPUP["popup.js — Settings UI & Stats Display"]:::sw
+    end
+
+    STORAGE[("chrome.storage")]:::storage
+    DNR["Static + Dynamic DNR Rulesets"]:::dnr
+
+    USER["The User (Cleaned Experience)"]:::actor
+
+    INTERNET -- "Network Requests" --> DNR
+    INTERNET --> BG
+
+    BG <--> STORAGE
+    BG <--> DNR
+    SUBS -->|"Deduplicated Block Rules"| DNR
+    SUBS <-->|"Fetch & Cache"| STORAGE
+    SCRPT -->|"On Navigation: Inject into Page"| BG
+    POPUP <-->|"Sync Config & Stats"| STORAGE
+
+    DNR -->|"Filtered Traffic"| USER
+    POPUP -->|"Display Stats"| USER
+
+    style SW fill:none,stroke:#01579b,stroke-width:1px,stroke-dasharray:4
 ```
 
 ---

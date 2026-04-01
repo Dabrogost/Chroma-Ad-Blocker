@@ -352,7 +352,7 @@
   init();
 
   // ─── TESTING EXPORTS ─────
-  if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
+  if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
     /** @type {Object} */
     globalThis.CONFIG = CONFIG;
     /** @returns {void} */
