@@ -117,7 +117,8 @@ const createSandbox = () => {
 
   /** @param {string} token @param {Object} selectors */
   sandbox.simulateHandshake = (token = 'test-token', selectors = {}) => {
-    dispatch('document')('__CHROMA_TOKEN_DELIVERY__');
+    const portNonce = '__CHROMA_PT_test__';
+    dispatch('document')({ type: '__CHROMA_TOKEN_DELIVERY__', detail: { portNonce } });
     
     // VULN-01 Patch: MessagePort transfer via CustomEvent.
     const port = { 
@@ -129,7 +130,7 @@ const createSandbox = () => {
     };
 
     sandbox.window.dispatchEvent({
-      type: '__CHROMA_PORT_TRANSFER__',
+      type: portNonce,
       ports: [port],
       detail: { port: port },
       stopImmediatePropagation: () => {}

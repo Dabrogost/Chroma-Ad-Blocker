@@ -334,9 +334,15 @@
     }
     
     pristineRemoveDocEventListener('__CHROMA_TOKEN_DELIVERY__', handleTokenDelivery, true);
-    
+
+    // SECURITY: Read per-session nonce from delivery event.
+    // Port transfer event name is randomized per page load — page scripts
+    // cannot pre-register for an event name they don't know yet.
+    const portNonce = e.detail && e.detail.portNonce;
+    if (!portNonce) return;
+
     // SECURITY: Capture Phase Port Transfer (VULN-01 Hardening)
-    pristineAddEventListener('__CHROMA_PORT_TRANSFER__', function portCatcher(e) {
+    pristineAddEventListener(portNonce, function portCatcher(e) {
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
       }
@@ -367,7 +373,7 @@
         }
       };
       
-      pristineRemoveEventListener('__CHROMA_PORT_TRANSFER__', portCatcher, true);
+      pristineRemoveEventListener(portNonce, portCatcher, true);
     }, true); // MUST be true for Capture Phase!
   };
 
