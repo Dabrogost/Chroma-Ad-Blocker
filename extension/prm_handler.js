@@ -107,7 +107,6 @@ function initAdOverlay(video) {
   // SECURITY: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
   adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
   
-  // Inject Styles into ShadowRoot
   const style = cE('style');
   style.textContent = `
     :host {
@@ -276,7 +275,6 @@ function updateAdOverlay(video, isActive) {
     initAdOverlay(video);
   }
 
-  // Ensure it's in the right place
   const container = video.closest('.atvwebplayersdk-player-container, .webPlayerUIContainer') || video.parentElement;
   if (container && adOverlayHost && !container.contains(adOverlayHost)) {
     container.appendChild(adOverlayHost);
@@ -286,7 +284,6 @@ function updateAdOverlay(video, isActive) {
     adOverlayHost.classList.add('active');
   }
 
-  // Update progress bar
   if (adOverlayRoot && video) {
     const progressBar = adOverlayRoot.querySelector('.chroma-progress-bar');
     if (progressBar) {
@@ -457,8 +454,8 @@ function injectChromaCSS() {
       transition: border-color 0.2s linear, box-shadow 0.2s linear !important;
     }
   `;
-  // Lockdown: Attempt to freeze the style object properties to mitigate potential host-page tampering.
-  Object.freeze(style); // SECURITY: Mitigation against host-page style property tampering.
+  // SECURITY: Freeze style object to mitigate host-page property tampering
+  Object.freeze(style);
   (document.head || document.documentElement).appendChild(style);
 }
 
@@ -682,7 +679,7 @@ function init() {
     injectChromaCSS();
     startPolling();
   } else {
-    // SAFETY FALLBACK: Poll for isolated-world sentinel before activating.
+    // Safety Fallback: Poll for isolated-world sentinel before activating.
     let _pollCount = 0;
     const _pollId = sI(() => {
       const initDone = !!window.__CHROMA_INTERNAL__ || document.documentElement.getAttribute('data-chroma-init') === 'complete';
@@ -697,7 +694,7 @@ function init() {
         }
 
         if (!CONFIG.enabled) {
-          // SAFETY FALLBACK: protection.js finished (or timed out) and domain is not whitelisted.
+          // Safety Fallback: protection.js finished (or timed out) and domain is not whitelisted.
           if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up Prime handler with defaults.');
           CONFIG.enabled = true;
           CONFIG.acceleration = true;
@@ -746,7 +743,7 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
   globalThis.isAdShowing = isAdShowing;
   globalThis.findActiveVideo = findActiveVideo;
   
-  // EXPOSE STATE FOR LEGACY TESTS VIA BRIDGE (Node/VM safe only)
+  // State Bridge: Expose internal state for legacy tests (Node/VM safe only)
   globalThis.__CHROMA_STATE_BRIDGE__ = {
     get isAdActive() { return isAdActive; },
     set isAdActive(v) { isAdActive = v; }

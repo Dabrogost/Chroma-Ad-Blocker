@@ -255,7 +255,7 @@
   // ─── NAVIGATION HANDLING (SPA) ─────
   function onYTNavigate() {
     // Performance Optimization: Multi-Stage SPA Cleanup
-    [500, 1500].forEach(delay => { // Multi-stage timeouts for SPA navigation to catch late-mounting ads
+    [500, 1500].forEach(delay => { // 500ms catches initial DOM swap; 1500ms catches lazy-rendered ad slots
       setTimeout(() => {
         suppressAdblockWarnings();
         removeLeftoverAdContainers();

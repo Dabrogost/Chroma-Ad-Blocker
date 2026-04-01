@@ -62,8 +62,6 @@ async function init() {
     }
   };
 
-  const SPEED_OPTIONS = [4, 8, 12, 16];
-
   function syncSpeedUI(speed, accelerationOn) {
     const row = $('speedSelectorRow');
     if (row) row.classList.toggle('disabled', !accelerationOn);
@@ -277,7 +275,7 @@ async function init() {
           e.target.textContent = '↻';
           e.target.disabled = false;
           loadSubscriptionUI();
-        }, 1500);
+        }, 1500); // 1500ms visual feedback delay before resetting refresh button state
       });
     });
   }
@@ -302,8 +300,7 @@ async function init() {
   function formatLogUrl(url) {
     try {
       const u = new URL(url);
-      const path = u.hostname.length > 22 ? u.hostname.slice(0, 20) + '…' : u.hostname; // User requested u.hostname + path, but also path manipulation. 
-      // User prompt: "const path = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname; return u.hostname + path;"
+      const path = u.hostname.length > 22 ? u.hostname.slice(0, 20) + '…' : u.hostname;
       const userPath = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname;
       return u.hostname + userPath;
     } catch {

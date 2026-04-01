@@ -24,7 +24,7 @@ import { initScriptletEngine } from './scriptlets/engine.js';
 const DEBUG = false;
 
 // ─── UPDATE CHECK ─────
-const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
+const UPDATE_CHECK_TTL_MS = 6 * 60 * 60 * 1000; // 6-hour cache window to avoid GitHub API rate limits
 const RELEASES_URL = 'https://api.github.com/repos/Dabrogost/Chroma-Ad-Blocker/releases/latest';
 
 function isNewerVersion(local, remote) {
@@ -71,7 +71,7 @@ async function checkForUpdate() {
 
 
 // ─── REQUEST LOG BUFFER ─────
-const LOG_MAX_ENTRIES = 500;
+const LOG_MAX_ENTRIES = 500; // Cap to bound chrome.storage.local write size per flush
 let _logBuffer = [];
 // State Bridge: Exposes in-memory log access for automated testing.
 // Without this, background request log tests would be slow and timing-dependent
@@ -100,7 +100,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         hideMerch: true,
         hideOffers: true,
         suppressWarnings: true,
-        accelerationSpeed: 8, // Default acceleration speed
+        accelerationSpeed: 8,
         blockPushNotifications: true,
         enabled: true,
       },
@@ -242,15 +242,14 @@ async function syncWhitelistRules() {
   try {
     const { whitelist = [] } = await chrome.storage.local.get('whitelist');
     
-    // Whitelist rules use a safe high range (9,000,000+)
-    const WHITELIST_START_ID = 9000000;
+    const WHITELIST_START_ID = 9000000; // High ID range to avoid collisions with default dynamic rules (1000-99999) and subscription rules
     
     const existing = await chrome.declarativeNetRequest.getDynamicRules();
     const removeIds = existing.filter(r => r.id >= WHITELIST_START_ID).map(r => r.id);
     
     const addRules = whitelist.map((domain, index) => ({
       id: WHITELIST_START_ID + index,
-      priority: 999999, // Absolute Priority
+      priority: 999999, // Highest priority to unconditionally override all other DNR rules
       action: { type: 'allow' },
       condition: {
         initiatorDomains: [domain],
@@ -402,7 +401,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             sessionData.tokenRetrievalLocked[sessionKey] = true;
             await updateSessionData('tokenRetrievalLocked', sessionData.tokenRetrievalLocked);
             
-            const buffer = new Uint8Array(16); // 128-bit entropy for session token generation
+            const buffer = new Uint8Array(16); // 128-bit CSPRNG entropy for session token generation
             crypto.getRandomValues(buffer);
             const token = Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
             
@@ -531,7 +530,7 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
     _pendingBlocked++;
 
     if (!_flushTimer) {
-      _flushTimer = setTimeout(flushLog, 500);
+      _flushTimer = setTimeout(flushLog, 500); // 500ms batch window to coalesce rapid rule-match events
     }
   });
 }
@@ -567,7 +566,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// ─── TESTING EXPORTS ────────────────────────────────────────────────────────
+// ─── TESTING EXPORTS ─────
 if (typeof globalThis !== 'undefined' && globalThis.__TESTING__) {
   /** @returns {Promise<void>} */
   globalThis.syncDynamicRules = syncDynamicRules;

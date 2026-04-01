@@ -73,8 +73,12 @@
       
       if (DEBUG) console.log('[Chroma Ad-Blocker] MAIN world ready. Delivering token.');
 
-      // Dispatch the token securely via CustomEvent
-      document.dispatchEvent(new CustomEvent('__CHROMA_TOKEN_DELIVERY__'));
+      // Generate a per-session nonce for the port transfer event name.
+      // This prevents page scripts from pre-registering for a predictable event.
+      const portNonce = '__CHROMA_PT_' + crypto.getRandomValues(new Uint32Array(2)).join('_') + '__';
+
+      // Deliver the nonce to interceptor.js via CustomEvent detail
+      document.dispatchEvent(new CustomEvent('__CHROMA_TOKEN_DELIVERY__', { detail: { portNonce } }));
 
       const channel = new MessageChannel();
       isolatedPort = channel.port1;
@@ -85,11 +89,11 @@
       };
 
       try {
-        window.dispatchEvent(new MessageEvent('__CHROMA_PORT_TRANSFER__', {
+        window.dispatchEvent(new MessageEvent(portNonce, {
           ports: [channel.port2]
         }));
       } catch (e) {
-        window.dispatchEvent(new CustomEvent('__CHROMA_PORT_TRANSFER__', {
+        window.dispatchEvent(new CustomEvent(portNonce, {
           detail: { port: channel.port2 }
         }));
       }
@@ -106,10 +110,6 @@
 
     document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
   }
-
-  /**
-   * Signals the interceptor script whether protections should be active.
-   */
 
   // Initial sync with storage
   chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist']).then(async (data) => {

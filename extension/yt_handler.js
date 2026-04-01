@@ -285,7 +285,7 @@
 
     // Heuristic completion check: Terminal state reached if the final ad in a sequence finishes or a manual skip is detected.
     const isOnFinalAd = (cachedCurrentAd || 1) >= (cachedTotalAds || 1);
-    const isAdMediaFinished = video && video.duration > 0 && video.currentTime >= video.duration - 0.5; // 0.5s end-of-ad threshold
+    const isAdMediaFinished = video && video.duration > 0 && video.currentTime >= video.duration - 0.5; // 0.5s threshold accounts for imprecise ad media boundaries
     const isAdsDone = (isOnFinalAd && (!rawAdShowing || isAdMediaFinished)) || chromaAdSkipped;
     
     const spinner = adOverlayRoot.querySelector('.chroma-spinner, .chroma-checkmark');
@@ -329,8 +329,7 @@
 
   const enforceMuteHandler = () => {
     if (chromaAdSessionActive && targetAdVideo) {
-      // Safety check: Only enforce mute if ad-specific UI is still present or if the player is in ad-showing mode.
-      // This prevents the 'sticky mute' bug where content starts but the session hasn't cleared yet.
+      // Prevents the 'sticky mute' bug where content starts but the session hasn't cleared yet.
       const isAdDetected = qS('.ad-showing, .ad-interrupting') || 
                           qS('.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-preview-text');
       
@@ -415,7 +414,7 @@
       const isMainVideoReady = mainVideo && mainVideo.readyState >= 3;
 
       // Session release logic:
-      if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) { // 500ms pod gap bridge; 5000ms watchdog timeout
+      if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) { // 500ms bridges multi-ad pod gaps; 5000ms absolute watchdog timeout
         chromaAdSessionActive = false;
         chromaAdSessionEndedAt = Date.now();
 
@@ -497,7 +496,7 @@
   API.addDocEventListener('yt-navigate-finish', onYTNavigate);
   API.addDocEventListener('yt-page-data-updated', onYTNavigate);
 
-  // We now handle config updates via a custom event from interceptor.js or direct property update
+
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
       // SECURITY: Configuration Validation Allowlist
@@ -683,7 +682,7 @@
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;
     
-    // EXPOSE STATE FOR LEGACY TESTS VIA BRIDGE (Node/VM safe only)
+    // State Bridge: Expose internal state for legacy tests (Node/VM safe only)
     globalThis.__CHROMA_STATE_BRIDGE__ = {
       get chromaAdSessionActive() { return chromaAdSessionActive; },
       set chromaAdSessionActive(v) { chromaAdSessionActive = v; },
