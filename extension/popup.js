@@ -202,6 +202,11 @@ async function init() {
   });
 
   // ─── SUBSCRIPTION UI ─────
+  /** @param {string} str */
+  function escapeHTML(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   async function loadSubscriptionUI() {
     const list = document.getElementById('subscriptionList');
     if (!list) return;
@@ -234,20 +239,24 @@ async function init() {
         ? `${sub.ruleCount.network.toLocaleString()} network · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
         : '';
 
-      const errorText = sub.lastError
-        ? `<div style="font-size:10px;color:var(--c-red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${sub.lastError}">Error: ${sub.lastError}</div>`
+      const safeName  = escapeHTML(sub.name);
+      const safeId    = escapeHTML(sub.id);
+      const safeError = sub.lastError ? escapeHTML(sub.lastError) : '';
+
+      const errorText = safeError
+        ? `<div style="font-size:10px;color:var(--c-red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${safeError}">Error: ${safeError}</div>`
         : '';
 
       row.innerHTML = `
         <div class="toggle-info">
-          <div class="name">${sub.name}</div>
+          <div class="name">${safeName}</div>
           <div class="desc">Updated: ${lastUpdatedText}${countText ? ' · ' + countText : ''}</div>
           ${errorText}
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          <button data-id="${sub.id}" class="sub-refresh-btn reset-btn" style="font-size:9px;padding:3px 8px;" title="Force refresh">↻</button>
+          <button data-id="${safeId}" class="sub-refresh-btn reset-btn" style="font-size:9px;padding:3px 8px;" title="Force refresh">↻</button>
           <label class="switch">
-            <input type="checkbox" class="sub-toggle" data-id="${sub.id}" ${sub.enabled ? 'checked' : ''} />
+            <input type="checkbox" class="sub-toggle" data-id="${safeId}" ${sub.enabled ? 'checked' : ''} />
             <span class="slider"></span>
           </label>
         </div>
