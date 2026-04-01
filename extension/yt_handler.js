@@ -65,6 +65,73 @@
   let lastVideoDuration = 0;
   let _chromaFastWatcher = false;
 
+  // Anti-Tamper: In-memory video state (invisible to page scripts, unlike dataset attributes)
+  const videoState = new WeakMap();
+  function getVideoState(video) {
+    let s = videoState.get(video);
+    if (!s) {
+      s = { listenersAdded: false, chromaMuted: false, savedVolume: null };
+      videoState.set(video, s);
+    }
+    return s;
+  }
+
+  // Anti-Detection: Session stylesheet toggle (replaces observable body class mutations)
+  let sessionSheet = null;
+
+  function ensureSessionSheet() {
+    if (sessionSheet) return;
+    sessionSheet = new CSSStyleSheet();
+    sessionSheet.replaceSync(`
+      .ytp-ad-player-overlay,
+      .ytp-ad-player-overlay-instream-info {
+        z-index: 2147483647 !important;
+        pointer-events: none !important;
+      }
+      .ytp-ad-skip-button-container,
+      .ytp-ad-skip-button-slot,
+      .ytp-skip-ad-button,
+      .videoAdUiSkipButton,
+      [id^="skip-button:"] {
+        z-index: 2147483647 !important;
+        border: 1.5px solid #FE0034 !important;
+        border-radius: 24px !important;
+        box-shadow: 0 0 15px rgba(254, 0, 52, 0.4),
+                    inset 0 0 6px rgba(254, 0, 52, 0.2) !important;
+        transition: border-color 0.15s linear, box-shadow 0.15s linear !important;
+        overflow: hidden !important;
+      }
+      .html5-video-player.ytp-autohide .ytp-chrome-bottom,
+      .html5-video-player .ytp-chrome-bottom {
+        opacity: 1 !important;
+        visibility: visible !important;
+      }
+      .ytp-play-progress,
+      .ytp-load-progress,
+      .ytp-ad-progress-list,
+      .ytp-hover-progress {
+        opacity: 0 !important;
+        visibility: hidden !important;
+      }
+    `);
+  }
+
+  function activateSessionSheet() {
+    ensureSessionSheet();
+    const sheets = document.adoptedStyleSheets;
+    if (!sheets.includes(sessionSheet)) {
+      document.adoptedStyleSheets = [...sheets, sessionSheet];
+    }
+  }
+
+  function deactivateSessionSheet() {
+    if (!sessionSheet) return;
+    const sheets = document.adoptedStyleSheets;
+    if (sheets.includes(sessionSheet)) {
+      document.adoptedStyleSheets = sheets.filter(s => s !== sessionSheet);
+    }
+  }
+
   // ─── ACTIVEVIEW / PTRACKING BEACON SUPPRESSION ─────
   // Suppresses activeview and ptracking beacons when no ad session is active,
   // preventing post-session observer floods. Beacons fire normally during
@@ -355,9 +422,12 @@
       targetAdVideo.removeEventListener('volumechange', enforceMuteHandler);
       targetAdVideo.removeEventListener('play', enforceMuteHandler);
 
-      delete targetAdVideo.dataset.chromaListenersAdded;
-      delete targetAdVideo.dataset.ytChromaMuted;
-      delete targetAdVideo.dataset.ytChromaVolume;
+      const state = videoState.get(targetAdVideo);
+      if (state) {
+        state.listenersAdded = false;
+        state.chromaMuted = false;
+        state.savedVolume = null;
+      }
 
       targetAdVideo = null;
     } catch (err) {
@@ -422,15 +492,15 @@
     }
     
     if (chromaAdSessionActive) {
-      document.body.classList.add('chroma-session-active');
+      activateSessionSheet();
     } else {
-      document.body.classList.remove('chroma-session-active');
+      deactivateSessionSheet();
     }
     
     updateAdOverlay(video, chromaAdSessionActive, rawAdShowing, hasAdUI);
 
-    if (!video.dataset.chromaListenersAdded) {
-      video.dataset.chromaListenersAdded = 'true';
+    if (!getVideoState(video).listenersAdded) {
+      getVideoState(video).listenersAdded = true;
       video.addEventListener('volumechange', enforceMuteHandler);
       video.addEventListener('play', enforceMuteHandler);
     }
@@ -440,8 +510,8 @@
         video.muted = true;
       }
       if (video.volume > 0) {
-        if (!video.dataset.ytChromaVolume) {
-          video.dataset.ytChromaVolume = video.volume;
+        if (!getVideoState(video).savedVolume) {
+          getVideoState(video).savedVolume = video.volume;
         }
         video.volume = 0;
       }
@@ -449,26 +519,22 @@
       if (rawAdShowing && video.playbackRate !== CONFIG.accelerationSpeed) {
         video.playbackRate = CONFIG.accelerationSpeed;
       }
+      getVideoState(video).chromaMuted = true;
     } else {
-      if (video.muted && video.dataset.ytChromaMuted === 'true') {
+      if (video.muted && getVideoState(video).chromaMuted) {
         video.muted = false;
       }
-      if (video.dataset.ytChromaVolume !== undefined) {
-        const restoredVol = parseFloat(video.dataset.ytChromaVolume);
-        if (restoredVol > 0) {
-          video.volume = restoredVol;
+      const savedVol = getVideoState(video).savedVolume;
+      if (savedVol != null) {
+        if (savedVol > 0) {
+          video.volume = savedVol;
         }
-        delete video.dataset.ytChromaVolume;
+        getVideoState(video).savedVolume = null;
       }
       if (video.playbackRate === CONFIG.accelerationSpeed) {
         video.playbackRate = 1;
       }
-    }
-
-    if (chromaAdSessionActive) {
-      video.dataset.ytChromaMuted = 'true';
-    } else {
-      delete video.dataset.ytChromaMuted;
+      getVideoState(video).chromaMuted = false;
     }
   }
 
@@ -514,10 +580,11 @@
           if (targetAdVideo.playbackRate === CONFIG.accelerationSpeed) {
             targetAdVideo.playbackRate = 1;
           }
-          if (targetAdVideo.muted && targetAdVideo.dataset.ytChromaMuted === 'true') {
+          if (targetAdVideo.muted && getVideoState(targetAdVideo).chromaMuted) {
             targetAdVideo.muted = false;
-            if (targetAdVideo.dataset.ytChromaVolume !== undefined) {
-              targetAdVideo.volume = parseFloat(targetAdVideo.dataset.ytChromaVolume) || 1;
+            const savedVol = getVideoState(targetAdVideo).savedVolume;
+            if (savedVol != null) {
+              targetAdVideo.volume = savedVol > 0 ? savedVol : 1;
             }
           }
         }
@@ -528,6 +595,7 @@
         chromaAdSessionActive = false;
         chromaAdSessionEndedAt = Date.now();
         _chromaFastWatcher = false;
+        deactivateSessionSheet();
         cleanupVideoState();
         
       } else {
@@ -583,44 +651,10 @@
     requestAnimationFrame(check);
   }
 
+  // Session CSS is now managed via adoptedStyleSheets (see ensureSessionSheet above).
+  // This function is retained as a no-op alias for call sites that prepare CSS early.
   function injectChromaCSS() {
-    if (API.getElementById('chroma-acceleration')) return;
-    const style = cE('style');
-    style.id = 'chroma-acceleration';
-    style.textContent = `
-      body.chroma-session-active .ytp-ad-skip-button-container,
-      body.chroma-session-active .ytp-ad-skip-button-slot,
-      body.chroma-session-active .ytp-skip-ad-button,
-      body.chroma-session-active .videoAdUiSkipButton,
-      body.chroma-session-active [id^="skip-button:"] {
-        border: 1.5px solid #FE0034 !important; // Consistent border width for UI highlighting
-        border-radius: 24px !important;
-        box-shadow: 0 0 15px rgba(254, 0, 52, 0.4), 
-                    inset 0 0 6px rgba(254, 0, 52, 0.2) !important;
-        transition: border-color 0.15s linear, box-shadow 0.15s linear !important;
-        overflow: hidden !important;
-      }
-      
-      body.chroma-session-active .html5-video-player.ytp-autohide .ytp-chrome-bottom,
-      body.chroma-session-active .html5-video-player .ytp-chrome-bottom {
-        opacity: 1 !important;
-        visibility: visible !important;
-      }
-      
-      body.chroma-session-active .ytp-play-progress,
-      body.chroma-session-active .ytp-load-progress,
-      body.chroma-session-active .ytp-ad-progress-list,
-      body.chroma-session-active .ytp-hover-progress {
-        opacity: 0 !important;
-        visibility: hidden !important;
-      }
-      
-    `;
-    // SECURITY: Style Object Lockdown (VULN-06)
-    try {
-      Object.freeze(style); // SECURITY: Host-Page Tampering Mitigation
-    } catch (e) {}
-    (document.head || document.documentElement).appendChild(style);
+    ensureSessionSheet();
   }
 
   function init() {

@@ -148,6 +148,13 @@ test('YouTube ad acceleration', async (t) => {
 
     sandbox.globalThis = sandbox;
 
+    // Mock browser-native CSSStyleSheet API for adoptedStyleSheets-based session management
+    sandbox.CSSStyleSheet = class {
+      constructor() { this._css = ''; }
+      replaceSync(css) { this._css = css; }
+    };
+    sandbox.document.adoptedStyleSheets = [];
+
     if (setupDoc) setupDoc(sandbox.document);
 
     // VULN-03 Hardening: Sandbox bridge mocking.
@@ -250,10 +257,26 @@ test('YouTube ad acceleration', async (t) => {
     });
 
 
-    sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive = true;
-    sandbox.__CHROMA_STATE_BRIDGE__.lastAdDetectTime = Date.now();
-    mockVideo.muted = true;
-    mockVideo.dataset.ytChromaMuted = 'true';
+    // Prime the session by running an ad-active cycle first (sets WeakMap state internally)
+    const adMock = createMockElement('div');
+    sandbox.document.querySelector = (sel) => {
+      if (sel.includes('.ad-showing')) return adMock;
+      if (sel.includes('video')) return mockVideo;
+      return null;
+    };
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, true, 'Session should be active after ad detection');
+    assert.strictEqual(mockVideo.muted, true, 'Video should be muted during ad');
+
+    // Now switch to no-ad state with main video ready
+    sandbox.document.querySelector = (sel) => {
+      if (sel.includes('.ad-showing')) return null;
+      if (sel.includes('.video-ads')) return null;
+      if (sel.includes('.ytp-ad-module')) return null;
+      if (sel.includes('.ytp-ad-simple-ad-badge')) return null;
+      if (sel.includes('#movie_player') || sel.includes('.html5-main-video') || sel === 'video') return mockVideo;
+      return null;
+    };
 
     // Debounce Override: Immediate unmute on main content detection.
     sandbox.handleAdAcceleration();
