@@ -87,8 +87,7 @@ test('YouTube ad acceleration', async (t) => {
         CONFIG_GET: 'CONFIG_GET',
         CONFIG_SET: 'CONFIG_SET',
         CONFIG_UPDATE: 'CONFIG_UPDATE',
-        STATS_RESET: 'STATS_RESET',
-        SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+        STATS_RESET: 'STATS_RESET'
       },
       document: {
         readyState: 'complete',

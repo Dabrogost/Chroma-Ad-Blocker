@@ -69,7 +69,7 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
   <p class="section__eyebrow fade-up">Protection Layers</p>
   <h2 class="section__title fade-up">Built to Outlast<br/>Every Ad System</h2>
   <p class="section__sub fade-up">
-    Six independent layers of protection, each targeting a different attack vector.
+    Five independent layers of protection, each targeting a different attack vector.
     Together they handle anything ad networks throw at your browser.
   </p>
 
@@ -84,7 +84,7 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
       <p class="card__desc">
         Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) with audio muted, delivering a seamless experience without intrusive interruptions.
       </p>
-      <span class="card__tag">Streaming Platforms</span>
+      <span class="card__tag">YouTube &amp; Prime Video</span>
     </div>
 
     <!-- Card 2: Network Blocking -->
@@ -126,21 +126,6 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
         empty slots, and layout artifacts in real time as pages load and navigate.
       </p>
       <span class="card__tag">MutationObserver</span>
-    </div>
-
-    <!-- Card 5: Push Suppression -->
-    <div class="card card--cyan fade-up">
-      <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-        <line x1="1" y1="1" x2="23" y2="23"/>
-      </svg>
-      <h3 class="card__title">Push Suppression</h3>
-      <p class="card__desc">
-        Overrides the Notification API and PushManager registration in the Main World 
-        to silently deny intrusive permission requests globally.
-      </p>
-      <span class="card__tag">Notification API</span>
     </div>
 
     <!-- Card 6: Hardened Security -->
@@ -190,13 +175,11 @@ graph TD
         VIDEO["Video Accelerator (Speeds Through Video Ads)"]:::action
         CONTENT["Content Cleaner (Removes Overlays & Placeholders)"]:::action
         SCRIPTLETS["Script Neutralizer (Disables Anti-Adblock Scripts)"]:::action
-        PUSH["Push Suppressor (Blocks Notification Prompts)"]:::action
 
         TITLE --> NETWORK
         TITLE --> VIDEO
         TITLE --> CONTENT
         TITLE --> SCRIPTLETS
-        TITLE --> PUSH
         LISTS -.->|"supplements"| NETWORK
     end
 
@@ -208,7 +191,6 @@ graph TD
     VIDEO --> USER
     CONTENT --> USER
     SCRIPTLETS --> USER
-    PUSH --> USER
 
     style CHROMA fill:none,stroke:none
     </div>
@@ -305,7 +287,7 @@ graph TD
 <section class="support-section fade-up">
   <h2 class="section__title">Support the Project</h2>
   <p class="section__sub">
-    Chroma is 100% free, open-source, and always will be. It is built and 
+    Chroma is 100% free, source-available, and always will be. It is built and 
     maintained by a single developer. If it has improved your
     web experience, consider supporting the work with a coffee.
   </p>

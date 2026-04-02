@@ -192,24 +192,6 @@ test('Security Hardening - background.js', async (t) => {
     assert.ok(resSub && resSub.token, 'Sub-frame should get its own token');
   });
 
-  await t.test('SUSPICIOUS_ACTIVITY requires valid token', async () => {
-    const sender = { tab: { id: 789 }, url: 'https://www.youtube.com/watch?v=789' };
-    let tokenResponse = null;
-    await messageHandler({ type: 'GET_TOKEN' }, sender, (res) => { tokenResponse = res; });
-    
-    assert.ok(tokenResponse && tokenResponse.token, 'Should have received a valid token');
-    const validToken = tokenResponse.token;
-
-    const msg = {
-      type: 'SUSPICIOUS_ACTIVITY',
-      activity: 'NOTIFICATION_ATTEMPT',
-      token: validToken
-    };
-
-    let response = null;
-    await messageHandler(msg, sender, (res) => { response = res; });
-    assert.ok(response && response.ok === true, 'Should have sent { ok: true } for suspicious activity');
-  });
 
   await t.test('onRemoved clears all documents for a tabId', async () => {
     const tabId = 333;

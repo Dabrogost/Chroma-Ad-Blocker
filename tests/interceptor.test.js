@@ -67,7 +67,6 @@ const createSandbox = () => {
     postMessage: function(msg, origin, ports) {
       sandbox.postMessages.push({ msg, origin, ports });
     },
-    Notification: makeNative(function() {}),
     location: { hostname: 'www.youtube.com' },
     __CHROMA_INTERNAL_TEST_STRICT__: true,
     __CHROMA_TEST_ENVIRONMENT__: true
@@ -86,9 +85,6 @@ const createSandbox = () => {
     querySelector: () => null
   };
   
-  sandbox.window.Notification.requestPermission = makeNative(() => Promise.resolve('default'));
-  sandbox.window.Notification.permission = 'default';
-  
   // Integrity Layer: Pre-capture global initialization.
   sandbox.globalThis = sandbox;
   sandbox.__CHROMA_INTERNAL_TEST_STRICT__ = true;
@@ -98,22 +94,8 @@ const createSandbox = () => {
   sandbox.setInterval = sandbox.window.setInterval;
   sandbox.clearInterval = sandbox.window.clearInterval;
   sandbox.fetch = sandbox.window.fetch;
-  sandbox.Notification = sandbox.window.Notification;
 
-  sandbox.ServiceWorkerRegistration = function() {};
-  sandbox.ServiceWorkerRegistration.prototype = {
-    // Push Interception Mocking: Standard ServiceWorkerRegistration object.
-    showNotification: () => Promise.resolve(),
-    pushManager: {}
-  };
-  sandbox.navigator = {
-    permissions: { query: (p) => Promise.resolve({ state: 'prompt', name: p.name }) }
-  };
-  sandbox.PushManager = function() {};
-  sandbox.PushManager.prototype = {
-    // Push Interception Mocking: Standard PushManager object.
-    subscribe: () => Promise.resolve({})
-  };
+
 
   /** @param {string} token @param {Object} selectors */
   sandbox.simulateHandshake = (token = 'test-token', selectors = {}) => {
@@ -157,36 +139,8 @@ test('main-world interceptor initialization', async (t) => {
   vm.runInContext(interceptorJsCode, sandbox);
   sandbox.simulateHandshake();
 
-  await t.test('intercepts Notification as secondary protection', () => {
-    assert.ok(sandbox.window.Notification !== Function.prototype, 'Notification should be shadowed');
-  });
-});
-
-
-// ─── PUSH NOTIFICATION BLOCKING ─────
-test('Push Notification Blocking - ACTIVE', async (t) => {
-  const sandbox = createSandbox();
-  vm.createContext(sandbox);
-  vm.runInContext(interceptorJsCode, sandbox);
-  sandbox.simulateHandshake();
-
-  await t.test('Notification.requestPermission is blocked', async () => {
-    sandbox.postMessages = [];
-    const result = await sandbox.window.Notification.requestPermission();
-
-    assert.strictEqual(result, 'denied', 'Should return denied');
-    const portMessages = sandbox.postMessages.filter(m => m.viaPort);
-    assert.strictEqual(portMessages.length, 1, 'Should trigger postMessage via port');
-    assert.strictEqual(portMessages[0].msg.type, 'NOTIFICATION_ATTEMPT');
-  });
-
-  await t.test('Notification constructor is blocked', () => {
-    sandbox.postMessages = [];
-    const notif = new sandbox.window.Notification('Test Notif', { body: 'body' });
-
-    assert.strictEqual(notif.title, 'Test Notif');
-    const portMessages = sandbox.postMessages.filter(m => m.viaPort);
-    assert.strictEqual(portMessages.length, 1);
+  await t.test('bridge is created on hostile domains', () => {
+    assert.ok(sandbox.window.__CHROMA_INTERNAL__, 'Bridge should exist on YouTube');
   });
 });
 

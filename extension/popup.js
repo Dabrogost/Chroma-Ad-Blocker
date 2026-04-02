@@ -66,7 +66,6 @@ async function init() {
     ['toggleMerch',        'hideMerch',                true],
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
-    ['togglePush',         'blockPushNotifications',   true],
   ];
 
   const syncUI = (cfg, masterOn) => {
