@@ -509,3 +509,94 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     assert.strictEqual(mockVideo.playbackRate, 1, 'Restored to 1x');
   });
 });
+
+test('Prime Event-Driven Initialization Flow', async (t) => {
+  const createInitSandbox = () => {
+    let listeners = {};
+    const sandbox = {
+      chrome: { runtime: { sendMessage: () => Promise.resolve(), onMessage: { addListener: () => {} } }, storage: { local: { get: () => Promise.resolve({ config: {} }) } } },
+      document: {
+        createElement: (tag) => createMockElement(tag),
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        documentElement: createMockElement('html'),
+        body: createMockElement('body'),
+        addEventListener: function(evt, cb) {
+          if (!listeners[evt]) listeners[evt] = [];
+          listeners[evt].push(cb);
+        },
+        removeEventListener: () => {},
+        dispatchEvent: function(e) {
+          if (listeners[e.type]) listeners[e.type].forEach(cb => cb(e));
+        },
+        adoptedStyleSheets: []
+      },
+      CSSStyleSheet: class {
+        constructor() { this._css = ''; }
+        replaceSync(css) { this._css = css; }
+      },
+      setInterval: () => 999,
+      clearInterval: () => {},
+      setTimeout: global.setTimeout,
+      console: console,
+      Math: Math,
+      Date: Date,
+      requestAnimationFrame: () => {},
+      MutationObserver: class { observe() {} disconnect() {} },
+      window: {},
+      __CHROMA_INTERNAL_TEST_STRICT__: true
+    };
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+
+    sandbox.window.__CHROMA_INTERNAL__ = {
+      api: {
+        querySelector: (s) => sandbox.document.querySelector(s),
+        getElementById: () => null,
+        createElement: (t) => sandbox.document.createElement(t),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        setTimeout: (f, t) => sandbox.setTimeout(f, t),
+        setInterval: (f, t) => sandbox.setInterval(f, t),
+        clearInterval: (i) => sandbox.clearInterval(i),
+        dispatchEvent: (e) => sandbox.document.dispatchEvent(e),
+        addDocEventListener: (e, f, o) => sandbox.document.addEventListener(e, f, o),
+        removeDocEventListener: () => {},
+        MutationObserver: sandbox.MutationObserver
+      },
+      config: null // Force polling
+    };
+    
+    return sandbox;
+  };
+
+  await t.test('aborts initialization when __EXT_INIT__ activates kill switch', async () => {
+    let intervalFns = [];
+    const sandbox = createInitSandbox();
+    sandbox.setInterval = (fn) => intervalFns.push(fn);
+
+    vm.createContext(sandbox);
+    vm.runInContext(messagingJsCode, sandbox);
+    vm.runInContext(primeJsCode, sandbox);
+
+    sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: false } });
+    intervalFns.forEach(fn => fn());
+
+    assert.strictEqual(sandbox.CONFIG.enabled, false, 'Kill switch should prevent enabling');
+  });
+
+  await t.test('wakes up normally when __EXT_INIT__ fires true', async () => {
+    let intervalFns = [];
+    const sandbox = createInitSandbox();
+    sandbox.setInterval = (fn) => intervalFns.push(fn);
+
+    vm.createContext(sandbox);
+    vm.runInContext(messagingJsCode, sandbox);
+    vm.runInContext(primeJsCode, sandbox);
+
+    sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: true } });
+    intervalFns.forEach(fn => fn());
+
+    assert.strictEqual(sandbox.CONFIG.enabled, true, 'Should wake up gracefully');
+  });
+});

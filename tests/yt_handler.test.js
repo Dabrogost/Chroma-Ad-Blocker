@@ -99,9 +99,15 @@ test('YouTube ad acceleration', async (t) => {
         head: createMockElement('head'),
         body: createMockElement('body'),
         documentElement: createMockElement('html'),
-        addEventListener: () => {},
+        _listeners: {},
+        addEventListener: function(evt, cb) {
+          if (!this._listeners[evt]) this._listeners[evt] = [];
+          this._listeners[evt].push(cb);
+        },
         removeEventListener: () => {},
-        dispatchEvent: () => {},
+        dispatchEvent: function(e) {
+          if (this._listeners[e.type]) this._listeners[e.type].forEach(cb => cb(e));
+        },
         getElementsByClassName: () => []
       },
       setInterval: () => {},
@@ -154,7 +160,6 @@ test('YouTube ad acceleration', async (t) => {
       replaceSync(css) { this._css = css; }
     };
     sandbox.document.adoptedStyleSheets = [];
-
     if (setupDoc) setupDoc(sandbox.document);
 
     // VULN-03 Hardening: Sandbox bridge mocking.
@@ -169,8 +174,8 @@ test('YouTube ad acceleration', async (t) => {
         setInterval: (f, t) => sandbox.setInterval(f, t),
         clearInterval: (i) => sandbox.clearInterval(i),
         dispatchEvent: (e) => sandbox.document.dispatchEvent(e),
-        addDocEventListener: (e, f, o) => sandbox.document.addEventListener(e, f, o),
-        removeDocEventListener: (e, f, o) => sandbox.document.removeEventListener(e, f, o),
+        addDocEventListener: (e, f, o) => sandbox.document.addEventListener(e, f),
+        removeDocEventListener: (e, f, o) => sandbox.document.removeEventListener(e, f),
         MutationObserver: sandbox.window.MutationObserver
       },
       config: { enabled: true, acceleration: true, accelerationSpeed: 8 }
@@ -283,5 +288,34 @@ test('YouTube ad acceleration', async (t) => {
     
     assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, false, 'Session should be deactivated when main content is ready');
     assert.strictEqual(mockVideo.muted, false, 'Video should be unmuted');
+  });
+
+  await t.test('Event-Driven Initialization Flow', async (st) => {
+    await st.test('aborts initialization when __EXT_INIT__ activates kill switch', async () => {
+      let intervalFns = [];
+      const sandbox = createSandbox();
+      sandbox.window.__CHROMA_INTERNAL__.config = null;
+      sandbox.setInterval = (fn) => intervalFns.push(fn);
+      // Run yt_handler again so it picks up the null config state
+      vm.runInContext(youtubeJsCode, sandbox);
+
+      sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: false } });
+      intervalFns.forEach(fn => fn());
+
+      assert.strictEqual(sandbox.CONFIG.enabled, false, 'Kill switch should prevent enabling');
+    });
+
+    await st.test('wakes up normally when __EXT_INIT__ fires true', async () => {
+      let intervalFns = [];
+      const sandbox = createSandbox();
+      sandbox.window.__CHROMA_INTERNAL__.config = null;
+      sandbox.setInterval = (fn) => intervalFns.push(fn);
+      vm.runInContext(youtubeJsCode, sandbox);
+      
+      sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: true } });
+      intervalFns.forEach(fn => fn());
+
+      assert.strictEqual(sandbox.CONFIG.enabled, true, 'Should wake up gracefully');
+    });
   });
 });

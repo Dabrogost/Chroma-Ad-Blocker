@@ -59,10 +59,7 @@
    * SECURITY: Private Communication Channel Generation
    */
   function initHandshake() {
-    if (!secretToken) {
-      if (DEBUG) console.error('[Chroma Ad-Blocker] Token generation failed. Aborting handshake.');
-      return; 
-    }
+
 
     const handleMainReady = (e) => {
       if (typeof e.stopImmediatePropagation === 'function') {
@@ -120,7 +117,6 @@
     if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {
       isWhitelisted = true;
       if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
-      document.documentElement.setAttribute('data-chroma-whitelisted', 'true');
     }
 
     const savedConfig = data.config;
@@ -134,14 +130,11 @@
       CONFIG.acceleration = false;
     }
     
-    // Set DOM attributes for immediate kill-switch access in MAIN world
-    document.documentElement.setAttribute('data-chroma-enabled', CONFIG.enabled);
-    document.documentElement.setAttribute('data-chroma-acceleration', CONFIG.acceleration);
+    document.dispatchEvent(new CustomEvent('__EXT_INIT__', { detail: { active: CONFIG.enabled } }));
 
     // SECURITY: Secure Bridge Handshake
     await getTokenFromBackground();
     initHandshake();
-    document.documentElement.setAttribute('data-chroma-init', 'complete'); // SECURITY: Security Context Initialization
   });
 
   // ─── CONFIGURATION UPDATES ─────
@@ -151,9 +144,6 @@
       CONFIG.blockPushNotifications = msg.config.blockPushNotifications !== false;
       CONFIG.acceleration = msg.config.acceleration !== false;
 
-      // Update DOM attributes for live kill-switch response
-      document.documentElement.setAttribute('data-chroma-enabled', CONFIG.enabled);
-      document.documentElement.setAttribute('data-chroma-acceleration', CONFIG.acceleration);
       document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: msg.config }));
 
       if (isolatedPort) {
