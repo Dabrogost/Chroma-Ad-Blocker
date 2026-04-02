@@ -61,7 +61,6 @@
   let lastAdDetectTime = 0;
   let cachedCurrentAd = 1;
   let cachedTotalAds = 1;
-  let chromaAdSessionEndedAt = 0;
   let lastVideoDuration = 0;
   let _chromaFastWatcher = false;
 
@@ -486,7 +485,6 @@
       // Session release logic:
       if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) { // 500ms bridges multi-ad pod gaps; 5000ms absolute watchdog timeout
         chromaAdSessionActive = false;
-        chromaAdSessionEndedAt = Date.now();
 
       }
     }
@@ -550,7 +548,6 @@
   function onYTNavigate() {
     cleanupVideoState();
     chromaAdSessionActive = false;
-    chromaAdSessionEndedAt = Date.now();
     chromaAdSkipped = false;
     lastAdDetectTime = 0;
     cachedCurrentAd = 1;
@@ -593,7 +590,6 @@
         if (overlay) overlay.classList.remove('active');
         
         chromaAdSessionActive = false;
-        chromaAdSessionEndedAt = Date.now();
         _chromaFastWatcher = false;
         deactivateSessionSheet();
         cleanupVideoState();
