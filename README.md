@@ -8,9 +8,7 @@
 - **Multi-Part DNR Network Blocking**: Utilizes a 10-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to external filter lists (EasyPrivacy, Chroma Hotfix) that refresh automatically every 24 hours. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: Injects targeted scriptlets into page context on navigation to neutralize anti-adblock scripts, abort property reads, prevent timers, and intercept fetch and XHR calls.
-- **Global Component Filtering**:
-    - **Push Suppression**: Proactively blocks intrusive native notification and permission prompts.
-    - **Cosmetic Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring.
+- **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring.
 - **Safety Exclusion Protocol**: Automatically excludes critical infrastructure, including financial institutions, authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of Google Chrome (and other Chromium-based browsers).
@@ -36,14 +34,14 @@ graph TD
     INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
 
     subgraph MW["Main World (Page Context)"]
-        INTERCEPT["interceptor.js — API Protection & Notification Blocking"]:::main
+        INTERCEPT["interceptor.js — API Protection & Handshake"]:::main
         BRIDGE["__CHROMA_INTERNAL__ — Secure API Bridge"]:::secure
         YT_H["yt_handler.js — Video Ad Acceleration"]:::main
         PRM_H["prm_handler.js — Video Ad Acceleration"]:::main
     end
 
     subgraph IW["Isolated World (Extension Context)"]
-        PROT["protection.js — Config Relay & Push Blocking"]:::isolated
+        PROT["protection.js — Config Relay"]:::isolated
         CONT["content.js — Cosmetic Filtering & Warning Suppression"]:::isolated
     end
 
@@ -129,7 +127,7 @@ Utilizes a high-performance MutationObserver and CSS injection via Constructable
 On every navigation commit, the scriptlet engine matches the current hostname against stored subscription scriptlet rules and injects matching scriptlet functions directly into the page's MAIN world context via `chrome.scripting.executeScript`. Scriptlets can abort property reads, neutralize anti-adblock timers, intercept fetch and XHR calls, and remove specific CSS classes.
 
 ### Layer 5: Universal Protection (protection.js, interceptor.js)
-A proactive security layer that blocks intrusive push notification requests and permission prompts globally. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, writes the initialization sentinel to `document.documentElement`, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
+A proactive security layer that maintains extension integrity across execution contexts. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, writes the initialization sentinel to `document.documentElement`, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
 
 ---
 
@@ -177,7 +175,6 @@ Chroma implements several advanced security measures to ensure extension integri
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offer modules. | `true` |
 | `suppressWarnings` | Removes unsolicited overlay dialogs that restrict content access. | `true` |
-| `blockPushNotifications` | Blocks browser notification prompts. | `true` |
 | `whitelist` | Toggles blocking for the current domain. | `false` |
 
 ---

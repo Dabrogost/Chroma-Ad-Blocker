@@ -66,7 +66,6 @@ async function init() {
     ['toggleMerch',        'hideMerch',                true],
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
-    ['togglePush',         'blockPushNotifications',   true],
   ];
 
   const syncUI = (cfg, masterOn) => {
@@ -104,15 +103,13 @@ async function init() {
     });
   });
 
-  const { stats = { networkBlocked: 0, notificationsBlocked: 0 } } = await chrome.storage.local.get('stats');
+  const { stats = { networkBlocked: 0 } } = await chrome.storage.local.get('stats');
   if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
-  if ($('statNotificationsBlocked')) $('statNotificationsBlocked').textContent = stats.notificationsBlocked ?? 0;
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.stats) {
-      const newStats = changes.stats.newValue || { networkBlocked: 0, notificationsBlocked: 0 };
+      const newStats = changes.stats.newValue || { networkBlocked: 0 };
       if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = newStats.networkBlocked ?? 0;
-      if ($('statNotificationsBlocked')) $('statNotificationsBlocked').textContent = newStats.notificationsBlocked ?? 0;
     }
   });
 
@@ -214,7 +211,6 @@ async function init() {
   $('resetStats').addEventListener('click', async () => {
     await notifyBackground({ type: MSG.STATS_RESET });
     if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = '0';
-    if ($('statNotificationsBlocked')) $('statNotificationsBlocked').textContent = '0';
   });
 
   // ─── SUBSCRIPTION UI ─────

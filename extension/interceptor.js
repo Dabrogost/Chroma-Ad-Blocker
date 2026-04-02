@@ -1,7 +1,7 @@
 /**
  * Chroma Ad-Blocker - Generic Interceptor
  * Runs in the page's execution context (MAIN world) for all sites.
- * Overrides Notification APIs to detect and notify about push attempts.
+ * Provides secure API bridge and configuration relay.
  */
 
 (() => {
@@ -154,7 +154,6 @@
 
     // Secure Config State: Use local variables to prevent host-page tampering.
     localConfig = {
-      blockPushNotifications: selectors.blockPushNotifications !== false,
       enabled: selectors.enabled !== false
     };
 
@@ -192,133 +191,15 @@
     }
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Hostile Domain: ${isHostileDomain}`);
-    // SECURITY: Local Configuration Access (VULN-01/02 Hardening)
-    const checkPushBlocking = () => localConfig.enabled && localConfig.blockPushNotifications;
 
     pristineAddDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       if (e.detail) {
         Object.assign(localConfig, {
-          blockPushNotifications: e.detail.blockPushNotifications !== false,
           enabled: e.detail.enabled !== false
         });
       }
     }, true);
 
-
-    // ─── PUSH NOTIFICATION BLOCKING ─────
-    if (typeof window.Notification !== 'undefined') {
-      const OriginalNotification = window.Notification;
-      const originalRequestPermission = OriginalNotification.requestPermission;
-
-      class ShadowNotification extends OriginalNotification {
-        constructor(title, options) {
-          // SECURITY: Notification Prompt Prevention
-          if (checkPushBlocking()) {
-            if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked Notification construction:', title);
-            sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
-            
-            const instance = Object.create(ShadowNotification.prototype);
-            instance.title = title;
-            instance.body = options?.body || '';
-            instance.close = () => {};
-            
-            pristineSetTimeout(() => {
-              if (typeof instance.onshow === 'function') {
-                try { instance.onshow(); } catch (e) {}
-              }
-            }, 50); // 50ms grace period for event listener attachment before firing onshow
-            return instance;
-          }
-          return new OriginalNotification(title, options);
-        }
-
-        static get permission() {
-          if (checkPushBlocking()) return 'denied';
-          return OriginalNotification.permission;
-        }
-
-        static requestPermission(callback) {
-          if (checkPushBlocking()) {
-            if (DEBUG) console.warn('[Chroma Ad-Blocker] Blocked notification permission request.');
-            sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
-            
-            const denied = 'denied';
-            if (typeof callback === 'function') {
-              try { callback(denied); } catch (e) {}
-            }
-            return Promise.resolve(denied);
-          }
-          
-          if (typeof originalRequestPermission === 'function') {
-            if (typeof callback === 'function') {
-               return originalRequestPermission.call(OriginalNotification, (result) => callback(result));
-            }
-            return originalRequestPermission.apply(OriginalNotification, arguments);
-          }
-          return Promise.resolve('default');
-        }
-      }
-
-      window.Notification = ShadowNotification;
-    }
-    // SECURITY: Deep Notification Blocking
-    if (typeof ServiceWorkerRegistration !== 'undefined' && ServiceWorkerRegistration.prototype) {
-      const originalShowNotification = ServiceWorkerRegistration.prototype.showNotification;
-      // SECURITY: Prototype Reassignment to intercept SW-based push notifications
-      ServiceWorkerRegistration.prototype.showNotification = function(title, options) {
-        if (checkPushBlocking()) {
-          sendToProtection({ source: 'chroma-interceptor', token: token, type: 'NOTIFICATION_ATTEMPT' });
-          return Promise.resolve();
-        }
-        return originalShowNotification.apply(this, arguments);
-      };
-    }
-
-    if (typeof navigator.permissions !== 'undefined' && typeof navigator.permissions.query === 'function') {
-      const originalQuery = navigator.permissions.query;
-      navigator.permissions.query = function(parameters) {
-        // SECURITY: Permission State Spoofing
-        if (parameters && parameters.name === 'notifications' && checkPushBlocking()) {
-          return Promise.resolve({ state: 'denied', onchange: null, name: 'notifications' });
-        }
-        return originalQuery.apply(this, arguments);
-      };
-    }
-
-    if (typeof ServiceWorkerRegistration !== 'undefined' && 
-        ServiceWorkerRegistration.prototype && 
-        Object.prototype.hasOwnProperty.call(ServiceWorkerRegistration.prototype, 'pushManager') &&
-        typeof PushManager !== 'undefined' && 
-        PushManager.prototype) {
-      
-      const originalSubscribe = PushManager.prototype.subscribe;
-      if (typeof originalSubscribe === 'function') {
-        // SECURITY: Prototype Reassignment to block push subscription enrollment
-        PushManager.prototype.subscribe = function() {
-          if (checkPushBlocking()) {
-            return Promise.reject(new DOMException('Registration failed - push service not available', 'AbortError'));
-          }
-          return originalSubscribe.apply(this, arguments);
-        };
-      }
-    }
-
-    // SECURITY: API Lockdown
-    if (isHostileDomain) {
-      try {
-        // SECURITY: Freeze writable+configurable to prevent host-page re-override
-        const lock = (obj, prop) => {
-          const desc = Object.getOwnPropertyDescriptor(obj, prop);
-          if (desc && desc.configurable) {
-            Object.defineProperty(obj, prop, { writable: false, configurable: false });
-          }
-        };
-
-        if (typeof window.Notification !== 'undefined') {
-          lock(window, 'Notification');
-        }
-      } catch (e) {}
-    }
   }
 
   // ─── SECURE SYNCHRONIZATION ─────

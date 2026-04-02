@@ -116,8 +116,7 @@ test('Content script generic functionality', async (t) => {
         CONFIG_GET: 'CONFIG_GET',
         CONFIG_SET: 'CONFIG_SET',
         CONFIG_UPDATE: 'CONFIG_UPDATE',
-        STATS_RESET: 'STATS_RESET',
-        SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY'
+        STATS_RESET: 'STATS_RESET'
       },
       HIDE_SELECTORS: ['.ad-showing', '#masthead-ad'],
       WARNING_SELECTOR_COMBINED: 'ytd-enforcement-message-view-model',

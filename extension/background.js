@@ -101,7 +101,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         hideOffers: true,
         suppressWarnings: true,
         accelerationSpeed: 8,
-        blockPushNotifications: true,
         enabled: true,
       },
       stats: { networkBlocked: 0 },
@@ -298,7 +297,6 @@ const MSG = {
   WHITELIST_GET: 'WHITELIST_GET',
   WHITELIST_ADD: 'WHITELIST_ADD',
   WHITELIST_REMOVE: 'WHITELIST_REMOVE',
-  SUSPICIOUS_ACTIVITY: 'SUSPICIOUS_ACTIVITY',
   SUBSCRIPTION_GET:     'SUBSCRIPTION_GET',
   SUBSCRIPTION_SET:     'SUBSCRIPTION_SET',
   SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
@@ -310,7 +308,7 @@ const MSG = {
 
 // ─── CONFIGURATION VALIDATION ─────
 function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'blockPushNotifications', 'enabled'];
+  const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled'];
   const validatedConfig = {};
 
   if (inputConfig && typeof inputConfig === 'object') {
@@ -435,18 +433,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (wlNew.length !== wlRem.length) {
             await chrome.storage.local.set({ whitelist: wlNew });
             await syncWhitelistRules();
-          }
-          sendResponse({ ok: true });
-          break;
-        case MSG.SUSPICIOUS_ACTIVITY:
-          const actSessionKey = docId || (tabId ? `${tabId}:${_sender.frameId || 0}` : null);
-          const sessionEntry = sessionData.sessionTokens[actSessionKey];
-          if (sessionEntry && sessionEntry.token === msg.token) {
-            // SECURITY: Session Token Validation — token is authentic, record the event.
-            if (DEBUG) console.warn(`[Chroma Security] Suspicious Activity on session ${actSessionKey}:`, msg.activity);
-            const { stats: saStats = {} } = await chrome.storage.local.get('stats');
-            saStats.notificationsBlocked = (saStats.notificationsBlocked || 0) + 1;
-            await chrome.storage.local.set({ stats: saStats });
           }
           sendResponse({ ok: true });
           break;

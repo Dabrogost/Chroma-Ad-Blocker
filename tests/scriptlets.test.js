@@ -27,8 +27,6 @@ function makeWindow() {
     Blob:          class { constructor(p, o) { this.parts=p; this.type=o.type; } },
     XMLHttpRequest: class { open() {} send() {} },
     eval:          (code) => code,
-    open:          (url) => ({ url }),
-    Notification:  function() {},
     location:      { hostname: 'test.example.com' },
     document: {
       querySelectorAll: () => [],
@@ -152,25 +150,6 @@ test('prevent-fetch', async (t) => {
     const sandbox = runScriptlet('preventFetch', ['analytics.example.com'], win);
     await vm.runInContext('window.fetch("https://cdn.other.com/asset.js")', sandbox);
     assert.strictEqual(fetchCalled, true, 'Non-matching fetch should pass through');
-  });
-});
-
-// ─── PREVENT-WINDOW-OPEN ─────
-test('prevent-window-open', async (t) => {
-  await t.test('blocks window.open matching URL and returns null', () => {
-    const win = makeWindow();
-    win.open = (url) => ({ url });
-    const sandbox = runScriptlet('preventWindowOpen', ['popup.ads.com'], win);
-    const result = vm.runInContext('window.open("https://popup.ads.com/ad")', sandbox);
-    assert.strictEqual(result, null);
-  });
-
-  await t.test('allows window.open to non-matching URL', () => {
-    const win = makeWindow();
-    win.open = (url) => ({ url });
-    const sandbox = runScriptlet('preventWindowOpen', ['popup.ads.com'], win);
-    const result = vm.runInContext('window.open("https://safe.example.com")', sandbox);
-    assert.ok(result !== null);
   });
 });
 

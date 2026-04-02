@@ -258,29 +258,6 @@ export function removeClass(args) {
   });
 }
 
-/**
- * Blocks window.open calls to URLs matching a pattern.
- * Returns null (same as a blocked popup) for matched calls.
- * args[0]: URL string pattern, /regex/, or '*' to block all opens
- */
-export function preventWindowOpen(args) {
-  const pattern = args[0] || '*';
-
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
-  const matches = (url) => {
-    if (pattern === '*') return true;
-    if (re) return re.test(url);
-    return !url || url.includes(pattern);
-  };
-
-  const orig = window.open;
-  window.open = function(url) {
-    if (matches(url || '')) return null;
-    return orig.apply(this, arguments);
-  };
-  window.open.toString = () => orig.toString();
-}
 
 /**
  * Blocks eval() calls whose code string matches a pattern.
@@ -323,7 +300,5 @@ export const SCRIPTLET_MAP = new Map([
   ['prevent-xhr',             preventXhr],
   ['no-xhr-if',               preventXhr], // uBlock alias
   ['remove-class',            removeClass],
-  ['prevent-window-open',     preventWindowOpen],
-  ['no-window-open-if',       preventWindowOpen], // uBlock alias
   ['no-eval-if',              noEvalIf]
 ]);

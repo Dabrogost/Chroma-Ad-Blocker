@@ -1,6 +1,6 @@
 /**
- * Handles message relay for push notification suppression
- * and other security tasks across all websites.
+ * Handles secure handshake and configuration relay
+ * between isolated and MAIN worlds across all websites.
  */
 
 'use strict';
@@ -31,7 +31,6 @@
   };
 
   const CONFIG = {
-    blockPushNotifications: true,
     enabled: true,
     acceleration: true
   };
@@ -42,19 +41,6 @@
   /** @param {Object} data */
   function processInterceptorMessage(data) {
     if (!data || data.source !== 'chroma-interceptor') return;
-
-
-    // Legacy: Handle existing message types that aren't yet using action/payload.
-    if (data.type === 'NOTIFICATION_ATTEMPT') {
-      if (DEBUG) console.log('[Chroma Ad-Blocker] Blocked notification attempt');
-      notifyBackground({
-        type: MSG.SUSPICIOUS_ACTIVITY,
-        token: data.token,
-        activity: data.type
-      });
-      return;
-    }
-
   }
 
   /**
@@ -130,11 +116,9 @@
     const savedConfig = data.config;
     if (savedConfig) {
       CONFIG.enabled = isWhitelisted ? false : (savedConfig.enabled !== false);
-      CONFIG.blockPushNotifications = isWhitelisted ? false : (savedConfig.blockPushNotifications !== false);
       CONFIG.acceleration = isWhitelisted ? false : (savedConfig.acceleration !== false);
     } else if (isWhitelisted) {
       CONFIG.enabled = false;
-      CONFIG.blockPushNotifications = false;
       CONFIG.acceleration = false;
     }
     
@@ -149,7 +133,6 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === MSG.CONFIG_UPDATE) {
       CONFIG.enabled = msg.config.enabled !== false;
-      CONFIG.blockPushNotifications = msg.config.blockPushNotifications !== false;
       CONFIG.acceleration = msg.config.acceleration !== false;
 
       document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: msg.config }));

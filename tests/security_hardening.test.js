@@ -192,49 +192,6 @@ test('Security Hardening - background.js', async (t) => {
     assert.ok(resSub && resSub.token, 'Sub-frame should get its own token');
   });
 
-  await t.test('SUSPICIOUS_ACTIVITY requires valid token and increments counter', async () => {
-    const sender = { tab: { id: 789 }, url: 'https://www.youtube.com/watch?v=789' };
-    let tokenResponse = null;
-    await messageHandler({ type: 'GET_TOKEN' }, sender, (res) => { tokenResponse = res; });
-    
-    assert.ok(tokenResponse && tokenResponse.token, 'Should have received a valid token');
-    const validToken = tokenResponse.token;
-
-    // Seed stats so we can verify increment
-    const initialCount = 5;
-    chromeMock.storage.local._stats = { networkBlocked: 10, notificationsBlocked: initialCount };
-    const origGet = chromeMock.storage.local.get;
-    chromeMock.storage.local.get = async (keys) => {
-      if (keys === 'stats' || (Array.isArray(keys) && keys.includes('stats'))) {
-        return { stats: { ...chromeMock.storage.local._stats } };
-      }
-      return origGet(keys);
-    };
-    const origSet = chromeMock.storage.local.set;
-    chromeMock.storage.local.set = async (val) => {
-      if (val.stats) chromeMock.storage.local._stats = val.stats;
-      return origSet(val);
-    };
-
-    const msg = {
-      type: 'SUSPICIOUS_ACTIVITY',
-      activity: 'NOTIFICATION_ATTEMPT',
-      token: validToken
-    };
-
-    let response = null;
-    await messageHandler(msg, sender, (res) => { response = res; });
-    assert.ok(response && response.ok === true, 'Should have sent { ok: true } for suspicious activity');
-    assert.strictEqual(
-      chromeMock.storage.local._stats.notificationsBlocked,
-      initialCount + 1,
-      'notificationsBlocked should be incremented by 1'
-    );
-
-    // Restore
-    chromeMock.storage.local.get = origGet;
-    chromeMock.storage.local.set = origSet;
-  });
 
   await t.test('onRemoved clears all documents for a tabId', async () => {
     const tabId = 333;

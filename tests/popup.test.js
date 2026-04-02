@@ -67,7 +67,6 @@ test('popup.js functionality', async (t) => {
               acceleration: false,
               cosmetic: true,
               suppressWarnings: false,
-              blockPushNotifications: false,
               enabled: true
             };
           }
@@ -139,7 +138,6 @@ test('popup.js functionality', async (t) => {
     getElement('toggleMerch');
     getElement('toggleOffers');
     getElement('toggleWarnings');
-    getElement('togglePush');
     getElement('statNetworkBlocked');
     getElement('resetStats');
     getElement('toggleWhitelist');
@@ -158,7 +156,6 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['toggleAcceleration'].checked, false);
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
     assert.strictEqual(elements['toggleWarnings'].checked, false);
-    assert.strictEqual(elements['togglePush'].checked, false);
 
     assert.strictEqual(elements['statNetworkBlocked'].textContent, 5);
 
@@ -214,7 +211,6 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['toggleAcceleration'].checked, true);
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
     assert.strictEqual(elements['toggleWarnings'].checked, true);
-    assert.strictEqual(elements['togglePush'].checked, true);
 
     assert.strictEqual(elements['statNetworkBlocked'].textContent, 0);
   });
