@@ -169,7 +169,7 @@
     /* ── STATS ── */
     .stats-container {
       margin: 4px 12px 16px;
-      display: grid; grid-template-columns: 1fr; gap: 10px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
     }
 
     .stat-card {
@@ -434,7 +434,11 @@
   <div class="stats-container">
     <div class="stat-card" id="cardNetwork">
       <div class="stat-value" id="statNetworkBlocked">0</div>
-      <div class="stat-label">Ads-Blocked</div>
+      <div class="stat-label">Ads Blocked</div>
+    </div>
+    <div class="stat-card" id="cardNotifications">
+      <div class="stat-value" id="statNotificationsBlocked">0</div>
+      <div class="stat-label">Notifications</div>
     </div>
   </div>
 

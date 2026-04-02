@@ -442,8 +442,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const actSessionKey = docId || (tabId ? `${tabId}:${_sender.frameId || 0}` : null);
           const sessionEntry = sessionData.sessionTokens[actSessionKey];
           if (sessionEntry && sessionEntry.token === msg.token) {
-            // SECURITY: Session Token Validation
+            // SECURITY: Session Token Validation — token is authentic, record the event.
             if (DEBUG) console.warn(`[Chroma Security] Suspicious Activity on session ${actSessionKey}:`, msg.activity);
+            const { stats: saStats = {} } = await chrome.storage.local.get('stats');
+            saStats.notificationsBlocked = (saStats.notificationsBlocked || 0) + 1;
+            await chrome.storage.local.set({ stats: saStats });
           }
           sendResponse({ ok: true });
           break;
