@@ -305,7 +305,7 @@ graph TD
 <section class="support-section fade-up">
   <h2 class="section__title">Support the Project</h2>
   <p class="section__sub">
-    Chroma is 100% free, open-source, and always will be. It is built and 
+    Chroma is 100% free, source-available, and always will be. It is built and 
     maintained by a single developer. If it has improved your
     web experience, consider supporting the work with a coffee.
   </p>

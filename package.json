@@ -11,8 +11,8 @@
     "url": "git+https://github.com/Dabrogost/Chroma-Ad-Blocker.git"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Dabrogost",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/Dabrogost/Chroma-Ad-Blocker/issues"
