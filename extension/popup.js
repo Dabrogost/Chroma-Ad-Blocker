@@ -17,13 +17,26 @@ async function init() {
 
     const banner = document.createElement('div');
     banner.id = 'updateBanner';
-    banner.innerHTML = `
-      <a href="${RELEASES_PAGE}" target="_blank" style="color:var(--c-cyan);text-decoration:none;font-weight:600;">
-        ↑ v${latestVersion} available
-      </a>
-      <span style="color:var(--text-muted);margin-left:4px;font-size:9px;">on GitHub</span>
-      <button id="dismissUpdate" style="margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0 2px;line-height:1;" title="Dismiss">✕</button>
-    `;
+
+    const updateLink = document.createElement('a');
+    updateLink.href = RELEASES_PAGE;
+    updateLink.target = '_blank';
+    updateLink.style.cssText = 'color:var(--c-cyan);text-decoration:none;font-weight:600;';
+    updateLink.textContent = `↑ v${latestVersion} available`;
+
+    const githubSpan = document.createElement('span');
+    githubSpan.style.cssText = 'color:var(--text-muted);margin-left:4px;font-size:9px;';
+    githubSpan.textContent = 'on GitHub';
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.id = 'dismissUpdate';
+    dismissBtn.style.cssText = 'margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0 2px;line-height:1;';
+    dismissBtn.title = 'Dismiss';
+    dismissBtn.textContent = '✕';
+
+    banner.appendChild(updateLink);
+    banner.appendChild(githubSpan);
+    banner.appendChild(dismissBtn);
     banner.style.cssText = `
       display: flex;
       align-items: center;
