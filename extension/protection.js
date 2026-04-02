@@ -37,16 +37,6 @@
 
 
 
-  // ─── MESSAGE PROCESSING ─────
-  /** @param {Object} data */
-  function processInterceptorMessage(data) {
-    if (!data || data.source !== 'chroma-interceptor') return;
-  }
-
-  /**
-   * Listen for messages from the MAIN world interceptor
-   */
-
   // ─── SECURE HANDSHAKE ─────
   /**
    * Securely transfers the secret token to the MAIN world.
@@ -73,11 +63,6 @@
 
       const channel = new MessageChannel();
       isolatedPort = channel.port1;
-
-      isolatedPort.onmessage = (e) => {
-        if (DEBUG) console.log('[Chroma Ad-Blocker] Received via secure pipe:', e.data);
-        processInterceptorMessage(e.data);
-      };
 
       try {
         window.dispatchEvent(new MessageEvent(portNonce, {
