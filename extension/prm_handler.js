@@ -55,6 +55,13 @@ const cE = (t) => API.createElement(t);
 const sI = (f, t) => API.setInterval(f, t);
 const cI = (i) => API.clearInterval(i);
 
+let _chromaExtInitActive = true;
+let _extInitFired = false;
+API.addDocEventListener('__EXT_INIT__', (e) => {
+  _extInitFired = true;
+  if (e && e.detail && e.detail.active === false) _chromaExtInitActive = false;
+}, true);
+
 const AD_SELECTORS = [
   '.atvwebplayersdk-ad-container',
   '.atvwebplayersdk-ad-time-remaining',
@@ -677,14 +684,6 @@ function resetSession() {
 }
 
 function init() {
-  const isWhitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
-
-  // 0. Whitelist shortcut for MAIN world
-  if (isWhitelisted) {
-    if (DEBUG) console.log('[Chroma] Prime handler disabled by whitelist.');
-    return;
-  }
-
   // 1. Initial check (might be ready if handshake was fast)
   if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
     applyConfig(window.__CHROMA_INTERNAL__.config);
@@ -706,25 +705,33 @@ function init() {
     // Safety Fallback: Poll for isolated-world sentinel before activating.
     let _pollCount = 0;
     const _pollId = sI(() => {
-      const initDone = !!window.__CHROMA_INTERNAL__ || document.documentElement.getAttribute('data-chroma-init') === 'complete';
+      const initDone = !!window.__CHROMA_INTERNAL__ || _extInitFired;
       _pollCount++;
 
-      if (initDone || isWhitelisted || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
+      if (initDone) {
         cI(_pollId);
-
-        if (isWhitelisted) {
-          if (DEBUG) console.log('[Chroma] Kill switch or whitelist detected. Prime handler silenced.');
-          return;
+        if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+          applyConfig(window.__CHROMA_INTERNAL__.config);
         }
-
-        if (!CONFIG.enabled) {
-          // Safety Fallback: protection.js finished (or timed out) and domain is not whitelisted.
-          if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up Prime handler with defaults.');
+        if (!_chromaExtInitActive) return;
+        if (CONFIG.enabled && CONFIG.acceleration) {
+          injectChromaCSS();
+          startPolling();
+        } else {
           CONFIG.enabled = true;
           CONFIG.acceleration = true;
           injectChromaCSS();
           startPolling();
         }
+      } else if (!_chromaExtInitActive || _pollCount >= 40) {
+        cI(_pollId);
+        if (!_chromaExtInitActive) return;
+        
+        if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up Prime handler with defaults.');
+        CONFIG.enabled = true;
+        CONFIG.acceleration = true;
+        injectChromaCSS();
+        startPolling();
       }
     }, 50); // Polling frequency (50ms) for initialization check
   }

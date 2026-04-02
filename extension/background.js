@@ -409,6 +409,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             sessionData.sessionTokens[sessionKey] = { token, tabId };
             await updateSessionData('sessionTokens', sessionData.sessionTokens);
             sendResponse({ token });
+          } else {
+            sendResponse({ error: 'No session key' });
           }
           break;
 

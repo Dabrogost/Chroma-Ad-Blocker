@@ -49,6 +49,12 @@
   const sI = (f, t) => API.setInterval(f, t);
   const cI = (i) => API.clearInterval(i);
 
+  let _chromaExtInitActive = true;
+  let _extInitFired = false;
+  API.addDocEventListener('__EXT_INIT__', (e) => {
+    _extInitFired = true;
+    if (e && e.detail && e.detail.active === false) _chromaExtInitActive = false;
+  }, true);
 
   // ─── STATE ─────
   let targetAdVideo = null;
@@ -654,14 +660,6 @@
   }
 
   function init() {
-    const isWhitelisted = document.documentElement.getAttribute('data-chroma-whitelisted') === 'true';
-
-    // 0. Whitelist shortcut for MAIN world
-    if (isWhitelisted) {
-      if (DEBUG) console.log('[Chroma] YouTube handler disabled by whitelist.');
-      return;
-    }
-
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
     if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
       // SECURITY: Handshake Configuration Validation
@@ -679,26 +677,36 @@
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = API.setInterval(() => {
-        const initDone = !!window.__CHROMA_INTERNAL__ || document.documentElement.getAttribute('data-chroma-init') === 'complete';
+        const initDone = !!window.__CHROMA_INTERNAL__ || _extInitFired;
         _pollCount++;
 
-        if (initDone || isWhitelisted || _pollCount >= 40) { // 2s total wait time at 50ms intervals 
+        if (initDone) {
           API.clearInterval(_pollId);
-          
-          if (isWhitelisted) {
-            if (DEBUG) console.log('[Chroma] Kill switch or whitelist detected. Accelerator silenced.');
-            return;
+          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+            applyConfig(window.__CHROMA_INTERNAL__.config);
           }
-
-          if (!CONFIG.enabled) {
-            // Safety Fallback: protection.js finished (or timed out) and domain is not whitelisted.
-            if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up YouTube handler with defaults.');
+          if (!_chromaExtInitActive) return;
+          if (CONFIG.enabled && CONFIG.acceleration) {
+            injectChromaCSS();
+            startPolling();
+            initSkipButtonListener();
+          } else {
             CONFIG.enabled = true;
             CONFIG.acceleration = true;
             injectChromaCSS();
             startPolling();
             initSkipButtonListener();
           }
+        } else if (!_chromaExtInitActive || _pollCount >= 40) {
+          API.clearInterval(_pollId);
+          if (!_chromaExtInitActive) return;
+          
+          if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up YouTube handler with defaults.');
+          CONFIG.enabled = true;
+          CONFIG.acceleration = true;
+          injectChromaCSS();
+          startPolling();
+          initSkipButtonListener();
         }
       }, 50); // Polling frequency (50ms) for initialization check
     }

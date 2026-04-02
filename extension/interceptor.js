@@ -360,10 +360,8 @@
       chromaPort.onmessage = (msgEvent) => {
         if (msgEvent.data?.type === 'INIT_CHROMA') {
            const initData = msgEvent.data;
-           if (initData.token) {
-             initChromaInterceptor(initData.token, initData.selectors || {});
-             if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port initialized via inner channel.');
-           }
+           initChromaInterceptor(initData.token || null, initData.selectors || {});
+           if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port initialized via inner channel.');
         } else if (msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
           const resp = msgEvent.data.data;
           if (resp && resp.type === 'CONFIG_UPDATE') {
@@ -381,10 +379,6 @@
   
   // DO NOT ping if compromised or if the site is whitelisted
   if (!isEnvironmentCompromised) {
-    if (document.documentElement.getAttribute('data-chroma-whitelisted') === 'true') {
-      if (DEBUG) console.log('[Chroma] Interceptor disabled by whitelist.');
-      return;
-    }
     
     const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web
     
