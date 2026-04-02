@@ -7,6 +7,14 @@
 
 (function() {
   const DEBUG = false;
+  if (!window.MSG) {
+    console.error("[Chroma Error] window.MSG is missing. Expected messaging.js to provide it.");
+    return;
+  }
+  if (!window.notifyBackground) {
+    console.error("[Chroma Error] window.notifyBackground is missing. Expected messaging.js to provide it.");
+    return;
+  }
   const MSG = window.MSG; // Provided by messaging.js
   let isolatedPort;
   let secretToken;
