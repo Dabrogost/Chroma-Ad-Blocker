@@ -69,7 +69,7 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
   <p class="section__eyebrow fade-up">Protection Layers</p>
   <h2 class="section__title fade-up">Built to Outlast<br/>Every Ad System</h2>
   <p class="section__sub fade-up">
-    Five independent layers of protection, each targeting a different attack vector.
+    Six independent layers of protection, each targeting a different attack vector.
     Together they handle anything ad networks throw at your browser.
   </p>
 
@@ -126,6 +126,21 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
         empty slots, and layout artifacts in real time as pages load and navigate.
       </p>
       <span class="card__tag">MutationObserver</span>
+    </div>
+
+    <!-- Card 5: Filter Subscriptions -->
+    <div class="card card--green fade-up">
+      <svg class="card__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="23 4 23 10 17 10"/>
+        <polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </svg>
+      <h3 class="card__title">Filter Subscriptions</h3>
+      <p class="card__desc">
+        Automatically syncs Hagezi Pro Mini and Chroma Hotfix filter lists every 24 hours,
+        keeping network blocking rules current without any user intervention.
+      </p>
+      <span class="card__tag">Hagezi Pro Mini &middot; Chroma Hotfix</span>
     </div>
 
     <!-- Card 6: Hardened Security -->
