@@ -1,6 +1,6 @@
 /**
  * Chroma Ad-Blocker - Generic Interceptor
- * Runs in the page's execution context (MAIN world) for all sites.
+ * Runs in the page's execution context (MAIN world) for supported sites.
  * Provides secure API bridge and configuration relay.
  */
 
@@ -155,12 +155,8 @@
     localConfig = {
       enabled: selectors.enabled !== false
     };
-
     // SECURITY: Provisioning of secure messaging for authorized domains.
     if (isHostileDomain) {
-      // SECURITY: Token Exposure Prevention (VULN-02 Fix)
-      // Site-specific handlers (yt_handler, prm_handler) must use the exposed 'send' function
-      // which automatically injects the token from this closure.
       const internalBridge = Object.create(null); // SECURITY: Property Lookup Prevention via Prototype Chain
       Object.assign(internalBridge, {
         config: Object.freeze({ ...selectors }),
@@ -203,7 +199,7 @@
 
   // ─── SECURE SYNCHRONIZATION ─────
   /** @param {Event} e */
-  const handleTokenDelivery = (e) => {
+  const handleConfigDelivery = (e) => {
     if (typeof e.stopImmediatePropagation === 'function') {
       e.stopImmediatePropagation();
     }
@@ -213,7 +209,7 @@
       pingInterval = null;
     }
     
-    pristineRemoveDocEventListener('__CHROMA_TOKEN_DELIVERY__', handleTokenDelivery, true);
+    pristineRemoveDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
 
     // SECURITY: Read per-session nonce from delivery event.
     // Port transfer event name is randomized per page load — page scripts
@@ -255,7 +251,7 @@
     }, true); // MUST be true for Capture Phase!
   };
 
-  pristineAddDocEventListener('__CHROMA_TOKEN_DELIVERY__', handleTokenDelivery, true);
+  pristineAddDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
   
   // DO NOT ping if compromised or if the site is whitelisted
   if (!isEnvironmentCompromised) {

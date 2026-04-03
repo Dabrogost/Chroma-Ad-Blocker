@@ -27,7 +27,7 @@
 
   // ─── SECURE HANDSHAKE ─────
   /**
-   * Securely transfers the secret token to the MAIN world.
+   * Securely transfers the configuration to the MAIN world.
    * SECURITY: Private Communication Channel Generation
    */
   function initHandshake() {
@@ -40,14 +40,14 @@
       
       document.removeEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
       
-      if (DEBUG) console.log('[Chroma Ad-Blocker] MAIN world ready. Delivering token.');
+      if (DEBUG) console.log('[Chroma Ad-Blocker] MAIN world ready. Delivering config/selectors.');
 
       // Generate a per-session nonce for the port transfer event name.
       // This prevents page scripts from pre-registering for a predictable event.
       const portNonce = '__CHROMA_PT_' + crypto.getRandomValues(new Uint32Array(2)).join('_') + '__';
 
       // Deliver the nonce to interceptor.js via CustomEvent detail
-      document.dispatchEvent(new CustomEvent('__CHROMA_TOKEN_DELIVERY__', { detail: { portNonce } }));
+      document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_DELIVERY__', { detail: { portNonce } }));
 
       const channel = new MessageChannel();
       isolatedPort = channel.port1;
