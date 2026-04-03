@@ -143,7 +143,7 @@ function initAdOverlay(video) {
   if (adOverlayHost) return;
   
   adOverlayHost = cE('div');
-  adOverlayHost.id = 'prime-chroma-overlay';
+  adOverlayHost.id = 'chroma-host-' + Math.random().toString(36).substring(2, 9);
   
   // SECURITY: Using 'closed' mode to prevent host-page scripts from accessing or tampering with the Chroma overlay.
   adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
@@ -387,108 +387,7 @@ function updateAdOverlay(video, isActive) {
   }
 }
 
-/**
- * Injects necessary CSS for the overlay.
- */
-function injectChromaCSS() {
-  if (API.getElementById('prime-chroma-styles')) return;
-  const style = cE('style');
-  style.id = 'prime-chroma-styles';
-  style.textContent = `
-    #prime-chroma-overlay {
-      pointer-events: none !important;
-    }
-    .chroma-screen {
-      position: absolute !important;
-      top: 0 !important; left: 0 !important;
-      width: 100% !important; height: 100% !important;
-      background: rgba(0, 0, 0, 0.7) !important;
-      backdrop-filter: blur(12px) !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      color: white !important;
-      font-family: 'Amazon Ember', Arial, sans-serif !important;
-      opacity: 0 !important;
-      transition: opacity 0.5s ease-out !important;
-      box-sizing: border-box !important;
-      pointer-events: none !important;
-    }
-    .chroma-screen.active {
-      opacity: 1 !important;
-      pointer-events: all !important;
-    }
-    .chroma-content-box {
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: center !important;
-      justify-content: center !important;
-      background: rgba(20, 20, 25, 0.85) !important;
-      padding: 40px !important;
-      border-radius: 20px !important;
-      border: 1px solid rgba(255, 255, 255, 0.1) !important;
-      box-shadow: 0 30px 60px rgba(0,0,0,0.8) !important;
-      max-width: 90% !important;
-      width: 380px !important;
-      height: auto !important;
-      min-height: 0 !important;
-      max-height: 90% !important;
-      transform: translateY(0) !important;
-      transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1) !important;
-      flex-grow: 0 !important;
-      flex-shrink: 0 !important;
-    }
-    .chroma-screen.active .chroma-content-box {
-      transform: translateY(-8px) !important;
-    }
-    .chroma-spinner {
-      width: 50px !important; height: 50px !important;
-      border: 4px solid rgba(255,255,255,0.08) !important;
-      border-top-color: #00A8E1 !important;
-      border-radius: 50% !important;
-      animation: chroma-spin 1s linear infinite !important;
-      margin: 0 0 20px 0 !important;
-      flex-shrink: 0 !important;
-      box-sizing: border-box !important;
-      display: block !important;
-    }
-    @keyframes chroma-spin { 
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); } 
-    }
-    .chroma-title {
-      font-size: 24px !important; font-weight: 800 !important; 
-      margin: 0 0 8px 0 !important;
-      color: #fff !important;
-      letter-spacing: -0.02em !important;
-      text-align: center !important;
-      line-height: 1.2 !important;
-    }
-    .chroma-subtitle {
-      font-size: 15px !important; color: rgba(255, 255, 255, 0.6) !important;
-      margin: 0 0 20px 0 !important;
-      text-align: center !important;
-      line-height: 1.4 !important;
-    }
-    .chroma-progress-container {
-      width: 100% !important;
-      height: 4px !important;
-      background: rgba(255,255,255,0.1) !important;
-      border-radius: 2px !important;
-      overflow: hidden !important;
-      display: block !important;
-    }
-    .chroma-progress-bar {
-      width: 0%;
-      height: 100% !important;
-      background: #00A8E1 !important;
-      transition: width 0.1s linear, background 0.3s linear !important;
-    }
-  `;
-  // SECURITY: Freeze style object to mitigate host-page property tampering
-  Object.freeze(style);
-  (document.head || document.documentElement).appendChild(style);
-}
+
 
 /**
  * Checks for ad indicators using both CSS selectors and text-based heuristics.
@@ -623,6 +522,7 @@ function handlePrimeAdAcceleration() {
         activatePrimeSessionSheet();
       }
       
+      targetVideo = video;
       lastAcceleratedSrc = currentSrc;
 
       // Apply acceleration
@@ -659,7 +559,6 @@ function handlePrimeAdAcceleration() {
       }
     }
 
-    targetVideo = video;
     updateAdOverlay(video, isAdActive);
   } catch (err) {
     if (DEBUG) console.error('[Chroma] Error in Prime loop:', err);
@@ -699,7 +598,7 @@ function init() {
 
   // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
   if (CONFIG.enabled && CONFIG.acceleration) {
-    injectChromaCSS();
+    ensurePrimeSessionSheet();
     startPolling();
   } else {
     // Safety Fallback: Poll for isolated-world sentinel before activating.
@@ -715,23 +614,18 @@ function init() {
         }
         if (!_chromaExtInitActive) return;
         if (CONFIG.enabled && CONFIG.acceleration) {
-          injectChromaCSS();
+          ensurePrimeSessionSheet();
           startPolling();
         } else {
-          CONFIG.enabled = true;
-          CONFIG.acceleration = true;
-          injectChromaCSS();
-          startPolling();
+          return;
         }
       } else if (!_chromaExtInitActive || _pollCount >= 40) {
         cI(_pollId);
         if (!_chromaExtInitActive) return;
-        
-        if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up Prime handler with defaults.');
-        CONFIG.enabled = true;
-        CONFIG.acceleration = true;
-        injectChromaCSS();
-        startPolling();
+        if (CONFIG.enabled && CONFIG.acceleration) {
+          ensurePrimeSessionSheet();
+          startPolling();
+        }
       }
     }, 50); // Polling frequency (50ms) for initialization check
   }
@@ -759,7 +653,7 @@ API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       deactivatePrimeSessionSheet();
       if (adOverlayHost) adOverlayHost.classList.remove('active');
     } else {
-      injectChromaCSS();
+      ensurePrimeSessionSheet();
       startPolling();
     }
   }

@@ -145,10 +145,9 @@
   let localConfig = null;
 
   /**
-   * @param {string} token
    * @param {Object} [selectors]
    */
-  function initChromaInterceptor(token, selectors = {}) {
+  function initChromaInterceptor(selectors = {}) {
     if (isInitialized) return;
     isInitialized = true;
 
@@ -241,7 +240,7 @@
       chromaPort.onmessage = (msgEvent) => {
         if (msgEvent.data?.type === 'INIT_CHROMA') {
            const initData = msgEvent.data;
-           initChromaInterceptor(initData.token || null, initData.selectors || {});
+           initChromaInterceptor(initData.selectors || {});
            if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port initialized via inner channel.');
         } else if (msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
           const resp = msgEvent.data.data;
@@ -268,7 +267,7 @@
       pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__'));
     }, pingRate);
   } else {
-    initChromaInterceptor(null, {});
+    initChromaInterceptor({});
   }
   // ─── TESTING EXPORTS ─────
   if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {

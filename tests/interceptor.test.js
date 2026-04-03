@@ -97,8 +97,8 @@ const createSandbox = () => {
 
 
 
-  /** @param {string} token @param {Object} selectors */
-  sandbox.simulateHandshake = (token = 'test-token', selectors = {}) => {
+  /** @param {Object} selectors */
+  sandbox.simulateHandshake = (selectors = {}) => {
     const portNonce = '__CHROMA_PT_test__';
     dispatch('document')({ type: '__CHROMA_TOKEN_DELIVERY__', detail: { portNonce } });
     
@@ -122,7 +122,6 @@ const createSandbox = () => {
       port.onmessage({
         data: {
           type: 'INIT_CHROMA',
-          token: token,
           selectors: { HIDE_SELECTORS: [], WARNING_SELECTORS: [], ...selectors }
         }
       });

@@ -17,18 +17,6 @@
   }
   const MSG = window.MSG; // Provided by messaging.js
   let isolatedPort;
-  let secretToken;
-
-  // SECURITY: Session Token Retrieval
-  /** @returns {Promise<boolean>} */
-  const getTokenFromBackground = async () => {
-    const response = await window.notifyBackground({ type: MSG.GET_TOKEN });
-    if (response && response.token) {
-      secretToken = response.token;
-      return true;
-    }
-    return false;
-  };
 
   const CONFIG = {
     enabled: true,
@@ -77,7 +65,6 @@
       // Deliver the payload through the protected pipe
       isolatedPort.postMessage({
         type: 'INIT_CHROMA',
-        token: secretToken,
         selectors: { ...CONFIG }
       });
 
@@ -110,7 +97,6 @@
     document.dispatchEvent(new CustomEvent('__EXT_INIT__', { detail: { active: CONFIG.enabled } }));
 
     // SECURITY: Secure Bridge Handshake
-    await getTokenFromBackground();
     initHandshake();
   });
 

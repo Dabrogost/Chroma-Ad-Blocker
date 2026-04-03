@@ -269,17 +269,6 @@ async function syncWhitelistRules() {
 
 
 
-async function getSessionData() {
-  const data = await chrome.storage.session.get(['sessionTokens', 'tokenRetrievalLocked']);
-  return {
-    sessionTokens: data.sessionTokens || {},
-    tokenRetrievalLocked: data.tokenRetrievalLocked || {}
-  };
-}
-
-async function updateSessionData(key, value) {
-  await chrome.storage.session.set({ [key]: value });
-}
 
 
 
@@ -293,7 +282,6 @@ const MSG = {
   CONFIG_SET: 'CONFIG_SET',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
   STATS_RESET: 'STATS_RESET',
-  GET_TOKEN: 'GET_TOKEN',
   WHITELIST_GET: 'WHITELIST_GET',
   WHITELIST_ADD: 'WHITELIST_ADD',
   WHITELIST_REMOVE: 'WHITELIST_REMOVE',
@@ -334,10 +322,6 @@ function validateConfig(inputConfig) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   const handler = async () => {
     try {
-      const sessionData = await getSessionData();
-      const tabId = _sender.tab?.id;
-      const docId = _sender.documentId;
-
       // SECURITY: Origin Authentication
       const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
       const isFromInternal = _sender.origin === extensionOrigin;
@@ -388,29 +372,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
 
-        case MSG.GET_TOKEN:
-          if (!_sender.tab || !_sender.url) return sendResponse({ error: 'Invalid Sender' });
-          
-          // Use documentId as primary identifier (MV3 best practice); fallback to tabId for compatibility.
-          const sessionKey = docId || (tabId ? `${tabId}:${_sender.frameId || 0}` : null);
-
-          if (sessionKey) {
-            if (sessionData.tokenRetrievalLocked[sessionKey]) return sendResponse({ error: 'Locked' });
-            sessionData.tokenRetrievalLocked[sessionKey] = true;
-            await updateSessionData('tokenRetrievalLocked', sessionData.tokenRetrievalLocked);
-            
-            const buffer = new Uint8Array(16); // 128-bit CSPRNG entropy for session token generation
-            crypto.getRandomValues(buffer);
-            const token = Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
-            
-            // Store both token and tabId to allow for precise cleanup on tab removal.
-            sessionData.sessionTokens[sessionKey] = { token, tabId };
-            await updateSessionData('sessionTokens', sessionData.sessionTokens);
-            sendResponse({ token });
-          } else {
-            sendResponse({ error: 'No session key' });
-          }
-          break;
 
         case MSG.WHITELIST_GET:
           const { whitelist: wlGet = [] } = await chrome.storage.local.get('whitelist');
@@ -528,25 +489,7 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
 
 
 
-chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const sessionData = await getSessionData();
-  let changed = false;
 
-  // Cleanup all sessions (documentId or fallback keys) belonging to this tabId
-  for (const key in sessionData.sessionTokens) {
-    const entry = sessionData.sessionTokens[key];
-    // Check if it's a new-style object entry or an old-style tabId fallback key
-    if ((entry && entry.tabId === tabId) || key === String(tabId) || key.startsWith(`${tabId}:`)) {
-      delete sessionData.sessionTokens[key];
-      delete sessionData.tokenRetrievalLocked[key];
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    await chrome.storage.session.set(sessionData);
-  }
-});
 
 // ─── SUBSCRIPTION ALARM ─────
 chrome.alarms.onAlarm.addListener((alarm) => {
