@@ -690,23 +690,15 @@
             injectChromaCSS();
             startPolling();
             initSkipButtonListener();
-          } else {
+          } else if (_extInitFired && _chromaExtInitActive) {
             CONFIG.enabled = true;
             CONFIG.acceleration = true;
             injectChromaCSS();
             startPolling();
             initSkipButtonListener();
           }
-        } else if (!_chromaExtInitActive || _pollCount >= 40) {
+        } else if (_pollCount >= 40) {
           API.clearInterval(_pollId);
-          if (!_chromaExtInitActive) return;
-          
-          if (DEBUG) console.log('[Chroma] Sentinel resolved. Waking up YouTube handler with defaults.');
-          CONFIG.enabled = true;
-          CONFIG.acceleration = true;
-          injectChromaCSS();
-          startPolling();
-          initSkipButtonListener();
         }
       }, 50); // Polling frequency (50ms) for initialization check
     }

@@ -314,7 +314,7 @@ test('YouTube ad acceleration', async (t) => {
       sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: true } });
       intervalFns.forEach(fn => fn());
 
-      assert.strictEqual(sandbox.CONFIG.enabled, true, 'Should wake up gracefully');
+      assert.strictEqual(sandbox.CONFIG.enabled, false, 'Should not force enable');
     });
   });
 });

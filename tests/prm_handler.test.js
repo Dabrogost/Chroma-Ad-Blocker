@@ -329,7 +329,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     
     let createdOverlay = null;
     container.appendChild = (child) => {
-      if (child.id === 'prime-chroma-overlay') createdOverlay = child;
+      if (child.id && child.id.startsWith('chroma-host-')) createdOverlay = child;
     };
     container.contains = (child) => child === createdOverlay;
 
@@ -345,7 +345,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     }, container);
 
     sandbox.document.getElementById = (id) => {
-      if (id === 'prime-chroma-overlay') return createdOverlay;
+      if (id && id.startsWith('chroma-host-')) return createdOverlay;
       return null;
     };
 
@@ -366,7 +366,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     container.className = 'atvwebplayersdk-player-container';
     
     const overlay = createMockElement('div');
-    overlay.id = 'prime-chroma-overlay';
+    overlay.id = 'chroma-host-12345';
     // Loop Prevention: Chroma overlay detection exclusion.
     overlay.textContent = 'Accelerating Prime Ad...';
     container.appendChild(overlay);
@@ -402,7 +402,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     
     const playerContainer = createMockElement('div');
     playerContainer.className = 'atvwebplayersdk-player-container';
-    playerContainer.appendChild = (child) => { if (child.id === 'prime-chroma-overlay') createdOverlay = child; return child; };
+    playerContainer.appendChild = (child) => { if (child.id && child.id.startsWith('chroma-host-')) createdOverlay = child; return child; };
     mockVideo.closest = () => playerContainer;
 
     sandbox.document.querySelector = createMockQuerySelector({
@@ -451,7 +451,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     assert.strictEqual(mockVideo.playbackRate, 8, 'First ad should be accelerated');
     
     // The overlay is now injected into container
-    const overlay = container.children.find(c => c.id === 'prime-chroma-overlay');
+    const overlay = container.children.find(c => c.id && c.id.startsWith('chroma-host-'));
     assert.ok(overlay, 'Overlay should be injected into container');
 
     // Ad Detection Debounce: Consecutive detection threshold.
@@ -597,6 +597,6 @@ test('Prime Event-Driven Initialization Flow', async (t) => {
     sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: true } });
     intervalFns.forEach(fn => fn());
 
-    assert.strictEqual(sandbox.CONFIG.enabled, true, 'Should wake up gracefully');
+    assert.strictEqual(sandbox.CONFIG.enabled, false, 'Should not force enable');
   });
 });

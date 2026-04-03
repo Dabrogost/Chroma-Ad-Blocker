@@ -10,7 +10,7 @@ export const SUBSCRIPTION_ID_START = 100000;
 export const SUBSCRIPTION_ID_END   = 8999999;
 
 // Target cap: 25,000 — leaves ~5,000 buffer below DNR 30,000 dynamic limit
-// after accounting for default dynamic rules (1001–1006) and whitelist (9,000,000+)
+// after accounting for default dynamic rules (1001–1015) and whitelist (9,000,000+)
 export const SUBSCRIPTION_RULE_CAP = 25000;
 
 /**
