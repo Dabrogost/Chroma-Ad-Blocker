@@ -690,17 +690,15 @@
             injectChromaCSS();
             startPolling();
             initSkipButtonListener();
-          } else {
-            return;
-          }
-        } else if (!_chromaExtInitActive || _pollCount >= 40) {
-          cI(_pollId);
-          if (!_chromaExtInitActive) return;
-          if (CONFIG.enabled && CONFIG.acceleration) {
+          } else if (_extInitFired && _chromaExtInitActive) {
+            CONFIG.enabled = true;
+            CONFIG.acceleration = true;
             injectChromaCSS();
             startPolling();
             initSkipButtonListener();
           }
+        } else if (_pollCount >= 40) {
+          API.clearInterval(_pollId);
         }
       }, 50); // Polling frequency (50ms) for initialization check
     }
