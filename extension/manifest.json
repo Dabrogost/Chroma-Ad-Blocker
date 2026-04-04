@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chroma Ad-Blocker",
-  "version": "0.9.2",
+  "version": "0.9.5",
   "description": "Multi-layered ad-blocker using ad-acceleration, network blocking, and cosmetic filtering.",
   "permissions": [
     "declarativeNetRequest",

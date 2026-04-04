@@ -289,7 +289,7 @@ graph TD
       <button id="cancel-download" class="btn-ghost" data-close-modal>Cancel</button>
       <a 
         id="final-download-btn" 
-        href="https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v0.9.2/Chroma_Ad_Blocker.zip" 
+        href="https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v0.9.5/Chroma_Ad_Blocker.zip" 
         class="btn-primary btn-disabled"
         download
       >
