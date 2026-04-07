@@ -84,10 +84,7 @@ const AD_SELECTORS = [
   '.adunit',
   '.fbt-ad-indicator',
   '.fbt-ad-progress',
-  '#ape_VideoAd-Player-Container',
-  // Positional fallbacks for obfuscated players where stable classes are missing.
-  '.webPlayerUIContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)',
-  '.templateContainer [tabindex="-1"] > div:nth-child(4) > div:nth-child(2)'
+  '#ape_VideoAd-Player-Container'
 ];
 
 let targetVideo = null;
@@ -429,9 +426,16 @@ function isAdShowing() {
       if (/\b(Ad|AD|Ad:|AD:|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(text)) {
         // Double check: if it's JUST our title, it's not an ad
         const cleanText = text.replace(/Chroma Active|Accelerating Prime Ad/gi, '').trim();
-        if (/\b(Ad|AD|Ad:|AD:|Sponsored|Advertisement|Annonce|Anzeige)\b/i.test(cleanText) ||
-            (text.toLowerCase().includes('skip ad') || text.toLowerCase().includes('advertisement'))) {
+        if (text.toLowerCase().includes('skip ad') || text.toLowerCase().includes('advertisement')) {
           return true;
+        }
+        if (/\b(Ad|AD|Ad:|AD:|Sponsored|Annonce|Anzeige)\b/i.test(cleanText)) {
+          // Require corroborating evidence: a visible countdown timer or progress indicator.
+          // A lone "Ad" word without a timing signal is not a reliable active-ad indicator
+          // (catches residual "Ad info" / "Ad choices" links that persist after ad ends).
+          if (/\d+:\d+/.test(cleanText) || qS('.atvwebplayersdk-ad-timer, .atvwebplayersdk-ad-time-remaining, [class*="ad-progress"], [class*="ad-timer"]')) {
+            return true;
+          }
         }
       }
     } finally {
