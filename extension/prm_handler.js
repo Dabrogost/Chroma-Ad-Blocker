@@ -60,15 +60,27 @@ let _extInitFired = false;
 API.addDocEventListener('__EXT_INIT__', (e) => {
   _extInitFired = true;
   if (e && e.detail && e.detail.active === false) _chromaExtInitActive = false;
+
+  // Late-arrival activation: If the init polling loop already timed out
+  // (cold browser start where chrome.storage was slow), activate now.
+  if (!pollingInterval && _chromaExtInitActive) {
+    if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+      applyConfig(window.__CHROMA_INTERNAL__.config);
+    }
+    if (CONFIG.enabled && CONFIG.acceleration) {
+      ensurePrimeSessionSheet();
+      startPolling();
+    } else if (_chromaExtInitActive) {
+      CONFIG.enabled = true;
+      CONFIG.acceleration = true;
+      ensurePrimeSessionSheet();
+      startPolling();
+    }
+  }
 }, true);
 
-const AD_SELECTORS = [
-  '.atvwebplayersdk-ad-container',
-  '.atvwebplayersdk-ad-time-remaining',
-  '.atvwebplayersdk-ad-indicator-text',
-  '.atvwebplayersdk-ad-timer',
-  '[data-testid="ad-indicator"]',
-  '[data-testid="video-ad-label"]',
+// Selectors that reliably indicate an active ad (state classes, skip buttons, overlays)
+const AD_SELECTORS_RELIABLE = [
   '.ad-skipping',
   '.ad-interrupting',
   '.ad-showing',
@@ -77,14 +89,21 @@ const AD_SELECTORS = [
   '.atvwebplayersdk-player-container .ad-overlay',
   '.templateContainer .ad-overlay',
   '.dv-player-fullscreen .ad-overlay',
-  'div[class*="ad-overlay"]',
-  'div[class*="ad-indicator"]',
-  'div[class*="ad-timer"]',
-  'div[class*="ad-break"]',
   '.adunit',
   '.fbt-ad-indicator',
   '.fbt-ad-progress',
-  '#ape_VideoAd-Player-Container'
+  '#ape_VideoAd-Player-Container',
+  '[data-testid="video-ad-label"]'
+];
+
+// Selectors for elements that persist in the DOM after ads end.
+// These require secondary validation (must contain countdown text).
+const AD_SELECTORS_NEED_TIMER = [
+  '.atvwebplayersdk-ad-container',
+  '.atvwebplayersdk-ad-time-remaining',
+  '.atvwebplayersdk-ad-indicator-text',
+  '.atvwebplayersdk-ad-timer',
+  '[data-testid="ad-indicator"]'
 ];
 
 let targetVideo = null;
@@ -390,13 +409,18 @@ function updateAdOverlay(video, isActive) {
  * Checks for ad indicators using both CSS selectors and text-based heuristics.
  */
 function isAdShowing() {
-  // 1. Check CSS Selectors First (fastest)
-  const adElement = qS(AD_SELECTORS.join(','));
-  if (adElement && (adElement.offsetParent !== null || adElement.getClientRects().length > 0)) {
-    // Smarter check for timer countdown element (Fix 2)
-    if (adElement.className.includes('ad-timer-countdown') && !/\d+:\d+/.test(adElement.textContent.trim())) {
-      // Continue to next checks if not showing an actual timer
-    } else {
+  // 1a. Reliable selectors — state classes, skip buttons, overlays (trusted immediately)
+  const reliableEl = qS(AD_SELECTORS_RELIABLE.join(','));
+  if (reliableEl && (reliableEl.offsetParent !== null || reliableEl.getClientRects().length > 0)) {
+    return true;
+  }
+
+  // 1b. Persistent selectors — containers/timers that linger after ads end.
+  //     Only trust them if they (or a child) contain an active countdown.
+  const timerEl = qS(AD_SELECTORS_NEED_TIMER.join(','));
+  if (timerEl && (timerEl.offsetParent !== null || timerEl.getClientRects().length > 0)) {
+    const content = (timerEl.textContent || '').trim();
+    if (/\d+:\d+/.test(content)) {
       return true;
     }
   }
@@ -430,10 +454,14 @@ function isAdShowing() {
           return true;
         }
         if (/\b(Ad|AD|Ad:|AD:|Sponsored|Annonce|Anzeige)\b/i.test(cleanText)) {
-          // Require corroborating evidence: a visible countdown timer or progress indicator.
-          // A lone "Ad" word without a timing signal is not a reliable active-ad indicator
-          // (catches residual "Ad info" / "Ad choices" links that persist after ad ends).
-          if (/\d+:\d+/.test(cleanText) || qS('.atvwebplayersdk-ad-timer, .atvwebplayersdk-ad-time-remaining, [class*="ad-progress"], [class*="ad-timer"]')) {
+          // Require corroborating evidence: a visible countdown timer with actual digits,
+          // or a progress indicator. A lone "Ad" word without a live timing signal is
+          // unreliable (catches residual "Ad info" / "Ad choices" links after ad ends).
+          if (/\d+:\d+/.test(cleanText)) {
+            return true;
+          }
+          const timerEl = qS('.atvwebplayersdk-ad-timer, .atvwebplayersdk-ad-time-remaining, [class*="ad-progress"], [class*="ad-timer"]');
+          if (timerEl && /\d+:\d+/.test(timerEl.textContent || '')) {
             return true;
           }
         }
@@ -520,21 +548,28 @@ function handlePrimeAdAcceleration() {
     }
 
     if (rawAdShowing) {
-      consecutiveFalseCount = 0;
-      if (!isAdActive) {
-        isAdActive = true;
-        activatePrimeSessionSheet();
-      }
-      
-      targetVideo = video;
-      lastAcceleratedSrc = currentSrc;
+      // Guard: If we were accelerating a specific video source and findActiveVideo()
+      // now returns a different source, the player has switched to content while
+      // residual ad DOM persists. Treat this as a false positive.
+      if (isAdActive && lastAcceleratedSrc && lastAcceleratedSrc !== currentSrc) {
+        consecutiveFalseCount++;
+      } else {
+        consecutiveFalseCount = 0;
+        if (!isAdActive) {
+          isAdActive = true;
+          activatePrimeSessionSheet();
+        }
 
-      // Apply acceleration
-      if (video.playbackRate !== CONFIG.accelerationSpeed) {
-        if (!video.muted && video.volume > 0) savedVolume = video.volume;
-        video.playbackRate = CONFIG.accelerationSpeed;
-        video.muted = true;
-        video.volume = 0;
+        targetVideo = video;
+        lastAcceleratedSrc = currentSrc;
+
+        // Apply acceleration
+        if (video.playbackRate !== CONFIG.accelerationSpeed) {
+          if (!video.muted && video.volume > 0) savedVolume = video.volume;
+          video.playbackRate = CONFIG.accelerationSpeed;
+          video.muted = true;
+          video.volume = 0;
+        }
       }
       
     } else {
