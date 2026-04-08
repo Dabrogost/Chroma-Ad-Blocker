@@ -42,7 +42,6 @@ const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ?
             window.__CHROMA_INTERNAL__.api : 
             {
               querySelector: document.querySelector.bind(document),
-              getElementById: document.getElementById.bind(document),
               createElement: document.createElement.bind(document),
               addEventListener: window.addEventListener.bind(window),
               setInterval: window.setInterval.bind(window),

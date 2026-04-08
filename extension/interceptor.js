@@ -71,12 +71,10 @@
   // ─── PRISTINE CACHE ─────
   // Capture native APIs immediately to prevent host-page scripts from 
   // bypassing blockers by overwriting globals later.
-  const pristineSetTimeout = window.setTimeout.bind(window);
   const pristineSetInterval = window.setInterval.bind(window);
   const pristineClearInterval = window.clearInterval.bind(window);
 
   const pristineCreateElement = document.createElement.bind(document);
-  const pristineGetElementById = document.getElementById.bind(document);
   const pristineQuerySelector = document.querySelector.bind(document);
   const pristineAddEventListener = window.addEventListener.bind(window);
   const pristineRemoveEventListener = window.removeEventListener.bind(window);
@@ -127,19 +125,6 @@
   let chromaPort;
   let pingInterval;
 
-  /**
-   * Helper to send messages only via the secure pipe.
-   * Fails closed if the port is not established or env is compromised.
-   */
-  /** @param {Object} message */
-  function sendToProtection(message) {
-    if (isEnvironmentCompromised || !chromaPort) {
-      if (DEBUG) console.error("[Chroma Ad-Blocker] Secure pipe not available/compromised. Dropping message.");
-      return;
-    }
-    chromaPort.postMessage(message);
-  }
-
   // ─── INTERCEPTOR ─────
   let isInitialized = false;
   let localConfig = null;
@@ -163,7 +148,6 @@
         // Integrity Layer: API Passthrough
         api: Object.freeze({
           querySelector: pristineQuerySelector,
-          getElementById: pristineGetElementById,
           createElement: pristineCreateElement,
           addEventListener: pristineAddEventListener,
           setInterval: pristineSetInterval,

@@ -37,7 +37,6 @@
               window.__CHROMA_INTERNAL__.api : 
               {
                 querySelector: document.querySelector.bind(document),
-                getElementById: document.getElementById.bind(document),
                 createElement: document.createElement.bind(document),
                 setInterval: window.setInterval.bind(window),
                 clearInterval: window.clearInterval.bind(window),

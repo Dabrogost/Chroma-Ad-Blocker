@@ -124,7 +124,6 @@
     let removedAny = false;
 
     if (!nodes) {
-      if (!WARNING_SELECTOR_COMBINED) return; 
       const els = document.querySelectorAll(WARNING_SELECTOR_COMBINED);
       if (els.length > 0) {
         removedAny = true;
@@ -293,8 +292,6 @@
       }
 
       // Merge subscription cosmetic rules applicable to the current hostname.
-      // NOTE: content.js only runs on YouTube and Amazon URL patterns (per manifest).
-      // Subscription cosmetic rules for other domains are stored but never applied here.
       if (data.subscriptionCosmeticRules && Array.isArray(data.subscriptionCosmeticRules)) {
         const h = window.location.hostname;
 
