@@ -196,7 +196,11 @@ function parseCosmeticRule(line, isException = false) {
     // Extended/procedural CSS — skip in Phase 1
     if (selector.startsWith(':-abp-') || selector.includes(':xpath(') ||
         selector.includes(':-abp-has(') || selector.includes(':upward(') ||
-        selector.includes(':nth-ancestor(') || selector.includes(':style(')) return null;
+        selector.includes(':nth-ancestor(') || selector.includes(':style(') ||
+        selector.includes(':remove(') || selector.includes(':has-text(') ||
+        selector.includes(':matches-css(') || selector.includes(':matches-path(') ||
+        selector.includes(':min-text-length(') || selector.includes(':others(') ||
+        selector.includes(':watch-attr(')) return null;
 
     const domains = domainPart
       ? domainPart.split(',').map(d => d.trim()).filter(Boolean)
