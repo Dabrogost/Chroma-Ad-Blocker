@@ -209,7 +209,7 @@
       const isElement = node.nodeType === Node.ELEMENT_NODE;
 
       const processAdContainer = (el) => {
-        if (!el || !el.id) return;
+        if (!el || !el.id || typeof el.id !== 'string') return;
         
         // Exclusion: Internal extension styles and critical site elements
         const id = el.id.toLowerCase();
@@ -311,7 +311,11 @@
           )
           .map(r => r.selector);
 
-        HIDE_SELECTORS = [...HIDE_SELECTORS, ...additional];
+        const validated = additional.filter(sel => {
+          try { document.querySelector(sel); return true; } catch { return false; }
+        });
+
+        HIDE_SELECTORS = [...HIDE_SELECTORS, ...validated];
       }
       
       if (data.WARNING_SELECTORS) {
