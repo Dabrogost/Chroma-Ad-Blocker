@@ -1,6 +1,6 @@
 /**
  * Chroma Ad-Blocker - Amazon Prime Video Accelerator
- * Strategy: Ad-Acceleration (8x speed)
+ * Strategy: Ad-Acceleration (configurable speed, default 8x)
  * Specifically tuned for Prime Video's web player.
  */
 
@@ -171,7 +171,7 @@ function initAdOverlay(video) {
       position: absolute !important;
       top: 0 !important; left: 0 !important; 
       width: 100% !important; height: 100% !important;
-      z-index: 2147483647 !important; // Maximum 32-bit signed integer for absolute top-layer positioning
+      z-index: 2147483647 !important; /* Maximum z-index */
       pointer-events: none !important;
       contain: strict !important;
       margin: 0 !important; padding: 0 !important;

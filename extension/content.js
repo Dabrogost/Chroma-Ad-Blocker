@@ -45,7 +45,7 @@
             max-width: unset !important;
           }
           .ytp-chrome-bottom {
-            z-index: 9999999 !important; // High layer for player controls
+            z-index: 9999999 !important; /* High layer for player controls */
           }
         `,
         isEnabled: () => CONFIG.enabled && CONFIG.cosmetic
@@ -95,7 +95,6 @@
     styles.forEach(styleDef => {
       let sheet = chromaSheets.get(styleDef.id);
       if (!sheet) {
-        // Performance Optimization: Constructable Stylesheets (isolate from DOM string parser)
         sheet = new CSSStyleSheet();
         try {
           sheet.replaceSync(styleDef.content);
@@ -210,7 +209,6 @@
 
       const isElement = node.nodeType === Node.ELEMENT_NODE;
 
-      // Performance Optimization: Heuristic Container Removal
       const processAdContainer = (el) => {
         if (!el || !el.id) return;
         
@@ -242,7 +240,6 @@
 
   // ─── NAVIGATION HANDLING (SPA) ─────
   function onYTNavigate() {
-    // Performance Optimization: Multi-Stage SPA Cleanup
     [500, 1500].forEach(delay => { // 500ms catches initial DOM swap; 1500ms catches lazy-rendered ad slots
       setTimeout(() => {
         suppressAdblockWarnings();
@@ -280,7 +277,6 @@
     try {
       const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist', 'subscriptionCosmeticRules']);
       
-      // Performance Optimization: Domain Exclusion
       const whitelist = data.whitelist || [];
       const hostname = window.location.hostname;
       if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {

@@ -13,7 +13,7 @@
     checkIntervalMs: 300,  // Interval between ad state checks (ms)
   });
 
-  // Whitelist of allowed config keys for secure updates (VULN-07 Hardening)
+  // Whitelist of allowed config keys for secure updates
   const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
 
   const CONFIG_VALIDATORS = Object.freeze({
@@ -198,7 +198,7 @@
         position: absolute !important;
         top: 0 !important; left: 0 !important; 
         width: 100% !important; height: 100% !important;
-        z-index: 2147483640 !important; // Stack-safe absolute overlay layer (below browser defaults)
+        z-index: 2147483640 !important; /* Below browser default z-index ceiling */
         pointer-events: none !important;
         contain: strict !important;
         margin: 0 !important; padding: 0 !important;
@@ -494,7 +494,7 @@
       if (!chromaAdSessionActive) {
         if (DEBUG) console.log('[Chroma Ad-Blocker] Ad Session Detected');
         chromaAdSkipped = false;
-        // Performance Optimization: Switches to rAF-synced watcher during active ads for frame-perfect acceleration and overlay synchronization.
+        // Switches to rAF-synced watcher during active ads for frame-aligned acceleration and overlay updates.
         startFastAdWatcher(); 
       }
       chromaAdSessionActive = true;
@@ -508,7 +508,7 @@
       const isMainVideoReady = mainVideo && mainVideo.readyState >= 3;
 
       // Session release logic:
-      if (isMainVideoReady || timeSinceAd > 500 || timeSinceAd > 5000) { // 500ms bridges multi-ad pod gaps; 5000ms absolute watchdog timeout
+      if (isMainVideoReady || timeSinceAd > 5000) { // Normal release: main video ready; watchdog: force-release after 5000ms if video never becomes ready
         chromaAdSessionActive = false;
 
       }
@@ -569,7 +569,7 @@
   }
 
 
-  // ─── POLLING & INITIALIZATION ─────
+  // ─── NAVIGATION & EVENT HANDLERS ─────
   function onYTNavigate() {
     cleanupVideoState();
     chromaAdSessionActive = false;
@@ -672,8 +672,7 @@
     requestAnimationFrame(check);
   }
 
-  // Session CSS is now managed via adoptedStyleSheets (see ensureSessionSheet above).
-  // This function is retained as a no-op alias for call sites that prepare CSS early.
+  // Convenience alias — ensures the session stylesheet object exists for later activation.
   function injectChromaCSS() {
     ensureSessionSheet();
   }
@@ -687,7 +686,7 @@
 
 
 
-    // 3. SECURE START: If we already have config, start. Otherwise, wait for handshake.
+    // If config is already available, start immediately. Otherwise, poll for handshake.
     if (CONFIG.enabled && CONFIG.acceleration) {
       injectChromaCSS();
       startPolling();

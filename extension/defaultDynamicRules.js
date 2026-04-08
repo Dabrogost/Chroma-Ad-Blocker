@@ -1,5 +1,5 @@
 /**
- * Default dynamic rules — these supplement the static rules.json.
+ * Default dynamic rules — these supplement the static rule files.
  * Because these are dynamic, they can be updated at runtime without
  * going through the extension store review process. This is to prevent
  * YouTube from blocking the extension.
@@ -183,8 +183,8 @@ export function getDefaultDynamicRules() {
         resourceTypes: ['script'],
       },
     },
-    // Allow YouTube end-of-ad conversion attribution ping (Anti-Detection)
-    // PRIVACY TRADEOFF: Permits the generate_204 connectivity ping on youtube.com
+    // Allow YouTube connectivity/measurement ping (Anti-Detection)
+    // PRIVACY TRADEOFF: Permits the generate_204 beacon on youtube.com
     // to prevent detection. Restricted to YouTube initiator only.
     {
       id: 1015,

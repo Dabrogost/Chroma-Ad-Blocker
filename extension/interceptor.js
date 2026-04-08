@@ -87,7 +87,7 @@
   const pristineCall = Function.prototype.call.bind(Function.prototype.call);
   const pristineIncludes = String.prototype.includes.bind(String.prototype);
 
-  // SECURITY: Protect against Prototype Pollution hijacking (VULN-01)
+  // Domains where the secure bridge and pristine API wrappers are provisioned.
   const HOSTILE_DOMAINS = [
     'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',
     'amazon.co.jp', 'amazon.ca', 'amazon.fr', 'amazon.it',
@@ -123,7 +123,7 @@
   }
 
   // =========================================================================
-  // ─── API LOCKDOWN ─────
+  // ─── SECURE PORT ─────
   let chromaPort;
   let pingInterval;
 
