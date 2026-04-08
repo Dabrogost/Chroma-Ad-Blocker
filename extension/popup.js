@@ -234,7 +234,8 @@ async function init() {
 
     const summaryBar = document.createElement('div');
     summaryBar.style.cssText = 'padding: 8px 14px 4px; font-size: 10px; color: var(--text-muted); text-align: center; letter-spacing: 0.03em;';
-    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied to network filter`;
+    const totalCosmetic = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.cosmetic || 0), 0);
+    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied to network filter · ${totalCosmetic.toLocaleString()} cosmetic`;
 
     list.innerHTML = '';
     list.appendChild(summaryBar);
@@ -248,7 +249,9 @@ async function init() {
         : 'Never';
 
       const countText = sub.ruleCount
-        ? `${sub.ruleCount.network.toLocaleString()} network · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
+        ? sub.cosmeticOnly
+          ? `cosmetic only · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
+          : `${sub.ruleCount.network.toLocaleString()} parsed · ${sub.ruleCount.network > 0 ? appliedNetworkRuleCount.toLocaleString() : '0'} applied`
         : '';
 
       const safeName  = escapeHTML(sub.name);
@@ -262,7 +265,8 @@ async function init() {
       row.innerHTML = `
         <div class="toggle-info">
           <div class="name">${safeName}</div>
-          <div class="desc">Updated: ${lastUpdatedText}${countText ? ' · ' + countText : ''}</div>
+          <div class="desc">Updated: ${lastUpdatedText}</div>
+          ${countText ? `<div class="desc">${countText}</div>` : ''}
           ${errorText}
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">

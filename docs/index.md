@@ -314,4 +314,7 @@ graph TD
   >
     Buy me a coffee
   </a>
+  <p class="section__sub" style="margin-top:2rem;font-size:0.8rem;opacity:0.6;">
+    Filter lists provided by <a href="https://github.com/hagezi/dns-blocklists" target="_blank" rel="noopener noreferrer">Hagezi</a> (MIT) and <a href="https://easylist.to/" target="_blank" rel="noopener noreferrer">the EasyList authors</a> (CC BY 3.0).
+  </p>
 </section>

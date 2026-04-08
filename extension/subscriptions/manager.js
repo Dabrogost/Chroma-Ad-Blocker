@@ -109,6 +109,7 @@ async function rebuildNetworkRules(subscriptions) {
 
   const allRules = [];
   for (const sub of subscriptions) {
+    if (sub.cosmeticOnly) continue;
     if (sub.enabled && perSubRules[sub.id]) {
       allRules.push(...perSubRules[sub.id].filter(r => r.action && r.action.type === 'block'));
     }
@@ -237,7 +238,7 @@ export async function refreshSubscription(id) {
     const cosPerSub = cosStore.sub_cosmetic_rules || {};
     const scrPerSub = scrStore.sub_scriptlet_rules || {};
 
-    netPerSub[id] = networkRules;
+    netPerSub[id] = sub.cosmeticOnly ? [] : networkRules;
     cosPerSub[id] = cosmeticRules;
     scrPerSub[id] = scriptletRules;
 
@@ -248,7 +249,7 @@ export async function refreshSubscription(id) {
     });
 
     // Update subscription metadata
-    sub.ruleCount   = { network: networkRules.length, cosmetic: cosmeticRules.length, scriptlet: scriptletRules.length };
+    sub.ruleCount   = { network: sub.cosmeticOnly ? 0 : networkRules.length, cosmetic: cosmeticRules.length, scriptlet: scriptletRules.length };
     sub.lastUpdated = Date.now();
     sub.version     = String(Date.now());
     sub.lastError   = null;

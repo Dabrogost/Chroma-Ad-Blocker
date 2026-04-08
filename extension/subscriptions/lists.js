@@ -26,5 +26,29 @@ export const DEFAULT_SUBSCRIPTIONS = [
     version: null,
     lastError: null,
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+  },
+  {
+    id: 'easylist',
+    name: 'EasyList',
+    url: 'https://easylist.to/easylist/easylist.txt',
+    enabled: true,
+    cosmeticOnly: true,
+    intervalHours: 24,
+    lastUpdated: 0,
+    version: null,
+    lastError: null,
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+  },
+  {
+    id: 'fanboy-annoyance',
+    name: 'Fanboy Annoyance',
+    url: 'https://secure.fanboy.co.nz/fanboy-annoyance.txt',
+    enabled: true,
+    cosmeticOnly: true,
+    intervalHours: 24,
+    lastUpdated: 0,
+    version: null,
+    lastError: null,
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
   }
 ];

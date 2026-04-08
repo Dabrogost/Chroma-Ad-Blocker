@@ -54,6 +54,25 @@
   API.addDocEventListener('__EXT_INIT__', (e) => {
     _extInitFired = true;
     if (e && e.detail && e.detail.active === false) _chromaExtInitActive = false;
+
+    // Late-arrival activation: If the init polling loop already timed out
+    // (cold browser start where chrome.storage was slow), activate now.
+    if (!pollingInterval && _chromaExtInitActive) {
+      if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+        applyConfig(window.__CHROMA_INTERNAL__.config);
+      }
+      if (CONFIG.enabled && CONFIG.acceleration) {
+        injectChromaCSS();
+        startPolling();
+        initSkipButtonListener();
+      } else if (_chromaExtInitActive) {
+        CONFIG.enabled = true;
+        CONFIG.acceleration = true;
+        injectChromaCSS();
+        startPolling();
+        initSkipButtonListener();
+      }
+    }
   }, true);
 
   // ─── STATE ─────

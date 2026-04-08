@@ -185,6 +185,15 @@ Portions of this codebase, including initial logic structures and documentation,
 
 ---
 
+## Filter List Credits
+
+Chroma subscribes to the following third-party filter lists at runtime. These lists are not bundled with the extension — they are fetched and applied dynamically.
+
+- **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists) — [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE)
+- **Fanboy's Annoyance List** by Fanboy, MonztA, Khrin, and Yuki2718 — [CC BY 3.0](http://creativecommons.org/licenses/by/3.0/) · [easylist.to](https://easylist.to/)
+
+---
+
 ## Legal Disclaimers
 
 **Trademark Disclaimer:** YouTube is a trademark of Google LLC. Amazon Prime Video is a trademark of Amazon.com, Inc. Chroma Ad-Blocker is an independent project and is NOT affiliated with, endorsed by, or sponsored by Google LLC, YouTube, Amazon.com, Inc., or any other third-party platform.
