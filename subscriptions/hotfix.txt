@@ -1,1 +1,3 @@
 ! Chroma Hotfix Rules
+
+reddit.com##shreddit-ad-post
