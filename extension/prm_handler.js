@@ -512,6 +512,24 @@ function handlePrimeAdAcceleration() {
     // to prevent UI 'flicker' caused by the MutationObserver/visibility-toggle race condition.
     const rawAdShowing = isAdShowing();
     const video = findActiveVideo();
+    if (isAdActive && adOverlayHost && !adOverlayHost.isConnected) {
+      if (DEBUG) console.log('[Chroma] Overlay disconnected — forcing ad-end.');
+      if (targetVideo) {
+        targetVideo.playbackRate = 1;
+        targetVideo.muted = false;
+        targetVideo.volume = savedVolume;
+      }
+      isAdActive = false;
+      lastAdEndTime = Date.now();
+      consecutiveFalseCount = 0;
+      lastAcceleratedSrc = null;
+      currentAdRemainingStart = 0;
+      lastAdTimerText = null;
+      deactivatePrimeSessionSheet();
+      adOverlayHost = null;
+      adOverlayRoot = null;
+      return;
+    }
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
     // Cooldown check: Prevents rapid re-triggering during the playback transition.
@@ -556,18 +574,18 @@ function handlePrimeAdAcceleration() {
         consecutiveFalseCount = 0;
         if (!isAdActive) {
           isAdActive = true;
+          targetVideo = video;
           activatePrimeSessionSheet();
         }
 
-        targetVideo = video;
         lastAcceleratedSrc = currentSrc;
 
         // Apply acceleration
-        if (video.playbackRate !== CONFIG.accelerationSpeed) {
-          if (!video.muted && video.volume > 0) savedVolume = video.volume;
-          video.playbackRate = CONFIG.accelerationSpeed;
-          video.muted = true;
-          video.volume = 0;
+        if (targetVideo.playbackRate !== CONFIG.accelerationSpeed) {
+          if (!targetVideo.muted && targetVideo.volume > 0) savedVolume = targetVideo.volume;
+          targetVideo.playbackRate = CONFIG.accelerationSpeed;
+          targetVideo.muted = true;
+          targetVideo.volume = 0;
         }
       }
       
