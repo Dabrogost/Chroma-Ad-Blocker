@@ -139,6 +139,23 @@ Chroma does not intercept or store any data from these requests. For a full expl
 
 ---
 
+## Permissions
+
+Chroma requests the following permissions. Each is required for a specific, documented purpose.
+
+| Permission | Reason |
+|---|---|
+| `declarativeNetRequest` | Enables and manages the static and dynamic DNR rulesets that perform network-level ad and tracker blocking at the browser engine level. |
+| `declarativeNetRequestFeedback` | Allows the service worker to read which rules fired, used to collect per-session blocking statistics displayed in the popup. |
+| `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
+| `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
+| `tabs` | Required to read the active tab's URL for whitelist matching in the popup and to reload the tab when the whitelist is toggled. |
+| `alarms` | Powers the 24-hour subscription refresh cycle. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
+| `scripting` | Used by the scriptlet engine to inject matched scriptlet functions into the page's MAIN world context on navigation via `chrome.scripting.executeScript`. |
+| `webNavigation` | Provides navigation lifecycle events that trigger the scriptlet engine and MAIN world handler injection at the correct point in the page load sequence. |
+
+---
+
 ## Security Hardening
 
 Chroma implements several advanced security measures to ensure extension integrity and prevent bypass by third-party scripts:
