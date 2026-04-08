@@ -296,7 +296,9 @@
         HIDE_SELECTORS = data.HIDE_SELECTORS;
       }
 
-      // Merge subscription cosmetic rules applicable to the current hostname
+      // Merge subscription cosmetic rules applicable to the current hostname.
+      // NOTE: content.js only runs on YouTube and Amazon URL patterns (per manifest).
+      // Subscription cosmetic rules for other domains are stored but never applied here.
       if (data.subscriptionCosmeticRules && Array.isArray(data.subscriptionCosmeticRules)) {
         const h = window.location.hostname;
 

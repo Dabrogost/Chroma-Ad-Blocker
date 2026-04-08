@@ -127,7 +127,7 @@ Utilizes a high-performance MutationObserver and CSS injection via Constructable
 On every navigation commit, the scriptlet engine matches the current hostname against stored subscription scriptlet rules and injects matching scriptlet functions directly into the page's MAIN world context via `chrome.scripting.executeScript`. Scriptlets can abort property reads, neutralize anti-adblock timers, intercept fetch and XHR calls, and remove specific CSS classes.
 
 ### Layer 5: Universal Protection (protection.js, interceptor.js)
-A proactive security layer that maintains extension integrity across execution contexts. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, writes the initialization sentinel to `document.documentElement`, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
+A proactive security layer that maintains extension integrity across execution contexts. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, dispatches the `__EXT_INIT__` document event to signal the MAIN world handlers, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
 
 ---
 
@@ -207,7 +207,7 @@ Portions of this codebase, including initial logic structures and documentation,
 Chroma subscribes to the following third-party filter lists at runtime. These lists are not bundled with the extension — they are fetched and applied dynamically.
 
 - **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists) — [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE)
-- **Fanboy's Annoyance List** by Fanboy, MonztA, Khrin, and Yuki2718 — [CC BY 3.0](http://creativecommons.org/licenses/by/3.0/) · [easylist.to](https://easylist.to/)
+- **Chroma Hotfix** — Maintainer-controlled list for platform-specific overrides.
 
 ---
 

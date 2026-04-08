@@ -253,7 +253,7 @@
 
   pristineAddDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
   
-  // DO NOT ping if compromised or if the site is whitelisted
+  // DO NOT ping if the environment is compromised
   if (!isEnvironmentCompromised) {
     
     const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web
