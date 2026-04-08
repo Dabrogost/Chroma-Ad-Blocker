@@ -9,7 +9,7 @@
  *   sub_cosmetic_rules       — { [id]: Object[] } parsed cosmetic rules per subscription
  *   sub_scriptlet_rules      — { [id]: Object[] } parsed scriptlet rules per subscription
  *   subscriptionCosmeticRules  — Object[] flat combined array consumed by content.js
- *   subscriptionScriptletRules — Object[] flat combined array consumed by Phase 2 engine
+ *   subscriptionScriptletRules — Object[] flat combined array consumed by scriptlets/engine.js
  */
 
 'use strict';
@@ -146,7 +146,7 @@ async function rebuildCosmeticRules(subscriptions) {
 
 /**
  * Combines enabled subscription scriptlet rules and writes flat array to storage.
- * Phase 2 engine reads subscriptionScriptletRules.
+ * scriptlets/engine.js reads subscriptionScriptletRules.
  * @param {Object[]} subscriptions
  * @returns {Promise<void>}
  */

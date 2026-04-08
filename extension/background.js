@@ -125,7 +125,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         'img[src*="/ad/gif.gif"]', 'img[src*="/ad/static.png"]',
         'img[src*="advmaker"]', 'div[class*="advmaker"]', 'a[href*="advmaker"]',
         '.advmaker', '#advmaker', '.ad-slot', '.ad-container',
-        '.ads-by-google', '[id^="ad-"]', '[class^="ad-"]'
+        '.ads-by-google', '[id^="ad-"]', '[class^="ad-"]',
+        'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]'
       ],
       WARNING_SELECTORS: [
         'tp-yt-iron-overlay-backdrop', 'ytd-enforcement-message-view-model',

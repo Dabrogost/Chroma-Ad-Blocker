@@ -1,1 +1,5 @@
 ! Chroma Hotfix Rules
+
+reddit.com##shreddit-ad-post
+x.com##[data-testid="tweet"]:has([data-testid="promotedIndicator"])
+twitter.com##[data-testid="tweet"]:has([data-testid="promotedIndicator"])

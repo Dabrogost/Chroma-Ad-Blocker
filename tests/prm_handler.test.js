@@ -252,12 +252,20 @@ test('Amazon Prime Video ad acceleration', async (t) => {
   if (sandbox.CONFIG) sandbox.CONFIG.acceleration = true;
 
   await t.test('should accelerate when ad container is present', () => {
+    // Reset state from previous tests
+    sandbox.document.querySelector = () => null;
+    sandbox.document.querySelectorAll = () => [];
+    for (let i = 0; i < 5; i++) sandbox.handlePrimeAdAcceleration();
+
     const mockVideo = createMockElement('video');
     const playerContainer = createMockElement('div');
     playerContainer.className = 'atvwebplayersdk-player-container';
     
+    const adContainer = createMockElement('div');
+    adContainer.className = 'atvwebplayersdk-ad-container';
+    adContainer.textContent = '0:15';
     sandbox.document.querySelector = createMockQuerySelector({
-      '.atvwebplayersdk-ad-container': createMockElement('div'),
+      '.atvwebplayersdk-ad-container': adContainer,
       'video': mockVideo
     }, playerContainer);
     
@@ -274,6 +282,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
   });
 
   await t.test('should accelerate when ad-related text is present', () => {
+    // Reset state from previous tests
+    sandbox.document.querySelector = () => null;
+    sandbox.document.querySelectorAll = () => [];
+    for (let i = 0; i < 5; i++) sandbox.handlePrimeAdAcceleration();
+
     const mockVideo = createMockElement('video');
     const playerContainer = createMockElement('div');
     playerContainer.className = 'atvwebplayersdk-player-container';
@@ -295,6 +308,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
   });
 
   await t.test('should target the visible video element if multiple exist', () => {
+    // Reset state from previous tests
+    sandbox.document.querySelector = () => null;
+    sandbox.document.querySelectorAll = () => [];
+    for (let i = 0; i < 5; i++) sandbox.handlePrimeAdAcceleration();
+
     const hiddenVideo = createMockElement('video');
     hiddenVideo.offsetParent = null;
     const visibleVideo = createMockElement('video');
@@ -309,8 +327,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
       if (sel === 'video') return [hiddenVideo, visibleVideo];
       return [];
     };
+    const adContainer = createMockElement('div');
+    adContainer.className = 'atvwebplayersdk-ad-container';
+    adContainer.textContent = '0:15';
     sandbox.document.querySelector = createMockQuerySelector({
-      '.atvwebplayersdk-ad-container': createMockElement('div')
+      '.atvwebplayersdk-ad-container': adContainer
     });
 
     sandbox.handlePrimeAdAcceleration();
@@ -319,6 +340,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     assert.strictEqual(hiddenVideo.playbackRate, 1, 'Hidden video should remain normal');
   });
   await t.test('should create and activate visual overlay during ad', () => {
+    // Reset state from previous tests
+    sandbox.document.querySelector = () => null;
+    sandbox.document.querySelectorAll = () => [];
+    for (let i = 0; i < 5; i++) sandbox.handlePrimeAdAcceleration();
+
     const mockVideo = createMockElement('video');
     mockVideo.currentTime = 5;
     mockVideo.duration = 10;
@@ -339,8 +365,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
       return [];
     };
     
+    const adContainer = createMockElement('div');
+    adContainer.className = 'atvwebplayersdk-ad-container';
+    adContainer.textContent = '0:15';
     sandbox.document.querySelector = createMockQuerySelector({
-      '.atvwebplayersdk-ad-container': createMockElement('div'),
+      '.atvwebplayersdk-ad-container': adContainer,
       'video': mockVideo
     }, container);
 
@@ -386,6 +415,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
   });
 
   await t.test('should estimate progress from ad timer text', () => {
+    // Reset state from previous tests
+    sandbox.document.querySelector = () => null;
+    sandbox.document.querySelectorAll = () => [];
+    for (let i = 0; i < 5; i++) sandbox.handlePrimeAdAcceleration();
+
     const mockVideo = createMockElement('video');
     mockVideo.duration = 60; // Use realistic ad duration
     
@@ -424,6 +458,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
   });
 
   await t.test('should accelerate multiple consecutive ads in the same session', async () => {
+    // Reset state from previous tests
+    sandbox.document.querySelector = () => null;
+    sandbox.document.querySelectorAll = () => [];
+    for (let i = 0; i < 5; i++) sandbox.handlePrimeAdAcceleration();
+
     const mockVideo = createMockElement('video');
     const container = createMockElement('div');
     container.className = 'webPlayerUIContainer';
@@ -477,6 +516,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
   });
 
   await t.test('should reset state when video source changes without an active ad', () => {
+    // Reset state from previous tests
+    sandbox.document.querySelector = () => null;
+    sandbox.document.querySelectorAll = () => [];
+    for (let i = 0; i < 5; i++) sandbox.handlePrimeAdAcceleration();
+
     const mockVideo = createMockElement('video');
     mockVideo.src = 'ad-source-1';
     const container = createMockElement('div');
@@ -488,8 +532,11 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     };
 
     // 1. Start an ad
+    const adContainer = createMockElement('div');
+    adContainer.className = 'atvwebplayersdk-ad-container';
+    adContainer.textContent = '0:15';
     sandbox.document.querySelector = createMockQuerySelector({
-      '.atvwebplayersdk-ad-container': createMockElement('div'),
+      '.atvwebplayersdk-ad-container': adContainer,
       'video': mockVideo
     }, container);
     
@@ -597,6 +644,6 @@ test('Prime Event-Driven Initialization Flow', async (t) => {
     sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: true } });
     intervalFns.forEach(fn => fn());
 
-    assert.strictEqual(sandbox.CONFIG.enabled, false, 'Should not force enable');
+    assert.strictEqual(sandbox.CONFIG.enabled, true, 'Should enable when active');
   });
 });

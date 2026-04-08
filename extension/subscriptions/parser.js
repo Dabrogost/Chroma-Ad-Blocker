@@ -2,7 +2,7 @@
  * Chroma Ad-Blocker — Filter List Parser
  * Stateless pure functions. No chrome APIs. Directly unit-testable.
  * Handles ABP/uBlock filter syntax for network, cosmetic, and scriptlet rules.
- * Phase 1 known limitations (counted, not silently dropped):
+ * Known limitations (counted, not silently dropped):
  *   - Regex network rules (/pattern/)
  *   - Procedural cosmetic filters (#?#)
  *   - $redirect, $csp, $rewrite, $generichide, $genericblock
@@ -43,12 +43,12 @@ const SKIP_OPTIONS = new Set([
  * @param {string} line
  * @returns {'comment'|'network'|'exception'|'cosmetic'|'cosmetic-exception'|'scriptlet'|'extended-css'}
  */
-export function classifyLine(line) {
+function classifyLine(line) {
   if (!line || line.startsWith('!') || line.startsWith('[') || line.startsWith('#')) return 'comment';
   if (line.includes('##+js(')) return 'scriptlet';
   if (line.startsWith('@@')) return 'exception';
   if (line.includes('#@#')) return 'cosmetic-exception';
-  if (line.includes('#?#')) return 'extended-css'; // Procedural — skip in Phase 1
+  if (line.includes('#?#')) return 'extended-css'; // Procedural — not supported
   if (line.includes('##')) return 'cosmetic';
   return 'network';
 }
@@ -110,7 +110,7 @@ function parseOptions(optionsStr) {
       continue;
     }
 
-    // Negated resource types — no clean DNR equivalent, skip in Phase 1
+    // Negated resource types — no clean DNR equivalent, skipped
     if (trimmed.startsWith('~')) continue;
 
     const mappedType = RESOURCE_TYPE_MAP[trimmed];
@@ -130,7 +130,7 @@ function parseOptions(optionsStr) {
  * @param {boolean} [isException=false]
  * @returns {Object|null}
  */
-export function parseNetworkRule(line, isException = false) {
+function parseNetworkRule(line, isException = false) {
   try {
     const stripped = isException ? line.slice(2) : line;
 
@@ -182,7 +182,7 @@ export function parseNetworkRule(line, isException = false) {
  * @param {boolean} [isException=false]
  * @returns {{ domains: string[]|null, selector: string, isException: boolean }|null}
  */
-export function parseCosmeticRule(line, isException = false) {
+function parseCosmeticRule(line, isException = false) {
   try {
     const sep = isException ? '#@#' : '##';
     const idx = line.indexOf(sep);
@@ -218,7 +218,7 @@ export function parseCosmeticRule(line, isException = false) {
  * @param {string} line
  * @returns {{ domains: string[]|null, scriptlet: string, args: string[] }|null}
  */
-export function parseScriptletRule(line) {
+function parseScriptletRule(line) {
   try {
     const markerIdx = line.indexOf('##+js(');
     if (markerIdx === -1) return null;

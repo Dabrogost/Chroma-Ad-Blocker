@@ -71,12 +71,10 @@
   // ─── PRISTINE CACHE ─────
   // Capture native APIs immediately to prevent host-page scripts from 
   // bypassing blockers by overwriting globals later.
-  const pristineSetTimeout = window.setTimeout.bind(window);
   const pristineSetInterval = window.setInterval.bind(window);
   const pristineClearInterval = window.clearInterval.bind(window);
 
   const pristineCreateElement = document.createElement.bind(document);
-  const pristineGetElementById = document.getElementById.bind(document);
   const pristineQuerySelector = document.querySelector.bind(document);
   const pristineAddEventListener = window.addEventListener.bind(window);
   const pristineRemoveEventListener = window.removeEventListener.bind(window);
@@ -87,7 +85,7 @@
   const pristineCall = Function.prototype.call.bind(Function.prototype.call);
   const pristineIncludes = String.prototype.includes.bind(String.prototype);
 
-  // SECURITY: Protect against Prototype Pollution hijacking (VULN-01)
+  // Domains where the secure bridge and pristine API wrappers are provisioned.
   const HOSTILE_DOMAINS = [
     'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',
     'amazon.co.jp', 'amazon.ca', 'amazon.fr', 'amazon.it',
@@ -123,22 +121,9 @@
   }
 
   // =========================================================================
-  // ─── API LOCKDOWN ─────
+  // ─── SECURE PORT ─────
   let chromaPort;
   let pingInterval;
-
-  /**
-   * Helper to send messages only via the secure pipe.
-   * Fails closed if the port is not established or env is compromised.
-   */
-  /** @param {Object} message */
-  function sendToProtection(message) {
-    if (isEnvironmentCompromised || !chromaPort) {
-      if (DEBUG) console.error("[Chroma Ad-Blocker] Secure pipe not available/compromised. Dropping message.");
-      return;
-    }
-    chromaPort.postMessage(message);
-  }
 
   // ─── INTERCEPTOR ─────
   let isInitialized = false;
@@ -163,7 +148,6 @@
         // Integrity Layer: API Passthrough
         api: Object.freeze({
           querySelector: pristineQuerySelector,
-          getElementById: pristineGetElementById,
           createElement: pristineCreateElement,
           addEventListener: pristineAddEventListener,
           setInterval: pristineSetInterval,
@@ -253,7 +237,7 @@
 
   pristineAddDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
   
-  // DO NOT ping if compromised or if the site is whitelisted
+  // DO NOT ping if the environment is compromised
   if (!isEnvironmentCompromised) {
     
     const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web

@@ -30,7 +30,7 @@ async function getRules() {
 }
 
 /**
- * Invalidates the rule cache when storage is updated by the subscription manager.
+ * Updates the in-memory rule cache when storage is changed by the subscription manager.
  */
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.subscriptionScriptletRules) {
