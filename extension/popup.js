@@ -251,7 +251,9 @@ async function init() {
       const countText = sub.ruleCount
         ? sub.cosmeticOnly
           ? `cosmetic only · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
-          : `${sub.ruleCount.network.toLocaleString()} parsed · ${sub.ruleCount.network > 0 ? appliedNetworkRuleCount.toLocaleString() : '0'} applied`
+          : sub.id === 'chroma-hotfix'
+            ? `${sub.ruleCount.network.toLocaleString()} Network Rules · ${sub.ruleCount.cosmetic.toLocaleString()} Cosmetic Rules`
+            : `${sub.ruleCount.network.toLocaleString()} parsed · ${sub.ruleCount.network > 0 ? appliedNetworkRuleCount.toLocaleString() : '0'} applied`
         : '';
 
       const safeName  = escapeHTML(sub.name);
