@@ -509,7 +509,7 @@
       // Session release logic:
       if (isMainVideoReady || timeSinceAd > 5000) { // Normal release: main video ready; watchdog: force-release after 5000ms if video never becomes ready
         chromaAdSessionActive = false;
-
+        targetAdVideo = null;
       }
     }
     

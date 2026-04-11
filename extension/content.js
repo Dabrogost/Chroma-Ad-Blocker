@@ -7,7 +7,6 @@
   // ─── CONFIG ─────
   const CONFIG = {
     enabled: true,
-    networkBlocking: true,
     cosmetic: true,
     hideShorts: false,
     hideMerch: true,
@@ -253,7 +252,7 @@
   }
 
   // ─── MESSAGE LISTENER ─────
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((msg) => {
     const MSG = window.MSG;
     if (MSG && msg.type === MSG.CONFIG_UPDATE) {
       Object.assign(CONFIG, msg.config);
