@@ -27,7 +27,7 @@ description: Multi-layered ad blocking built for Manifest V3. Works on Windows, 
   <p class="hero__tagline">
     Multi-layered protection built for the modern web. Accelerate, block,
     and filter ads &mdash; all locally on your device, zero data collected.
-    <br/><strong>Always free, open-source, and compatible with Windows, Mac, and Linux.</strong>
+    <br/><strong>Always free, source available, and compatible with Windows, Mac, and Linux.</strong>
   </p>
 
   <div class="hero__ctas">
