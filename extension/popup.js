@@ -60,6 +60,7 @@ async function init() {
 
   const TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
+    ['toggleStripping',    'stripping',                true],
     ['toggleAcceleration', 'acceleration',             true],
     ['toggleCosmetic',     'cosmetic',                 true],
     ['toggleShorts',       'hideShorts',               false],
