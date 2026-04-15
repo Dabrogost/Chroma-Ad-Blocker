@@ -299,7 +299,7 @@ const MSG = {
 
 // ─── CONFIGURATION VALIDATION ─────
 function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled'];
   const validatedConfig = {};
 
   if (inputConfig && typeof inputConfig === 'object') {

@@ -20,7 +20,8 @@
 
   const CONFIG = {
     enabled: true,
-    acceleration: true
+    acceleration: true,
+    stripping: true,
   };
 
 
@@ -89,9 +90,11 @@
     if (savedConfig) {
       CONFIG.enabled = isWhitelisted ? false : (savedConfig.enabled !== false);
       CONFIG.acceleration = isWhitelisted ? false : (savedConfig.acceleration !== false);
+      CONFIG.stripping = isWhitelisted ? false : (savedConfig.stripping !== false);
     } else if (isWhitelisted) {
       CONFIG.enabled = false;
       CONFIG.acceleration = false;
+      CONFIG.stripping = false;
     }
     
     document.dispatchEvent(new CustomEvent('__EXT_INIT__', { detail: { active: CONFIG.enabled } }));

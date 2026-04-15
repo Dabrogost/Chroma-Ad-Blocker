@@ -66,6 +66,228 @@ function createMockElement(tag = 'div') {
 const scriptPath = path.join(__dirname, '..', 'extension', 'yt_handler.js');
 const youtubeJsCode = fs.readFileSync(scriptPath, 'utf8');
 
+// ─── AD FIELD STRIPPING ─────
+test('Ad field stripping', async (t) => {
+  // Minimal sandbox — stripping functions run synchronously, no DOM needed.
+  const createStrippingSandbox = (configOverrides = {}) => {
+    const sandbox = {
+      window: {
+        location: { hostname: 'www.youtube.com' },
+        fetch: async () => ({ clone: () => ({ json: async () => ({}) }), status: 200, statusText: 'OK', headers: {} }),
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        innerHeight: 1000, innerWidth: 1000,
+        setTimeout: (fn) => fn(),
+        setInterval: () => {},
+        clearInterval: () => {},
+        MutationObserver: class { observe() {} disconnect() {} },
+      },
+      location: { hostname: 'www.youtube.com' },
+      document: {
+        readyState: 'complete',
+        createElement: () => ({ style: {}, appendChild: () => {}, attachShadow: () => ({ appendChild: () => {}, querySelector: () => null, childrenArray: [] }) }),
+        querySelector: () => null, querySelectorAll: () => [],
+        getElementById: () => null,
+        head: { appendChild: () => {} },
+        body: { style: {}, classList: { add: () => {}, remove: () => {}, contains: () => false } },
+        documentElement: { style: {}, classList: { add: () => {}, remove: () => {}, contains: () => false } },
+        adoptedStyleSheets: [],
+        _listeners: {},
+        addEventListener: function(e, cb) { (this._listeners[e] = this._listeners[e] || []).push(cb); },
+        removeEventListener: () => {},
+        dispatchEvent: function(e) { (this._listeners[e.type] || []).forEach(cb => cb(e)); },
+        getElementsByClassName: () => [],
+      },
+      setInterval: () => {},
+      clearInterval: () => {},
+      setTimeout: (fn) => fn(),
+      requestAnimationFrame: () => {},
+      MutationObserver: class { observe() {} disconnect() {} },
+      CSSStyleSheet: class { replaceSync() {} },
+      Response: class {
+        constructor(body, init) { this.body = body; this._init = init; }
+        async json() { return JSON.parse(this.body); }
+      },
+      XMLHttpRequest: class { open() {} send() {} addEventListener() {} },
+      console, Object, Array, Number, String, Boolean, Math, Date, Promise, Error,
+      // Give each sandbox its own JSON copy so JSON.parse mutations don't leak between test sandboxes.
+      JSON: { parse: JSON.parse, stringify: JSON.stringify },
+      __CHROMA_INTERNAL_TEST_STRICT__: true,
+    };
+    sandbox.globalThis = sandbox;
+    sandbox.window.__CHROMA_INTERNAL__ = {
+      api: {
+        querySelector: (s) => sandbox.document.querySelector(s),
+        createElement: (t) => sandbox.document.createElement(t),
+        setInterval: () => {},
+        clearInterval: () => {},
+        addDocEventListener: (e, cb) => sandbox.document.addEventListener(e, cb),
+        removeDocEventListener: () => {},
+        MutationObserver: sandbox.window.MutationObserver,
+      },
+      config: { enabled: true, stripping: true, acceleration: false, accelerationSpeed: 8, ...configOverrides },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(youtubeJsCode, sandbox);
+    return sandbox;
+  };
+
+  // ── stripAdFields ──
+  await t.test('stripAdFields — returns false for non-objects', (st) => {
+    const { stripAdFields } = createStrippingSandbox();
+    assert.strictEqual(stripAdFields(null),      false);
+    assert.strictEqual(stripAdFields(undefined), false);
+    assert.strictEqual(stripAdFields('string'),  false);
+    assert.strictEqual(stripAdFields(42),        false);
+  });
+
+  await t.test('stripAdFields — returns false when no ad fields present', (st) => {
+    const { stripAdFields } = createStrippingSandbox();
+    const obj = { title: 'Clean Video', videoDetails: { lengthSeconds: '300' } };
+    const result = stripAdFields(obj);
+    assert.strictEqual(result, false);
+    assert.deepStrictEqual(Object.keys(obj), ['title', 'videoDetails']);
+  });
+
+  await t.test('stripAdFields — removes all known ad fields and returns true', (st) => {
+    const { stripAdFields } = createStrippingSandbox();
+    const obj = {
+      adPlacements: [{}],
+      adSlots: [{}],
+      playerAds: [{}],
+      adBreakParams: {},
+      adBreakHeartbeatParams: {},
+      adInferredBlockingStatus: {},
+      videoDetails: { title: 'Keep me' },
+    };
+    assert.strictEqual(stripAdFields(obj), true);
+    assert.strictEqual('adPlacements'              in obj, false);
+    assert.strictEqual('adSlots'                   in obj, false);
+    assert.strictEqual('playerAds'                 in obj, false);
+    assert.strictEqual('adBreakParams'             in obj, false);
+    assert.strictEqual('adBreakHeartbeatParams'    in obj, false);
+    assert.strictEqual('adInferredBlockingStatus'  in obj, false);
+    assert.deepStrictEqual(obj.videoDetails, { title: 'Keep me' });
+  });
+
+  await t.test('stripAdFields — returns true when only some ad fields present', (st) => {
+    const { stripAdFields } = createStrippingSandbox();
+    const obj = { adPlacements: [{}], title: 'Video' };
+    assert.strictEqual(stripAdFields(obj), true);
+    assert.strictEqual('adPlacements' in obj, false);
+    assert.strictEqual(obj.title, 'Video');
+  });
+
+  // ── stripResponseAds ──
+  await t.test('stripResponseAds — handles null/undefined without throwing', (st) => {
+    const { stripResponseAds } = createStrippingSandbox();
+    assert.doesNotThrow(() => stripResponseAds(null));
+    assert.doesNotThrow(() => stripResponseAds(undefined));
+    assert.doesNotThrow(() => stripResponseAds({}));
+  });
+
+  await t.test('stripResponseAds — removes promoted items from search results', (st) => {
+    const { stripResponseAds } = createStrippingSandbox();
+    const data = {
+      contents: {
+        twoColumnSearchResultsRenderer: {
+          primaryContents: {
+            sectionListRenderer: {
+              contents: [
+                { videoRenderer: { videoId: 'abc' } },
+                { promotedSparklesTextSearchRenderer: {} },
+                { searchPyvRenderer: {} },
+                { adSlotRenderer: {} },
+                { videoRenderer: { videoId: 'def' } },
+              ]
+            }
+          }
+        }
+      }
+    };
+    stripResponseAds(data);
+    const contents = data.contents.twoColumnSearchResultsRenderer.primaryContents.sectionListRenderer.contents;
+    assert.strictEqual(contents.length, 2);
+    assert.ok(contents.every(c => c.videoRenderer), 'Only clean video items should remain');
+  });
+
+  await t.test('stripResponseAds — removes nested richItemRenderer ad slots from browse', (st) => {
+    const { stripResponseAds } = createStrippingSandbox();
+    const data = {
+      contents: {
+        twoColumnBrowseResultsRenderer: {
+          tabs: [{
+            tabRenderer: {
+              content: {
+                richGridRenderer: {
+                  contents: [
+                    { richItemRenderer: { content: { videoRenderer: {} } } },
+                    { richItemRenderer: { content: { adSlotRenderer: {} } } },
+                    { richItemRenderer: { content: { videoRenderer: {} } } },
+                  ]
+                }
+              }
+            }
+          }]
+        }
+      }
+    };
+    stripResponseAds(data);
+    const contents = data.contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.richGridRenderer.contents;
+    assert.strictEqual(contents.length, 2);
+    assert.ok(contents.every(c => c.richItemRenderer.content.videoRenderer), 'Ad slot item should be removed');
+  });
+
+  // ── shouldAccelerate ──
+  await t.test('shouldAccelerate — false when acceleration is off', (st) => {
+    const sandbox = createStrippingSandbox({ acceleration: false, stripping: false });
+    assert.strictEqual(sandbox.shouldAccelerate(), false);
+  });
+
+  await t.test('shouldAccelerate — true when acceleration on and stripping off', (st) => {
+    const sandbox = createStrippingSandbox({ acceleration: true, stripping: false });
+    assert.strictEqual(sandbox.shouldAccelerate(), true);
+  });
+
+  await t.test('shouldAccelerate — false when both acceleration and stripping are on', (st) => {
+    const sandbox = createStrippingSandbox({ acceleration: true, stripping: true });
+    assert.strictEqual(sandbox.shouldAccelerate(), false);
+  });
+
+  await t.test('shouldAccelerate — false when stripping on and acceleration off', (st) => {
+    const sandbox = createStrippingSandbox({ acceleration: false, stripping: true });
+    assert.strictEqual(sandbox.shouldAccelerate(), false);
+  });
+
+  // ── JSON.parse interceptor respects stripping flag ──
+  await t.test('JSON.parse strips ad fields when stripping is enabled', (st) => {
+    const sandbox = createStrippingSandbox({ stripping: true });
+    const input = JSON.stringify({ adPlacements: [{}], videoDetails: { title: 'Test' } });
+    const result = sandbox.JSON.parse(input);
+    assert.strictEqual('adPlacements' in result, false, 'adPlacements should be stripped');
+    assert.ok(result.videoDetails, 'non-ad fields should be preserved');
+  });
+
+  await t.test('JSON.parse passes through when stripping is disabled', (st) => {
+    const sandbox = createStrippingSandbox({ stripping: false });
+    const input = JSON.stringify({ adPlacements: [{}], videoDetails: { title: 'Test' } });
+    const result = sandbox.JSON.parse(input);
+    assert.ok('adPlacements' in result, 'adPlacements should not be stripped when stripping is off');
+  });
+
+  await t.test('JSON.parse strips nested playerResponse ad fields', (st) => {
+    const sandbox = createStrippingSandbox({ stripping: true });
+    const input = JSON.stringify({
+      playerResponse: { adPlacements: [{}], playerAds: [{}], streamingData: {} },
+      videoId: 'abc'
+    });
+    const result = sandbox.JSON.parse(input);
+    assert.strictEqual('adPlacements' in result.playerResponse, false);
+    assert.strictEqual('playerAds'    in result.playerResponse, false);
+    assert.ok(result.playerResponse.streamingData, 'non-ad fields inside playerResponse preserved');
+  });
+});
+
 // ─── YOUTUBE AD ACCELERATION ─────
 test('YouTube ad acceleration', async (t) => {
   const createSandbox = (setupDoc) => {

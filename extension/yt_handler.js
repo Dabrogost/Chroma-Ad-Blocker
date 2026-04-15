@@ -34,6 +34,12 @@
     }
   }
 
+  // Returns true only when acceleration polling should run on YouTube.
+  // When stripping is active it handles ad removal upstream, so polling is redundant.
+  function shouldAccelerate() {
+    return CONFIG.acceleration && !CONFIG.stripping;
+  }
+
   // ─── AD FIELD STRIPPING (PRIMARY BLOCKER) ─────
   // Deletes ad payload fields from YouTube API responses before the player reads them.
   // Native APIs are captured here — before the beacon suppression IIFE below patches XHR —
@@ -116,6 +122,7 @@
   } catch (_) {}
 
   // Capture native fetch/XHR/JSON.parse before anything else in this file modifies them.
+  const _nativeToString = Function.prototype.toString;
   const _nativeFetch = window.fetch;
   const _nativeXHROpen = XMLHttpRequest.prototype.open;
   const _nativeXHRSend = XMLHttpRequest.prototype.send;
@@ -153,6 +160,9 @@
     }
     return response;
   };
+  // Save reference before YouTube's scripts re-wrap window.fetch, so the
+  // toString spoof can map our wrapper even after it's no longer the outermost fetch.
+  const _ourFetch = window.fetch;
 
   // XHR wrapper — saves the request URL so the send wrapper can check it.
   // The beacon suppression IIFE (below) captures this as its _origOpen, giving the
@@ -230,7 +240,7 @@
       if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
         applyConfig(window.__CHROMA_INTERNAL__.config);
       }
-      if (CONFIG.enabled && CONFIG.acceleration) {
+      if (CONFIG.enabled && shouldAccelerate()) {
         injectChromaCSS();
         startPolling();
         initSkipButtonListener();
@@ -347,6 +357,34 @@
       if (this._chromaSuppressed) return;
       return _origSend.apply(this, arguments);
     };
+  })();
+
+  // ─── TOSTRING SPOOFING ─────
+  // Placed after beacon suppression so the Map captures the final XHR wrappers,
+  // not the intermediate stripping wrappers that beacon suppression overlays.
+  // fetch is omitted — YouTube's own scripts re-wrap window.fetch after document_start,
+  // so we can't make their outer wrapper appear native (nor do we need to).
+  (function() {
+    const _targets = new Map([
+      [_ourFetch,                       'function fetch() { [native code] }'],
+      [XMLHttpRequest.prototype.open,   'function open() { [native code] }'],
+      [XMLHttpRequest.prototype.send,   'function send() { [native code] }'],
+      [JSON.parse,                      'function parse() { [native code] }'],
+    ]);
+
+    const _spoof = function toString() {
+      if (_targets.has(this)) return _targets.get(this);
+      return _nativeToString.call(this);
+    };
+
+    // Recursive protection: make the spoof's own toString return a native string.
+    Object.defineProperty(_spoof, 'toString', {
+      value: function() { return _nativeToString.call(_nativeToString); },
+      writable: false,
+      configurable: false,
+    });
+
+    Function.prototype.toString = _spoof;
   })();
 
   // ─── AD ACCELERATION ─────
@@ -761,7 +799,7 @@
 
       if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
       
-      if (!CONFIG.enabled || !CONFIG.acceleration) {
+      if (!CONFIG.enabled || !shouldAccelerate()) {
         if (pollingInterval) {
           cI(pollingInterval);
           pollingInterval = null;
@@ -856,7 +894,7 @@
 
 
     // If config is already available, start immediately. Otherwise, poll for handshake.
-    if (CONFIG.enabled && CONFIG.acceleration) {
+    if (CONFIG.enabled && shouldAccelerate()) {
       injectChromaCSS();
       startPolling();
       initSkipButtonListener();
@@ -873,7 +911,7 @@
             applyConfig(window.__CHROMA_INTERNAL__.config);
           }
           if (!_chromaExtInitActive) return;
-          if (CONFIG.enabled && CONFIG.acceleration) {
+          if (CONFIG.enabled && shouldAccelerate()) {
             injectChromaCSS();
             startPolling();
             initSkipButtonListener();
@@ -898,6 +936,7 @@
     globalThis.CONFIG = CONFIG;
     globalThis.stripAdFields = stripAdFields;
     globalThis.stripResponseAds = stripResponseAds;
+    globalThis.shouldAccelerate = shouldAccelerate;
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;
     
