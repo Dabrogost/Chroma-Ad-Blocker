@@ -8,16 +8,18 @@
   const CONFIG = Object.create(null);
   Object.assign(CONFIG, {
     enabled: false, // Default to disabled until handshake (KILL SWITCH)
+    stripping: true,  // Primary: strip ad data from YouTube API responses before the player reads it
     acceleration: false,
     accelerationSpeed: 8, // Default playback rate supported for ad acceleration
     checkIntervalMs: 300,  // Interval between ad state checks (ms)
   });
 
   // Whitelist of allowed config keys for secure updates
-  const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
+  const VALID_CONFIG_KEYS = ['enabled', 'stripping', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
 
   const CONFIG_VALIDATORS = Object.freeze({
     enabled:           (v) => typeof v === 'boolean',
+    stripping:         (v) => typeof v === 'boolean',
     acceleration:      (v) => typeof v === 'boolean',
     accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 16,
     checkIntervalMs:   (v) => typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 5000
@@ -31,6 +33,174 @@
       }
     }
   }
+
+  // ─── AD FIELD STRIPPING (PRIMARY BLOCKER) ─────
+  // Deletes ad payload fields from YouTube API responses before the player reads them.
+  // Native APIs are captured here — before the beacon suppression IIFE below patches XHR —
+  // so the wrap order is: beacon suppression → our wrapper → native (correct chain).
+  const AD_FIELDS = [
+    'adPlacements',
+    'adSlots',
+    'playerAds',
+    'adBreakParams',
+    'adBreakHeartbeatParams',
+    'adInferredBlockingStatus',
+  ];
+
+  function stripAdFields(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    let stripped = false;
+    for (const field of AD_FIELDS) {
+      if (field in obj) {
+        delete obj[field];
+        stripped = true;
+      }
+    }
+    return stripped;
+  }
+
+  function stripResponseAds(data) {
+    if (!data) return;
+    try {
+      const contents =
+        data?.contents?.twoColumnSearchResultsRenderer?.primaryContents
+          ?.sectionListRenderer?.contents ||
+        data?.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer
+          ?.content?.richGridRenderer?.contents;
+      if (Array.isArray(contents)) {
+        for (let i = contents.length - 1; i >= 0; i--) {
+          const item = contents[i];
+          if (
+            item?.promotedSparklesTextSearchRenderer ||
+            item?.searchPyvRenderer ||
+            item?.adSlotRenderer ||
+            item?.richItemRenderer?.content?.adSlotRenderer
+          ) {
+            contents.splice(i, 1);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Hook ytInitialPlayerResponse — strips ad fields from the initial player payload
+  // before YouTube's own scripts read the value.
+  let _ytInitialPlayerResponse;
+  try {
+    Object.defineProperty(window, 'ytInitialPlayerResponse', {
+      configurable: true,
+      get() { return _ytInitialPlayerResponse; },
+      set(value) {
+        if (CONFIG.stripping && value && typeof value === 'object') {
+          stripAdFields(value);
+        }
+        _ytInitialPlayerResponse = value;
+      }
+    });
+  } catch (_) {}
+
+  // Hook ytInitialData — strips ad fields and promoted feed items from page-level data.
+  let _ytInitialData;
+  try {
+    Object.defineProperty(window, 'ytInitialData', {
+      configurable: true,
+      get() { return _ytInitialData; },
+      set(value) {
+        if (CONFIG.stripping && value && typeof value === 'object') {
+          stripAdFields(value);
+          stripResponseAds(value);
+        }
+        _ytInitialData = value;
+      }
+    });
+  } catch (_) {}
+
+  // Capture native fetch/XHR/JSON.parse before anything else in this file modifies them.
+  const _nativeFetch = window.fetch;
+  const _nativeXHROpen = XMLHttpRequest.prototype.open;
+  const _nativeXHRSend = XMLHttpRequest.prototype.send;
+  const _nativeJSONParse = JSON.parse;
+
+  const YT_API_PATHS = [
+    '/youtubei/v1/player',
+    '/youtubei/v1/next',
+    '/youtubei/v1/browse',
+    '/youtubei/v1/search',
+  ];
+
+  // Fetch wrapper — intercepts YouTube API responses and strips ad fields before returning.
+  window.fetch = async function(...args) {
+    const response = await _nativeFetch.apply(this, args);
+    if (!CONFIG.stripping) return response;
+
+    const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+    if (YT_API_PATHS.some(p => url.includes(p))) {
+      try {
+        const clone = response.clone();
+        const json = await clone.json();
+        let modified = false;
+        if (stripAdFields(json)) modified = true;
+        if (json?.playerResponse && stripAdFields(json.playerResponse)) modified = true;
+        stripResponseAds(json);
+        if (modified) {
+          return new Response(JSON.stringify(json), {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        }
+      } catch (_) {}
+    }
+    return response;
+  };
+
+  // XHR wrapper — saves the request URL so the send wrapper can check it.
+  // The beacon suppression IIFE (below) captures this as its _origOpen, giving the
+  // correct chain: beacon suppression → this wrapper → native open.
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this._chromaYTUrl = String(url);
+    return _nativeXHROpen.apply(this, arguments);
+  };
+
+  XMLHttpRequest.prototype.send = function(...args) {
+    const url = this._chromaYTUrl || '';
+    if (CONFIG.stripping && YT_API_PATHS.some(p => url.includes(p))) {
+      this.addEventListener('readystatechange', function() {
+        if (this.readyState !== 4) return;
+        try {
+          const rt = this.responseType;
+          if (rt && rt !== '' && rt !== 'text' && rt !== 'json') return;
+          const text = rt === 'json' ? JSON.stringify(this.response) : this.responseText;
+          const json = _nativeJSONParse(text);
+          if (stripAdFields(json)) {
+            const stripped = JSON.stringify(json);
+            Object.defineProperty(this, 'responseText', { value: stripped, writable: false });
+            Object.defineProperty(this, 'response', {
+              value: rt === 'json' ? json : stripped,
+              writable: false
+            });
+          }
+        } catch (_) {}
+      });
+    }
+    return _nativeXHRSend.apply(this, args);
+  };
+
+  // JSON.parse catch-all — strips ad fields from every parsed object regardless of
+  // how the bytes arrived (worker-side processing, batched RPC, etc.).
+  JSON.parse = function(text, reviver) {
+    const result = _nativeJSONParse.call(this, text, reviver);
+    if (!CONFIG.stripping) return result;
+    try {
+      if (result && typeof result === 'object') {
+        stripAdFields(result);
+        if (result.playerResponse && typeof result.playerResponse === 'object') {
+          stripAdFields(result.playerResponse);
+        }
+      }
+    } catch (_) {}
+    return result;
+  };
 
   // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
   const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
@@ -726,6 +896,8 @@
   // ─── TESTING EXPORTS ─────
   if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
     globalThis.CONFIG = CONFIG;
+    globalThis.stripAdFields = stripAdFields;
+    globalThis.stripResponseAds = stripResponseAds;
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;
     

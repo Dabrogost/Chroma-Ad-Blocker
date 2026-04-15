@@ -77,6 +77,22 @@
         isEnabled: () => CONFIG.enabled && CONFIG.hideMerch
       },
       {
+        id: 'chroma-enforcement',
+        content: `
+          ytd-enforcement-dialog-view-model,
+          tp-yt-paper-dialog:has(ytd-enforcement-dialog-view-model),
+          ytd-popup-container:has(ytd-enforcement-dialog-view-model),
+          ytd-mealbar-promo-renderer,
+          ytd-statement-banner-renderer,
+          yt-notification-action-renderer,
+          tp-yt-paper-toast,
+          ytd-popup-container tp-yt-paper-toast {
+            display: none !important;
+          }
+        `,
+        isEnabled: () => CONFIG.enabled && CONFIG.suppressWarnings && isYouTube
+      },
+      {
         id: 'chroma-offers',
         content: `
           ytd-tvfilm-offer-module-renderer,
@@ -118,6 +134,7 @@
 
   // ─── ANTI-ADBLOCK WARNING SUPPRESSION ─────
   function suppressAdblockWarnings(nodes) {
+
     if (!CONFIG.enabled || !CONFIG.suppressWarnings || !WARNING_SELECTOR_COMBINED) return;
 
     let removedAny = false;
@@ -155,9 +172,37 @@
         video.play().catch(() => {});
       }
     }
-    if (removedAny && document.body) {
-      document.body.style.removeProperty('overflow');
+    if (isYouTube) {
+      removeScrollLock();
     }
+  }
+
+  // ─── SCROLL LOCK PREVENTION ─────
+  let scrollLockObserver = null;
+
+  function removeScrollLock() {
+    const targets = [document.documentElement, document.body];
+    targets.forEach(el => {
+      if (!el) return;
+      const s = el.style;
+      if (s.overflow === 'hidden' || s.overflowY === 'hidden') {
+        s.removeProperty('overflow');
+        s.removeProperty('overflow-y');
+      }
+      // YouTube sometimes uses position:fixed on <body> to freeze scroll position
+      if (el === document.body && s.position === 'fixed') {
+        s.removeProperty('position');
+        s.removeProperty('top');
+      }
+    });
+  }
+
+  function startScrollLockObserver() {
+    if (scrollLockObserver) scrollLockObserver.disconnect();
+    scrollLockObserver = new MutationObserver(() => removeScrollLock());
+    const opts = { attributes: true, attributeFilter: ['style', 'class'] };
+    if (document.documentElement) scrollLockObserver.observe(document.documentElement, opts);
+    if (document.body) scrollLockObserver.observe(document.body, opts);
   }
 
   // ─── DOM OBSERVER ─────
@@ -326,12 +371,20 @@
       if (CONFIG.enabled) {
         startObserver();
         suppressAdblockWarnings();
+        if (isYouTube) {
+          removeScrollLock();
+          startScrollLockObserver();
+        }
       }
     } catch (err) {
       if (DEBUG) console.warn('[Chroma Ad-Blocker] Init fetch failed, using defaults.', err);
       injectAllCSS();
       startObserver();
       suppressAdblockWarnings();
+      if (isYouTube) {
+        removeScrollLock();
+        startScrollLockObserver();
+      }
     }
   }
 

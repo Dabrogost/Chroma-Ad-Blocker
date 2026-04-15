@@ -85,6 +85,75 @@
   const pristineCall = Function.prototype.call.bind(Function.prototype.call);
   const pristineIncludes = String.prototype.includes.bind(String.prototype);
 
+  // ─── YOUTUBE SCROLL LOCK PREVENTION ─────
+  // YouTube sets overflow:hidden on <html>/<body> and uses scroll event listeners
+  // to force the page back to the top when an adblocker is detected.
+  // This must run in the MAIN world, before YouTube's scripts, to intercept them.
+  if (window.location.hostname.includes('youtube.com')) {
+    const _origScrollTo = window.scrollTo.bind(window);
+    const _origScroll   = window.scroll.bind(window);
+
+    // Track the last time the user physically tried to scroll
+    let _chromaWheelTs = 0;
+    pristineAddDocEventListener('wheel', () => { _chromaWheelTs = performance.now(); },
+      { capture: true, passive: true });
+
+    function _chromaIsScrollReset(args) {
+      let x = 0, y = 0;
+      if (args[0] && typeof args[0] === 'object') {
+        x = args[0].left || 0;
+        y = args[0].top  || 0;
+      } else {
+        x = args[0] || 0;
+        y = args[1] || 0;
+      }
+      if (x !== 0 || y !== 0) return false;            // Not a to-top call
+      if (window.pageYOffset < 80) return false;        // Already near top — allow
+      return (performance.now() - _chromaWheelTs) < 400; // Happened right after a wheel event
+    }
+
+    window.scrollTo = function() {
+      if (_chromaIsScrollReset(arguments)) return;
+      return _origScrollTo.apply(window, arguments);
+    };
+    window.scroll = function() {
+      if (_chromaIsScrollReset(arguments)) return;
+      return _origScroll.apply(window, arguments);
+    };
+
+    // Also override scrollTop assignment on <html> (common YouTube pattern)
+    try {
+      const _htmlScrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop') ||
+                                  Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
+      if (_htmlScrollTopDesc && _htmlScrollTopDesc.set) {
+        const _origScrollTopSet = _htmlScrollTopDesc.set;
+        Object.defineProperty(document.documentElement, 'scrollTop', {
+          configurable: true,
+          get() { return _htmlScrollTopDesc.get ? _htmlScrollTopDesc.get.call(this) : 0; },
+          set(v) {
+            if (v === 0 && window.pageYOffset > 80 && (performance.now() - _chromaWheelTs) < 400) return;
+            _origScrollTopSet.call(this, v);
+          }
+        });
+      }
+    } catch (_) {}
+
+    // CSS belt-and-suspenders: override inline overflow:hidden that YouTube sets via JS
+    try {
+      const _scrollSheet = new CSSStyleSheet();
+      _scrollSheet.replaceSync(`
+        html[style*="overflow: hidden"], html[style*="overflow:hidden"],
+        html[style*="overflow-y: hidden"], html[style*="overflow-y:hidden"],
+        body[style*="overflow: hidden"], body[style*="overflow:hidden"],
+        body[style*="overflow-y: hidden"], body[style*="overflow-y:hidden"] {
+          overflow: auto !important;
+          overflow-y: auto !important;
+        }
+      `);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, _scrollSheet];
+    } catch (_) {}
+  }
+
   // Domains where the secure bridge and pristine API wrappers are provisioned.
   const HOSTILE_DOMAINS = [
     'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',

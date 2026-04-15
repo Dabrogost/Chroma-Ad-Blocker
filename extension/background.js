@@ -94,6 +94,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     await chrome.storage.local.set({
       config: {
         networkBlocking: true,
+        stripping: true,
         acceleration: true,
         cosmetic: true,
         hideShorts: false,
@@ -130,8 +131,9 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       ],
       WARNING_SELECTORS: [
         'tp-yt-iron-overlay-backdrop', 'ytd-enforcement-message-view-model',
-        '.ytd-enforcement-message-view-model', '#header-ad-container',
-        '.yt-playability-error-supported-renderers'
+        '.ytd-enforcement-message-view-model', 'ytd-enforcement-dialog-view-model',
+        'tp-yt-paper-dialog:has(ytd-enforcement-dialog-view-model)',
+        '#header-ad-container', '.yt-playability-error-supported-renderers'
       ],
       whitelist: []
     });
