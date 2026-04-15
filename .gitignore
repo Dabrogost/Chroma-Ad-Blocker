@@ -4,6 +4,7 @@ node_modules/
 # IDEs and Editors
 .idea/
 .vscode/
+.claude/
 *.sublime-project
 *.sublime-workspace
 .DS_Store
