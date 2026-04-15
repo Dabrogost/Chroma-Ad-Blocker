@@ -77,6 +77,22 @@
         isEnabled: () => CONFIG.enabled && CONFIG.hideMerch
       },
       {
+        id: 'chroma-enforcement',
+        content: `
+          ytd-enforcement-dialog-view-model,
+          tp-yt-paper-dialog:has(ytd-enforcement-dialog-view-model),
+          ytd-popup-container:has(ytd-enforcement-dialog-view-model),
+          ytd-mealbar-promo-renderer,
+          ytd-statement-banner-renderer,
+          yt-notification-action-renderer,
+          tp-yt-paper-toast,
+          ytd-popup-container tp-yt-paper-toast {
+            display: none !important;
+          }
+        `,
+        isEnabled: () => CONFIG.enabled && CONFIG.suppressWarnings && isYouTube
+      },
+      {
         id: 'chroma-offers',
         content: `
           ytd-tvfilm-offer-module-renderer,
@@ -118,6 +134,7 @@
 
   // ─── ANTI-ADBLOCK WARNING SUPPRESSION ─────
   function suppressAdblockWarnings(nodes) {
+
     if (!CONFIG.enabled || !CONFIG.suppressWarnings || !WARNING_SELECTOR_COMBINED) return;
 
     let removedAny = false;
