@@ -111,7 +111,9 @@ async function rebuildNetworkRules(subscriptions) {
   for (const sub of subscriptions) {
     if (sub.cosmeticOnly) continue;
     if (sub.enabled && perSubRules[sub.id]) {
-      allRules.push(...perSubRules[sub.id].filter(r => r.action && r.action.type === 'block'));
+      for (const rule of perSubRules[sub.id]) {
+        if (rule.action && rule.action.type === 'block') allRules.push(rule);
+      }
     }
   }
 
@@ -136,7 +138,7 @@ async function rebuildCosmeticRules(subscriptions) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.enabled && perSubRules[sub.id]) {
-      allRules.push(...perSubRules[sub.id]);
+      for (const rule of perSubRules[sub.id]) allRules.push(rule);
     }
   }
 
@@ -156,7 +158,7 @@ async function rebuildScriptletRules(subscriptions) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.enabled && perSubRules[sub.id]) {
-      allRules.push(...perSubRules[sub.id]);
+      for (const rule of perSubRules[sub.id]) allRules.push(rule);
     }
   }
 
