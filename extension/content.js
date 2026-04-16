@@ -15,6 +15,7 @@
   };
 
   const isYouTube = window.location.hostname.includes('youtube.com');
+  const isTwitch  = window.location.hostname.includes('twitch.tv');
 
   // ─── STATE ─────
   let observer = null;
@@ -104,6 +105,21 @@
           }
         `,
         isEnabled: () => CONFIG.enabled && CONFIG.hideOffers
+      },
+      {
+        id: 'chroma-twitch-cosmetic',
+        content: `
+          .ads-manager,
+          .ad-slot,
+          [class*="ad-banner"],
+          .tw-interstitial,
+          .ad-overlay,
+          [data-target="ad-slot"],
+          .premium-ad-slot {
+            display: none !important;
+          }
+        `,
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && isTwitch
       }
     ];
 

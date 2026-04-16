@@ -1,0 +1,89 @@
+[
+  {
+    "id": 50001,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||edge.ads.twitch.tv^",
+      "resourceTypes": ["script","xmlhttprequest","image","media","ping","sub_frame","other"]
+    }
+  },
+  {
+    "id": 50002,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||analytics.m7g.twitch.tv^",
+      "resourceTypes": ["script","xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 50003,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spade.sci.twitch.tv^",
+      "domainType": "thirdParty",
+      "resourceTypes": ["script","xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 50004,
+    "priority": 1,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/stubs/amazon_apstag.js" } },
+    "condition": {
+      "urlFilter": "||amazon-adsystem.com/aax2/apstag.js",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 50005,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||amazon-adsystem.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["main_frame","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 50006,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||flashtalking.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["main_frame","sub_frame"]
+    }
+  },
+  {
+    "id": 50007,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||playlist.ttvnw.net/trigger/",
+      "resourceTypes": ["xmlhttprequest","ping","other","image"]
+    }
+  },
+  {
+    "id": 50008,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||paets.advertising.amazon.dev^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","ping","other","script"]
+    }
+  },
+  {
+    "id": 50009,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||adsqtungsten.a9.amazon.dev^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","ping","other","script"]
+    }
+  }
+]

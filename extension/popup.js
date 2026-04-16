@@ -67,6 +67,7 @@ async function init() {
     ['toggleMerch',        'hideMerch',                true],
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
+    ['toggleTwitchHLS',   'twitchHLS',                true],
   ];
 
   const syncUI = (cfg, masterOn) => {
