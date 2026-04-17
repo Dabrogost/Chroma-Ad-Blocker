@@ -88,6 +88,10 @@
   let _streamInfoCache = {};    // variantUrl → {channelName, resolution, usherParams}
   let _adBreakActive   = false; // true while SSAI ad break is active (overlay shown)
   let _videoMutedBefore = false; // video.muted state saved before Chroma muted for ad
+  let _adBreakStartTs  = 0;     // Date.now() when AdBreakStart was received — for safety timeout
+  let _adBreakSafetyTid = 0;    // safety-timeout id: force-clears overlay if no AdBreakEnd arrives
+  let _adBreakDuration = 0;     // POD-FILLED-DURATION from DATERANGE (seconds), 0 = unknown
+  const AD_BREAK_SAFETY_MS = 90000; // Twitch ad breaks rarely exceed ~90s
 
   // ─── TWITCH PLAYLIST DETECTION ─────
 
@@ -151,6 +155,7 @@
     '  var _prefetchedTokens={};',
     '  var _backupCache={};',
     '  var _inAdBreak=false;',
+    '  var _sentInitialClear=false;',
     '  var _clientId=\"kimne78kx3ncx6brgo4mv6wki5h1ko\";',
     '  var _adSegmentCache=new Map();',
     '  var _BLANK_MP4_B64=\"AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA\";',
@@ -214,8 +219,25 @@
     '    }',
     '    return best;',
     '  }',
-    '  var _adSignifiers=[\"stitched-ad\",\"X-TV-TWITCH-AD\",\"EXT-X-CUE-OUT\",\"twitch-stitched-ad\",\"twitch-trigger\",\"twitch-maf-ad\",\"twitch-ad-quartile\",\"SCTE35-OUT\"];',
+    '  var _adSignifiers=[\"stitched-ad\",\"X-TV-TWITCH-AD\",\"twitch-stitched-ad\",\"Amazon\",\"DCM,\"];',
     '  function _hasAdTags(t){for(var i=0;i<_adSignifiers.length;i++)if(t.indexOf(_adSignifiers[i])>=0)return _adSignifiers[i];return null;}',
+    '  function _rebuildMinimal(text){',
+    '    var lines=text.split(/\\r?\\n/);',
+    '    var targetDur=\"5\",mediaSeq=\"0\";',
+    '    for(var i=0;i<lines.length;i++){',
+    '      var m1=lines[i].match(/^#EXT-X-TARGETDURATION:([0-9]+)/);if(m1)targetDur=m1[1];',
+    '      var m2=lines[i].match(/^#EXT-X-MEDIA-SEQUENCE:([0-9]+)/);if(m2)mediaSeq=m2[1];',
+    '    }',
+    '    var out=[\"#EXTM3U\",\"#EXT-X-TARGETDURATION:\"+targetDur,\"#EXT-X-MEDIA-SEQUENCE:\"+mediaSeq];',
+    '    for(var j=0;j<lines.length;j++){',
+    '      var lj=lines[j];',
+    '      if(lj.indexOf(\"#EXTINF:\")===0 && j+1<lines.length){',
+    '        var uri=(lines[j+1]||\"\").trim();',
+    '        if(uri.length>0 && uri.charAt(0)!==\"#\"){out.push(lj);out.push(uri);}',
+    '      }',
+    '    }',
+    '    return out.join(\"\\n\");',
+    '  }',
     '  function _stripAdSegments(text){',
     '    var now=Date.now();',
     '    _adSegmentCache.forEach(function(ts,u){if(now-ts>60000)_adSegmentCache.delete(u);});',
@@ -238,22 +260,31 @@
     '        }',
     '        if(!isLive || matchesPattern){',
     '          if(nextUrl){_adSegmentCache.set((\"\"+nextUrl).trim(),now);}',
-    '          lines[i]=\"\";',
-    '          lines[i+1]=\"\";',
     '          didStrip=true;',
     '          numStripped++;',
-    '          i++;',
+    '        }',
+    '      }',
+    '      else if(line.indexOf(\"#EXT-X-PART:\")===0){',
+    '        var pm=line.match(/URI=\"([^\"]+)\"/);',
+    '        var partUri=pm?pm[1].trim():\"\";',
+    '        if(partUri){',
+    '          var partMatches=false;',
+    '          for(var ppi=0;ppi<_AdSegmentURLPatterns.length;ppi++){',
+    '            if(partUri.indexOf(_AdSegmentURLPatterns[ppi])>=0){partMatches=true;break;}',
+    '          }',
+    '          if(_adSegmentCache.has(partUri)||partMatches){',
+    '            _adSegmentCache.set(partUri,now);',
+    '            lines[i]=\"\";',
+    '            didStrip=true;',
+    '          }',
     '        }',
     '      }',
     '    }',
+    '    if(!didStrip && _hasAdTags(text)){didStrip=true;}',
     '    if(didStrip){',
-    '      for(var j=0;j<lines.length;j++){',
-    '        if(lines[j].indexOf(\"#EXT-X-TWITCH-PREFETCH:\")===0 || lines[j].indexOf(\"#EXT-X-PRELOAD-HINT:\")===0){',
-    '          lines[j]=\"\";',
-    '        }',
-    '      }',
+    '      return {text:_rebuildMinimal(lines.join(\"\\n\")),didStrip:true,numStripped:numStripped};',
     '    }',
-    '    return {text:lines.join(\"\\n\"),didStrip:didStrip,numStripped:numStripped};',
+    '    return {text:lines.join(\"\\n\"),didStrip:false,numStripped:0};',
     '  }',
     '  function _processVariant(url,text){',
     '    var matched=_hasAdTags(text);if(!matched){return Promise.resolve(null);}',
@@ -324,6 +355,7 @@
     '      var cacheKey=info.channelName+\"_\"+typeObj.t+\"_\"+typeObj.p;',
     '      var cached=_backupCache[cacheKey];',
     '      if(cached && cached.bad && (Date.now() - cached.time < 15000)){',
+    '        console.log(\"[Chroma Worker] backup skip (cooling):\",typeObj.t,\"age:\",Date.now()-cached.time,\"ms\");',
     '        return tryNext(i+1);',
     '      }',
     '      console.log(\"[Chroma Worker] trying backup type:\",typeObj.t, \"plat:\", typeObj.p);',
@@ -451,9 +483,15 @@
     '            }',
     '          }',
     '          if(isRealSsai){',
-    '            if(!_inAdBreak){_inAdBreak=true;postMessage({key:\"AdBreakStart\"});}',
+    '            if(!_inAdBreak){',
+    '              _inAdBreak=true;',
+    '              var _dm=text.match(/X-TV-TWITCH-AD-POD-FILLED-DURATION=\\"([0-9.]+)\\"/);',
+    '              postMessage({key:\"AdBreakStart\",value:{duration:_dm?parseFloat(_dm[1]):0}});',
+    '            }',
+    '            _sentInitialClear=true;',
     '          } else {',
     '            if(_inAdBreak){_inAdBreak=false;postMessage({key:\"AdBreakEnd\"});}',
+    '            else if(!_sentInitialClear){_sentInitialClear=true;postMessage({key:\"AdBreakEnd\"});}',
     '          }',
     '          if(result===null)return response;',
     '          return new Response(result,{status:response.status,statusText:response.statusText,headers:response.headers});',
@@ -526,8 +564,11 @@
         // session are no longer valid and would poison the new Worker's lookups.
         twitchWorkers.length = 0;
         _streamInfoCache = {};
+        if (_adBreakSafetyTid) { clearTimeout(_adBreakSafetyTid); _adBreakSafetyTid = 0; }
         if (_adBreakActive) {
+          console.log('[Chroma Twitch] New Worker created while ad break active — resetting overlay');
           _adBreakActive = false;
+          _adBreakStartTs = 0;
           try { _hideAdOverlay(); _unmuteAfterAd(); } catch(_) {}
         }
         twitchWorkers.push(worker);
@@ -617,16 +658,33 @@
 
           // SSAI ad break signals from Worker
           if (e.data.key === 'AdBreakStart') {
+            const dur = (e.data.value && e.data.value.duration) ? e.data.value.duration : 0;
+            _adBreakDuration = dur;
+            console.log('[Chroma Twitch] AdBreakStart received (active:', _adBreakActive, 'duration:', dur || 'unknown', ')');
+            _adBreakStartTs = Date.now();
+            if (_adBreakSafetyTid) { clearTimeout(_adBreakSafetyTid); }
+            _adBreakSafetyTid = setTimeout(function() {
+              if (_adBreakActive) {
+                console.log('[Chroma Twitch] AdBreak safety timeout — force-clearing overlay after', AD_BREAK_SAFETY_MS, 'ms');
+                _adBreakActive = false;
+                _adBreakStartTs = 0;
+                try { _hideAdOverlay(); _unmuteAfterAd(); } catch(_) {}
+              }
+              _adBreakSafetyTid = 0;
+            }, AD_BREAK_SAFETY_MS);
             if (!_adBreakActive) {
               _adBreakActive = true;
-              try { _muteForAd(); _showAdOverlay(); } catch(_) {}
+              try { _muteForAd(); _showAdOverlay(_adBreakDuration); _resetPlayerBuffer(); } catch(_) {}
             }
             return;
           }
           if (e.data.key === 'AdBreakEnd') {
+            console.log('[Chroma Twitch] AdBreakEnd received (active:', _adBreakActive, 'duration:', _adBreakStartTs ? (Date.now() - _adBreakStartTs) + 'ms' : 'n/a', ')');
+            if (_adBreakSafetyTid) { clearTimeout(_adBreakSafetyTid); _adBreakSafetyTid = 0; }
+            _adBreakStartTs = 0;
             if (_adBreakActive) {
               _adBreakActive = false;
-              try { _hideAdOverlay(); _unmuteAfterAd(); } catch(_) {}
+              try { _hideAdOverlay(); _unmuteAfterAd(); _resetPlayerBuffer(); } catch(_) {}
             }
             return;
           }
@@ -814,10 +872,37 @@
     if (video && !_videoMutedBefore) video.muted = false;
   }
 
-  function _showAdOverlay() {
+  // Ported from Purple — on SSAI ad transitions, pause then resume playback
+  // to force the IVS player to drop its buffer and pick up the new playlist.
+  // Purple does this on both start AND end; the end one is what unsticks
+  // audio/video when the ad break ends and the stream should resume clean.
+  function _resetPlayerBuffer() {
+    const video = document.querySelector('.video-player video');
+    if (!video) return;
+    try { video.pause(); } catch(_) {}
+    setTimeout(function() {
+      const v = document.querySelector('.video-player video');
+      if (!v) return;
+      try { v.play(); } catch(_) {}
+      try { v.play(); } catch(_) {}
+    }, 1500);
+  }
+
+  let _progressStyleInjected = false;
+  function _ensureProgressStyle() {
+    if (_progressStyleInjected) return;
+    _progressStyleInjected = true;
+    const s = API.createElement('style');
+    s.id = 'chroma-progress-style';
+    s.textContent = '@keyframes chroma-fill{from{width:0}to{width:100%}}';
+    (document.head || document.documentElement).appendChild(s);
+  }
+
+  function _showAdOverlay(podDuration) {
     if (document.getElementById('chroma-ad-overlay')) return;
     const root = document.querySelector('.video-player');
     if (!root) return;
+    _ensureProgressStyle();
     const ov = API.createElement('div');
     ov.id = 'chroma-ad-overlay';
     ov.style.cssText = 'position:absolute;inset:0;background:#000;z-index:1000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
@@ -825,8 +910,12 @@
     lbl.style.cssText = 'color:rgba(255,255,255,0.35);font-size:13px;font-family:sans-serif;letter-spacing:0.05em;';
     lbl.textContent = 'Ad blocked';
     ov.appendChild(lbl);
+    const secs = (podDuration && podDuration > 0) ? podDuration : 30;
+    const bar = API.createElement('div');
+    bar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;width:0;background:#9147ff;animation:chroma-fill ' + secs + 's linear forwards;';
+    ov.appendChild(bar);
     root.appendChild(ov);
-    if (DEBUG) console.log('[Chroma Twitch] Ad overlay shown');
+    if (DEBUG) console.log('[Chroma Twitch] Ad overlay shown, pod duration:', secs + 's');
   }
 
   function _hideAdOverlay() {
@@ -905,10 +994,49 @@
     }
   }
 
+  // Hide CSAI slots (outstream video overlay, squeezeback banner, lower-third).
+  // These are stable DOM mounts that exist empty by default and populate when
+  // Twitch renders a client-side ad. We only hide while populated and restore
+  // when empty so normal layout isn't disturbed. The `outstream-ax-overlay`
+  // and `stream-display-ad__wrapper` are the primary CSAI video slots; the
+  // `stream-lowerthird` is the in-stream banner slot.
+  const _CSAI_SLOTS = [
+    '[data-a-target="outstream-ax-overlay"]',
+    '.stream-display-ad__wrapper',
+    '#stream-lowerthird'
+  ];
+  let _loggedCsaiHide = false;
+
+  function hideCsaiSlots() {
+    for (let s = 0; s < _CSAI_SLOTS.length; s++) {
+      const sel = _CSAI_SLOTS[s];
+      const els = document.querySelectorAll(sel);
+      for (let i = 0; i < els.length; i++) {
+        const el = els[i];
+        const populated = el.childElementCount > 0 || (el.textContent && el.textContent.trim().length > 0);
+        if (el.dataset.chromaCsaiHidden) {
+          if (!populated) {
+            delete el.dataset.chromaCsaiHidden;
+            el.style.removeProperty('display');
+          }
+          continue;
+        }
+        if (!populated) continue;
+        el.dataset.chromaCsaiHidden = '';
+        el.style.setProperty('display', 'none', 'important');
+        if (!_loggedCsaiHide) {
+          _loggedCsaiHide = true;
+          if (DEBUG) console.log('[Chroma Twitch] Hidden CSAI slot:', sel);
+        }
+      }
+    }
+  }
+
   // Run overlay hiding on a tick — catches dynamically injected overlays
   sI(function() {
     if (!CONFIG.enabled || !CONFIG.twitchHLS) return;
     try { hideTwitchAdOverlays(); } catch(_) {}
+    try { hideCsaiSlots(); } catch(_) {}
   }, 500);
 
   // ─── TOSTRING SPOOFING ─────

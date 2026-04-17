@@ -85,5 +85,24 @@
       "initiatorDomains": ["twitch.tv"],
       "resourceTypes": ["xmlhttprequest","ping","other","script"]
     }
+  },
+  {
+    "id": 50010,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||video-edge-*.hls.live-video.net/v1/segment/",
+      "resourceTypes": ["xmlhttprequest","media","ping","other"]
+    }
+  },
+  {
+    "id": 50011,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||sb.scorecardresearch.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script"]
+    }
   }
 ]
