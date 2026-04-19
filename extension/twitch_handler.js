@@ -663,7 +663,12 @@
 
   function _muteForAd() {
     const video = document.querySelector('.video-player video');
-    if (video) { _videoMutedBefore = video.muted; video.muted = true; }
+    if (!video) return;
+    // Only capture the user's mute state on the FIRST call per ad break.
+    // If Chroma already muted the video (e.g. Arm → Start), don't overwrite
+    // the saved state — otherwise _unmuteAfterAd sees true and skips restore.
+    if (!video.muted) { _videoMutedBefore = false; }
+    video.muted = true;
   }
 
   function _unmuteAfterAd() {
