@@ -25,7 +25,23 @@
     "*://*.ytimg.com/*",
     "*://*.ggpht.com/*",
     "*://*.twitch.tv/*",
-    "*://*.twitchapps.com/*"
+    "*://*.twitchapps.com/*",
+    "*://*.bellyfull.net/*",
+    "*://*.allrecipes.com/*",
+    "*://*.foodnetwork.com/*",
+    "*://*.epicurious.com/*",
+    "*://*.bbcgoodfood.com/*",
+    "*://*.thekitchn.com/*",
+    "*://*.seriouseats.com/*",
+    "*://*.recipetineats.com/*",
+    "*://*.smittenkitchen.com/*",
+    "*://*.budgetbytes.com/*",
+    "*://*.pinchofyum.com/*",
+    "*://*.sallysbakingaddiction.com/*",
+    "*://*.minimalistbaker.com/*",
+    "*://*.thewoksoflife.com/*",
+    "*://*.americastestkitchen.com/*",
+    "*://cooking.nytimes.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -147,6 +163,33 @@
       "run_at": "document_start",
       "world": "MAIN",
       "all_frames": true
+    },
+
+    {
+      "matches": [
+        "*://*.bellyfull.net/*",
+        "*://*.allrecipes.com/*",
+        "*://*.foodnetwork.com/*",
+        "*://*.epicurious.com/*",
+        "*://*.bbcgoodfood.com/*",
+        "*://*.thekitchn.com/*",
+        "*://*.seriouseats.com/*",
+        "*://*.recipetineats.com/*",
+        "*://*.smittenkitchen.com/*",
+        "*://*.budgetbytes.com/*",
+        "*://*.pinchofyum.com/*",
+        "*://*.sallysbakingaddiction.com/*",
+        "*://*.minimalistbaker.com/*",
+        "*://*.thewoksoflife.com/*",
+        "*://*.americastestkitchen.com/*",
+        "*://cooking.nytimes.com/*"
+      ],
+      "js": [
+        "recipes.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
     }
   ],
   "declarative_net_request": {
@@ -205,6 +248,11 @@
         "id": "twitch_ad_rules",
         "enabled": true,
         "path": "rules/rules_twitch.json"
+      },
+      {
+        "id": "recipe_ad_rules",
+        "enabled": true,
+        "path": "rules/rules_recipes.json"
       }
     ]
   },

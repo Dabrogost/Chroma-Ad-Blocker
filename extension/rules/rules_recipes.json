@@ -1,0 +1,187 @@
+[
+  {
+    "id": 60001,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||browseteriyaki.com^",
+      "resourceTypes": ["main_frame","sub_frame","script","xmlhttprequest","image","media","ping","other"]
+    }
+  },
+  {
+    "id": 60002,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||raptive.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60003,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||adthrive.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60004,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||mediavine.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60005,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||scripts.mediavine.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60006,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||d37j8pfxu2iogi.cloudfront.net^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60007,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "jsdelivr.net/gh/ad-shield",
+      "resourceTypes": ["script","xmlhttprequest","sub_frame","other"]
+    }
+  },
+  {
+    "id": 60008,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||grow.me^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60009,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||growplow.events^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60010,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||cafemedia.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60011,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "sb.scorecardresearch.com/internal-cs/",
+      "resourceTypes": ["script","xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 60012,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||html-load.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60013,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||ads.adthrive.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60014,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||taboola.com^",
+      "initiatorDomains": [
+        "bellyfull.net","allrecipes.com","foodnetwork.com","epicurious.com",
+        "bbcgoodfood.com","thekitchn.com","seriouseats.com","recipetineats.com",
+        "smittenkitchen.com","budgetbytes.com","pinchofyum.com",
+        "sallysbakingaddiction.com","minimalistbaker.com","thewoksoflife.com",
+        "americastestkitchen.com","nytimes.com"
+      ],
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 60015,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||outbrain.com^",
+      "initiatorDomains": [
+        "bellyfull.net","allrecipes.com","foodnetwork.com","epicurious.com",
+        "bbcgoodfood.com","thekitchn.com","seriouseats.com","recipetineats.com",
+        "smittenkitchen.com","budgetbytes.com","pinchofyum.com",
+        "sallysbakingaddiction.com","minimalistbaker.com","thewoksoflife.com",
+        "americastestkitchen.com","nytimes.com"
+      ],
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 60016,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||ezoic.net^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 60017,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||ezodn.com^",
+      "resourceTypes": ["script","sub_frame","xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 60018,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||content-loader.com^",
+      "resourceTypes": ["main_frame","sub_frame","script","xmlhttprequest","ping","image","other"]
+    }
+  },
+  {
+    "id": 60019,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||error-report.com^",
+      "resourceTypes": ["main_frame","sub_frame","script","xmlhttprequest","ping","image","other"]
+    }
+  }
+]
