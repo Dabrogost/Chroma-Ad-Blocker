@@ -85,6 +85,27 @@
       configurable: false,
       enumerable: true
     });
+
+    // Guard innerHTML setter — Dotdash Meredith/Mantle anti-adblock sets
+    // document.head.innerHTML = "" and document.body.innerHTML = "" in a
+    // setInterval loop when it detects blocked ad scripts. Lock this down
+    // at document_start so page scripts can't override or restore native.
+    const _innerHTMLDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+    if (_innerHTMLDesc && _innerHTMLDesc.configurable) {
+      Object.defineProperty(Element.prototype, 'innerHTML', {
+        get() { return _innerHTMLDesc.get.call(this); },
+        set(v) {
+          if ((this === document.body || this === document.documentElement || this === document.head)
+              && (v == null || String(v).trim() === '')) {
+            log('blocked innerHTML clear on', this.tagName);
+            return;
+          }
+          return _innerHTMLDesc.set.call(this, v);
+        },
+        configurable: false,
+        enumerable: true,
+      });
+    }
   })();
 
   const host = (location.hostname || '').toLowerCase();
@@ -303,13 +324,50 @@ ${HIDE_SELECTORS.join(',\n')} {
     }
   } catch (_) {}
 
+  // Anti-adblock injectors hide a recovery payload in the script's
+  // onerror/onload HTML attrs; a sibling obfuscated script reads those
+  // attrs and eval()s them, bypassing src neutering. Detect by content
+  // (the script id is randomized per page load — Tqgkgu, keJwKkCjYCQs,
+  // etc. — so we match the payload's signature instead).
+  const PAYLOAD_MARKERS = [
+    'html-load.com', 'content-loader.com', 'error-report.com',
+    'problem loading the page', 'loader_light',
+  ];
+  function looksLikeInjectorPayload(v) {
+    try {
+      const s = String(v || '');
+      if (s.length < 200) return false;
+      return PAYLOAD_MARKERS.some(m => s.includes(m));
+    } catch (_) { return false; }
+  }
+  function stripInjectorAttrs(el) {
+    if (!el || el.tagName !== 'SCRIPT') return;
+    let stripped = false;
+    if (looksLikeInjectorPayload(el.getAttribute('onerror'))) {
+      el.removeAttribute('onerror');
+      stripped = true;
+    }
+    if (looksLikeInjectorPayload(el.getAttribute('onload'))) {
+      el.removeAttribute('onload');
+      stripped = true;
+    }
+    if (stripped) log('stripped injector onerror/onload', el.id || '(no id)');
+  }
+
   // Patch setAttribute so `el.setAttribute('src', url)` is caught too.
   const _setAttr = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function (name, value) {
     if (this.tagName === 'SCRIPT' && String(name).toLowerCase() === 'src' && isBadUrl(value)) {
       log('neutered setAttribute src →', value);
-      this.setAttribute('data-chroma-neutered', '1');
+      _setAttr.call(this, 'data-chroma-neutered', '1');
       return _setAttr.call(this, 'src', NOOP_SRC);
+    }
+    if (this.tagName === 'SCRIPT') {
+      const lname = String(name).toLowerCase();
+      if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(value)) {
+        log('blocked setAttribute', lname, 'on injector', this.id || '(no id)');
+        return;
+      }
     }
     if (this.tagName === 'META' && String(name).toLowerCase() === 'content'
         && looksLikeRedirectTrap(value)) {
@@ -317,6 +375,22 @@ ${HIDE_SELECTORS.join(',\n')} {
       return;
     }
     return _setAttr.call(this, name, value);
+  };
+
+  // The HTML parser sets `onerror`/`onload` directly (not via setAttribute),
+  // so a sibling inline script can eval the payload before any observer
+  // fires. Intercept getAttribute so the reader script sees empty.
+  const _getAttr = Element.prototype.getAttribute;
+  Element.prototype.getAttribute = function (name) {
+    const v = _getAttr.call(this, name);
+    if (this.tagName === 'SCRIPT') {
+      const lname = String(name).toLowerCase();
+      if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(v)) {
+        log('hid injector', lname, 'from getAttribute');
+        return '';
+      }
+    }
+    return v;
   };
 
   Document.prototype.createElement = function (tag, opts) {
@@ -334,7 +408,6 @@ ${HIDE_SELECTORS.join(',\n')} {
     } catch (_) { return false; }
   }
   try {
-    const locDesc = Object.getOwnPropertyDescriptor(window, 'location');
     // `window.location` isn't reliably reconfigurable cross-browser; instead
     // patch the common setter paths on the existing Location object.
     const L = window.location;
@@ -348,6 +421,18 @@ ${HIDE_SELECTORS.join(',\n')} {
       if (looksLikeRedirectTrap(url)) { log('blocked replace →', url); return; }
       return origReplace(url);
     };
+    // Why: anti-adblock fallback calls reload(); F5 still works (browser-level).
+    // Use defineProperty on Location.prototype so page scripts can't restore native.
+    const _origReload = Location.prototype.reload;
+    try {
+      Object.defineProperty(Location.prototype, 'reload', {
+        value: function () { log('blocked location.reload() from page script'); },
+        writable: false,
+        configurable: false,
+      });
+    } catch (_) {
+      L.reload = function () { log('blocked location.reload() from page script'); };
+    }
   } catch (_) {}
 
   // Suppress the fallback alert() the loader fires after all its sources fail.
