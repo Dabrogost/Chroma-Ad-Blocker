@@ -1,24 +1,37 @@
 /**
  * Chroma Ad-Blocker - Twitch Handler
  *
- * Three-layer ad suppression strategy:
+ * Post-Section-34 strategy (Phase 8): Twitch's PAT is now SHA-1 HMAC signed and
+ * every playerType/platform combination returns server_ads:true. The
+ * "request-a-clean-token" family of tricks (playerType rewrites, backup-stream
+ * rotation) no longer works — keeping them only adds detection surface. So
+ * this handler now leans on cosmetic hiding + SSAI segment stripping + DNR.
  *
- *   1. GQL playerType substitution (vaft ForceAccessTokenPlayerType):
- *      Intercepts Twitch's own PlaybackAccessToken GQL request and rewrites
- *      playerType → 'popout'. Twitch issues a stream token that never has SSAI
- *      ads stitched in. Primary defense — ads never enter the pipeline.
+ *   1. HLS Worker segment stripping (primary mechanical defense):
+ *      Wraps the Amazon IVS WASM Worker's fetch; when a variant playlist comes
+ *      back with Amazon|/DCM|/stitched-ad signifiers, the ad segments are
+ *      dropped and the playlist is rebuilt. DISCONTINUITY markers are
+ *      preserved at content-resume boundaries so the player doesn't hang.
  *
- *   2. Backup stream (vaft backup stream):
- *      If the IVS Worker detects 'stitched' in a variant playlist (Phase 1
- *      bypassed), it requests a fresh access token via the main-thread GQL proxy
- *      and fetches a clean variant from an alternate player type. Tries
- *      ['embed', 'site', 'popout', 'mobile_web'] in order. Silent safety net.
+ *   2. Cosmetic overlay suppression (primary perceptual defense):
+ *      During an SSAI ad break (detected by the Worker), the main thread mutes
+ *      the video and paints a black "ad blocked" overlay. A PREFETCH-absence
+ *      leading indicator pre-arms the overlay one playlist refresh before
+ *      AdBreakStart so there's no audio leak at the transition.
+ *      Also hides the CSAI slot mounts (outstream, squeezeback, pause-ad,
+ *      lower-third, SDA, etc.) via _CSAI_SLOTS + content.js cosmetic sheet.
  *
- * Additional:
- *   - window.open suppression (nowoif equivalent): blocks popup/redirect ads
- *     triggered by Amazon's ad SDK (amazon-adsystem pattern).
- *   - Network blocking via rules/rules_twitch.json: blocks Twitch ad endpoints
- *     and redirects amazon-adsystem.com/aax2/apstag.js to a no-op stub.
+ *   3. Random X-Device-Id on PlaybackAccessToken:
+ *      X-Device-Id is not part of the HMAC signature; unknown devices skip
+ *      Twitch's "commercial break in progress" obligation at token issuance.
+ *
+ *   4. Network blocking via rules/rules_twitch.json:
+ *      Blocks ad endpoints (edge.ads, amazon-adsystem, flashtalking, tungsten,
+ *      doubleclick, imrworldwide, nielsen, etc.) and redirects
+ *      amazon-adsystem.com/*apstag* to a no-op stub.
+ *
+ *   5. window.open suppression (nowoif equivalent):
+ *      Blocks popup/redirect ads triggered by Amazon's ad SDK.
  */
 
 (function() {
@@ -75,23 +88,19 @@
   const _nativeCreateObjectURL   = URL.createObjectURL.bind(URL);
   const _nativeRevokeObjectURL   = URL.revokeObjectURL.bind(URL);
 
-  // Captured from Twitch's own GQL requests — used to make authenticated backup
-  // GQL calls and as signal that the page is fully initialised.
-  let _capturedAuth       = null;
-  let _capturedIntegrity  = null;
-  let _capturedVersion    = null;
-  let _capturedSession    = null;
-  let _capturedDeviceId   = null;
-
-  // Worker tracking for backup stream messaging
+  // Worker tracking for ad-break messaging
   const twitchWorkers  = [];    // wrapped Worker instances
   let _streamInfoCache = {};    // variantUrl → {channelName, resolution, usherParams}
   let _adBreakActive   = false; // true while SSAI ad break is active (overlay shown)
+  let _adBreakArmed    = false; // pre-armed via PREFETCH-vanished signal, before AdBreakStart confirms
   let _videoMutedBefore = false; // video.muted state saved before Chroma muted for ad
   let _adBreakStartTs  = 0;     // Date.now() when AdBreakStart was received — for safety timeout
   let _adBreakSafetyTid = 0;    // safety-timeout id: force-clears overlay if no AdBreakEnd arrives
-  let _adBreakDuration = 0;     // POD-FILLED-DURATION from DATERANGE (seconds), 0 = unknown
-  const AD_BREAK_SAFETY_MS = 90000; // Twitch ad breaks rarely exceed ~90s
+  let _adBreakElapsed  = 0;     // cumulative ad segment seconds (from Worker progress updates)
+  let _adBreakTotal    = 0;     // best-estimate total ad break duration (from Worker progress updates)
+  const AD_BREAK_SAFETY_MS = 240000; // generous ceiling: long mid-roll pods can exceed 3 min
+  let _adBreakPollTid  = 0;     // setTimeout id: fires at _adBreakTotal to begin polling overlay clear
+  let _adBreakPollInterval = 0; // setInterval id: polls every 2s to clear overlay after pod duration
 
   // ─── TWITCH PLAYLIST DETECTION ─────
 
@@ -149,14 +158,13 @@
     '(function(){',
     '  console.log("[Chroma Worker] IIFE hooks installing — overriding self.fetch");',
     '  var _origFetch=self.fetch;',
-    '  var _pending=new Map();',
     '  var _streamInfos={};',
-    '  var _auth=null,_integrity=null,_clientVersion=null,_clientSession=null,_deviceId=null;',
-    '  var _prefetchedTokens={};',
-    '  var _backupCache={};',
     '  var _inAdBreak=false;',
     '  var _sentInitialClear=false;',
-    '  var _clientId=\"kimne78kx3ncx6brgo4mv6wki5h1ko\";',
+    '  var _adElapsed=0;',
+    '  var _adTotal=0;',
+    '  var _countedAdSegUrls=new Set();',
+    '  var _prevHadPrefetch=false;',
     '  var _adSegmentCache=new Map();',
     '  var _BLANK_MP4_B64=\"AAAAKGZ0eXBtcDQyAAAAAWlzb21tcDQyZGFzaGF2YzFpc282aGxzZgAABEltb292AAAAbG12aGQAAAAAAAAAAAAAAAAAAYagAAAAAAABAAABAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAAABqHRyYWsAAABcdGtoZAAAAAMAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAURtZGlhAAAAIG1kaGQAAAAAAAAAAAAAAAAAALuAAAAAAFXEAAAAAAAtaGRscgAAAAAAAAAAc291bgAAAAAAAAAAAAAAAFNvdW5kSGFuZGxlcgAAAADvbWluZgAAABBzbWhkAAAAAAAAAAAAAAAkZGluZgAAABxkcmVmAAAAAAAAAAEAAAAMdXJsIAAAAAEAAACzc3RibAAAAGdzdHNkAAAAAAAAAAEAAABXbXA0YQAAAAAAAAABAAAAAAAAAAAAAgAQAAAAALuAAAAAAAAzZXNkcwAAAAADgICAIgABAASAgIAUQBUAAAAAAAAAAAAAAAWAgIACEZAGgICAAQIAAAAQc3R0cwAAAAAAAAAAAAAAEHN0c2MAAAAAAAAAAAAAABRzdHN6AAAAAAAAAAAAAAAAAAAAEHN0Y28AAAAAAAAAAAAAAeV0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAoAAAAFoAAAAAAGBbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAA9CQAAAAABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABLG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAOxzdGJsAAAAoHN0c2QAAAAAAAAAAQAAAJBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAoABaABIAAAASAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGP//AAAAOmF2Y0MBTUAe/+EAI2dNQB6WUoFAX/LgLUBAQFAAAD6AAA6mDgAAHoQAA9CW7y4KAQAEaOuPIAAAABBzdHRzAAAAAAAAAAAAAAAQc3RzYwAAAAAAAAAAAAAAFHN0c3oAAAAAAAAAAAAAAAAAAAAQc3RjbwAAAAAAAAAAAAAASG12ZXgAAAAgdHJleAAAAAAAAAABAAAAAQAAAC4AAAAAAoAAAAAAACB0cmV4AAAAAAAAAAIAAAABAACCNQAAAAACQAAA\";',
     '  var _BLANK_MP4_BLOB=null;',
@@ -168,7 +176,6 @@
     '    return _BLANK_MP4_BLOB;',
     '  }',
     '  var _TwitchAdUrlRewriteRegex=/(X-TV-TWITCH-AD(?:-[A-Z]+)*-URLS?=\")[^\"]*(\")/g;',
-    '  var _AdSegmentURLPatterns=[\"/adsquared/\",\"/_404/\",\"/processing\"];',
     '  function _isPlaylist(url){',
     '    try{',
     '      var u=new URL(url);',
@@ -178,48 +185,8 @@
     '        u.hostname.endsWith(".twitch.tv"));',
     '    }catch(e){return false}',
     '  }',
-    '  function _gqlRequest(body){',
-    '    return new Promise(function(resolve,reject){',
-    '      var id=Math.random().toString(36).slice(2);',
-    '      var tid=setTimeout(function(){',
-    '        if(_pending.has(id)){_pending.delete(id);reject(new Error("FetchRequest timed out"));}',
-    '      },15000);',
-    '      _pending.set(id,{resolve:resolve,reject:reject,tid:tid});',
-    '      if(!_deviceId){',
-    '        var chars="abcdefghijklmnopqrstuvwxyz0123456789";',
-    '        _deviceId="";for(var di=0;di<32;di++)_deviceId+=chars[Math.floor(Math.random()*chars.length)];',
-    '      }',
-    '      var hdrs={"Client-ID":_clientId,"X-Device-Id":_deviceId};',
-    '      if(_auth)hdrs["Authorization"]=_auth;',
-    '      if(_integrity)hdrs["Client-Integrity"]=_integrity;',
-    '      if(_clientVersion)hdrs["Client-Version"]=_clientVersion;',
-    '      if(_clientSession)hdrs["Client-Session-Id"]=_clientSession;',
-    '      postMessage({key:"FetchRequest",value:{id:id,url:"https://gql.twitch.tv/gql",options:{method:"POST",body:JSON.stringify(body),headers:hdrs}}});',
-    '    });',
-    '  }',
-    '  function _getAccessToken(ch,pt,plat){',
-    '    var p=plat||"web";',
-    '    return _gqlRequest({operationName:\"PlaybackAccessToken\",variables:{isLive:true,login:ch,isVod:false,vodID:\"\",playerType:pt,platform:p},extensions:{persistedQuery:{version:1,sha256Hash:\"ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9\"}}});',
-    '  }',
-    '  function _getStreamUrl(masterText,targetRes){',
-    '    var lines=masterText.split(\"\\n\"),best=null,bestDiff=Infinity;',
-    '    var tw=0,th=0;if(targetRes){var p=targetRes.split(\"x\");tw=+p[0]||0;th=+p[1]||0;}',
-    '    for(var i=0;i<lines.length;i++){',
-    '      if(lines[i].indexOf(\"EXT-X-STREAM-INF\")>=0){',
-    '        var m=lines[i].match(/RESOLUTION=(\\d+x\\d+)/);',
-    '        for(var j=i+1;j<lines.length;j++){',
-    '          var tl=lines[j].trim();',
-    '          if(tl.length===0 || tl[0]===\"#\") continue;',
-    '          if(m){var rp=m[1].split(\"x\"),rw=+rp[0],rh=+rp[1],diff=Math.abs(rw*rh-tw*th);',
-    '            if(diff<bestDiff){best=tl;bestDiff=diff;}',
-    '          }',
-    '          break;',
-    '        }',
-    '      }',
-    '    }',
-    '    return best;',
-    '  }',
-    '  var _adSignifiers=[\"stitched-ad\",\"X-TV-TWITCH-AD\",\"twitch-stitched-ad\",\"Amazon\",\"DCM,\"];',
+    '  var _adSignifiers=[\"stitched-ad\",\"X-TV-TWITCH-AD\",\"twitch-stitched-ad\",\"twitch-ad-quartile\",\"X-TV-TWITCH-STREAM-SOURCE=\\\"Amazon|\",\"X-TV-TWITCH-STREAM-SOURCE=\\\"DCM|\",\"Amazon|\",\"DCM|\"];',
+    '  var _adSegmentTitleRe=/^Amazon\\|\\d+$|^DCM\\|\\d+$/;',
     '  function _hasAdTags(t){for(var i=0;i<_adSignifiers.length;i++)if(t.indexOf(_adSignifiers[i])>=0)return _adSignifiers[i];return null;}',
     '  function _rebuildMinimal(text){',
     '    var lines=text.split(/\\r?\\n/);',
@@ -229,11 +196,24 @@
     '      var m2=lines[i].match(/^#EXT-X-MEDIA-SEQUENCE:([0-9]+)/);if(m2)mediaSeq=m2[1];',
     '    }',
     '    var out=[\"#EXTM3U\",\"#EXT-X-TARGETDURATION:\"+targetDur,\"#EXT-X-MEDIA-SEQUENCE:\"+mediaSeq];',
+    '    var _pendingDiscontinuity=false;',
+    '    var _lastKeptWasAd=false;',
     '    for(var j=0;j<lines.length;j++){',
     '      var lj=lines[j];',
+    '      if(lj.indexOf(\"#EXT-X-DISCONTINUITY\")===0){_pendingDiscontinuity=true;continue;}',
     '      if(lj.indexOf(\"#EXTINF:\")===0 && j+1<lines.length){',
     '        var uri=(lines[j+1]||\"\").trim();',
-    '        if(uri.length>0 && uri.charAt(0)!==\"#\"){out.push(lj);out.push(uri);}',
+    '        if(uri.length>0 && uri.charAt(0)!==\"#\"){',
+    '          var isAdTitle=(lj.indexOf(\",live\")<0);',
+    '          if(isAdTitle){',
+    '            _lastKeptWasAd=true;',
+    '          } else {',
+    '            if(_pendingDiscontinuity||_lastKeptWasAd){out.push(\"#EXT-X-DISCONTINUITY\");}',
+    '            out.push(lj);out.push(uri);',
+    '            _lastKeptWasAd=false;',
+    '            _pendingDiscontinuity=false;',
+    '          }',
+    '        }',
     '      }',
     '    }',
     '    return out.join(\"\\n\");',
@@ -254,11 +234,7 @@
     '      if(i<lines.length-1 && line.indexOf(\"#EXTINF\")===0){',
     '        var nextUrl=lines[i+1];',
     '        var isLive=line.indexOf(\",live\")>=0;',
-    '        var matchesPattern=false;',
-    '        for(var pi=0;pi<_AdSegmentURLPatterns.length;pi++){',
-    '          if(nextUrl && nextUrl.indexOf(_AdSegmentURLPatterns[pi])>=0){matchesPattern=true;break;}',
-    '        }',
-    '        if(!isLive || matchesPattern){',
+    '        if(!isLive){',
     '          if(nextUrl){_adSegmentCache.set((\"\"+nextUrl).trim(),now);}',
     '          didStrip=true;',
     '          numStripped++;',
@@ -267,16 +243,10 @@
     '      else if(line.indexOf(\"#EXT-X-PART:\")===0){',
     '        var pm=line.match(/URI=\"([^\"]+)\"/);',
     '        var partUri=pm?pm[1].trim():\"\";',
-    '        if(partUri){',
-    '          var partMatches=false;',
-    '          for(var ppi=0;ppi<_AdSegmentURLPatterns.length;ppi++){',
-    '            if(partUri.indexOf(_AdSegmentURLPatterns[ppi])>=0){partMatches=true;break;}',
-    '          }',
-    '          if(_adSegmentCache.has(partUri)||partMatches){',
-    '            _adSegmentCache.set(partUri,now);',
-    '            lines[i]=\"\";',
-    '            didStrip=true;',
-    '          }',
+    '        if(partUri && _adSegmentCache.has(partUri)){',
+    '          _adSegmentCache.set(partUri,now);',
+    '          lines[i]=\"\";',
+    '          didStrip=true;',
     '        }',
     '      }',
     '    }',
@@ -287,152 +257,28 @@
     '    return {text:lines.join(\"\\n\"),didStrip:false,numStripped:0};',
     '  }',
     '  function _processVariant(url,text){',
+    '    var _currentHasPrefetch=text.indexOf(\"#EXT-X-TWITCH-PREFETCH:\")>=0;',
+    '    if(_prevHadPrefetch && !_currentHasPrefetch && !_inAdBreak){',
+    '      console.log(\"[Chroma Worker] PREFETCH vanished — pre-arming ad overlay\");',
+    '      postMessage({key:\"AdBreakArm\"});',
+    '    }',
+    '    _prevHadPrefetch=_currentHasPrefetch;',
     '    var matched=_hasAdTags(text);if(!matched){return Promise.resolve(null);}',
     '    console.log(\"[Chroma Worker] ad signifier detected:\",matched);',
-    '    var _mainLines=text.split(/\\r?\\n/);',
-    '    var _hasNonLive=false;',
-    '    for(var _i=0;_i<_mainLines.length;_i++){',
-    '      if(_mainLines[_i].indexOf(\"#EXTINF\")===0 && _mainLines[_i].indexOf(\",live\")<0){_hasNonLive=true;break;}',
+    '    var _stripped=_stripAdSegments(text);',
+    '    if(_stripped.didStrip){',
+    '      console.log(\"[Chroma Worker] stripped\",_stripped.numStripped,\"ad segments\");',
+    '      return Promise.resolve(_stripped.text);',
     '    }',
-    '    if(!_hasNonLive){',
-    '      var _csai=_stripAdSegments(text);',
-    '      console.log(\"[Chroma Worker] CSAI fast path (all segments live)\");',
-    '      return Promise.resolve(_csai.text);',
-    '    }',
-    '    var ubase=url.split(\"?\")[0];',
-    '    var info=_streamInfos[ubase];',
-    '    if(!info){',
-    '      for(var k in _streamInfos){if(ubase.indexOf(k)>=0){info=_streamInfos[k];break;}}',
-    '    }',
-    '    if(!info){',
-    '      console.log(\"[Chroma Worker] failed streamInfo lookup for:\",ubase.slice(0,80));',
-    '      return Promise.resolve(null);',
-    '    }',
-    '    console.log(\"[Chroma Worker] processing variant for:\",info.channelName,info.resolution);',
-    '    var pft=_prefetchedTokens[info.channelName];',
-    '    if(pft){',
-    '      delete _prefetchedTokens[info.channelName];',
-    '      var pmu=new URL(\"https://usher.ttvnw.net/api/\"+(info.v2Api?\"v2/\":\"\")+\"channel/hls/\"+info.channelName+\".m3u8\"+info.usherParams);',
-    '      pmu.searchParams.delete("parent_domains");',
-    '      pmu.searchParams.set("sig",pft.signature);',
-    '      pmu.searchParams.set("token",pft.token);',
-    '      return _origFetch(pmu.href).then(function(pmr){',
-    '        if(!pmr||pmr.status!==200)return _processVariantFallback(url,text,info);',
-    '        return pmr.text().then(function(pmt){',
-    '          var pvu=_getStreamUrl(pmt,info.resolution);',
-    '          if(!pvu)return _processVariantFallback(url,text,info);',
-    '          return _origFetch(pvu).then(function(pvr){',
-    '            if(!pvr||pvr.status!==200)return _processVariantFallback(url,text,info);',
-    '            return pvr.text().then(function(pvt){',
-    '              if(_hasAdTags(pvt))return _processVariantFallback(url,text,info);',
-    '              console.log("[Chroma Worker] backup stream clean (prefetch)");',
-    '              return pvt;',
-    '            });',
-    '          });',
-    '        });',
-    '      }).catch(function(){return _processVariantFallback(url,text,info);});',
-    '    }',
-    '    return _processVariantFallback(url,text,info);',
+    '    return Promise.resolve(null);',
     '  }',
-    '  function _processVariantFallback(url,text,info){',
-    '    var types=[',
-    '      {t:\"embed\",p:\"web\"},',
-    '      {t:\"site\",p:\"web\"},',
-    '      {t:\"popout\",p:\"web\"},',
-    '      {t:\"mobile_web\",p:\"web\"}',
-    '    ];',
-    '    function tryNext(i){',
-    '      if(i>=types.length){',
-    '        var _fb=_stripAdSegments(text);',
-    '        if(_fb.didStrip){',
-    '          console.log(\"[Chroma Worker] all backups failed — stripped\",_fb.numStripped,\"ad segments\");',
-    '          return Promise.resolve(_fb.text);',
-    '        }',
-    '        console.log(\"[Chroma Worker] all backups failed, nothing to strip\");',
-    '        return Promise.resolve(null);',
-    '      }',
-    '      var typeObj=types[i];',
-    '      var cacheKey=info.channelName+\"_\"+typeObj.t+\"_\"+typeObj.p;',
-    '      var cached=_backupCache[cacheKey];',
-    '      if(cached && cached.bad && (Date.now() - cached.time < 15000)){',
-    '        console.log(\"[Chroma Worker] backup skip (cooling):\",typeObj.t,\"age:\",Date.now()-cached.time,\"ms\");',
-    '        return tryNext(i+1);',
-    '      }',
-    '      console.log(\"[Chroma Worker] trying backup type:\",typeObj.t, \"plat:\", typeObj.p);',
-    '      return _getAccessToken(info.channelName,typeObj.t,typeObj.p).then(function(r){',
-    '        if(!r||r.status!==200){',
-    '          _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '          return tryNext(i+1);',
-    '        }',
-    '        var d;try{d=JSON.parse(r.body);}catch(e){return tryNext(i+1);}',
-    '        var tok=d&&d.data&&d.data.streamPlaybackAccessToken;',
-    '        if(!tok){',
-    '          _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '          return tryNext(i+1);',
-    '        }',
-    '        var mu=new URL(\"https://usher.ttvnw.net/api/\"+(info.v2Api?\"v2/\":\"\")+\"channel/hls/\"+info.channelName+\".m3u8\"+info.usherParams);',
-    '        mu.searchParams.delete(\"parent_domains\");',
-    '        mu.searchParams.set(\"sig\",tok.signature);',
-    '        mu.searchParams.set(\"token\",tok.value);',
-    '        return _origFetch(mu.href).then(function(pmr){',
-    '          if(!pmr||pmr.status!==200){',
-    '            _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '            return tryNext(i+1);',
-    '          }',
-    '          return pmr.text().then(function(pmt){',
-    '            var pvu=_getStreamUrl(pmt,info.resolution);',
-    '            if(!pvu){',
-    '              _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '              return tryNext(i+1);',
-    '            }',
-    '            return _origFetch(pvu).then(function(pvr){',
-    '              if(!pvr||pvr.status!==200){',
-    '                _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '                return tryNext(i+1);',
-    '              }',
-    '              return pvr.text().then(function(pvt){',
-    '                var bad=_hasAdTags(pvt);',
-    '                if(bad){',
-    '                  console.log(\"[Chroma Worker] backup type\",typeObj.t,\"plat\",typeObj.p,\"still had ads:\",bad);',
-    '                  _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '                  return tryNext(i+1);',
-    '                }',
-    '                console.log(\"[Chroma Worker] clean backup found! (type:\",typeObj.t,\")\");',
-    '                delete _backupCache[cacheKey];',
-    '                return pvt;',
-    '              });',
-    '            });',
-    '          });',
-    '        }).catch(function(){',
-    '          _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '          return tryNext(i+1);',
-    '        });',
-    '      }).catch(function(){',
-    '        _backupCache[cacheKey]={time:Date.now(),bad:true};',
-    '        return tryNext(i+1);',
-    '      });',
-    '    }',
-    '    return tryNext(0).catch(function(){return null;});',
-    '  }',
-    '  var _chromaKeys={"FetchResponse":1,"UpdateAuthorizationHeader":1,"UpdateClientIntegrityHeader":1,"UpdateClientVersion":1,"UpdateClientSession":1,"UpdateDeviceId":1,"StreamInfoUpdate":1,"PrefetchedToken":1};',
+    '  var _chromaKeys={"StreamInfoUpdate":1};',
     '  self.addEventListener("message",function(e){',
     '    if(!e||!e.data)return;',
     '    var d=e.data;',
     '    if(d.key&&_chromaKeys[d.key]){e.stopImmediatePropagation();}',
-    '    if(d.key==="FetchResponse"){',
-    '      var p=_pending.get(d.value&&d.value.id);',
-    '      if(p){_pending.delete(d.value.id);clearTimeout(p.tid);',
-    '        if(d.value.error)p.reject(new Error(d.value.error));else p.resolve(d.value);}',
-    '    }else if(d.key==="UpdateAuthorizationHeader")_auth=d.value;',
-    '    else if(d.key==="UpdateClientIntegrityHeader")_integrity=d.value;',
-    '    else if(d.key==="UpdateClientVersion")_clientVersion=d.value;',
-    '    else if(d.key==="UpdateClientSession")_clientSession=d.value;',
-    '    else if(d.key==="UpdateDeviceId")_deviceId=d.value;',
-    '    else if(d.key==="StreamInfoUpdate"){',
+    '    if(d.key==="StreamInfoUpdate"){',
     '      var si=d.value;for(var k in si)_streamInfos[k]=si[k];',
-    '    }',
-    '    else if(d.key==="PrefetchedToken"){',
-    '      var pt=d.value;if(pt&&pt.channel)_prefetchedTokens[pt.channel]=pt;',
     '    }',
     '  });',
     '  self.fetch=function(){',
@@ -476,21 +322,47 @@
     '        console.log(\"[Chroma Worker] variant m3u8 — checking for stitched ads\");',
     '        return _processVariant(_url,text).then(function(result){',
     '          var isRealSsai=false;',
+    '          var _adLines=text.split(/\\r?\\n/);',
     '          if(_hasAdTags(text)){',
-    '            var _sl=text.split(/\\r?\\n/);',
-    '            for(var _si=0;_si<_sl.length;_si++){',
-    '              if(_sl[_si].indexOf(\"#EXTINF\")===0 && _sl[_si].indexOf(\",live\")<0){isRealSsai=true;break;}',
+    '            for(var _si=0;_si<_adLines.length;_si++){',
+    '              if(_adLines[_si].indexOf(\"#EXTINF\")===0 && _adLines[_si].indexOf(\",live\")<0){isRealSsai=true;break;}',
     '            }',
     '          }',
     '          if(isRealSsai){',
+    '            var _dm=text.match(/X-TV-TWITCH-AD-POD-FILLED-DURATION=\\"([0-9.]+)\\"/);',
+    '            var _pl=text.match(/X-TV-TWITCH-AD-POD-LENGTH=\\"?([0-9]+)\\\"?/);',
+    '            var _rt=text.match(/X-TV-TWITCH-AD-ROLL-TYPE=\\"([A-Z]+)\\"/);',
+    '            var _podFilled=_dm?parseFloat(_dm[1]):0;',
+    '            var _podLength=_pl?parseInt(_pl[1],10):0;',
+    '            var _rollType=_rt?_rt[1]:\"\";',
+    '            var _elapsed=0;',
+    '            var _maxQ=-1;',
+    '            for(var _ai=0;_ai<_adLines.length;_ai++){',
+    '              var _al=_adLines[_ai];',
+    '              if(_al.indexOf(\"#EXTINF:\")===0 && _al.indexOf(\",live\")<0){',
+    '                var _em=_al.match(/^#EXTINF:([0-9.]+)/);',
+    '                if(_em){var _segUrl=(_ai+1<_adLines.length)?_adLines[_ai+1].trim():\"\";if(_segUrl&&!_countedAdSegUrls.has(_segUrl)){_countedAdSegUrls.add(_segUrl);_elapsed+=parseFloat(_em[1]);}}',
+    '              }',
+    '              if(_al.indexOf(\"twitch-ad-quartile\")>=0){',
+    '                var _qm=_al.match(/X-TV-TWITCH-AD-QUARTILE=\\"?([0-9]+)\\\"?/);',
+    '                if(_qm){var _qv=parseInt(_qm[1],10);if(_qv>_maxQ)_maxQ=_qv;}',
+    '              }',
+    '            }',
+    '            _adElapsed+=_elapsed;',
+    '            var bestTotal=_podFilled;',
+    '            if(!bestTotal&&_podLength>0)bestTotal=_podLength*30;',
+    '            if(!bestTotal)bestTotal=_rollType===\"MIDROLL\"?90:30;',
+    '            if(bestTotal>_adTotal)_adTotal=bestTotal;',
     '            if(!_inAdBreak){',
     '              _inAdBreak=true;',
-    '              var _dm=text.match(/X-TV-TWITCH-AD-POD-FILLED-DURATION=\\"([0-9.]+)\\"/);',
-    '              postMessage({key:\"AdBreakStart\",value:{duration:_dm?parseFloat(_dm[1]):0}});',
+    '              _adElapsed=_elapsed;',
+    '              _adTotal=bestTotal;',
+    '              postMessage({key:\"AdBreakStart\"});',
     '            }',
+    '            postMessage({key:\"AdBreakProgress\",value:{elapsed:_adElapsed,total:_adTotal,quartile:_maxQ>=0?_maxQ:null}});',
     '            _sentInitialClear=true;',
     '          } else {',
-    '            if(_inAdBreak){_inAdBreak=false;postMessage({key:\"AdBreakEnd\"});}',
+    '            if(_inAdBreak){_inAdBreak=false;_adElapsed=0;_adTotal=0;_countedAdSegUrls.clear();postMessage({key:\"AdBreakEnd\"});}',
     '            else if(!_sentInitialClear){_sentInitialClear=true;postMessage({key:\"AdBreakEnd\"});}',
     '          }',
     '          if(result===null)return response;',
@@ -565,6 +437,8 @@
         twitchWorkers.length = 0;
         _streamInfoCache = {};
         if (_adBreakSafetyTid) { clearTimeout(_adBreakSafetyTid); _adBreakSafetyTid = 0; }
+        if (_adBreakPollTid) { clearTimeout(_adBreakPollTid); _adBreakPollTid = 0; }
+        if (_adBreakPollInterval) { clearInterval(_adBreakPollInterval); _adBreakPollInterval = 0; }
         if (_adBreakActive) {
           console.log('[Chroma Twitch] New Worker created while ad break active — resetting overlay');
           _adBreakActive = false;
@@ -573,95 +447,29 @@
         }
         twitchWorkers.push(worker);
 
-        // Seed Worker with any auth + stream info already captured before this Worker started
+        // Seed Worker with any stream info already captured before it started
         try {
-          if (_capturedAuth)       worker.postMessage({ key: 'UpdateAuthorizationHeader',   value: _capturedAuth });
-          if (_capturedIntegrity)  worker.postMessage({ key: 'UpdateClientIntegrityHeader', value: _capturedIntegrity });
-          if (_capturedVersion)    worker.postMessage({ key: 'UpdateClientVersion',         value: _capturedVersion });
-          if (_capturedSession)    worker.postMessage({ key: 'UpdateClientSession',         value: _capturedSession });
-          if (_capturedDeviceId)   worker.postMessage({ key: 'UpdateDeviceId',              value: _capturedDeviceId });
           if (Object.keys(_streamInfoCache).length) {
             worker.postMessage({ key: 'StreamInfoUpdate', value: _streamInfoCache });
           }
         } catch(_) {}
 
-        // ── Proactive token prefetch ──
-        // Race against Twitch's cached access token by immediately requesting
-        // a fresh token with playerType:'popout'. If Twitch reuses a stale
-        // cached token with playerType:'site', SSAI ads will be stitched in.
-        // By fetching our own clean token and storing it, Phase 2's Worker
-        // can use it immediately when it detects 'stitched' content, reducing
-        // the backup stream latency from ~2s to near-zero.
-        (async function prefetchCleanToken(w) {
-          try {
-            // Extract channel name from the current URL path
-            const pathMatch = window.location.pathname.match(/^\/([a-zA-Z0-9_]{3,25})$/);
-            if (!pathMatch) return;
-            const channel = pathMatch[1].toLowerCase();
-
-            // Skip non-channel pages
-            const reserved = ['directory', 'videos', 'settings', 'subscriptions',
-                              'inventory', 'drops', 'wallet', 'turbo', 'prime',
-                              'jobs', 'p', 'search', 'downloads', 'broadcast'];
-            if (reserved.includes(channel)) return;
-
-            // Wait briefly for auth headers to be captured from early GQL calls
-            if (!_capturedAuth) {
-              await new Promise(r => setTimeout(r, 500));
-            }
-            if (!_capturedAuth) return; // Still no auth — can't make authenticated GQL
-
-            const hdrs = { 'Client-ID': 'kimne78kx3ncx6brgo4mv6wki5h1ko' };
-            if (_capturedAuth)      hdrs['Authorization']      = _capturedAuth;
-            if (_capturedIntegrity) hdrs['Client-Integrity']   = _capturedIntegrity;
-            if (_capturedVersion)   hdrs['Client-Version']     = _capturedVersion;
-            if (_capturedSession)   hdrs['Client-Session-Id']  = _capturedSession;
-            if (_capturedDeviceId)  hdrs['X-Device-Id']        = _capturedDeviceId;
-
-            const resp = await _nativeFetch('https://gql.twitch.tv/gql', {
-              method: 'POST',
-              headers: hdrs,
-              body: JSON.stringify({
-                operationName: 'PlaybackAccessToken',
-                variables: {
-                  isLive: true, login: channel, isVod: false,
-                  vodID: '', playerType: 'popout', platform: 'web'
-                },
-                extensions: {
-                  persistedQuery: {
-                    version: 1,
-                    sha256Hash: 'ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9'
-                  }
-                }
-              })
-            });
-
-            if (!resp.ok) return;
-            const data = await resp.json();
-            const tok = data?.data?.streamPlaybackAccessToken;
-            if (!tok) return;
-
-            // Send the pre-fetched clean token to the Worker so Phase 2
-            // can use it immediately without the GQL round-trip delay
-            w.postMessage({
-              key: 'PrefetchedToken',
-              value: { channel, signature: tok.signature, token: tok.value }
-            });
-
-            if (DEBUG) console.log('[Chroma Twitch] Prefetched clean token for:', channel);
-          } catch(_) {}
-        })(worker);
-
-        // Proxy authenticated GQL fetch requests from Worker (Workers can't send credentialed requests)
-        worker.addEventListener('message', async function(e) {
+        worker.addEventListener('message', function(e) {
           if (!e.data) return;
 
-          // SSAI ad break signals from Worker
+          if (e.data.key === 'AdBreakArm') {
+            if (!_adBreakActive && !_adBreakArmed) {
+              _adBreakArmed = true;
+              try { _muteForAd(); _showAdOverlay(); } catch(_) {}
+            }
+            return;
+          }
           if (e.data.key === 'AdBreakStart') {
-            const dur = (e.data.value && e.data.value.duration) ? e.data.value.duration : 0;
-            _adBreakDuration = dur;
-            console.log('[Chroma Twitch] AdBreakStart received (active:', _adBreakActive, 'duration:', dur || 'unknown', ')');
+            console.log('[Chroma Twitch] AdBreakStart received (active:', _adBreakActive, ')');
             _adBreakStartTs = Date.now();
+            _adBreakElapsed = 0;
+            _adBreakTotal = 0;
+            if (_adBreakPollTid) { clearTimeout(_adBreakPollTid); _adBreakPollTid = 0; }
             if (_adBreakSafetyTid) { clearTimeout(_adBreakSafetyTid); }
             _adBreakSafetyTid = setTimeout(function() {
               if (_adBreakActive) {
@@ -674,38 +482,55 @@
             }, AD_BREAK_SAFETY_MS);
             if (!_adBreakActive) {
               _adBreakActive = true;
-              try { _muteForAd(); _showAdOverlay(_adBreakDuration); _resetPlayerBuffer(); } catch(_) {}
+              _adBreakArmed = false;
+              try { _muteForAd(); _showAdOverlay(); } catch(_) {}
+            }
+            return;
+          }
+          if (e.data.key === 'AdBreakProgress') {
+            const p = e.data.value || {};
+            _adBreakElapsed = p.elapsed || 0;
+            if (p.total && p.total > _adBreakTotal) {
+              _adBreakTotal = p.total;
+              // Schedule a poll to clear the overlay at the pod's stated end time.
+              // This fires even if the worker never sends AdBreakEnd (which is unreliable).
+              if (!_adBreakPollTid && _adBreakActive && _adBreakStartTs) {
+                const delay = Math.max(0, (_adBreakStartTs + _adBreakTotal * 1000) - Date.now());
+                console.log('[Chroma Twitch] AdBreakProgress: pod total', _adBreakTotal, 's — poll starts in', (delay / 1000).toFixed(1), 's');
+                _adBreakPollTid = setTimeout(function() {
+                  _adBreakPollTid = 0;
+                  _adBreakPollInterval = setInterval(function() {
+                    if (!_adBreakActive) {
+                      clearInterval(_adBreakPollInterval);
+                      _adBreakPollInterval = 0;
+                      return;
+                    }
+                    console.log('[Chroma Twitch] Poll: firing synthetic AdBreakEnd to clear overlay');
+                    if (_adBreakSafetyTid) { clearTimeout(_adBreakSafetyTid); _adBreakSafetyTid = 0; }
+                    _adBreakStartTs = 0;
+                    _adBreakArmed = false;
+                    _adBreakActive = false;
+                    try { _hideAdOverlay(); _unmuteAfterAd(); } catch(_) {}
+                  }, 2000);
+                }, delay);
+              }
+            }
+            if (_adBreakActive) {
+              try { _updateAdProgress(_adBreakElapsed, _adBreakTotal); } catch(_) {}
             }
             return;
           }
           if (e.data.key === 'AdBreakEnd') {
             console.log('[Chroma Twitch] AdBreakEnd received (active:', _adBreakActive, 'duration:', _adBreakStartTs ? (Date.now() - _adBreakStartTs) + 'ms' : 'n/a', ')');
             if (_adBreakSafetyTid) { clearTimeout(_adBreakSafetyTid); _adBreakSafetyTid = 0; }
+            if (_adBreakPollTid) { clearTimeout(_adBreakPollTid); _adBreakPollTid = 0; }
+            if (_adBreakPollInterval) { clearInterval(_adBreakPollInterval); _adBreakPollInterval = 0; }
             _adBreakStartTs = 0;
+            _adBreakArmed = false;
             if (_adBreakActive) {
               _adBreakActive = false;
               try { _hideAdOverlay(); _unmuteAfterAd(); _resetPlayerBuffer(); } catch(_) {}
             }
-            return;
-          }
-
-          if (e.data.key !== 'FetchRequest') return;
-          const req = e.data.value;
-          try {
-            const resp = await _nativeFetch(req.url, req.options);
-            const body = await resp.text();
-            worker.postMessage({
-              key: 'FetchResponse',
-              value: {
-                id: req.id,
-                status: resp.status,
-                statusText: resp.statusText,
-                headers: Object.fromEntries(resp.headers.entries()),
-                body
-              }
-            });
-          } catch(err) {
-            worker.postMessage({ key: 'FetchResponse', value: { id: req.id, error: err.message } });
           }
         });
 
@@ -727,54 +552,27 @@
     // Script only loads on *.twitch.tv, so no external kill switch needed here.
     const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url ?? '');
 
-    // ── GQL intercept: capture auth headers + replace playerType ──
-    // vaft's ForceAccessTokenPlayerType approach: rewrite 'site' → 'popout' in the
-    // PlaybackAccessToken GQL request. The Twitch CDN issues different stream tokens
-    // per player type; 'popout' historically receives a stream without SSAI ads stitched.
+    // ── GQL intercept: randomize X-Device-Id on PlaybackAccessToken ──
+    // playerType rewrite was removed in Phase 8 — Twitch's Section-34 instrumentation
+    // showed all playerType/platform combinations return server_ads:true, and the PAT
+    // is now SHA-1 HMAC signed (tampering adds detection surface without benefit).
+    // Random X-Device-Id still unsigned: removes "commercial break in progress"
+    // obligation at token-generation time for unknown devices.
     if (url.includes('gql.twitch.tv')) {
       const init = args[1] || {};
       let hdrs = init.headers || {};
-      // Normalize Headers instances to plain objects — bracket access on a
-      // Headers object returns undefined and would silently skip auth capture.
       if (typeof Headers !== 'undefined' && hdrs instanceof Headers) {
         const _h = {};
         hdrs.forEach(function(v, k) { _h[k] = v; });
         hdrs = _h;
       }
-      // Capture credentials for potential Phase-2 backup stream GQL calls.
-      // Twitch constructs headers with capitalized names; HTTP/2 normalizes to lowercase.
-      // Check both forms to be safe.
-      if (hdrs['Authorization']     || hdrs['authorization'])      _capturedAuth      = hdrs['Authorization']     || hdrs['authorization'];
-      if (hdrs['Client-Integrity']  || hdrs['client-integrity'])   _capturedIntegrity = hdrs['Client-Integrity']  || hdrs['client-integrity'];
-      if (hdrs['Client-Version']    || hdrs['client-version'])     _capturedVersion   = hdrs['Client-Version']    || hdrs['client-version'];
-      if (hdrs['Client-Session-Id'] || hdrs['client-session-id'])  _capturedSession   = hdrs['Client-Session-Id'] || hdrs['client-session-id'];
-      if (hdrs['X-Device-Id']       || hdrs['x-device-id'])        _capturedDeviceId  = hdrs['X-Device-Id']       || hdrs['x-device-id'];
-
-      // Forward captured auth to active Workers so they can make backup-stream GQL calls
-      if (_capturedAuth)       postTwitchWorkerMessage('UpdateAuthorizationHeader',   _capturedAuth);
-      if (_capturedIntegrity)  postTwitchWorkerMessage('UpdateClientIntegrityHeader', _capturedIntegrity);
-      if (_capturedVersion)    postTwitchWorkerMessage('UpdateClientVersion',         _capturedVersion);
-      if (_capturedSession)    postTwitchWorkerMessage('UpdateClientSession',         _capturedSession);
-      if (_capturedDeviceId)   postTwitchWorkerMessage('UpdateDeviceId',              _capturedDeviceId);
-
-      // Replace playerType only in PlaybackAccessToken operations
       if (typeof init.body === 'string' && init.body.includes('PlaybackAccessToken')) {
-        try {
-          const body = JSON.parse(init.body);
-          // Body may be a single operation object or an array of operations
-          const ops = Array.isArray(body) ? body : [body];
-          let replaced = false;
-          for (const op of ops) {
-            if (op?.variables?.playerType && op.variables.playerType !== 'popout') {
-              if (DEBUG) console.log('[Chroma Twitch] GQL playerType:', op.variables.playerType, '→ popout');
-              op.variables.playerType = 'popout';
-              replaced = true;
-            }
-          }
-          if (replaced) {
-            args[1] = { ...init, body: JSON.stringify(Array.isArray(body) ? ops : ops[0]) };
-          }
-        } catch (_) {}
+        const randomDeviceId = Array.from(
+          crypto.getRandomValues(new Uint8Array(16))
+        ).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+        const patchedHeaders = Object.assign({}, hdrs, { 'X-Device-Id': randomDeviceId });
+        if (DEBUG) console.log('[Chroma Twitch] PlaybackAccessToken X-Device-Id randomized:', randomDeviceId);
+        args[1] = Object.assign({}, args[1] || init, { headers: patchedHeaders });
       }
       return _nativeFetch.apply(this, args);
     }
@@ -815,8 +613,9 @@
       const text = await response.clone().text();
       if (!text.includes('#EXT-X-STREAM-INF')) return response;
 
-      // Capture variant URL → {channelName, resolution, usherParams} so Workers
-      // can construct backup stream URLs when they detect SSAI ads.
+      // Capture variant URL → {channelName, resolution, usherParams} metadata.
+      // Forwarded to Workers for diagnostic logging only — backup-stream
+      // construction was removed in Phase 8 (see header).
       const channelMatch = new URL(cleanUrl).pathname.match(/([^\/]+)(?=\.\w+$)/);
       const channelName = channelMatch ? channelMatch[0] : '';
       const usherParams = new URL(cleanUrl).search;
@@ -857,8 +656,8 @@
     return _nativeOpen(url, ...args);
   };
 
-  // ─── AD BREAK MUTE + OVERLAY (SSAI fallback) ─────
-  // When all backup stream attempts fail and SSAI ads play in the stream,
+  // ─── AD BREAK MUTE + OVERLAY (primary SSAI defense) ─────
+  // When Worker detects SSAI ad signifiers in the live variant playlist,
   // mute the video and cover it with a black overlay. Reversed automatically
   // when the Worker detects the ad has finished (clean variant m3u8 seen).
 
@@ -888,21 +687,12 @@
     }, 1500);
   }
 
-  let _progressStyleInjected = false;
-  function _ensureProgressStyle() {
-    if (_progressStyleInjected) return;
-    _progressStyleInjected = true;
-    const s = API.createElement('style');
-    s.id = 'chroma-progress-style';
-    s.textContent = '@keyframes chroma-fill{from{width:0}to{width:100%}}';
-    (document.head || document.documentElement).appendChild(s);
-  }
-
-  function _showAdOverlay(podDuration) {
+  function _showAdOverlay() {
     if (document.getElementById('chroma-ad-overlay')) return;
-    const root = document.querySelector('.video-player');
+    const root = document.querySelector('.video-player__overlay')
+               || document.querySelector('[data-a-target="video-ref"]')
+               || document.querySelector('.video-player');
     if (!root) return;
-    _ensureProgressStyle();
     const ov = API.createElement('div');
     ov.id = 'chroma-ad-overlay';
     ov.style.cssText = 'position:absolute;inset:0;background:#000;z-index:1000;display:flex;align-items:center;justify-content:center;pointer-events:none;';
@@ -910,17 +700,28 @@
     lbl.style.cssText = 'color:rgba(255,255,255,0.35);font-size:13px;font-family:sans-serif;letter-spacing:0.05em;';
     lbl.textContent = 'Ad blocked';
     ov.appendChild(lbl);
-    const secs = (podDuration && podDuration > 0) ? podDuration : 30;
     const bar = API.createElement('div');
-    bar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;width:0;background:#9147ff;animation:chroma-fill ' + secs + 's linear forwards;';
+    bar.id = 'chroma-ad-bar';
+    bar.style.cssText = 'position:absolute;bottom:0;left:0;height:3px;width:0%;background:#9147ff;transition:width 2.2s linear;';
     ov.appendChild(bar);
     root.appendChild(ov);
-    if (DEBUG) console.log('[Chroma Twitch] Ad overlay shown, pod duration:', secs + 's');
+    if (DEBUG) console.log('[Chroma Twitch] Ad overlay shown');
+  }
+
+  function _updateAdProgress(elapsed, total) {
+    const bar = document.getElementById('chroma-ad-bar');
+    if (!bar) return;
+    const pct = total > 0 ? Math.min(100, (elapsed / total) * 100) : 0;
+    bar.style.width = pct + '%';
   }
 
   function _hideAdOverlay() {
-    const ov = document.getElementById('chroma-ad-overlay');
-    if (ov) { ov.remove(); if (DEBUG) console.log('[Chroma Twitch] Ad overlay hidden'); }
+    const bar = document.getElementById('chroma-ad-bar');
+    if (bar) bar.style.width = '100%';
+    setTimeout(function() {
+      const ov = document.getElementById('chroma-ad-overlay');
+      if (ov) { ov.remove(); if (DEBUG) console.log('[Chroma Twitch] Ad overlay hidden'); }
+    }, 300);
   }
 
   // ─── CSAI AD OVERLAY HIDING (ported from vaft) ─────
@@ -1002,8 +803,23 @@
   // `stream-lowerthird` is the in-stream banner slot.
   const _CSAI_SLOTS = [
     '[data-a-target="outstream-ax-overlay"]',
+    '[data-a-target="video-ad-label"]',
+    '[data-a-target="sda-panel"]',
+    '[data-test-selector="ad-banner-default-text"]',
     '.stream-display-ad__wrapper',
-    '#stream-lowerthird'
+    '#stream-lowerthird',
+    '.video-ad-display',
+    '.video-ad-label',
+    '.player-ad-notice',
+    '.player-ad-notice__label',
+    '.outstream-vertical-video',
+    '.outstream-mirror-pbyp-video',
+    '.outstream-home-page-video',
+    '.squeezeback',
+    '.headliner',
+    '.pause-ad',
+    '.promotions-list',
+    '.home-carousel-ad'
   ];
   let _loggedCsaiHide = false;
 

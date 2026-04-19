@@ -115,7 +115,25 @@
           .tw-interstitial,
           .ad-overlay,
           [data-target="ad-slot"],
-          .premium-ad-slot {
+          [data-test-selector="ad-banner-default-text"],
+          [data-a-target="video-ad-label"],
+          [data-a-target="sda-panel"],
+          [data-a-target="outstream-ax-overlay"],
+          .premium-ad-slot,
+          .stream-display-ad__wrapper,
+          #stream-lowerthird,
+          .video-ad-display,
+          .video-ad-label,
+          .player-ad-notice,
+          .player-ad-notice__label,
+          .outstream-vertical-video,
+          .outstream-mirror-pbyp-video,
+          .outstream-home-page-video,
+          .squeezeback,
+          .headliner,
+          .pause-ad,
+          .promotions-list,
+          .home-carousel-ad {
             display: none !important;
           }
         `,

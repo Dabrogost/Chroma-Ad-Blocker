@@ -32,7 +32,7 @@
     "priority": 1,
     "action": { "type": "redirect", "redirect": { "extensionPath": "/stubs/amazon_apstag.js" } },
     "condition": {
-      "urlFilter": "||amazon-adsystem.com/aax2/apstag.js",
+      "urlFilter": "||amazon-adsystem.com/*apstag*",
       "initiatorDomains": ["twitch.tv"],
       "resourceTypes": ["script"]
     }
@@ -44,7 +44,7 @@
     "condition": {
       "urlFilter": "||amazon-adsystem.com^",
       "initiatorDomains": ["twitch.tv"],
-      "resourceTypes": ["main_frame","sub_frame","xmlhttprequest","ping","image","other"]
+      "resourceTypes": ["main_frame","sub_frame","xmlhttprequest","ping","image","script","other"]
     }
   },
   {
@@ -54,7 +54,7 @@
     "condition": {
       "urlFilter": "||flashtalking.com^",
       "initiatorDomains": ["twitch.tv"],
-      "resourceTypes": ["main_frame","sub_frame"]
+      "resourceTypes": ["main_frame","sub_frame","xmlhttprequest","ping","image","script","other"]
     }
   },
   {
@@ -103,6 +103,197 @@
       "urlFilter": "||sb.scorecardresearch.com^",
       "initiatorDomains": ["twitch.tv"],
       "resourceTypes": ["xmlhttprequest","image","ping","script"]
+    }
+  },
+  {
+    "id": 50012,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||s.rvikjd.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50013,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||tq-tungsten.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50014,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||spade.twitch.tv^",
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50015,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||player.stats.live-video.net^",
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50016,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||reporting.cdndex.io^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50017,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||global.poe.live-video.net^",
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50018,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||countess.twitch.tv^",
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50019,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||cloudfront.hls.ttvnw.net/probe",
+      "resourceTypes": ["xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 50020,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||m.media-amazon.com/images/S/al-na-",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","media","ping","other"]
+    }
+  },
+  {
+    "id": 50021,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||gcdn.2mdn.net^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","media","ping","script","other"]
+    }
+  },
+  {
+    "id": 50022,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||ad.doubleclick.net^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50023,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||googleads4.g.doubleclick.net^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50024,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||ade.googlesyndication.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50025,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||imasdk.googleapis.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","script","sub_frame","other"]
+    }
+  },
+  {
+    "id": 50026,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||twitch.tv/r/ts/",
+      "resourceTypes": ["xmlhttprequest","script","image","ping","other"]
+    }
+  },
+  {
+    "id": 50027,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||twitch.tv/r/c/",
+      "resourceTypes": ["xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 50028,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||twitch.tv/r/tn/",
+      "resourceTypes": ["xmlhttprequest","image","ping","other"]
+    }
+  },
+  {
+    "id": 50029,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||imrworldwide.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50030,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||nielsen.com^",
+      "initiatorDomains": ["twitch.tv"],
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
+    }
+  },
+  {
+    "id": 50031,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||paets.advertising.amazon.dev^",
+      "resourceTypes": ["xmlhttprequest","image","ping","script","other"]
     }
   }
 ]
