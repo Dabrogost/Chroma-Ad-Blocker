@@ -158,7 +158,7 @@
   const HOSTILE_DOMAINS = [
     'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',
     'amazon.co.jp', 'amazon.ca', 'amazon.fr', 'amazon.it',
-    'amazon.es', 'primevideo.com'
+    'amazon.es', 'primevideo.com', 'twitch.tv'
   ];
   
   const isHostileDomain = HOSTILE_DOMAINS.some(d => window.location.hostname.endsWith(d));

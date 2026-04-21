@@ -170,7 +170,8 @@ const STATIC_RULESETS = [
   'yt_ad_rules_part6',
   'yt_ad_rules_part7',
   'yt_ad_rules_part8',
-  'yt_ad_rules_part9'
+  'yt_ad_rules_part9',
+  'twitch_ad_rules'
 ];
 
 // Range 1000 - 99999 reserved for local/default dynamic rules (Anti-Detection/Acceleration)
@@ -383,7 +384,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
         case MSG.WHITELIST_ADD:
           const { whitelist: wlAdd = [] } = await chrome.storage.local.get('whitelist');
-          if (!wlAdd.includes(msg.domain)) {
+          if (
+            typeof msg.domain === 'string' &&
+            msg.domain.length > 0 &&
+            msg.domain.length <= 253 &&
+            /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(msg.domain) &&
+            !wlAdd.includes(msg.domain)
+          ) {
             wlAdd.push(msg.domain);
             await chrome.storage.local.set({ whitelist: wlAdd });
             await syncWhitelistRules();

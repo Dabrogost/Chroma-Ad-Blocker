@@ -97,7 +97,7 @@
       configurable: true,
       get() { return _ytInitialPlayerResponse; },
       set(value) {
-        if (CONFIG.stripping && value && typeof value === 'object') {
+        if (CONFIG.enabled && CONFIG.stripping && value && typeof value === 'object') {
           stripAdFields(value);
         }
         _ytInitialPlayerResponse = value;
@@ -112,7 +112,7 @@
       configurable: true,
       get() { return _ytInitialData; },
       set(value) {
-        if (CONFIG.stripping && value && typeof value === 'object') {
+        if (CONFIG.enabled && CONFIG.stripping && value && typeof value === 'object') {
           stripAdFields(value);
           stripResponseAds(value);
         }
@@ -138,7 +138,7 @@
   // Fetch wrapper — intercepts YouTube API responses and strips ad fields before returning.
   window.fetch = async function(...args) {
     const response = await _nativeFetch.apply(this, args);
-    if (!CONFIG.stripping) return response;
+    if (!(CONFIG.enabled && CONFIG.stripping)) return response;
 
     const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
     if (YT_API_PATHS.some(p => url.includes(p))) {
@@ -174,7 +174,7 @@
 
   XMLHttpRequest.prototype.send = function(...args) {
     const url = this._chromaYTUrl || '';
-    if (CONFIG.stripping && YT_API_PATHS.some(p => url.includes(p))) {
+    if (CONFIG.enabled && CONFIG.stripping && YT_API_PATHS.some(p => url.includes(p))) {
       this.addEventListener('readystatechange', function() {
         if (this.readyState !== 4) return;
         try {
@@ -200,7 +200,7 @@
   // how the bytes arrived (worker-side processing, batched RPC, etc.).
   JSON.parse = function(text, reviver) {
     const result = _nativeJSONParse.call(this, text, reviver);
-    if (!CONFIG.stripping) return result;
+    if (!(CONFIG.enabled && CONFIG.stripping)) return result;
     try {
       if (result && typeof result === 'object') {
         stripAdFields(result);
