@@ -139,6 +139,7 @@ test('Content script generic functionality', async (t) => {
     sandbox.CONFIG.hideMerch = false;
     sandbox.CONFIG.hideOffers = false;
     sandbox.CONFIG.hideShorts = false;
+    sandbox.CONFIG.suppressWarnings = false;
     sandbox.setHideSelectors(['.ad-showing', '#masthead-ad']);
 
     sandbox.injectAllCSS();

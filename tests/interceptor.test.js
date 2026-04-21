@@ -56,6 +56,8 @@ const createSandbox = () => {
     open: makeNative(function() { return {}; }),
     focus: makeNative(function() {}),
     blur: makeNative(function() {}),
+    scrollTo: makeNative(function() {}),
+    scroll: makeNative(function() {}),
     fetch: makeNative(() => Promise.resolve({})),
     setTimeout: (cb) => { try { cb(); } catch(e) {} },
     clearTimeout: () => {},
