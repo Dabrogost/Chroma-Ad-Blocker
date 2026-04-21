@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(npm test:*)",
-      "Bash(node --test tests/yt_handler.test.js)"
-    ]
-  }
-}
