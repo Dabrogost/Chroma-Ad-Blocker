@@ -24,8 +24,6 @@
     "*://*.adservice.google.com/*",
     "*://*.ytimg.com/*",
     "*://*.ggpht.com/*",
-    "*://*.twitch.tv/*",
-    "*://*.twitchapps.com/*",
     "*://*.bellyfull.net/*",
     "*://*.allrecipes.com/*",
     "*://*.foodnetwork.com/*",
@@ -131,39 +129,6 @@
       "all_frames": true
     },
 
-    {
-      "matches": [
-        "*://*.twitch.tv/*"
-      ],
-      "js": [
-        "messaging.js",
-        "protection.js"
-      ],
-      "run_at": "document_start",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "*://*.twitch.tv/*"
-      ],
-      "js": [
-        "interceptor.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "*://*.twitch.tv/*"
-      ],
-      "js": [
-        "twitch_handler.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
 
     {
       "matches": [
@@ -245,23 +210,12 @@
         "path": "rules/rules_9.json"
       },
       {
-        "id": "twitch_ad_rules",
-        "enabled": true,
-        "path": "rules/rules_twitch.json"
-      },
-      {
         "id": "recipe_ad_rules",
         "enabled": true,
         "path": "rules/rules_recipes.json"
       }
     ]
   },
-  "web_accessible_resources": [
-    {
-      "resources": ["stubs/amazon_apstag.js"],
-      "matches": ["*://*.twitch.tv/*"]
-    }
-  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

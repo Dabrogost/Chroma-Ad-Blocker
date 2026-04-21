@@ -22,7 +22,6 @@
     enabled: true,
     acceleration: true,
     stripping: true,
-    twitchHLS: true,
   };
 
 
@@ -92,12 +91,10 @@
       CONFIG.enabled = isWhitelisted ? false : (savedConfig.enabled !== false);
       CONFIG.acceleration = isWhitelisted ? false : (savedConfig.acceleration !== false);
       CONFIG.stripping = isWhitelisted ? false : (savedConfig.stripping !== false);
-      CONFIG.twitchHLS = isWhitelisted ? false : (savedConfig.twitchHLS !== false);
     } else if (isWhitelisted) {
       CONFIG.enabled = false;
       CONFIG.acceleration = false;
       CONFIG.stripping = false;
-      CONFIG.twitchHLS = false;
     }
     
     document.dispatchEvent(new CustomEvent('__EXT_INIT__', { detail: { active: CONFIG.enabled } }));
@@ -111,7 +108,6 @@
     if (msg.type === MSG.CONFIG_UPDATE) {
       CONFIG.enabled = msg.config.enabled !== false;
       CONFIG.acceleration = msg.config.acceleration !== false;
-      CONFIG.twitchHLS = msg.config.twitchHLS !== false;
 
       document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: msg.config }));
 

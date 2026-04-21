@@ -103,7 +103,6 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         suppressWarnings: true,
         accelerationSpeed: 8,
         enabled: true,
-        twitchHLS: true,
       },
       stats: { networkBlocked: 0 },
       requestLog: [],
@@ -301,7 +300,7 @@ const MSG = {
 
 // ─── CONFIGURATION VALIDATION ─────
 function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'twitchHLS'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled'];
   const validatedConfig = {};
 
   if (inputConfig && typeof inputConfig === 'object') {
