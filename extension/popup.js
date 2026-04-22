@@ -225,6 +225,13 @@ async function init() {
     if (!list) return;
 
     const subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+    // Sort: chroma-hotfix always at the bottom
+    subscriptions.sort((a, b) => {
+      if (a.id === 'chroma-hotfix') return 1;
+      if (b.id === 'chroma-hotfix') return -1;
+      return 0;
+    });
+
     const { appliedNetworkRuleCount = 0 } = await chrome.storage.local.get('appliedNetworkRuleCount');
     const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
