@@ -4,14 +4,16 @@
 
 ## Key Features
 
-- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on YouTube and Amazon Prime Video (Twitch uses server-side ad insertion and does not support ad acceleration), minimizing user interruption with minimal detection exposure.
+- **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, zero-latency viewing experience without the need for acceleration.
+- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on YouTube and Amazon Prime Video (Twitch uses server-side ad insertion and does not support ad acceleration), serving as a robust fallback when stripping is disabled.
 - **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes on-the-fly AES-256-GCM encryption for proxy credentials.
 - **Multi-Part DNR Network Blocking**: Utilizes a 10-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to external filter lists (Hagezi Pro Mini, Chroma Hotfix) that refresh automatically every 24 hours. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
-- **Scriptlet Injection Engine**: Injects targeted scriptlets into page context on navigation to neutralize anti-adblock scripts, abort property reads, prevent timers, and intercept fetch and XHR calls.
+- **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring.
 - **Safety Exclusion Protocol**: Automatically excludes critical infrastructure, including financial institutions, authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
+- **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
 - **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of Google Chrome (and other Chromium-based browsers).
 
 ---
@@ -39,6 +41,8 @@ graph TD
         BRIDGE["__CHROMA_INTERNAL__ — Secure API Bridge"]:::secure
         YT_H["yt_handler.js — Video Ad Acceleration"]:::main
         PRM_H["prm_handler.js — Video Ad Acceleration"]:::main
+        RECIPES["recipes.js — Recipe & Blog Optimization"]:::main
+        SCRIPTS["Matched Scriptlets — Surgical API Patching"]:::main
     end
 
     subgraph IW["Isolated World (Extension Context)"]
@@ -60,6 +64,7 @@ graph TD
     BRIDGE --> PRM_H
     YT_H -->|"Accelerated Playback"| PLAYER
     PRM_H -->|"Accelerated Playback"| PLAYER
+    RECIPES -->|"Layout Protection"| PLAYER
     CONT -->|"Inject CSS / Remove Elements"| PLAYER
 
     PLAYER --> USER
@@ -86,7 +91,7 @@ graph TD
     subgraph SW["Service Worker"]
         BG["background.js — Router, Stats & Rule Coordinator"]:::sw
         SUBS["subscriptions/ — Filter List Manager"]:::sw
-        SCRPT["scriptlets/engine.js — Scriptlet Injector"]:::sw
+        SCRPT["scriptlets/engine.js — userScripts Registry"]:::sw
         POPUP["popup.js — Settings UI & Stats Display"]:::sw
     end
 
@@ -102,7 +107,7 @@ graph TD
     BG <--> DNR
     SUBS -->|"Deduplicated Block Rules"| DNR
     SUBS <-->|"Fetch & Cache"| STORAGE
-    SCRPT -->|"On Navigation: Inject into Page"| BG
+    SCRPT -->|"Auto-Inject into MAIN World"| USER
     POPUP <-->|"Sync Config & Stats"| STORAGE
 
     DNR -->|"Filtered Traffic"| USER
@@ -115,20 +120,35 @@ graph TD
 
 ## System Layers
 
-### Layer 1: Ad Acceleration (yt_handler.js, prm_handler.js)
-The primary defense against server-side ad detection. Instead of blocking the video stream, Chroma accelerates detected ads at a configurable speed (×4–×16, default ×8) and synchronizes with a custom overlay, delivering a seamless experience without intrusive interruptions. Session state is fully private to the handler closure — host-page scripts cannot observe or tamper with acceleration state. Anti-detection exemption rules allow standard ad-measurement beacons to reach their destinations during active ad sessions while suppressing post-session observer floods.
+### Layer 1: Network-Level Blocking (rules/, background.js, subscriptions/)
+The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into a 10-part system of static rulesets covering over 299,000 domain-level block rules, augmented by dynamic rules for anti-detection exemptions and runtime filter list subscriptions. Subscription rules are automatically deduplicated against the static ruleset on each refresh, and scored by a priority budget allocator before being applied. The Service Worker coordinates these rulesets and collects blocking statistics.
 
-### Layer 2: Network-Level Blocking (rules/, background.js, subscriptions/)
-Powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into a 10-part system of static rulesets covering over 299,000 domain-level block rules, augmented by dynamic rules for anti-detection exemptions and runtime filter list subscriptions. Subscription rules are automatically deduplicated against the static ruleset on each refresh, and scored by a priority budget allocator before being applied. The Service Worker coordinates these rulesets and collects blocking statistics.
+### Layer 2: Scriptlet Injection (scriptlets/engine.js)
+The advanced surgical layer of the extension, migrated to the high-performance `chrome.userScripts` API. This engine parses complex scriptlet rules from filter list subscriptions, including uBlock Origin and AdGuard aliases. Key capabilities include:
+- **JSON Pruning**: Uses strict dot-notation path pruning (`json-prune`) to intercept and clean dynamic data payloads in `JSON.parse` calls.
+- **Regex Translation**: Features a built-in pre-processor that translates uBO network-style patterns (e.g., `||example.com^`) into optimized JavaScript RegExp strings for runtime matching.
+- **Flexible Execution Timing**: Supports explicit timing flags (`document_start`, `document_idle`, `document_end`), ensuring scriptlets execute at the optimal lifecycle moment (defaulting to `document_start` for critical API tampering).
+- **Broad Compatibility**: Supports a wide range of scriptlets including `abort-on-property-read`, `set-constant`, `prevent-fetch`, and `no-eval-if`.
 
-### Layer 3: Cosmetic & Warning Suppression (content.js)
+### Layer 3: YouTube Ad Stripping & Acceleration (yt_handler.js, prm_handler.js)
+A specialized foundation layer designed specifically for YouTube and Prime Video. It utilizes a dual-mode strategy:
+- **Primary (Stripping)**: Intercepts raw JSON responses from the YouTube API and surgically removes ad metadata (e.g., `adPlacements`, `playerAds`) before the player reads them. This results in an ad-free experience without pauses or acceleration.
+- **Fallback (Acceleration)**: If stripping is disabled or bypassed, Chroma detects active ads and accelerates them at a configurable speed (×4–×16, default ×8) while synchronizing with a custom overlay to deliver a seamless transition.
+Session state is fully private to the handler closure — host-page scripts cannot observe or tamper with internal state.
+
+### Layer 4: Cosmetic & Warning Suppression (content.js)
 Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
-
-### Layer 4: Scriptlet Injection (scriptlets/engine.js)
-On every navigation commit, the scriptlet engine matches the current hostname against stored subscription scriptlet rules and injects matching scriptlet functions directly into the page's MAIN world context via `chrome.scripting.executeScript`. Scriptlets can abort property reads, neutralize anti-adblock timers, intercept fetch and XHR calls, and remove specific CSS classes.
 
 ### Layer 5: Universal Protection (protection.js, interceptor.js)
 A proactive security layer that maintains extension integrity across execution contexts. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, dispatches the `__EXT_INIT__` document event to signal the MAIN world handlers, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
+
+### Layer 6: Recipe & Blog Protection (recipes.js)
+A specialized defense-in-depth layer optimized for high-clutter recipe and lifestyle blogs (e.g., CafeMedia/Raptive and Dotdash Meredith sites). It implements a multi-pronged strategy to ensure a clean reading experience:
+- **Style Protection**: Prevents aggressive anti-adblock scripts from stripping `<style>` and `<link>` elements, ensuring the site's layout remains intact.
+- **Recipe Content Preservation**: Uses semantic and container-based exclusion to ensure that ingredients and instructions are never accidentally hidden by cosmetic filters.
+- **Anti-Adblock Containment**: Neutres known anti-adblock recovery payloads in script handlers and redirects, and suppresses intrusive alert/confirm dialogs.
+- **Scroll Lock Recovery**: Dynamically detects and reverses scroll-locks (e.g., `overflow: hidden`) and body-hiding tactics used by ad-block walls.
+- **Site-Specific Rules**: Includes custom cosmetic overrides for major platforms like AllRecipes, Food Network, NYT Cooking, and Serious Eats.
 
 ---
 
@@ -161,6 +181,23 @@ Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browse
 
 ---
 
+## YouTube Ad Stripping (The "Stripper")
+
+Chroma features a high-performance **YouTube Ad Stripper** that provides a superior alternative to traditional ad blocking and acceleration. 
+
+### How it Works
+Instead of reacting to ads after they appear, the Stripper operates at the data layer. It intercepts communication between your browser and YouTube's internal API (`/youtubei/v1/player`, `/next`, etc.) and surgically removes ad-related metadata before the YouTube player can process it.
+
+- **Upstream Neutralization**: By deleting fields like `adPlacements`, `adSlots`, and `playerAds` from the raw JSON responses, the Stripper makes the YouTube player believe the video is entirely ad-free.
+- **Zero-Latency Experience**: Because the ads are "stripped" before they ever load, there is no "Ad starting in 5 seconds" countdown, no black screens, and no need for the acceleration engine to kick in.
+- **Payload Interception**: It utilizes deep hooks into `window.fetch`, `XMLHttpRequest`, and `JSON.parse` to ensure that even batched or worker-side requests are cleaned of ad data.
+- **Feed & Search Optimization**: Beyond the video player, it strips promoted "Sparkles" ads, suggested products, and sponsored results from your home feed and search results.
+
+> [!TIP]
+> While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience.
+
+---
+
 ## Permissions
 
 Chroma requests the following permissions. Each is required for a specific, documented purpose.
@@ -173,7 +210,8 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
 | `tabs` | Required to read the active tab's URL for whitelist matching in the popup and to reload the tab when the whitelist is toggled. |
 | `alarms` | Powers the 24-hour subscription refresh cycle. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
-| `scripting` | Used by the scriptlet engine to inject matched scriptlet functions into the page's MAIN world context on navigation via `chrome.scripting.executeScript`. |
+| `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. |
+| `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
 | `webNavigation` | Provides navigation lifecycle events that trigger the scriptlet engine and MAIN world handler injection at the correct point in the page load sequence. |
 
 ---
@@ -207,7 +245,8 @@ Chroma implements several advanced security measures to ensure extension integri
 |---------|-------------|---------|
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR ruleset blocking. | `true` |
-| `acceleration` | Enables accelerated ad playback. | `true` |
+| `stripping` | Enables YouTube Ad Stripping (the primary blocker). | `true` |
+| `acceleration` | Enables accelerated ad playback (as a fallback). | `true` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (×4, ×8, ×12, or ×16). | `8` |
 | `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
 | `hideShorts` | Removes Shorts component modules. | `false` |

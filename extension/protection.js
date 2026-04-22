@@ -108,6 +108,7 @@
     if (msg.type === MSG.CONFIG_UPDATE) {
       CONFIG.enabled = msg.config.enabled !== false;
       CONFIG.acceleration = msg.config.acceleration !== false;
+      CONFIG.stripping = msg.config.stripping !== false;
 
       document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: msg.config }));
 

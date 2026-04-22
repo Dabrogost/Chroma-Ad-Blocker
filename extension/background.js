@@ -96,7 +96,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       config: {
         networkBlocking: true,
         stripping: true,
-        acceleration: true,
+        acceleration: false,
         cosmetic: true,
         hideShorts: false,
         hideMerch: true,
