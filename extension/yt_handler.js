@@ -1,3 +1,12 @@
+/**
+ * Chroma Ad-Blocker — YouTube Handler
+ * 
+ * Portions of the YouTube ad-stripping logic (specifically payload field pruning) 
+ * are derived from Brave Browser's ad-blocking scriptlets and are subject to 
+ * the Mozilla Public License, v. 2.0. You can obtain a copy of the MPL 2.0 
+ * at https://mozilla.org/MPL/2.0/.
+ */
+
 (function() {
   'use strict';
 

@@ -273,10 +273,11 @@ Portions of this codebase, including initial logic structures and documentation,
 
 ---
 
-## Filter List Credits
+## Third-Party Credits
 
-Chroma subscribes to the following third-party filter lists at runtime. These lists are not bundled with the extension — they are fetched and applied dynamically.
+Chroma utilizes logic and patterns derived from the following open-source projects:
 
+- **Brave Browser** — The YouTube ad-stripping logic (payload metadata pruning) is derived from Brave's ad-blocking scriptlets ([MPL 2.0](https://mozilla.org/MPL/2.0/)).
 - **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists) — [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE)
 - **Chroma Hotfix** — Maintainer-controlled list for platform-specific overrides.
 
