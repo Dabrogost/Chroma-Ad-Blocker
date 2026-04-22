@@ -8,7 +8,11 @@
 const STATIC_SALT = 'chroma-proxy-salt-9876543210';
 const STATIC_PASS = 'chroma-proxy-obfuscation-key-1337';
 
+let _cachedKey = null;
+
 async function getDerivedKey() {
+  if (_cachedKey) return _cachedKey;
+
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
@@ -17,11 +21,12 @@ async function getDerivedKey() {
     false,
     ['deriveBits', 'deriveKey']
   );
-  return crypto.subtle.deriveKey(
+  
+  _cachedKey = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: enc.encode(STATIC_SALT),
-      iterations: 100000,
+      iterations: 10000,
       hash: 'SHA-256'
     },
     keyMaterial,
@@ -29,6 +34,8 @@ async function getDerivedKey() {
     true,
     ['encrypt', 'decrypt']
   );
+
+  return _cachedKey;
 }
 
 export async function encryptAuth(username, password) {

@@ -20,7 +20,7 @@ import {
   removeSubscription
 } from './subscriptions/manager.js';
 import { initScriptletEngine } from './scriptlets/engine.js';
-import { decryptAuth } from './crypto.js';
+import { decryptAuth, encryptAuth } from './crypto.js';
 
 const DEBUG = false;
 
@@ -312,7 +312,8 @@ const MSG = {
   LOG_GET: 'LOG_GET',
   UPDATE_CHECK: 'UPDATE_CHECK',
   PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
-  PROXY_CONFIG_SET: 'PROXY_CONFIG_SET'
+  PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
+  PROXY_TEST: 'PROXY_TEST'
 };
 
 // ─── CONFIGURATION VALIDATION ─────
@@ -388,14 +389,67 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
         case MSG.PROXY_CONFIG_GET:
           const { proxyConfig: pcGet } = await chrome.storage.local.get('proxyConfig');
+          if (pcGet && pcGet.authCipher && pcGet.authIv) {
+            const auth = await decryptAuth(pcGet.authIv, pcGet.authCipher);
+            if (auth) {
+              pcGet.username = auth.username;
+              pcGet.password = auth.password;
+            }
+          }
           sendResponse(pcGet || { host: '', port: '', username: '', password: '', domains: [] });
           break;
 
         case MSG.PROXY_CONFIG_SET:
           const { proxyConfig: pcCurr } = await chrome.storage.local.get('proxyConfig');
           const pcNew = { ...pcCurr, ...msg.proxyConfig };
+          
+          // Encrypt if username/password are provided in the set request
+          if (pcNew.username || pcNew.password) {
+            const encrypted = await encryptAuth(pcNew.username, pcNew.password);
+            if (encrypted) {
+              pcNew.authIv = encrypted.iv;
+              pcNew.authCipher = encrypted.ciphertext;
+              delete pcNew.username;
+              delete pcNew.password;
+            }
+          }
+
           await chrome.storage.local.set({ proxyConfig: pcNew });
           sendResponse({ ok: true });
+          break;
+
+        case MSG.PROXY_TEST:
+          try {
+            const { proxyConfig: pcTest } = await chrome.storage.local.get('proxyConfig');
+            if (!pcTest || !pcTest.host || !pcTest.port || !pcTest.accepted) {
+              return sendResponse({ ok: false, error: 'Proxy not configured' });
+            }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            // icanhazip.com is always proxied if a proxy is active (see PROXY_DOMAIN_EXPANSION)
+            const res = await fetch('https://icanhazip.com', { 
+              signal: controller.signal, 
+              cache: 'no-cache',
+              mode: 'no-cors' // We just need to know if the request goes through
+            }).catch(e => e); 
+
+            // Actually, for icanhazip.com we want the text to prove the IP
+            const resWithText = await fetch('https://icanhazip.com', { 
+              signal: controller.signal, 
+              cache: 'no-cache'
+            });
+
+            clearTimeout(timeoutId);
+            if (resWithText.ok) {
+              const ip = (await resWithText.text()).trim();
+              sendResponse({ ok: true, ip });
+            } else {
+              sendResponse({ ok: false, error: `HTTP ${resWithText.status}` });
+            }
+          } catch (err) {
+            sendResponse({ ok: false, error: err.message === 'The user aborted a request.' ? 'Timeout' : err.message });
+          }
           break;
 
         case MSG.STATS_RESET:
@@ -528,6 +582,7 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
 }
 
 // ─── PROXY ROUTER & AUTHENTICATION ─────
+const PROXY_TEST_DOMAIN = 'icanhazip.com';
 const PROXY_DOMAIN_EXPANSION = {
   'youtube.com':   ['googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'nhacmp3abc.com'],
   'twitch.tv':     ['ttvnw.net', 'jtvnw.net', 'twitchcdn.net'],
@@ -542,6 +597,7 @@ const PROXY_DOMAIN_EXPANSION = {
 
 function expandDomains(domains) {
   const expanded = new Set(domains);
+  if (domains.length > 0) expanded.add(PROXY_TEST_DOMAIN);
   for (const d of domains) {
     // Exact match
     if (PROXY_DOMAIN_EXPANSION[d]) {

@@ -336,11 +336,9 @@ async function init() {
 
     if (!hostInput) return;
 
-    const { encryptAuth, decryptAuth } = await import('./crypto.js');
-
-    let { proxyConfig } = await chrome.storage.local.get('proxyConfig');
+    let proxyConfig = await notifyBackground({ type: MSG.PROXY_CONFIG_GET });
     if (!proxyConfig) {
-      proxyConfig = { host: '', port: '', accepted: false, domains: [] };
+      proxyConfig = { host: '', port: '', username: '', password: '', accepted: false, domains: [] };
     }
 
     const updateUIState = () => {
@@ -357,47 +355,71 @@ async function init() {
     hostInput.value = proxyConfig.host || '';
     portInput.value = proxyConfig.port || '';
 
-    // Cleanup legacy plaintext if it exists
-    if (proxyConfig.username || proxyConfig.password) {
-      delete proxyConfig.username;
-      delete proxyConfig.password;
-    }
+    // Cleanup legacy plaintext if it exists in storage (background handles this now)
 
-    if (proxyConfig.authCipher && proxyConfig.authIv) {
-      const auth = await decryptAuth(proxyConfig.authIv, proxyConfig.authCipher);
-      if (auth) {
-        userInput.value = auth.username || '';
-        passInput.value = auth.password || '';
-      }
-    }
+    userInput.value = proxyConfig.username || '';
+    passInput.value = proxyConfig.password || '';
 
     updateUIState();
 
     const saveConfig = async (isAccept = false) => {
-      proxyConfig.host = hostInput.value.trim();
+      let host = hostInput.value.trim();
+      // Automatically add https:// if it has .com and no protocol (e.g. nordvpn servers)
+      // Only auto-add on 'Accept' to avoid interfering with active typing/pasting
+      if (isAccept && host.includes('.com') && !host.includes('://')) {
+        host = 'https://' + host;
+        hostInput.value = host;
+      }
+      proxyConfig.host = host;
       proxyConfig.port = portInput.value.trim();
       if (isAccept) proxyConfig.accepted = true;
       
-      const u = userInput.value.trim();
-      const p = passInput.value.trim();
-      
-      if (u || p) {
-        const encrypted = await encryptAuth(u, p);
-        if (encrypted) {
-          proxyConfig.authIv = encrypted.iv;
-          proxyConfig.authCipher = encrypted.ciphertext;
-        }
-      } else {
-        proxyConfig.authIv = null;
-        proxyConfig.authCipher = null;
-      }
+      proxyConfig.username = userInput.value.trim() || null;
+      proxyConfig.password = passInput.value.trim() || null;
 
       await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfig });
       if (isAccept) updateUIState();
     };
 
+    let isTesting = false;
+    const testProxyConnection = async () => {
+      if (isTesting) return;
+      const dot = $('proxyStatusDot');
+      const txt = $('proxyStatusText');
+      if (!dot || !txt) return;
+
+      isTesting = true;
+      dot.style.background = 'var(--text-muted)';
+      dot.style.boxShadow = '0 0 5px rgba(255,255,255,0.1)';
+      txt.textContent = 'Verifying...';
+
+      const res = await notifyBackground({ type: MSG.PROXY_TEST });
+      if (res && res.ok) {
+        dot.style.background = 'var(--c-cyan)';
+        dot.style.boxShadow = '0 0 8px var(--c-cyan)';
+        txt.textContent = `Connected (${res.ip})`;
+      } else {
+        dot.style.background = 'var(--c-red)';
+        dot.style.boxShadow = '0 0 8px var(--c-red)';
+        txt.textContent = res ? `Offline (${res.error})` : 'Offline';
+      }
+      isTesting = false;
+    };
+
     if (acceptBtn) {
-      acceptBtn.addEventListener('click', () => saveConfig(true));
+      acceptBtn.addEventListener('click', async () => {
+        await saveConfig(true);
+        testProxyConnection();
+      });
+    }
+
+    if ($('proxyRefreshBtn')) {
+      $('proxyRefreshBtn').addEventListener('click', testProxyConnection);
+    }
+
+    // Initial test if already active
+    if (proxyConfig.accepted && proxyConfig.host && proxyConfig.port) {
+      testProxyConnection();
     }
 
     if (clearSettingsBtn) {
@@ -418,8 +440,18 @@ async function init() {
       });
     }
 
+    // Auto-save progress as user types/pastes to ensure state is kept if popup closes
     [hostInput, portInput, userInput, passInput].forEach(el => {
       el.addEventListener('input', () => saveConfig(false));
+    });
+
+    // Also auto-add protocol on blur for convenience
+    hostInput.addEventListener('blur', () => {
+      const host = hostInput.value.trim();
+      if (host.includes('.com') && !host.includes('://')) {
+        hostInput.value = 'https://' + host;
+        saveConfig(false);
+      }
     });
 
     const renderDomains = () => {
