@@ -640,7 +640,7 @@ async function syncProxyState(proxyConfig) {
       proxyStr = `"PROXY ${cleanHost}:${port}"`;
     }
 
-    const conditions = activeDomains.map(d => `shExpMatch(host, "${d}") || shExpMatch(host, "*.${d}")`).join(' || ');
+    const conditions = activeDomains.map(d => `host === "${d}" || dnsDomainIs(host, ".${d}")`).join(' || ');
     scriptData = `
       function FindProxyForURL(url, host) {
         if (${conditions}) {
