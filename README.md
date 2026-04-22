@@ -4,17 +4,17 @@
 
 ## Key Features
 
-- **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, zero-latency viewing experience without the need for acceleration.
-- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on YouTube and Amazon Prime Video (Twitch uses server-side ad insertion and does not support ad acceleration), serving as a robust fallback when stripping is disabled.
-- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes on-the-fly AES-256-GCM encryption for proxy credentials.
-- **Multi-Part DNR Network Blocking**: Utilizes a 10-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
+- **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
+- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes on-the-fly AES-256-GCM encryption for proxy credentials and connectivity verification.
+- **Multi-Part DNR Network Blocking**: Utilizes an 11-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to external filter lists (Hagezi Pro Mini, Chroma Hotfix) that refresh automatically every 24 hours. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
-- **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring.
+- **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Safety Exclusion Protocol**: Automatically excludes critical infrastructure, including financial institutions, authentication providers, and government domains (.gov) to ensure zero disruption to essential workflows.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
-- **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of Google Chrome (and other Chromium-based browsers).
+- **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on YouTube and Amazon Prime Video (Twitch uses server-side ad insertion and does not support ad acceleration), serving as a robust fallback when stripping is disabled.
+- **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of **Google Chrome 120+** (and other Chromium-based browsers with engine version 120+). This version is required to support the 11-part static ruleset.
 
 ---
 
@@ -39,7 +39,7 @@ graph TD
     subgraph MW["Main World (Page Context)"]
         INTERCEPT["interceptor.js — API Protection & Handshake"]:::main
         BRIDGE["__CHROMA_INTERNAL__ — Secure API Bridge"]:::secure
-        YT_H["yt_handler.js — Video Ad Acceleration"]:::main
+        YT_H["yt_handler.js — Video Ad Stripping & Acceleration"]:::main
         PRM_H["prm_handler.js — Video Ad Acceleration"]:::main
         RECIPES["recipes.js — Recipe & Blog Optimization"]:::main
         SCRIPTS["Matched Scriptlets — Surgical API Patching"]:::main
@@ -58,11 +58,10 @@ graph TD
 
     INTERCEPT <-->|"Secure Handshake"| PROT
     PROT -->|"Dispatch Config Update"| INTERCEPT
-    PROT --> CONT
 
     BRIDGE --> YT_H
     BRIDGE --> PRM_H
-    YT_H -->|"Accelerated Playback"| PLAYER
+    YT_H -->|"Stripped / Accelerated"| PLAYER
     PRM_H -->|"Accelerated Playback"| PLAYER
     RECIPES -->|"Layout Protection"| PLAYER
     CONT -->|"Inject CSS / Remove Elements"| PLAYER
@@ -92,9 +91,9 @@ graph TD
         BG["background.js — Router, Stats & Rule Coordinator"]:::sw
         SUBS["subscriptions/ — Filter List Manager"]:::sw
         SCRPT["scriptlets/engine.js — userScripts Registry"]:::sw
-        POPUP["popup.js — Settings UI & Stats Display"]:::sw
     end
 
+    POPUP["popup.js — Settings UI & Stats Display"]:::sw
     STORAGE[("chrome.storage")]:::storage
     DNR["Static + Dynamic DNR Rulesets"]:::dnr
 
@@ -107,7 +106,7 @@ graph TD
     BG <--> DNR
     SUBS -->|"Deduplicated Block Rules"| DNR
     SUBS <-->|"Fetch & Cache"| STORAGE
-    SCRPT -->|"Auto-Inject into MAIN World"| USER
+    SCRPT -->|"Register userScripts (MAIN World)"| USER
     POPUP <-->|"Sync Config & Stats"| STORAGE
 
     DNR -->|"Filtered Traffic"| USER
@@ -121,7 +120,15 @@ graph TD
 ## System Layers
 
 ### Layer 1: Network-Level Blocking (rules/, background.js, subscriptions/)
-The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into a 10-part system of static rulesets covering over 299,000 domain-level block rules, augmented by dynamic rules for anti-detection exemptions and runtime filter list subscriptions. Subscription rules are automatically deduplicated against the static ruleset on each refresh, and scored by a priority budget allocator before being applied. The Service Worker coordinates these rulesets and collects blocking statistics.
+The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into an 11-part system (10 primary sets + 1 specialized recipe layer) covering over 290,000 domain-level block rules. 
+
+#### Why 290,000+ Rules Do Not Impact Performance
+Users often wonder how a database of nearly 300,000 rules can operate without slowing down the browser. Chroma achieves this through three key architectural advantages:
+- **Engine-Level Matching**: Unlike legacy ad-blockers that use the `webRequest` API (which requires waking up a JavaScript process for every single network request), DNR rules are handed off to the browser's core C++ networking engine. Matching happens at the system level before the request even leaves the browser.
+- **Binary Pre-Optimization**: Upon installation and update, Chromium compiles these JSON rulesets into a highly optimized binary format (similar to a Bloom filter). This allows the browser to perform "O(1)" or near-instant lookups regardless of whether there are 10 rules or 300,000.
+- **Zero JS Overhead**: Because the matching logic lives outside of the extension's execution context, there is no main-thread contention. Your CPU remains free for page rendering while the networking stack silently drops ad-related packets.
+- **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This ensures that the dynamic rule budget is reserved only for unique, high-priority threats.
+
 
 ### Layer 2: Scriptlet Injection (scriptlets/engine.js)
 The advanced surgical layer of the extension, migrated to the high-performance `chrome.userScripts` API. This engine parses complex scriptlet rules from filter list subscriptions, including uBlock Origin and AdGuard aliases. Key capabilities include:
@@ -160,15 +167,39 @@ Chroma does not intercept or store any data from these requests. For a full expl
 
 ---
 
+## Why Not the Chrome Web Store?
+
+Ad-blocking in the modern web is a high-stakes "cat-and-mouse" game where trust is the most valuable currency. Chroma is deliberately **not** hosted on the Chrome Web Store, and it never will be. This is a strategic decision rooted in transparency and technical freedom:
+
+### 1. Conflict of Interest
+Google is an advertising company first. As the gatekeeper of the Chrome Web Store, they have an inherent conflict of interest regarding tools that neutralize their primary revenue stream. By remaining independent, Chroma is not subject to arbitrary policy changes, forced feature deprecations, or the risk of sudden removal that "authorized" blockers frequently face.
+
+### 2. Full Auditability (Zero Obfuscation)
+Web Store extensions often arrive as "black boxes" with bundled or obfuscated code. Chroma is distributed as raw, human-readable source code. By loading it as an unpacked extension, you (and the community) can audit every single line of JavaScript. There are no hidden analytics, no telemetry backdoors, and no "Acceptable Ads" programs that allow paid bypasses.
+
+### 3. Unrestricted API Power
+Chroma utilizes advanced, performance-heavy APIs—such as the `userScripts` engine and high-volume `declarativeNetRequest` rule-sets—that are often restricted, capped, or heavily throttled for Web Store submissions. Bypassing the store allows us to use the browser's full hardware-acceleration capabilities without corporate handcuffs.
+
+### 4. Zero-Day Hotfixes
+When YouTube or other platforms update their ad-delivery algorithms, we can push a hotfix to GitHub in minutes. Web Store reviews can take days or even weeks. In the world of ad-blocking, a three-day delay is an eternity. Staying off the store ensures that you are always running the most potent version of the engine.
+
+> [!IMPORTANT]
+> Sideloading an extension requires a higher level of trust. We encourage you to review the [Permissions](#permissions) and [Security Hardening](#security-hardening) sections to understand exactly how Chroma protects your session.
+
+---
+
 ## Media Proxy Router (Split-Tunneling)
 
 Chroma includes a built-in split-tunnel proxy router that allows you to route traffic for specific domains through a proxy server while keeping the rest of your browser traffic on your direct, local connection. This operates entirely within the browser via dynamic Proxy Auto-Configuration (PAC) scripts, meaning it does not require a system-level VPN installation.
 
 ### Supported Protocols
-Chroma supports `HTTP`, `HTTPS`, and `SOCKS5` proxies. You can force a specific protocol by adding a prefix to the proxy host (e.g., `https://` or `socks5://`). If no prefix is provided, it defaults to standard `https://`.
+Chroma supports `HTTP`, `HTTPS`, and `SOCKS5` proxies. You can force a specific protocol by adding a prefix to the proxy host (e.g., `https://` or `socks5://`). In the popup UI, entering a `.com` host without a protocol will automatically default to `https://`. Otherwise, it defaults to standard `HTTP` (PROXY).
 
 ### Security
 Your proxy credentials (username and password) are encrypted locally using AES-256-GCM via the native Web Crypto API before being stored to disk. They are decrypted dynamically in-memory only when the proxy server challenges the browser for authentication, providing excellent obfuscation against disk-level inspection.
+
+### Connection Verification
+The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
 
 ### Example: Setting up NordVPN
 Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN server (e.g., Albania #80):
@@ -182,12 +213,15 @@ Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browse
 ### Smart-Link Auto-Expansion
 To prevent "infinite spin" and geo-blocking issues caused by IP mismatches between a site's UI and its video delivery network, Chroma includes a **Smart-Link** system. When you add a major streaming service to your proxy list, Chroma automatically identifies and proxies its associated media delivery networks (CDNs).
 
-For example, adding `youtube.com` automatically proxies `googlevideo.com` and `ytimg.com`, ensuring that the video stream itself originates from the same proxy IP as your main session. Supported services include:
-- **YouTube** (`googlevideo.com`, `ytimg.com`, `ggpht.com`)
-- **Netflix** (`nflxvideo.net`, `nflxext.com`, `nflxso.net`)
-- **Amazon Prime Video** (`aiv-cdn.net`, `pv-cdn.net`, + all global TLDs like `.de`, `.co.jp`)
-- **Twitch**
-- **Disney+**, **Max (HBO)**, **Hulu**, and **Spotify**.
+For example, adding `youtube.com` automatically proxies `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com`, ensuring that the video stream itself originates from the same proxy IP as your main session. Supported services include:
+- **YouTube** (`googlevideo.com`, `ytimg.com`, `ggpht.com`, `youtube-nocookie.com`, `nhacmp3abc.com`)
+- **Netflix** (`netflix.net`, `nflxvideo.net`, `nflxext.com`, `nflximg.com`, `nflximg.net`, `nflxso.net`, `nflxsearch.net`)
+- **Amazon Prime Video** (`amazonvideo.com`, `primevideo.com`, `aiv-cdn.net`, `pv-cdn.net`, `aiv-delivery.net`, `media-amazon.com`, `ssl-images-amazon.com`, + all global TLDs like `.de`, `.co.jp`)
+- **Twitch** (`ttvnw.net`, `jtvnw.net`, `twitchcdn.net`)
+- **Disney+** (`disney-plus.net`, `dssott.com`, `dssedge.com`, `bamgrid.com`, `disney-plus.com`)
+- **Hulu** (`hulumail.com`, `huluim.com`, `hulu.hbomax.com`)
+- **Max (HBO)** (`hbomax.com`, `hbo.com`, `hbonow.com`, `hbogo.com`)
+- **Spotify** (`scdn.co`, `spotify.net`, `audio-ak-spotify-com.akamaized.net`)
 
 ---
 
@@ -199,12 +233,12 @@ Chroma features a high-performance **YouTube Ad Stripper** that provides a super
 Instead of reacting to ads after they appear, the Stripper operates at the data layer. It intercepts communication between your browser and YouTube's internal API (`/youtubei/v1/player`, `/next`, etc.) and surgically removes ad-related metadata before the YouTube player can process it.
 
 - **Upstream Neutralization**: By deleting fields like `adPlacements`, `adSlots`, and `playerAds` from the raw JSON responses, the Stripper makes the YouTube player believe the video is entirely ad-free.
-- **Zero-Latency Experience**: Because the ads are "stripped" before they ever load, there is no "Ad starting in 5 seconds" countdown, no black screens, and no need for the acceleration engine to kick in.
+- **Seamless Viewing Experience**: Because the ads are "stripped" before they ever load, there is no "Ad starting in 5 seconds" countdown, no black screens, and no need for the acceleration engine to kick in.
 - **Payload Interception**: It utilizes deep hooks into `window.fetch`, `XMLHttpRequest`, and `JSON.parse` to ensure that even batched or worker-side requests are cleaned of ad data.
 - **Feed & Search Optimization**: Beyond the video player, it strips promoted "Sparkles" ads, suggested products, and sponsored results from your home feed and search results.
 
 > [!TIP]
-> While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience. The stripper will always have a slight delay, but will never show mid-roll ads. Ultimately a proxy is the only zero-delay solution. 
+> While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience. The stripper will always have a slight delay (inherent to how the YouTube player processes ad-free data), but will never show mid-roll ads. Because a proxy payload contains no ad-data from the start, it remains the only true zero-delay solution. 
 
 ---
 
@@ -222,7 +256,9 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `alarms` | Powers the 24-hour subscription refresh cycle. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
 | `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. |
 | `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
-| `webNavigation` | Provides navigation lifecycle events that trigger the scriptlet engine and MAIN world handler injection at the correct point in the page load sequence. |
+| `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
+| `webRequest` | Used to intercept authentication challenges from proxy servers. |
+| `webRequestAuthProvider` | Required to provide credentials to proxy servers via the `onAuthRequired` listener. |
 
 ---
 
@@ -256,7 +292,7 @@ Chroma implements several advanced security measures to ensure extension integri
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR ruleset blocking. | `true` |
 | `stripping` | Enables YouTube Ad Stripping (the primary blocker). | `true` |
-| `acceleration` | Enables accelerated ad playback (as a fallback). | `true` |
+| `acceleration` | Enables accelerated ad playback (as a fallback). | `false` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (×4, ×8, ×12, or ×16). | `8` |
 | `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
 | `hideShorts` | Removes Shorts component modules. | `false` |
@@ -279,6 +315,7 @@ Chroma utilizes logic and patterns derived from the following open-source projec
 
 - **Brave Browser** — The YouTube ad-stripping logic (payload metadata pruning) is derived from Brave's ad-blocking scriptlets ([MPL 2.0](https://mozilla.org/MPL/2.0/)).
 - **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists) — [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE)
+- **Peter Lowe's List** by [Peter Lowe](https://pgl.yoyo.org/adservers/) — [Terms of Use](https://pgl.yoyo.org/adservers/policy.php)
 
 ## Filter List Subscriptions
 
@@ -286,6 +323,20 @@ Chroma subscribes to the following lists to ensure real-time protection:
 
 - **Chroma Hotfix** — Maintainer-controlled list for platform-specific overrides.
 - **Hagezi Pro Mini** — High-performance DNS and ad-blocking rules.
+- **EasyList** — The primary filter for cosmetic ad-blocking and element hiding.
+- **Fanboy Annoyance** — Blocks social widgets, popups, and other non-ad annoyances.
+
+> [!NOTE]
+> To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are utilized exclusively for the **Cosmetic Filtering Layer**. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
+
+---
+
+## Recommended Extensions
+
+Chroma is not affiliated with the following extensions, but I use them daily in tandem with Chroma for the ultimate browsing experience:
+
+- **[Privacy Badger](https://chromewebstore.google.com/detail/privacy-badger/pkehgijcmpdhfbdbbnkijodmdjhbjlgp)** — A privacy-focused extension that blocks invisible trackers.
+- **[SponsorBlock](https://chromewebstore.google.com/detail/sponsorblock-for-youtube-s/mnjggcdmjocbbbhaepdhchncahnbgone)** — Skip sponsor segments and other interruptions on YouTube.
 
 ---
 

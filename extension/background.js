@@ -186,7 +186,7 @@ const STATIC_RULESETS = [
   'yt_ad_rules_part7',
   'yt_ad_rules_part8',
   'yt_ad_rules_part9',
-  'twitch_ad_rules'
+  'recipe_ad_rules'
 ];
 
 // Range 1000 - 99999 reserved for local/default dynamic rules (Anti-Detection/Acceleration)
