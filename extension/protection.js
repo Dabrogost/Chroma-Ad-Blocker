@@ -91,13 +91,19 @@
       CONFIG.enabled = isWhitelisted ? false : (savedConfig.enabled !== false);
       CONFIG.acceleration = isWhitelisted ? false : (savedConfig.acceleration !== false);
       CONFIG.stripping = isWhitelisted ? false : (savedConfig.stripping !== false);
-    } else if (isWhitelisted) {
-      CONFIG.enabled = false;
-      CONFIG.acceleration = false;
-      CONFIG.stripping = false;
+    } else {
+      // Fallback to defaults if storage is empty, but respect whitelist
+      CONFIG.enabled = !isWhitelisted;
+      CONFIG.acceleration = !isWhitelisted;
+      CONFIG.stripping = !isWhitelisted;
     }
     
-    document.dispatchEvent(new CustomEvent('__EXT_INIT__', { detail: { active: CONFIG.enabled } }));
+    document.dispatchEvent(new CustomEvent('__EXT_INIT__', { 
+      detail: { 
+        active: CONFIG.enabled,
+        stripping: CONFIG.stripping 
+      } 
+    }));
 
     // SECURITY: Secure Bridge Handshake
     initHandshake();

@@ -436,10 +436,14 @@ async function init() {
         row.style.borderBottom = 'none';
 
         const safeHost = escapeHTML(d.host);
+        
+        // Smart-Link badge for domains with automatic expansion (Streaming Services)
+        const isLinked = ['youtube.com', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'].some(h => safeHost === h || safeHost.endsWith('.' + h) || (safeHost.startsWith('amazon.') && h === 'amazon.com'));
+        const badgeHtml = isLinked ? `<span class="badge" style="font-size:7px; vertical-align:middle; margin-top:-2px;" title="Automatically proxies associated media domains (googlevideo, ttvnw, etc.)">Smart-Link</span>` : '';
 
         row.innerHTML = `
           <div class="toggle-info">
-            <div class="name" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${safeHost}</div>
+            <div class="name" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${safeHost} ${badgeHtml}</div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
             <button class="reset-btn proxy-del-btn" data-idx="${idx}" style="padding: 2px 6px; font-size: 10px; border-color: rgba(255,0,85,0.3); color: var(--c-red);" title="Remove">✕</button>

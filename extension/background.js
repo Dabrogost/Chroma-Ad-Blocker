@@ -149,6 +149,13 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await initSubscriptions();
   await refreshAllStale();
   await initScriptletEngine();
+  
+  // Force-sync all open tabs with the current config to prevent "ghost" states during install/update
+  const tabs = await chrome.tabs.query({});
+  const { config } = await chrome.storage.local.get('config');
+  if (config) {
+    await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config }).catch(() => {})));
+  }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -159,6 +166,12 @@ chrome.runtime.onStartup.addListener(async () => {
   await chrome.storage.local.set({ requestLog: [] });
   await ensureAlarm();
   await initScriptletEngine();
+
+  // Re-broadcast state to existing tabs to recover from service worker restarts
+  const tabs = await chrome.tabs.query({});
+  if (storedConfig) {
+    await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config: storedConfig }).catch(() => {})));
+  }
 });
 
 // ─── DYNAMIC RULE UPDATES ─────
@@ -515,10 +528,44 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
 }
 
 // ─── PROXY ROUTER & AUTHENTICATION ─────
+const PROXY_DOMAIN_EXPANSION = {
+  'youtube.com':   ['googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'nhacmp3abc.com'],
+  'twitch.tv':     ['ttvnw.net', 'jtvnw.net', 'twitchcdn.net'],
+  'netflix.com':   ['netflix.net', 'nflxvideo.net', 'nflxext.com', 'nflximg.com', 'nflximg.net', 'nflxso.net', 'nflxsearch.net'],
+  'amazon.com':    ['amazonvideo.com', 'primevideo.com', 'aiv-cdn.net', 'pv-cdn.net', 'aiv-delivery.net', 'media-amazon.com', 'ssl-images-amazon.com'],
+  'primevideo.com':['amazon.com', 'amazonvideo.com', 'aiv-cdn.net', 'pv-cdn.net', 'aiv-delivery.net', 'media-amazon.com', 'ssl-images-amazon.com'],
+  'disneyplus.com':['disney-plus.net', 'dssott.com', 'dssedge.com', 'bamgrid.com', 'disney-plus.com'],
+  'hulu.com':      ['hulumail.com', 'huluim.com', 'hulu.hbomax.com'],
+  'max.com':       ['hbomax.com', 'hbo.com', 'hbonow.com', 'hbogo.com'],
+  'spotify.com':   ['scdn.co', 'spotify.net', 'audio-ak-spotify-com.akamaized.net']
+};
+
+function expandDomains(domains) {
+  const expanded = new Set(domains);
+  for (const d of domains) {
+    // Exact match
+    if (PROXY_DOMAIN_EXPANSION[d]) {
+      PROXY_DOMAIN_EXPANSION[d].forEach(ext => expanded.add(ext));
+    }
+    
+    // Handle 'www.' prefix
+    const base = d.replace(/^www\./, '');
+    if (PROXY_DOMAIN_EXPANSION[base]) {
+      PROXY_DOMAIN_EXPANSION[base].forEach(ext => expanded.add(ext));
+    }
+
+    // Special Case: Amazon TLDs (amazon.co.uk, amazon.de, etc.)
+    if (base.startsWith('amazon.') && base !== 'amazon.com') {
+      PROXY_DOMAIN_EXPANSION['amazon.com'].forEach(ext => expanded.add(ext));
+    }
+  }
+  return Array.from(expanded);
+}
+
 async function syncProxyState(proxyConfig) {
   if (!proxyConfig) return;
   const { host, port, domains = [], accepted } = proxyConfig;
-  const activeDomains = domains.filter(d => d.enabled).map(d => d.host);
+  const activeDomains = expandDomains(domains.filter(d => d.enabled).map(d => d.host));
 
   let scriptData = "function FindProxyForURL(url, host) { return 'DIRECT'; }";
 

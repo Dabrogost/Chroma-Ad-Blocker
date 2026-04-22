@@ -232,7 +232,10 @@
   let _extInitFired = false;
   API.addDocEventListener('__EXT_INIT__', (e) => {
     _extInitFired = true;
-    if (e && e.detail && e.detail.active === false) _chromaExtInitActive = false;
+    if (e && e.detail) {
+      if (e.detail.active === false) _chromaExtInitActive = false;
+      if (e.detail.stripping !== undefined) CONFIG.stripping = e.detail.stripping;
+    }
 
     // Late-arrival activation: If the init polling loop already timed out
     // (cold browser start where chrome.storage was slow), activate now.

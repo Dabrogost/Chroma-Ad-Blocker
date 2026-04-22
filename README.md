@@ -179,6 +179,15 @@ Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browse
 4. **Domains:** Add the domains you want to route (e.g., `youtube.com`) to the active list.
 5. Click **Accept Settings**.
 
+### Smart-Link Auto-Expansion
+To prevent "infinite spin" and geo-blocking issues caused by IP mismatches between a site's UI and its video delivery network, Chroma includes a **Smart-Link** system. When you add a major streaming service to your proxy list, Chroma automatically identifies and proxies its associated media delivery networks (CDNs).
+
+For example, adding `youtube.com` automatically proxies `googlevideo.com` and `ytimg.com`, ensuring that the video stream itself originates from the same proxy IP as your main session. Supported services include:
+- **YouTube** (`googlevideo.com`, `ytimg.com`, `ggpht.com`)
+- **Netflix** (`nflxvideo.net`, `nflxext.com`, `nflxso.net`)
+- **Amazon Prime Video** (`aiv-cdn.net`, `pv-cdn.net`, + all global TLDs like `.de`, `.co.jp`)
+- **Disney+**, **Max (HBO)**, **Hulu**, **Spotify**, and **Twitch**.
+
 ---
 
 ## YouTube Ad Stripping (The "Stripper")
