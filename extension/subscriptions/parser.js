@@ -218,9 +218,29 @@ function parseCosmeticRule(line, isException = false) {
 
 // ─── SCRIPTLET RULE PARSER ─────
 /**
+ * Translates uBO network syntax into standard JS RegExp strings.
+ * @param {string} pattern
+ * @returns {string}
+ */
+function translateScriptletRegex(pattern) {
+  if (!pattern) return pattern;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) return pattern;
+
+  let regexStr = pattern
+    .replace(/[.+?${}()|[\]\\]/g, '\\$&') // Escape regex special chars
+    .replace(/\\\*/g, '.*')               // Wildcards *
+    .replace(/^\\\|\\\|/, '^(?:https?:\\/\\/)?(?:[a-z0-9-]+\\.)*') // || prefix
+    .replace(/\\\^/g, '(?:[:/?]|$)') // ^ separator
+    .replace(/^\\\|/, '^') // | exact start
+    .replace(/\\\|$/, '$'); // | exact end
+
+  return `/${regexStr}/`;
+}
+
+/**
  * Parses a scriptlet rule line. Stored as opaque data — Phase 2 engine executes.
  * @param {string} line
- * @returns {{ domains: string[]|null, scriptlet: string, args: string[] }|null}
+ * @returns {{ domains: string[]|null, scriptlet: string, args: string[], runAt: string }|null}
  */
 function parseScriptletRule(line) {
   try {
@@ -241,6 +261,28 @@ function parseScriptletRule(line) {
 
     if (!scriptletName) return null;
 
+    let runAt = 'document_start';
+    if (args.length > 0) {
+      const last = args[args.length - 1];
+      if (last.includes('runAt=idle') || last.includes('run-at: document_idle') || last.includes('run-at=document_idle')) {
+        runAt = 'document_idle';
+        args.pop();
+      } else if (last.includes('runAt=start') || last.includes('run-at: document_start') || last.includes('run-at=document_start')) {
+        runAt = 'document_start';
+        args.pop();
+      } else if (last.includes('runAt=end') || last.includes('run-at: document_end') || last.includes('run-at=document_end')) {
+        runAt = 'document_end';
+        args.pop();
+      }
+    }
+
+    const regexOpts = new Set(['no-setTimeout-if', 'nostif', 'no-setInterval-if', 'nosiif', 'prevent-fetch', 'no-fetch-if', 'prevent-xhr', 'no-xhr-if', 'no-eval-if']);
+    if (regexOpts.has(scriptletName) && args.length > 0) {
+      if (args[0].includes('||') || args[0].includes('^') || args[0].includes('*')) {
+        args[0] = translateScriptletRegex(args[0]);
+      }
+    }
+
     const domains = domainPart
       ? domainPart.split(',').map(d => d.trim()).filter(Boolean)
       : null;
@@ -248,7 +290,8 @@ function parseScriptletRule(line) {
     return {
       domains: (domains && domains.length > 0) ? domains : null,
       scriptlet: scriptletName,
-      args
+      args,
+      runAt
     };
   } catch {
     return null;

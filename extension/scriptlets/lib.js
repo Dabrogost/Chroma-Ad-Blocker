@@ -280,6 +280,43 @@ export function noEvalIf(args) {
   window.eval.toString = () => orig.toString();
 }
 
+/**
+ * Intercepts JSON.parse and prunes specified dot-notation paths from the object.
+ * Strictly enforces exact paths without recursive wildcards to maintain performance.
+ * args[0]: space-separated list of paths (e.g. 'adPlacements playerResponse.adSlots')
+ */
+export function jsonPrune(args) {
+  const pathsStr = args[0];
+  if (!pathsStr) return;
+  const paths = pathsStr.split(' ').filter(Boolean);
+  if (paths.length === 0) return;
+
+  const origParse = JSON.parse;
+  JSON.parse = function(text, reviver) {
+    const result = origParse.call(this, text, reviver);
+    if (!result || typeof result !== 'object') return result;
+
+    for (let i = 0; i < paths.length; i++) {
+      const parts = paths[i].split('.');
+      let obj = result;
+      let valid = true;
+      for (let j = 0; j < parts.length - 1; j++) {
+        if (!obj || typeof obj !== 'object' || !(parts[j] in obj)) {
+          valid = false;
+          break;
+        }
+        obj = obj[parts[j]];
+      }
+      if (valid && obj && typeof obj === 'object') {
+        const last = parts[parts.length - 1];
+        if (last in obj) delete obj[last];
+      }
+    }
+    return result;
+  };
+  JSON.parse.toString = () => origParse.toString();
+}
+
 // ─── SCRIPTLET MAP ─────
 /**
  * Maps filter list scriptlet names to their implementation functions.
@@ -300,5 +337,6 @@ export const SCRIPTLET_MAP = new Map([
   ['prevent-xhr',             preventXhr],
   ['no-xhr-if',               preventXhr], // uBlock alias
   ['remove-class',            removeClass],
-  ['no-eval-if',              noEvalIf]
+  ['no-eval-if',              noEvalIf],
+  ['json-prune',              jsonPrune]
 ]);
