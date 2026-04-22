@@ -167,6 +167,27 @@ Chroma does not intercept or store any data from these requests. For a full expl
 
 ---
 
+## Why Not the Chrome Web Store?
+
+Ad-blocking in the modern web is a high-stakes "cat-and-mouse" game where trust is the most valuable currency. Chroma is deliberately **not** hosted on the Chrome Web Store, and it never will be. This is a strategic decision rooted in transparency and technical freedom:
+
+### 1. Conflict of Interest
+Google is an advertising company first. As the gatekeeper of the Chrome Web Store, they have an inherent conflict of interest regarding tools that neutralize their primary revenue stream. By remaining independent, Chroma is not subject to arbitrary policy changes, forced feature deprecations, or the risk of sudden removal that "authorized" blockers frequently face.
+
+### 2. Full Auditability (Zero Obfuscation)
+Web Store extensions often arrive as "black boxes" with bundled or obfuscated code. Chroma is distributed as raw, human-readable source code. By loading it as an unpacked extension, you (and the community) can audit every single line of JavaScript. There are no hidden analytics, no telemetry backdoors, and no "Acceptable Ads" programs that allow paid bypasses.
+
+### 3. Unrestricted API Power
+Chroma utilizes advanced, performance-heavy APIs—such as the `userScripts` engine and high-volume `declarativeNetRequest` rule-sets—that are often restricted, capped, or heavily throttled for Web Store submissions. Bypassing the store allows us to use the browser's full hardware-acceleration capabilities without corporate handcuffs.
+
+### 4. Zero-Day Hotfixes
+When YouTube or other platforms update their ad-delivery algorithms, we can push a hotfix to GitHub in minutes. Web Store reviews can take days or even weeks. In the world of ad-blocking, a three-day delay is an eternity. Staying off the store ensures that you are always running the most potent version of the engine.
+
+> [!IMPORTANT]
+> Sideloading an extension requires a higher level of trust. We encourage you to review the [Permissions](#permissions) and [Security Hardening](#security-hardening) sections to understand exactly how Chroma protects your session.
+
+---
+
 ## Media Proxy Router (Split-Tunneling)
 
 Chroma includes a built-in split-tunnel proxy router that allows you to route traffic for specific domains through a proxy server while keeping the rest of your browser traffic on your direct, local connection. This operates entirely within the browser via dynamic Proxy Auto-Configuration (PAC) scripts, meaning it does not require a system-level VPN installation.
