@@ -61,7 +61,7 @@ async function init() {
   const TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
     ['toggleStripping',    'stripping',                true],
-    ['toggleAcceleration', 'acceleration',             true],
+    ['toggleAcceleration', 'acceleration',             false],
     ['toggleCosmetic',     'cosmetic',                 true],
     ['toggleShorts',       'hideShorts',               false],
     ['toggleMerch',        'hideMerch',                true],
@@ -225,6 +225,13 @@ async function init() {
     if (!list) return;
 
     const subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+    // Sort: chroma-hotfix always at the bottom
+    subscriptions.sort((a, b) => {
+      if (a.id === 'chroma-hotfix') return 1;
+      if (b.id === 'chroma-hotfix') return -1;
+      return 0;
+    });
+
     const { appliedNetworkRuleCount = 0 } = await chrome.storage.local.get('appliedNetworkRuleCount');
     const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
@@ -309,6 +316,219 @@ async function init() {
   }
 
   await loadSubscriptionUI();
+
+  // ─── PROXY ROUTER UI ─────
+  async function loadProxyRouterUI() {
+    const inputGroup = $('proxyInputGroup');
+    const activeGroup = $('proxyActiveGroup');
+    const activeText = $('proxyActiveText');
+    const acceptBtn = $('proxyAcceptBtn');
+    const clearSettingsBtn = $('proxyClearSettingsBtn');
+    
+    const hostInput = $('proxyHost');
+    const portInput = $('proxyPort');
+    const userInput = $('proxyUser');
+    const passInput = $('proxyPass');
+    
+    const domainInput = $('proxyDomainInput');
+    const addBtn = $('proxyAddDomainBtn');
+    const list = $('proxyDomainList');
+
+    if (!hostInput) return;
+
+    let proxyConfig = await notifyBackground({ type: MSG.PROXY_CONFIG_GET });
+    if (!proxyConfig) {
+      proxyConfig = { host: '', port: '', username: '', password: '', accepted: false, domains: [] };
+    }
+
+    const updateUIState = () => {
+      if (proxyConfig.accepted && proxyConfig.host && proxyConfig.port) {
+        inputGroup.style.display = 'none';
+        activeGroup.style.display = 'flex';
+        activeText.textContent = `${proxyConfig.host}:${proxyConfig.port}`;
+      } else {
+        inputGroup.style.display = 'grid';
+        activeGroup.style.display = 'none';
+      }
+    };
+
+    hostInput.value = proxyConfig.host || '';
+    portInput.value = proxyConfig.port || '';
+
+    // Cleanup legacy plaintext if it exists in storage (background handles this now)
+
+    userInput.value = proxyConfig.username || '';
+    passInput.value = proxyConfig.password || '';
+
+    updateUIState();
+
+    const saveConfig = async (isAccept = false) => {
+      let host = hostInput.value.trim();
+      // Automatically add https:// if it has .com and no protocol (e.g. nordvpn servers)
+      // Only auto-add on 'Accept' to avoid interfering with active typing/pasting
+      if (isAccept && host.includes('.com') && !host.includes('://')) {
+        host = 'https://' + host;
+        hostInput.value = host;
+      }
+      proxyConfig.host = host;
+      proxyConfig.port = portInput.value.trim();
+      if (isAccept) proxyConfig.accepted = true;
+      
+      proxyConfig.username = userInput.value.trim() || null;
+      proxyConfig.password = passInput.value.trim() || null;
+
+      await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfig });
+      if (isAccept) updateUIState();
+    };
+
+    let isTesting = false;
+    const testProxyConnection = async () => {
+      if (isTesting) return;
+      const dot = $('proxyStatusDot');
+      const txt = $('proxyStatusText');
+      if (!dot || !txt) return;
+
+      isTesting = true;
+      dot.style.background = 'var(--text-muted)';
+      dot.style.boxShadow = '0 0 5px rgba(255,255,255,0.1)';
+      txt.textContent = 'Verifying...';
+
+      const res = await notifyBackground({ type: MSG.PROXY_TEST });
+      if (res && res.ok) {
+        dot.style.background = 'var(--c-cyan)';
+        dot.style.boxShadow = '0 0 8px var(--c-cyan)';
+        txt.textContent = `Connected (${res.ip})`;
+      } else {
+        dot.style.background = 'var(--c-red)';
+        dot.style.boxShadow = '0 0 8px var(--c-red)';
+        txt.textContent = res ? `Offline (${res.error})` : 'Offline';
+      }
+      isTesting = false;
+    };
+
+    if (acceptBtn) {
+      acceptBtn.addEventListener('click', async () => {
+        await saveConfig(true);
+        testProxyConnection();
+      });
+    }
+
+    if ($('proxyRefreshBtn')) {
+      $('proxyRefreshBtn').addEventListener('click', testProxyConnection);
+    }
+
+    // Initial test if already active
+    if (proxyConfig.accepted && proxyConfig.host && proxyConfig.port) {
+      testProxyConnection();
+    }
+
+    if (clearSettingsBtn) {
+      clearSettingsBtn.addEventListener('click', async () => {
+        hostInput.value = '';
+        portInput.value = '';
+        userInput.value = '';
+        passInput.value = '';
+        
+        proxyConfig.host = '';
+        proxyConfig.port = '';
+        proxyConfig.accepted = false;
+        proxyConfig.authIv = null;
+        proxyConfig.authCipher = null;
+        
+        await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfig });
+        updateUIState();
+      });
+    }
+
+    // Auto-save progress as user types/pastes to ensure state is kept if popup closes
+    [hostInput, portInput, userInput, passInput].forEach(el => {
+      el.addEventListener('input', () => saveConfig(false));
+    });
+
+    // Also auto-add protocol on blur for convenience
+    hostInput.addEventListener('blur', () => {
+      const host = hostInput.value.trim();
+      if (host.includes('.com') && !host.includes('://')) {
+        hostInput.value = 'https://' + host;
+        saveConfig(false);
+      }
+    });
+
+    const renderDomains = () => {
+      list.innerHTML = '';
+      if (!proxyConfig.domains || proxyConfig.domains.length === 0) {
+        list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No domains added.</span></div>';
+        return;
+      }
+
+      proxyConfig.domains.forEach((d, idx) => {
+        const row = document.createElement('div');
+        row.className = 'toggle-row';
+        row.style.borderTop = '1px solid rgba(255,255,255,0.03)';
+        row.style.borderBottom = 'none';
+
+        const safeHost = escapeHTML(d.host);
+        
+        // Smart-Link badge for domains with automatic expansion (Streaming Services)
+        const isLinked = ['youtube.com', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'].some(h => safeHost === h || safeHost.endsWith('.' + h) || (safeHost.startsWith('amazon.') && h === 'amazon.com'));
+        const badgeHtml = isLinked ? `<span class="badge" style="font-size:7px; vertical-align:middle; margin-top:-2px;" title="Automatically proxies associated media domains (googlevideo, ttvnw, etc.)">Smart-Link</span>` : '';
+
+        row.innerHTML = `
+          <div class="toggle-info">
+            <div class="name" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${safeHost} ${badgeHtml}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
+            <button class="reset-btn proxy-del-btn" data-idx="${idx}" style="padding: 2px 6px; font-size: 10px; border-color: rgba(255,0,85,0.3); color: var(--c-red);" title="Remove">✕</button>
+            <label class="switch">
+              <input type="checkbox" class="proxy-domain-toggle" data-idx="${idx}" ${d.enabled ? 'checked' : ''} />
+              <span class="slider"></span>
+            </label>
+          </div>
+        `;
+        list.appendChild(row);
+      });
+
+      list.querySelectorAll('.proxy-domain-toggle').forEach(toggle => {
+        toggle.addEventListener('change', async (e) => {
+          const idx = parseInt(e.target.dataset.idx);
+          proxyConfig.domains[idx].enabled = e.target.checked;
+          await saveConfig();
+        });
+      });
+
+      list.querySelectorAll('.proxy-del-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const idx = parseInt(e.target.dataset.idx);
+          proxyConfig.domains.splice(idx, 1);
+          await saveConfig();
+          renderDomains();
+        });
+      });
+    };
+
+    renderDomains();
+
+    addBtn.addEventListener('click', async () => {
+      let d = domainInput.value.trim().toLowerCase();
+      // basic cleanup
+      d = d.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      if (d) {
+        if (!proxyConfig.domains) proxyConfig.domains = [];
+        if (!proxyConfig.domains.find(x => x.host === d)) {
+          proxyConfig.domains.push({ host: d, enabled: true });
+          domainInput.value = '';
+          await saveConfig();
+          renderDomains();
+        }
+      }
+    });
+
+    domainInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addBtn.click();
+    });
+  }
+
+  await loadProxyRouterUI();
 
   // ─── REQUEST LOG UI ─────
   const RT_BADGE = {

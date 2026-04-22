@@ -290,6 +290,7 @@
         if (msgEvent.data?.type === 'INIT_CHROMA') {
            const initData = msgEvent.data;
            initChromaInterceptor(initData.selectors || {});
+           document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: initData.selectors }));
            if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port initialized via inner channel.');
         } else if (msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
           const resp = msgEvent.data.data;

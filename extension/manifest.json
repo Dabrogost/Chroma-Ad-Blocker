@@ -12,7 +12,10 @@
     "tabs",
     "alarms",
     "scripting",
-    "userScripts"
+    "userScripts",
+    "proxy",
+    "webRequest",
+    "webRequestAuthProvider"
   ],
   "host_permissions": [
     "<all_urls>",

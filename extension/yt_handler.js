@@ -1,3 +1,12 @@
+/**
+ * Chroma Ad-Blocker — YouTube Handler
+ * 
+ * Portions of the YouTube ad-stripping logic (specifically payload field pruning) 
+ * are derived from Brave Browser's ad-blocking scriptlets and are subject to 
+ * the Mozilla Public License, v. 2.0. You can obtain a copy of the MPL 2.0 
+ * at https://mozilla.org/MPL/2.0/.
+ */
+
 (function() {
   'use strict';
 
@@ -7,7 +16,7 @@
   // Use Object.create(null) to protect against Prototype Pollution
   const CONFIG = Object.create(null);
   Object.assign(CONFIG, {
-    enabled: false, // Default to disabled until handshake (KILL SWITCH)
+    enabled: true, // Default to active; handshake will synchronize with user settings
     stripping: true,  // Primary: strip ad data from YouTube API responses before the player reads it
     acceleration: false,
     accelerationSpeed: 8, // Default playback rate supported for ad acceleration
@@ -232,7 +241,10 @@
   let _extInitFired = false;
   API.addDocEventListener('__EXT_INIT__', (e) => {
     _extInitFired = true;
-    if (e && e.detail && e.detail.active === false) _chromaExtInitActive = false;
+    if (e && e.detail) {
+      if (e.detail.active === false) _chromaExtInitActive = false;
+      if (e.detail.stripping !== undefined) CONFIG.stripping = e.detail.stripping;
+    }
 
     // Late-arrival activation: If the init polling loop already timed out
     // (cold browser start where chrome.storage was slow), activate now.
@@ -240,13 +252,8 @@
       if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
         applyConfig(window.__CHROMA_INTERNAL__.config);
       }
+      
       if (CONFIG.enabled && shouldAccelerate()) {
-        injectChromaCSS();
-        startPolling();
-        initSkipButtonListener();
-      } else if (_chromaExtInitActive) {
-        CONFIG.enabled = true;
-        CONFIG.acceleration = true;
         injectChromaCSS();
         startPolling();
         initSkipButtonListener();
@@ -799,7 +806,7 @@
 
       if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
       
-      if (!CONFIG.enabled || !shouldAccelerate()) {
+      if (!CONFIG.enabled) {
         if (pollingInterval) {
           cI(pollingInterval);
           pollingInterval = null;
@@ -826,10 +833,17 @@
         deactivateSessionSheet();
         cleanupVideoState();
         
-      } else {
+      }
+      
+      if (CONFIG.enabled && shouldAccelerate()) {
         injectChromaCSS();
         startPolling();
         initSkipButtonListener();
+      } else if (pollingInterval) {
+        cI(pollingInterval);
+        pollingInterval = null;
+        if (adOverlayHost) adOverlayHost.classList.remove('active');
+        deactivateSessionSheet();
       }
     }
   });
@@ -912,12 +926,6 @@
           }
           if (!_chromaExtInitActive) return;
           if (CONFIG.enabled && shouldAccelerate()) {
-            injectChromaCSS();
-            startPolling();
-            initSkipButtonListener();
-          } else if (_extInitFired && _chromaExtInitActive) {
-            CONFIG.enabled = true;
-            CONFIG.acceleration = true;
             injectChromaCSS();
             startPolling();
             initSkipButtonListener();

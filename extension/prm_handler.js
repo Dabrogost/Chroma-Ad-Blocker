@@ -71,7 +71,7 @@ API.addDocEventListener('__EXT_INIT__', (e) => {
       startPolling();
     } else if (_chromaExtInitActive) {
       CONFIG.enabled = true;
-      CONFIG.acceleration = true;
+      CONFIG.acceleration = false;
       ensurePrimeSessionSheet();
       startPolling();
     }
@@ -674,7 +674,7 @@ function init() {
           startPolling();
         } else if (_extInitFired && _chromaExtInitActive) {
           CONFIG.enabled = true;
-          CONFIG.acceleration = true;
+          CONFIG.acceleration = false;
           ensurePrimeSessionSheet();
           startPolling();
         }
