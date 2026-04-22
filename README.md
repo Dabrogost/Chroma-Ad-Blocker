@@ -204,7 +204,7 @@ Instead of reacting to ads after they appear, the Stripper operates at the data 
 - **Feed & Search Optimization**: Beyond the video player, it strips promoted "Sparkles" ads, suggested products, and sponsored results from your home feed and search results.
 
 > [!TIP]
-> While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience.
+> While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience. The stripper will always have a slight delay, but will never show mid-roll ads. Ultimately a proxy is the only zero-delay solution. 
 
 ---
 
