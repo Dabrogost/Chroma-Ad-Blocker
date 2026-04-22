@@ -165,7 +165,7 @@ Chroma does not intercept or store any data from these requests. For a full expl
 Chroma includes a built-in split-tunnel proxy router that allows you to route traffic for specific domains through a proxy server while keeping the rest of your browser traffic on your direct, local connection. This operates entirely within the browser via dynamic Proxy Auto-Configuration (PAC) scripts, meaning it does not require a system-level VPN installation.
 
 ### Supported Protocols
-Chroma supports `HTTP`, `HTTPS`, and `SOCKS5` proxies. You can force a specific protocol by adding a prefix to the proxy host (e.g., `https://` or `socks5://`). If no prefix is provided, it defaults to standard HTTP.
+Chroma supports `HTTP`, `HTTPS`, and `SOCKS5` proxies. You can force a specific protocol by adding a prefix to the proxy host (e.g., `https://` or `socks5://`). If no prefix is provided, it defaults to standard `https://`.
 
 ### Security
 Your proxy credentials (username and password) are encrypted locally using AES-256-GCM via the native Web Crypto API before being stored to disk. They are decrypted dynamically in-memory only when the proxy server challenges the browser for authentication, providing excellent obfuscation against disk-level inspection.
@@ -186,7 +186,8 @@ For example, adding `youtube.com` automatically proxies `googlevideo.com` and `y
 - **YouTube** (`googlevideo.com`, `ytimg.com`, `ggpht.com`)
 - **Netflix** (`nflxvideo.net`, `nflxext.com`, `nflxso.net`)
 - **Amazon Prime Video** (`aiv-cdn.net`, `pv-cdn.net`, + all global TLDs like `.de`, `.co.jp`)
-- **Disney+**, **Max (HBO)**, **Hulu**, **Spotify**, and **Twitch**.
+- **Twitch**
+- **Disney+**, **Max (HBO)**, **Hulu**, and **Spotify**.
 
 ---
 
