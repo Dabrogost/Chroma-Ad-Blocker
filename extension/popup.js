@@ -317,6 +317,183 @@ async function init() {
 
   await loadSubscriptionUI();
 
+  // ─── PROXY ROUTER UI ─────
+  async function loadProxyRouterUI() {
+    const inputGroup = $('proxyInputGroup');
+    const activeGroup = $('proxyActiveGroup');
+    const activeText = $('proxyActiveText');
+    const acceptBtn = $('proxyAcceptBtn');
+    const clearSettingsBtn = $('proxyClearSettingsBtn');
+    
+    const hostInput = $('proxyHost');
+    const portInput = $('proxyPort');
+    const userInput = $('proxyUser');
+    const passInput = $('proxyPass');
+    
+    const domainInput = $('proxyDomainInput');
+    const addBtn = $('proxyAddDomainBtn');
+    const list = $('proxyDomainList');
+
+    if (!hostInput) return;
+
+    const { encryptAuth, decryptAuth } = await import('./crypto.js');
+
+    let { proxyConfig } = await chrome.storage.local.get('proxyConfig');
+    if (!proxyConfig) {
+      proxyConfig = { host: '', port: '', accepted: false, domains: [] };
+    }
+
+    const updateUIState = () => {
+      if (proxyConfig.accepted && proxyConfig.host && proxyConfig.port) {
+        inputGroup.style.display = 'none';
+        activeGroup.style.display = 'flex';
+        activeText.textContent = `${proxyConfig.host}:${proxyConfig.port}`;
+      } else {
+        inputGroup.style.display = 'grid';
+        activeGroup.style.display = 'none';
+      }
+    };
+
+    hostInput.value = proxyConfig.host || '';
+    portInput.value = proxyConfig.port || '';
+
+    // Cleanup legacy plaintext if it exists
+    if (proxyConfig.username || proxyConfig.password) {
+      delete proxyConfig.username;
+      delete proxyConfig.password;
+    }
+
+    if (proxyConfig.authCipher && proxyConfig.authIv) {
+      const auth = await decryptAuth(proxyConfig.authIv, proxyConfig.authCipher);
+      if (auth) {
+        userInput.value = auth.username || '';
+        passInput.value = auth.password || '';
+      }
+    }
+
+    updateUIState();
+
+    const saveConfig = async (isAccept = false) => {
+      proxyConfig.host = hostInput.value.trim();
+      proxyConfig.port = portInput.value.trim();
+      if (isAccept) proxyConfig.accepted = true;
+      
+      const u = userInput.value.trim();
+      const p = passInput.value.trim();
+      
+      if (u || p) {
+        const encrypted = await encryptAuth(u, p);
+        if (encrypted) {
+          proxyConfig.authIv = encrypted.iv;
+          proxyConfig.authCipher = encrypted.ciphertext;
+        }
+      } else {
+        proxyConfig.authIv = null;
+        proxyConfig.authCipher = null;
+      }
+
+      await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfig });
+      if (isAccept) updateUIState();
+    };
+
+    if (acceptBtn) {
+      acceptBtn.addEventListener('click', () => saveConfig(true));
+    }
+
+    if (clearSettingsBtn) {
+      clearSettingsBtn.addEventListener('click', async () => {
+        hostInput.value = '';
+        portInput.value = '';
+        userInput.value = '';
+        passInput.value = '';
+        
+        proxyConfig.host = '';
+        proxyConfig.port = '';
+        proxyConfig.accepted = false;
+        proxyConfig.authIv = null;
+        proxyConfig.authCipher = null;
+        
+        await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfig });
+        updateUIState();
+      });
+    }
+
+    [hostInput, portInput, userInput, passInput].forEach(el => {
+      el.addEventListener('input', () => saveConfig(false));
+    });
+
+    const renderDomains = () => {
+      list.innerHTML = '';
+      if (!proxyConfig.domains || proxyConfig.domains.length === 0) {
+        list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No domains added.</span></div>';
+        return;
+      }
+
+      proxyConfig.domains.forEach((d, idx) => {
+        const row = document.createElement('div');
+        row.className = 'toggle-row';
+        row.style.borderTop = '1px solid rgba(255,255,255,0.03)';
+        row.style.borderBottom = 'none';
+
+        const safeHost = escapeHTML(d.host);
+
+        row.innerHTML = `
+          <div class="toggle-info">
+            <div class="name" style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">${safeHost}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
+            <button class="reset-btn proxy-del-btn" data-idx="${idx}" style="padding: 2px 6px; font-size: 10px; border-color: rgba(255,0,85,0.3); color: var(--c-red);" title="Remove">✕</button>
+            <label class="switch">
+              <input type="checkbox" class="proxy-domain-toggle" data-idx="${idx}" ${d.enabled ? 'checked' : ''} />
+              <span class="slider"></span>
+            </label>
+          </div>
+        `;
+        list.appendChild(row);
+      });
+
+      list.querySelectorAll('.proxy-domain-toggle').forEach(toggle => {
+        toggle.addEventListener('change', async (e) => {
+          const idx = parseInt(e.target.dataset.idx);
+          proxyConfig.domains[idx].enabled = e.target.checked;
+          await saveConfig();
+        });
+      });
+
+      list.querySelectorAll('.proxy-del-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const idx = parseInt(e.target.dataset.idx);
+          proxyConfig.domains.splice(idx, 1);
+          await saveConfig();
+          renderDomains();
+        });
+      });
+    };
+
+    renderDomains();
+
+    addBtn.addEventListener('click', async () => {
+      let d = domainInput.value.trim().toLowerCase();
+      // basic cleanup
+      d = d.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      if (d) {
+        if (!proxyConfig.domains) proxyConfig.domains = [];
+        if (!proxyConfig.domains.find(x => x.host === d)) {
+          proxyConfig.domains.push({ host: d, enabled: true });
+          domainInput.value = '';
+          await saveConfig();
+          renderDomains();
+        }
+      }
+    });
+
+    domainInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') addBtn.click();
+    });
+  }
+
+  await loadProxyRouterUI();
+
   // ─── REQUEST LOG UI ─────
   const RT_BADGE = {
     script:         { label: 'JS',  color: 'rgba(0,255,204,0.15)',  text: 'var(--c-cyan)' },

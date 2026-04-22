@@ -402,6 +402,34 @@
       border-color: var(--c-purple);
       color: var(--text);
     }
+    .chroma-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border-glass);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 11px;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .chroma-input:focus {
+      border-color: var(--c-purple);
+      box-shadow: 0 0 8px rgba(108, 92, 231, 0.3);
+      background: rgba(108, 92, 231, 0.05);
+    }
+    .proxy-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 10px 14px;
+    }
+    .proxy-grid-full {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -555,6 +583,33 @@
   <div class="protection-list" id="subscriptionList">
     <div class="toggle-row" style="justify-content: center; padding: 14px;">
       <span style="font-size: 11px; color: var(--text-muted);">Loading subscriptions...</span>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top: 16px;">Media Proxy Router</div>
+  <div class="protection-list" id="proxyRouterPanel">
+    <div id="proxyInputGroup" class="proxy-grid">
+      <input type="text" id="proxyHost" class="chroma-input" placeholder="Proxy Host (e.g. 1.2.3.4)" />
+      <input type="text" id="proxyPort" class="chroma-input" placeholder="Port (e.g. 80)" />
+      <input type="text" id="proxyUser" class="chroma-input" placeholder="Username (optional)" />
+      <input type="password" id="proxyPass" class="chroma-input" placeholder="Password (optional)" />
+      <button id="proxyAcceptBtn" class="reset-btn" style="grid-column: 1 / -1; padding: 6px;">Accept Settings</button>
+    </div>
+    
+    <div id="proxyActiveGroup" style="display: none; padding: 12px 14px; align-items: center; justify-content: space-between;">
+      <div>
+        <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 2px;">Active Server</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text);" id="proxyActiveText"></div>
+      </div>
+      <button id="proxyClearSettingsBtn" class="reset-btn" style="padding: 4px 10px; border-color: rgba(255,0,85,0.3); color: var(--c-red);">Clear</button>
+    </div>
+
+    <div class="proxy-grid-full" style="padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.03);">
+      <input type="text" id="proxyDomainInput" class="chroma-input" placeholder="Domain (e.g. youtube.com)" />
+      <button id="proxyAddDomainBtn" class="reset-btn" style="padding: 6px 12px; font-size: 10px;">Add</button>
+    </div>
+    <div id="proxyDomainList" style="max-height: 140px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;">
+      <!-- Domain rows will be injected here -->
     </div>
   </div>
 

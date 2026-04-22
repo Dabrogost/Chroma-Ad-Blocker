@@ -20,6 +20,7 @@ import {
   removeSubscription
 } from './subscriptions/manager.js';
 import { initScriptletEngine } from './scriptlets/engine.js';
+import { decryptAuth } from './crypto.js';
 
 const DEBUG = false;
 
@@ -135,7 +136,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         'tp-yt-paper-dialog:has(ytd-enforcement-dialog-view-model)',
         '#header-ad-container', '.yt-playability-error-supported-renderers'
       ],
-      whitelist: []
+      whitelist: [],
+      proxyConfig: { host: '', port: '', username: '', password: '', domains: [] }
     });
     if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
@@ -295,7 +297,9 @@ const MSG = {
   SUBSCRIPTION_ADD:     'SUBSCRIPTION_ADD',
   SUBSCRIPTION_REMOVE:  'SUBSCRIPTION_REMOVE',
   LOG_GET: 'LOG_GET',
-  UPDATE_CHECK: 'UPDATE_CHECK'
+  UPDATE_CHECK: 'UPDATE_CHECK',
+  PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
+  PROXY_CONFIG_SET: 'PROXY_CONFIG_SET'
 };
 
 // ─── CONFIGURATION VALIDATION ─────
@@ -333,7 +337,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const SENSITIVE_TYPES = [
         MSG.CONFIG_GET,
         MSG.CONFIG_SET,
-        MSG.STATS_RESET
+        MSG.STATS_RESET,
+        MSG.PROXY_CONFIG_GET,
+        MSG.PROXY_CONFIG_SET
       ];
 
       if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
@@ -367,6 +373,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: true });
           break;
 
+        case MSG.PROXY_CONFIG_GET:
+          const { proxyConfig: pcGet } = await chrome.storage.local.get('proxyConfig');
+          sendResponse(pcGet || { host: '', port: '', username: '', password: '', domains: [] });
+          break;
+
+        case MSG.PROXY_CONFIG_SET:
+          const { proxyConfig: pcCurr } = await chrome.storage.local.get('proxyConfig');
+          const pcNew = { ...pcCurr, ...msg.proxyConfig };
+          await chrome.storage.local.set({ proxyConfig: pcNew });
+          sendResponse({ ok: true });
+          break;
 
         case MSG.STATS_RESET:
           _logBuffer = [];
@@ -497,9 +514,120 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   });
 }
 
+// ─── PROXY ROUTER & AUTHENTICATION ─────
+async function syncProxyState(proxyConfig) {
+  if (!proxyConfig) return;
+  const { host, port, domains = [], accepted } = proxyConfig;
+  const activeDomains = domains.filter(d => d.enabled).map(d => d.host);
 
+  let scriptData = "function FindProxyForURL(url, host) { return 'DIRECT'; }";
 
+  if (accepted && activeDomains.length > 0 && host && port) {
+    let proxyStr = `"PROXY ${host}:${port}"`;
+    let cleanHost = host;
+    
+    if (host.startsWith('socks5://')) {
+      cleanHost = host.replace('socks5://', '');
+      proxyStr = `"SOCKS5 ${cleanHost}:${port}; SOCKS ${cleanHost}:${port}"`;
+    } else if (host.startsWith('https://')) {
+      cleanHost = host.replace('https://', '');
+      proxyStr = `"HTTPS ${cleanHost}:${port}"`;
+    } else if (host.startsWith('http://')) {
+      cleanHost = host.replace('http://', '');
+      proxyStr = `"PROXY ${cleanHost}:${port}"`;
+    }
 
+    const conditions = activeDomains.map(d => `shExpMatch(host, "${d}") || shExpMatch(host, "*.${d}")`).join(' || ');
+    scriptData = `
+      function FindProxyForURL(url, host) {
+        if (${conditions}) {
+          return ${proxyStr};
+        }
+        return "DIRECT";
+      }
+    `;
+  }
+
+  try {
+    await chrome.proxy.settings.set({
+      value: { mode: 'pac_script', pacScript: { data: scriptData } },
+      scope: 'regular'
+    });
+    if (DEBUG) console.log('[Chroma Ad-Blocker] Proxy PAC script synced. Active domains:', activeDomains.length);
+  } catch (err) {
+    if (DEBUG) console.error('[Chroma Ad-Blocker] Failed to set proxy PAC script:', err);
+  }
+}
+
+// Listen for proxy config changes to update PAC script dynamically
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.proxyConfig) {
+    syncProxyState(changes.proxyConfig.newValue);
+  }
+});
+
+// Initialize proxy state on startup
+chrome.storage.local.get('proxyConfig').then(({ proxyConfig }) => {
+  if (proxyConfig) syncProxyState(proxyConfig);
+});
+
+// Proxy Authentication Handler
+const _authAttempted = new Set();
+// Periodically clean up old auth attempts
+setInterval(() => _authAttempted.clear(), 60000);
+
+chrome.webRequest.onAuthRequired.addListener(
+  function(details, callback) {
+    if (!details.isProxy) {
+      callback({});
+      return;
+    }
+
+    const requestId = details.requestId;
+    if (_authAttempted.has(requestId)) {
+      if (DEBUG) console.warn('[Chroma Ad-Blocker] Proxy auth looped. Cancelling request.', details.url);
+      callback({ cancel: true });
+      return;
+    }
+
+    chrome.storage.local.get('proxyConfig').then(async ({ proxyConfig }) => {
+      if (!proxyConfig || (!proxyConfig.username && !proxyConfig.authCipher)) {
+        if (DEBUG) console.warn('[Chroma Ad-Blocker] Proxy auth required but credentials missing.');
+        callback({ cancel: true });
+        return;
+      }
+
+      let username = proxyConfig.username;
+      let password = proxyConfig.password;
+
+      if (proxyConfig.authCipher && proxyConfig.authIv) {
+        const auth = await decryptAuth(proxyConfig.authIv, proxyConfig.authCipher);
+        if (auth) {
+          username = auth.username;
+          password = auth.password;
+        }
+      }
+
+      if (!username || !password) {
+        callback({ cancel: true });
+        return;
+      }
+
+      _authAttempted.add(requestId);
+      callback({
+        authCredentials: {
+          username: username,
+          password: password
+        }
+      });
+    }).catch(err => {
+      if (DEBUG) console.error('[Chroma Ad-Blocker] Error in proxy auth:', err);
+      callback({ cancel: true });
+    });
+  },
+  { urls: ["<all_urls>"] },
+  ["asyncBlocking"]
+);
 
 // ─── SUBSCRIPTION ALARM ─────
 chrome.alarms.onAlarm.addListener((alarm) => {
