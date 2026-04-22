@@ -279,7 +279,13 @@ Chroma utilizes logic and patterns derived from the following open-source projec
 
 - **Brave Browser** — The YouTube ad-stripping logic (payload metadata pruning) is derived from Brave's ad-blocking scriptlets ([MPL 2.0](https://mozilla.org/MPL/2.0/)).
 - **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists) — [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE)
+
+## Filter List Subscriptions
+
+Chroma subscribes to the following lists to ensure real-time protection:
+
 - **Chroma Hotfix** — Maintainer-controlled list for platform-specific overrides.
+- **Hagezi Pro Mini** — High-performance DNS and ad-blocking rules.
 
 ---
 
@@ -302,9 +308,6 @@ For information on how to report security vulnerabilities, please see our [Secur
 Chroma is a solo project dedicated to restoring the web to its fast, private, and uninterrupted roots. It is 100% free for everyone, forever. If this tool has made your daily browsing a little more colorful, consider supporting this mission.
 
 <div align="center">
-  <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker">GitHub Repository</a>
-  <br/>
-  <br/>
   <a href="https://buymeacoffee.com/dabrogost">
     <img src="https://img.shields.io/badge/Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me a Coffee">
   </a>
