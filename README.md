@@ -130,18 +130,15 @@ Users often wonder how a database of nearly 300,000 rules can operate without sl
 - **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This ensures that the dynamic rule budget is reserved only for unique, high-priority threats.
 
 
-### Layer 2: Scriptlet Injection (scriptlets/engine.js)
+### Layer 2: YouTube Ad Stripping (yt_handler.js)
+A specialized surgical layer designed specifically for YouTube. It intercepts raw JSON responses from the YouTube API and surgically removes ad metadata (e.g., `adPlacements`, `playerAds`) before the player reads them. This results in a seamless, ad-free experience without pauses or the need for playback acceleration. Session state is fully private to the handler closure — host-page scripts cannot observe or tamper with internal state.
+
+### Layer 3: Scriptlet Injection (scriptlets/engine.js)
 The advanced surgical layer of the extension, migrated to the high-performance `chrome.userScripts` API. This engine parses complex scriptlet rules from filter list subscriptions, including uBlock Origin and AdGuard aliases. Key capabilities include:
 - **JSON Pruning**: Uses strict dot-notation path pruning (`json-prune`) to intercept and clean dynamic data payloads in `JSON.parse` calls.
 - **Regex Translation**: Features a built-in pre-processor that translates uBO network-style patterns (e.g., `||example.com^`) into optimized JavaScript RegExp strings for runtime matching.
 - **Flexible Execution Timing**: Supports explicit timing flags (`document_start`, `document_idle`, `document_end`), ensuring scriptlets execute at the optimal lifecycle moment (defaulting to `document_start` for critical API tampering).
 - **Broad Compatibility**: Supports a wide range of scriptlets including `abort-on-property-read`, `set-constant`, `prevent-fetch`, and `no-eval-if`.
-
-### Layer 3: YouTube Ad Stripping & Acceleration (yt_handler.js, prm_handler.js)
-A specialized foundation layer designed specifically for YouTube and Prime Video. It utilizes a dual-mode strategy:
-- **Primary (Stripping)**: Intercepts raw JSON responses from the YouTube API and surgically removes ad metadata (e.g., `adPlacements`, `playerAds`) before the player reads them. This results in an ad-free experience without pauses or acceleration.
-- **Fallback (Acceleration)**: If stripping is disabled or bypassed, Chroma detects active ads and accelerates them at a configurable speed (×4–×16, default ×8) while synchronizing with a custom overlay to deliver a seamless transition.
-Session state is fully private to the handler closure — host-page scripts cannot observe or tamper with internal state.
 
 ### Layer 4: Cosmetic & Warning Suppression (content.js)
 Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
@@ -156,6 +153,9 @@ A specialized defense-in-depth layer optimized for high-clutter recipe and lifes
 - **Anti-Adblock Containment**: Neutres known anti-adblock recovery payloads in script handlers and redirects, and suppresses intrusive alert/confirm dialogs.
 - **Scroll Lock Recovery**: Dynamically detects and reverses scroll-locks (e.g., `overflow: hidden`) and body-hiding tactics used by ad-block walls.
 - **Site-Specific Rules**: Includes custom cosmetic overrides for major platforms like AllRecipes, Food Network, NYT Cooking, and Serious Eats.
+
+### Layer 7: Dynamic Ad Acceleration (prm_handler.js, yt_handler.js)
+A robust fallback and specialized layer for Amazon Prime Video and YouTube (when stripping is disabled). **Shipped in an OFF state by default**, it detects active ads and accelerates them at a configurable speed (×4–×16, default ×8) while synchronizing with a custom overlay to deliver a seamless transition.
 
 ---
 
