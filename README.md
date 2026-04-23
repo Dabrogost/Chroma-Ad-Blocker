@@ -65,6 +65,7 @@ graph TD
     PRM_H -->|"Accelerated Playback"| PLAYER
     RECIPES -->|"Layout Protection"| PLAYER
     CONT -->|"Inject CSS / Remove Elements"| PLAYER
+    SCRIPTS -->|"Surgical Neutralization"| PLAYER
 
     PLAYER --> USER
 
