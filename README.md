@@ -9,7 +9,7 @@
 ## Key Features
 
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
-- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes on-the-fly AES-256-GCM encryption for proxy credentials and connectivity verification.
+- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Features AES-256-GCM encryption for credentials and real-time connectivity verification.
 - **Multi-Part DNR Network Blocking**: Utilizes an 11-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to external filter lists (Hagezi Pro Mini, Chroma Hotfix) that refresh automatically every 24 hours. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
@@ -198,6 +198,15 @@ Your proxy credentials (username and password) are encrypted locally using AES-2
 
 ### Connection Verification
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
+
+### Global Proxy Fallback (VPN Mode)
+In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. When enabled for a specific proxy server via the toggle switch on its card, all browser traffic that does not match a domain-specific rule will be automatically routed through that fallback server. This effectively turns the extension into a browser-level VPN while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Albania) simultaneously.
+
+### Dynamic Routing Status
+The Chroma popup provides real-time feedback on your routing state. The status line on each proxy card will dynamically update to show exactly what it is doing:
+- **GLOBAL VPN ACTIVE**: The server is handling all browser traffic.
+- **ROUTING [X] DOMAINS**: The server is only handling the specific domains you have listed.
+- **CONNECTED**: The server is ready but has no current routing assignments.
 
 ### Example: Setting up NordVPN
 Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN server (e.g., Albania #80):
