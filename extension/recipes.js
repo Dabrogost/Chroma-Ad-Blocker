@@ -115,7 +115,7 @@
     'bbcgoodfood.com', 'thekitchn.com', 'seriouseats.com', 'recipetineats.com',
     'smittenkitchen.com', 'budgetbytes.com', 'pinchofyum.com',
     'sallysbakingaddiction.com', 'minimalistbaker.com', 'thewoksoflife.com',
-    'americastestkitchen.com', 'cooking.nytimes.com',
+    'americastestkitchen.com', 'cooking.nytimes.com', 'weelicious.com',
   ];
 
   const siteKey = SITE_KEYS.find(k => host === k || host.endsWith('.' + k));
@@ -223,6 +223,11 @@
     ],
     'sallysbakingaddiction.com': [
       '[class*="mv-ad-"]', '[id^="mv-creation-"][id$="-jtr"]',
+    ],
+    'weelicious.com': [
+      '[id*="browseteriyaki"]',
+      '.grow-iframe-container', '#grow-signup',
+      '[class*="mv-ad-"]',
     ],
   };
 

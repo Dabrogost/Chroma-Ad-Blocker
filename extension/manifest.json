@@ -42,7 +42,8 @@
     "*://*.minimalistbaker.com/*",
     "*://*.thewoksoflife.com/*",
     "*://*.americastestkitchen.com/*",
-    "*://cooking.nytimes.com/*"
+    "*://cooking.nytimes.com/*",
+    "*://*.weelicious.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -150,7 +151,8 @@
         "*://*.minimalistbaker.com/*",
         "*://*.thewoksoflife.com/*",
         "*://*.americastestkitchen.com/*",
-        "*://cooking.nytimes.com/*"
+        "*://cooking.nytimes.com/*",
+        "*://*.weelicious.com/*"
       ],
       "js": [
         "recipes.js"
