@@ -18,7 +18,8 @@ const backgroundJsCode = backgroundJsCodeRaw
     var addSubscription      = globalThis._mockAddSubscription;
     var removeSubscription   = globalThis._mockRemoveSubscription;
   `)
-  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;");
+  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;")
+  .replace("import { decryptAuth, encryptAuth } from './crypto.js';", "var decryptAuth = globalThis._mockDecryptAuth; var encryptAuth = globalThis._mockEncryptAuth;");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'defaultDynamicRules.js'), 'utf8');
 const defaultDynamicRulesCode = defaultDynamicRulesCodeRaw.replace('export function getDefaultDynamicRules', 'globalThis.getDefaultDynamicRules = function');
@@ -60,6 +61,15 @@ test('getDefaultDynamicRules', async (t) => {
       get: () => Promise.resolve(null),
       onAlarm: { addListener: () => {} }
     },
+    proxy: {
+      settings: {
+        set: () => Promise.resolve(),
+        get: () => Promise.resolve({})
+      }
+    },
+    webRequest: {
+      onAuthRequired: { addListener: () => {} }
+    }
   };
   sandbox._mockInitSubscriptions    = async () => {};
   sandbox._mockEnsureAlarm          = async () => {};
@@ -70,6 +80,8 @@ test('getDefaultDynamicRules', async (t) => {
   sandbox._mockAddSubscription      = async () => ({ ok: true });
   sandbox._mockRemoveSubscription   = async () => ({ ok: true });
   sandbox._mockInitScriptletEngine  = async () => {};
+  sandbox._mockDecryptAuth          = async () => ({ username: 'u', password: 'p' });
+  sandbox._mockEncryptAuth          = async () => ({ iv: 'iv', ciphertext: 'ct' });
 
   sandbox.chrome = chromeMock;
   sandbox.console = console;
@@ -167,6 +179,15 @@ test('syncDynamicRules successful syncing', async (t) => {
       get: () => Promise.resolve(null),
       onAlarm: { addListener: () => {} }
     },
+    proxy: {
+      settings: {
+        set: () => Promise.resolve(),
+        get: () => Promise.resolve({})
+      }
+    },
+    webRequest: {
+      onAuthRequired: { addListener: () => {} }
+    }
   };
 
   sandbox._mockInitSubscriptions    = async () => {};
@@ -178,6 +199,8 @@ test('syncDynamicRules successful syncing', async (t) => {
   sandbox._mockAddSubscription      = async () => ({ ok: true });
   sandbox._mockRemoveSubscription   = async () => ({ ok: true });
   sandbox._mockInitScriptletEngine  = async () => {};
+  sandbox._mockDecryptAuth          = async () => ({ username: 'u', password: 'p' });
+  sandbox._mockEncryptAuth          = async () => ({ iv: 'iv', ciphertext: 'ct' });
 
   sandbox.chrome = chromeMock;
   sandbox.console = {
@@ -264,6 +287,15 @@ test('syncDynamicRules error handling', async (t) => {
       get: () => Promise.resolve(null),
       onAlarm: { addListener: () => {} }
     },
+    proxy: {
+      settings: {
+        set: () => Promise.resolve(),
+        get: () => Promise.resolve({})
+      }
+    },
+    webRequest: {
+      onAuthRequired: { addListener: () => {} }
+    }
   };
 
   sandbox._mockInitSubscriptions    = async () => {};
@@ -275,6 +307,8 @@ test('syncDynamicRules error handling', async (t) => {
   sandbox._mockAddSubscription      = async () => ({ ok: true });
   sandbox._mockRemoveSubscription   = async () => ({ ok: true });
   sandbox._mockInitScriptletEngine  = async () => {};
+  sandbox._mockDecryptAuth          = async () => ({ username: 'u', password: 'p' });
+  sandbox._mockEncryptAuth          = async () => ({ iv: 'iv', ciphertext: 'ct' });
 
   sandbox.chrome = chromeMock;
   sandbox.console = {

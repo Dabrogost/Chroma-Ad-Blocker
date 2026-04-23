@@ -18,7 +18,8 @@ const backgroundJsCode = backgroundJsCodeRaw
     var addSubscription         = async () => ({ ok: true });
     var removeSubscription      = async () => ({ ok: true });
   `)
-  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = async () => {};");
+  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;")
+  .replace("import { decryptAuth, encryptAuth } from './crypto.js';", "var decryptAuth = globalThis._mockDecryptAuth; var encryptAuth = globalThis._mockEncryptAuth;");
 
 // ─── SECURITY HARDENING - BACKGROUND.JS ─────
 test('Security Hardening - background.js', async (t) => {
@@ -110,6 +111,18 @@ test('Security Hardening - background.js', async (t) => {
   sandbox.fetch = async () => ({ ok: false });
   sandbox.DEBUG = true;
   sandbox.__CHROMA_INTERNAL_TEST_STRICT__ = true;
+  sandbox._mockInitScriptletEngine = async () => {};
+  sandbox._mockDecryptAuth          = async () => ({ username: 'u', password: 'p' });
+  sandbox._mockEncryptAuth          = async () => ({ iv: 'iv', ciphertext: 'ct' });
+  chromeMock.proxy = {
+    settings: {
+      set: () => Promise.resolve(),
+      get: () => Promise.resolve({})
+    }
+  };
+  chromeMock.webRequest = {
+    onAuthRequired: { addListener: () => {} }
+  };
 
   vm.createContext(sandbox);
   vm.runInContext(backgroundJsCode, sandbox);

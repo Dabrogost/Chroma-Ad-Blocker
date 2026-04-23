@@ -2,10 +2,14 @@
 
 **Chroma Ad-Blocker** is an advanced, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to maintain functionality across a wide range of websites while maintaining a minimal resource footprint. Chroma is free, source-available, and privacy-focused. For optimal performance, it is recommended to disable other ad-blocking extensions while using Chroma.
 
+<div align="center">
+  <img src="assets/popup.gif" alt="Chroma Ad-Blocker Popup Preview" width="360">
+</div>
+
 ## Key Features
 
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
-- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes on-the-fly AES-256-GCM encryption for proxy credentials and connectivity verification.
+- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Features AES-256-GCM encryption for credentials and real-time connectivity verification.
 - **Multi-Part DNR Network Blocking**: Utilizes an 11-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to external filter lists (Hagezi Pro Mini, Chroma Hotfix) that refresh automatically every 24 hours. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
@@ -29,45 +33,42 @@ How Chroma operates inside the browser tab on every page load.
 ```mermaid
 graph TD
     classDef main     fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
-    classDef secure   fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
     classDef isolated fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
     classDef dom      fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
     classDef actor    fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
-    INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
+    INTERNET["The Internet"]:::actor
 
     subgraph MW["Main World (Page Context)"]
-        INTERCEPT["interceptor.js — API Protection & Handshake"]:::main
-        BRIDGE["__CHROMA_INTERNAL__ — Secure API Bridge"]:::secure
-        YT_H["yt_handler.js — Video Ad Stripping & Acceleration"]:::main
-        PRM_H["prm_handler.js — Video Ad Acceleration"]:::main
-        RECIPES["recipes.js — Recipe & Blog Optimization"]:::main
-        SCRIPTS["Matched Scriptlets — Surgical API Patching"]:::main
+        INTERCEPT["interceptor.js"]:::main
+        YT_H["yt_handler.js"]:::main
+        PRM_H["prm_handler.js"]:::main
+        RECIPES["recipes.js"]:::main
+        SCRIPTS["Matched Scriptlets"]:::main
     end
 
     subgraph IW["Isolated World (Extension Context)"]
-        PROT["protection.js — Config Relay"]:::isolated
-        CONT["content.js — Cosmetic Filtering & Warning Suppression"]:::isolated
+        PROT["protection.js"]:::isolated
+        CONT["content.js"]:::isolated
     end
 
-    PLAYER["Media Players"]:::dom
-    USER["The User (Cleaned Experience)"]:::actor
+    PAGE["Page / Media Players"]:::dom
+    USER["User"]:::actor
 
     INTERNET --> MW
     INTERNET --> IW
 
-    INTERCEPT <-->|"Secure Handshake"| PROT
-    PROT -->|"Dispatch Config Update"| INTERCEPT
+    PROT <-->|"Handshake & Config"| INTERCEPT
+    INTERCEPT -->|"API Bridge"| YT_H
+    INTERCEPT -->|"API Bridge"| PRM_H
 
-    BRIDGE --> YT_H
-    BRIDGE --> PRM_H
-    YT_H -->|"Stripped / Accelerated"| PLAYER
-    PRM_H -->|"Accelerated Playback"| PLAYER
-    RECIPES -->|"Layout Protection"| PLAYER
-    CONT -->|"Inject CSS / Remove Elements"| PLAYER
-    SCRIPTS -->|"Surgical Neutralization"| PLAYER
+    YT_H -->|"Stripped / Accelerated"| PAGE
+    PRM_H -->|"Accelerated"| PAGE
+    RECIPES -->|"Layout Protection"| PAGE
+    CONT -->|"CSS / DOM Cleanup"| PAGE
+    SCRIPTS -->|"Surgical Patching"| PAGE
 
-    PLAYER --> USER
+    PAGE --> USER
 
     style MW fill:none,stroke:#880e4f,stroke-width:1px,stroke-dasharray:4
     style IW fill:none,stroke:#1b5e20,stroke-width:1px,stroke-dasharray:4
@@ -86,32 +87,28 @@ graph TD
     classDef dnr     fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
     classDef actor   fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
-    INTERNET["The Internet (Traffic, Ads, Scripts)"]:::actor
+    INTERNET["The Internet"]:::actor
 
     subgraph SW["Service Worker"]
-        BG["background.js — Router, Stats & Rule Coordinator"]:::sw
-        SUBS["subscriptions/ — Filter List Manager"]:::sw
-        SCRPT["scriptlets/engine.js — userScripts Registry"]:::sw
+        BG["background.js"]:::sw
+        SUBS["subscriptions/"]:::sw
+        SCRPT["scriptlets/engine.js"]:::sw
     end
 
-    POPUP["popup.js — Settings UI & Stats Display"]:::sw
+    POPUP["popup.js"]:::sw
     STORAGE[("chrome.storage")]:::storage
-    DNR["Static + Dynamic DNR Rulesets"]:::dnr
+    DNR["DNR Rulesets"]:::dnr
+    USER["User"]:::actor
 
-    USER["The User (Cleaned Experience)"]:::actor
-
-    INTERNET -- "Network Requests" --> DNR
-    INTERNET --> BG
-
+    INTERNET -->|"Requests"| DNR
     BG <--> STORAGE
-    BG <--> DNR
-    SUBS -->|"Deduplicated Block Rules"| DNR
+    BG <-->|"Manage Rules"| DNR
+    SUBS -->|"Deduplicated Rules"| DNR
     SUBS <-->|"Fetch & Cache"| STORAGE
-    SCRPT -->|"Register userScripts (MAIN World)"| USER
-    POPUP <-->|"Sync Config & Stats"| STORAGE
+    SCRPT -->|"Register userScripts"| USER
+    POPUP <-->|"Config & Stats"| STORAGE
 
     DNR -->|"Filtered Traffic"| USER
-    POPUP -->|"Display Stats"| USER
 
     style SW fill:none,stroke:#01579b,stroke-width:1px,stroke-dasharray:4
 ```
@@ -201,6 +198,15 @@ Your proxy credentials (username and password) are encrypted locally using AES-2
 
 ### Connection Verification
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
+
+### Global Proxy Fallback (VPN Mode)
+In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. When enabled for a specific proxy server via the toggle switch on its card, all browser traffic that does not match a domain-specific rule will be automatically routed through that fallback server. This effectively turns the extension into a browser-level VPN while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Albania) simultaneously.
+
+### Dynamic Routing Status
+The Chroma popup provides real-time feedback on your routing state. The status line on each proxy card will dynamically update to show exactly what it is doing:
+- **GLOBAL VPN ACTIVE**: The server is handling all browser traffic.
+- **ROUTING [X] DOMAINS**: The server is only handling the specific domains you have listed.
+- **CONNECTED**: The server is ready but has no current routing assignments.
 
 ### Example: Setting up NordVPN
 Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN server (e.g., Albania #80):

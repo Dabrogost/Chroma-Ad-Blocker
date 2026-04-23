@@ -249,9 +249,9 @@ test('Ad field stripping', async (t) => {
     assert.strictEqual(sandbox.shouldAccelerate(), true);
   });
 
-  await t.test('shouldAccelerate — false when both acceleration and stripping are on', (st) => {
+  await t.test('shouldAccelerate — true when both acceleration and stripping are on', (st) => {
     const sandbox = createStrippingSandbox({ acceleration: true, stripping: true });
-    assert.strictEqual(sandbox.shouldAccelerate(), false);
+    assert.strictEqual(sandbox.shouldAccelerate(), true);
   });
 
   await t.test('shouldAccelerate — false when stripping on and acceleration off', (st) => {

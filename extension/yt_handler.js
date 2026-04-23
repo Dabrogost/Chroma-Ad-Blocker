@@ -46,7 +46,7 @@
   // Returns true only when acceleration polling should run on YouTube.
   // When stripping is active it handles ad removal upstream, so polling is redundant.
   function shouldAccelerate() {
-    return CONFIG.acceleration && !CONFIG.stripping;
+    return CONFIG.acceleration;
   }
 
   // ─── AD FIELD STRIPPING (PRIMARY BLOCKER) ─────
@@ -232,18 +232,22 @@
                 addDocEventListener: document.addEventListener.bind(document)
               };
 
-  const qS = (s) => API.querySelector(s);
-  const cE = (t) => API.createElement(t);
-  const sI = (f, t) => API.setInterval(f, t);
-  const cI = (i) => API.clearInterval(i);
+  const safeQuery = (s) => API.querySelector(s);
+  const safeCreate = (t) => API.createElement(t);
+  const safeSetInterval = (f, t) => API.setInterval(f, t);
+  const safeClearInterval = (i) => API.clearInterval(i);
 
   let _chromaExtInitActive = true;
   let _extInitFired = false;
   API.addDocEventListener('__EXT_INIT__', (e) => {
     _extInitFired = true;
     if (e && e.detail) {
-      if (e.detail.active === false) _chromaExtInitActive = false;
+      if (e.detail.active === false) {
+        _chromaExtInitActive = false;
+        CONFIG.enabled = false;
+      }
       if (e.detail.stripping !== undefined) CONFIG.stripping = e.detail.stripping;
+      if (e.detail.acceleration !== undefined) CONFIG.acceleration = e.detail.acceleration;
     }
 
     // Late-arrival activation: If the init polling loop already timed out
@@ -398,14 +402,14 @@
   function initAdOverlay() {
     if (adOverlayHost) return;
     
-    adOverlayHost = cE('div');
+    adOverlayHost = safeCreate('div');
     // SECURITY: Session Isolation (evade detector scripts)
     adOverlayHost.id = 'chroma-host-' + Math.random().toString(36).substring(2, 9); // Random 7-char suffix to evade detector scripts
 
     // SECURITY: Shadow DOM Lockdown (prevent host-page tampering)
     adOverlayRoot = adOverlayHost.attachShadow({ mode: 'closed' });
     
-    const style = cE('style');
+    const style = safeCreate('style');
     style.textContent = `
       :host {
         display: block !important;
@@ -501,24 +505,24 @@
       }
     `;
     
-    const screen = cE('div');
+    const screen = safeCreate('div');
     screen.className = 'chroma-screen';
 
-    const spinner = cE('div');
+    const spinner = safeCreate('div');
     spinner.className = 'chroma-spinner';
     
-    const title = cE('div');
+    const title = safeCreate('div');
     title.className = 'chroma-title';
     title.textContent = 'Chroma Active';
     
-    const subtitle = cE('div');
+    const subtitle = safeCreate('div');
     subtitle.className = 'chroma-subtitle';
     subtitle.textContent = 'Accelerating Ad...';
 
-    const progressContainer = cE('div');
+    const progressContainer = safeCreate('div');
     progressContainer.className = 'chroma-progress-container';
     
-    const progressBar = cE('div');
+    const progressBar = safeCreate('div');
     progressBar.className = 'chroma-progress-bar';
     progressContainer.appendChild(progressBar);
     
@@ -530,7 +534,7 @@
     adOverlayRoot.appendChild(style);
     adOverlayRoot.appendChild(screen);
 
-    const playerContainer = qS('.html5-video-player') || qS('#movie_player');
+    const playerContainer = safeQuery('.html5-video-player') || safeQuery('#movie_player');
     if (playerContainer && !playerContainer.contains(adOverlayHost)) {
       playerContainer.appendChild(adOverlayHost);
     }
@@ -635,8 +639,8 @@
   const enforceMuteHandler = () => {
     if (chromaAdSessionActive && targetAdVideo) {
       // Prevents the 'sticky mute' bug where content starts but the session hasn't cleared yet.
-      const isAdDetected = qS('.ad-showing, .ad-interrupting') || 
-                          qS('.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-preview-text');
+      const isAdDetected = safeQuery('.ad-showing, .ad-interrupting') || 
+                          safeQuery('.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-preview-text');
       
       if (!isAdDetected) {
         // If we are here, it means the event fired but we don't see an ad anymore.
@@ -676,13 +680,13 @@
   function handleAdAcceleration() {
     if (!CONFIG.enabled || !CONFIG.acceleration) return;
 
-    let currentAdVideo = qS('.video-ads video, .ytp-ad-module video');
-    let hasAdUI = qS(
+    let currentAdVideo = safeQuery('.video-ads video, .ytp-ad-module video');
+    let hasAdUI = safeQuery(
       '.ytp-ad-simple-ad-badge, .ytp-ad-duration-remaining, .ytp-ad-text, .ytp-ad-preview-text, .ytp-ad-visit-advertiser-button'
     );
 
     if (!currentAdVideo) {
-      const adPlayer = qS('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
+      const adPlayer = safeQuery('.html5-video-player.ad-showing, .html5-video-player.ad-interrupting');
       if (adPlayer) {
         currentAdVideo = adPlayer.querySelector('video');
       }
@@ -691,13 +695,12 @@
     let rawAdShowing = !!currentAdVideo;
 
     if (!rawAdShowing && hasAdUI) {
-      currentAdVideo = qS('#movie_player video, .html5-main-video');
+      currentAdVideo = safeQuery('#movie_player video, .html5-main-video');
       rawAdShowing = !!currentAdVideo;
     }
 
-    const video = currentAdVideo || targetAdVideo || qS('#movie_player video, .html5-main-video');
+    const video = currentAdVideo || targetAdVideo || safeQuery('#movie_player video, .html5-main-video');
     if (!video) return;
-
 
     if (rawAdShowing && currentAdVideo) {
       targetAdVideo = currentAdVideo;
@@ -718,7 +721,7 @@
     if (!rawAdShowing) {
       const now = Date.now();
       const timeSinceAd = lastAdDetectTime ? now - lastAdDetectTime : 0;
-      const mainVideo = qS('.html5-main-video');
+      const mainVideo = safeQuery('.html5-main-video');
       const isMainVideoReady = mainVideo && mainVideo.readyState >= 3;
 
       // Session release logic:
@@ -778,10 +781,9 @@
   let pollingInterval = null;
 
   function startPolling() {
-    if (pollingInterval) cI(pollingInterval);
-    pollingInterval = sI(handleAdAcceleration, CONFIG.checkIntervalMs);
+    if (pollingInterval) safeClearInterval(pollingInterval);
+    pollingInterval = safeSetInterval(handleAdAcceleration, CONFIG.checkIntervalMs);
   }
-
 
   // ─── NAVIGATION & EVENT HANDLERS ─────
   function onYTNavigate() {
@@ -798,7 +800,6 @@
   API.addDocEventListener('yt-navigate-finish', onYTNavigate);
   API.addDocEventListener('yt-page-data-updated', onYTNavigate);
 
-
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
       // SECURITY: Configuration Validation Allowlist
@@ -808,7 +809,7 @@
       
       if (!CONFIG.enabled) {
         if (pollingInterval) {
-          cI(pollingInterval);
+          safeClearInterval(pollingInterval);
           pollingInterval = null;
         }
         
@@ -840,7 +841,7 @@
         startPolling();
         initSkipButtonListener();
       } else if (pollingInterval) {
-        cI(pollingInterval);
+        safeClearInterval(pollingInterval);
         pollingInterval = null;
         if (adOverlayHost) adOverlayHost.classList.remove('active');
         deactivateSessionSheet();
@@ -904,8 +905,6 @@
       // SECURITY: Handshake Configuration Validation
       applyConfig(window.__CHROMA_INTERNAL__.config);
     }
-
-
 
     // If config is already available, start immediately. Otherwise, poll for handshake.
     if (CONFIG.enabled && shouldAccelerate()) {

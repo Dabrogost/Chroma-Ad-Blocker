@@ -104,6 +104,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         suppressWarnings: true,
         accelerationSpeed: 8,
         enabled: true,
+        globalProxyEnabled: false,
+        globalProxyId: null,
       },
       stats: { networkBlocked: 0 },
       requestLog: [],
@@ -137,7 +139,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         '#header-ad-container', '.yt-playability-error-supported-renderers'
       ],
       whitelist: [],
-      proxyConfig: { host: '', port: '', username: '', password: '', domains: [] }
+      proxyConfigs: []
     });
     if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
@@ -286,11 +288,6 @@ async function syncWhitelistRules() {
   }
 }
 
-
-
-
-
-
 // ─── MESSAGE TYPES ─────
 /**
  * Maintain parity with messaging.js. Content scripts and background workers 
@@ -318,7 +315,7 @@ const MSG = {
 
 // ─── CONFIGURATION VALIDATION ─────
 function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId'];
   const validatedConfig = {};
 
   if (inputConfig && typeof inputConfig === 'object') {
@@ -331,6 +328,10 @@ function validateConfig(inputConfig) {
           }
         } else if (typeof val === 'boolean') {
           validatedConfig[key] = val;
+        } else if (key === 'globalProxyId') {
+          if (val === null || typeof val === 'number') {
+            validatedConfig[key] = val;
+          }
         }
       }
     }
@@ -388,69 +389,93 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           break;
 
         case MSG.PROXY_CONFIG_GET:
-          const { proxyConfig: pcGet } = await chrome.storage.local.get('proxyConfig');
-          if (pcGet && pcGet.authCipher && pcGet.authIv) {
-            const auth = await decryptAuth(pcGet.authIv, pcGet.authCipher);
-            if (auth) {
-              pcGet.username = auth.username;
-              pcGet.password = auth.password;
+          const { proxyConfigs: pcsGet = [] } = await chrome.storage.local.get('proxyConfigs');
+          // Decrypt passwords for each config if needed
+          const decryptedConfigs = await Promise.all(pcsGet.map(async (pc) => {
+            const pcCopy = { ...pc };
+            if (pcCopy.authCipher && pcCopy.authIv) {
+              const auth = await decryptAuth(pcCopy.authIv, pcCopy.authCipher);
+              if (auth) {
+                pcCopy.username = auth.username;
+                pcCopy.password = auth.password;
+              }
             }
-          }
-          sendResponse(pcGet || { host: '', port: '', username: '', password: '', domains: [] });
+            return pcCopy;
+          }));
+          sendResponse(decryptedConfigs);
           break;
 
         case MSG.PROXY_CONFIG_SET:
-          const { proxyConfig: pcCurr } = await chrome.storage.local.get('proxyConfig');
-          const pcNew = { ...pcCurr, ...msg.proxyConfig };
-          
-          // Encrypt if username/password are provided in the set request
-          if (pcNew.username || pcNew.password) {
-            const encrypted = await encryptAuth(pcNew.username, pcNew.password);
-            if (encrypted) {
-              pcNew.authIv = encrypted.iv;
-              pcNew.authCipher = encrypted.ciphertext;
-              delete pcNew.username;
-              delete pcNew.password;
+          const pcsNew = await Promise.all(msg.proxyConfigs.map(async (pc) => {
+            const pcNew = { ...pc };
+            // Encrypt if username/password are provided
+            if (pcNew.username || pcNew.password) {
+              const encrypted = await encryptAuth(pcNew.username, pcNew.password);
+              if (encrypted) {
+                pcNew.authIv = encrypted.iv;
+                pcNew.authCipher = encrypted.ciphertext;
+                delete pcNew.username;
+                delete pcNew.password;
+              }
             }
-          }
+            return pcNew;
+          }));
 
-          await chrome.storage.local.set({ proxyConfig: pcNew });
+          await chrome.storage.local.set({ proxyConfigs: pcsNew });
           sendResponse({ ok: true });
           break;
 
-        case MSG.PROXY_TEST:
-          try {
-            const { proxyConfig: pcTest } = await chrome.storage.local.get('proxyConfig');
-            if (!pcTest || !pcTest.host || !pcTest.port || !pcTest.accepted) {
-              return sendResponse({ ok: false, error: 'Proxy not configured' });
+        case MSG.PROXY_TEST: {
+          // Use a sequential lock to prevent simultaneous tests from stomping on PAC state
+          const currentLock = _proxyTestLock;
+          const nextLock = (async () => {
+            await currentLock;
+            try {
+              const { proxyConfigs: pcsTest = [] } = await chrome.storage.local.get('proxyConfigs');
+              const pcTest = pcsTest.find(p => p.id === msg.proxyId) || pcsTest[0];
+              
+              if (!pcTest || !pcTest.host || !pcTest.port || !pcTest.accepted) {
+                return { ok: false, error: 'Proxy not configured' };
+              }
+
+              // Temporarily sync PAC script with test domain routed to target proxy
+              _currentlyTestingId = pcTest.id;
+              await syncProxyState(pcsTest);
+
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+              try {
+                // icanhazip.com is always proxied if a proxy is active (see PROXY_DOMAIN_EXPANSION)
+                const resWithText = await fetch('https://icanhazip.com', {
+                  signal: controller.signal,
+                  cache: 'no-cache'
+                });
+
+                clearTimeout(timeoutId);
+                if (resWithText.ok) {
+                  const ip = (await resWithText.text()).trim();
+                  return { ok: true, ip };
+                } else {
+                  return { ok: false, error: `HTTP ${resWithText.status}` };
+                }
+              } catch (fetchErr) {
+                clearTimeout(timeoutId);
+                return { ok: false, error: fetchErr.name === 'AbortError' ? 'Timeout' : fetchErr.message };
+              } finally {
+                // Restore normal PAC state
+                _currentlyTestingId = null;
+                await syncProxyState(pcsTest);
+              }
+            } catch (err) {
+              return { ok: false, error: err.message };
             }
+          })();
 
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-            // icanhazip.com is always proxied if a proxy is active (see PROXY_DOMAIN_EXPANSION)
-            const res = await fetch('https://icanhazip.com', { 
-              signal: controller.signal, 
-              cache: 'no-cache',
-              mode: 'no-cors' // We just need to know if the request goes through
-            }).catch(e => e); 
-
-            // Actually, for icanhazip.com we want the text to prove the IP
-            const resWithText = await fetch('https://icanhazip.com', { 
-              signal: controller.signal, 
-              cache: 'no-cache'
-            });
-
-            clearTimeout(timeoutId);
-            if (resWithText.ok) {
-              const ip = (await resWithText.text()).trim();
-              sendResponse({ ok: true, ip });
-            } else {
-              sendResponse({ ok: false, error: `HTTP ${resWithText.status}` });
-            }
-          } catch (err) {
-            sendResponse({ ok: false, error: err.message === 'The user aborted a request.' ? 'Timeout' : err.message });
-          }
+          _proxyTestLock = nextLock.then(() => {}, () => {}); // Always release even on error
+          nextLock.then(res => sendResponse(res));
           break;
+        }
 
         case MSG.STATS_RESET:
           _logBuffer = [];
@@ -582,6 +607,8 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
 }
 
 // ─── PROXY ROUTER & AUTHENTICATION ─────
+let _currentlyTestingId = null;
+let _proxyTestLock = Promise.resolve();
 const PROXY_TEST_DOMAIN = 'icanhazip.com';
 const PROXY_DOMAIN_EXPANSION = {
   'youtube.com':   ['googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com', 'nhacmp3abc.com'],
@@ -597,7 +624,7 @@ const PROXY_DOMAIN_EXPANSION = {
 
 function expandDomains(domains) {
   const expanded = new Set(domains);
-  if (domains.length > 0) expanded.add(PROXY_TEST_DOMAIN);
+
   for (const d of domains) {
     // Exact match
     if (PROXY_DOMAIN_EXPANSION[d]) {
@@ -618,37 +645,76 @@ function expandDomains(domains) {
   return Array.from(expanded);
 }
 
-async function syncProxyState(proxyConfig) {
-  if (!proxyConfig) return;
-  const { host, port, domains = [], accepted } = proxyConfig;
-  const activeDomains = expandDomains(domains.filter(d => d.enabled).map(d => d.host));
+function getProxyString(pc) {
+  let { host, port } = pc;
+  if (!host || !port) return "'DIRECT'";
 
-  let scriptData = "function FindProxyForURL(url, host) { return 'DIRECT'; }";
+  let type = 'PROXY';
+  let cleanHost = host;
 
-  if (accepted && activeDomains.length > 0 && host && port) {
-    let proxyStr = `"PROXY ${host}:${port}"`;
-    let cleanHost = host;
-    
-    if (host.startsWith('socks5://')) {
-      cleanHost = host.replace('socks5://', '');
-      proxyStr = `"SOCKS5 ${cleanHost}:${port}; SOCKS ${cleanHost}:${port}"`;
-    } else if (host.startsWith('https://')) {
-      cleanHost = host.replace('https://', '');
-      proxyStr = `"HTTPS ${cleanHost}:${port}"`;
-    } else if (host.startsWith('http://')) {
-      cleanHost = host.replace('http://', '');
-      proxyStr = `"PROXY ${cleanHost}:${port}"`;
+  if (host.startsWith('socks5://')) {
+    type = 'SOCKS5';
+    cleanHost = host.replace('socks5://', '');
+  } else if (host.startsWith('https://')) {
+    type = 'HTTPS';
+    cleanHost = host.replace('https://', '');
+  } else if (host.startsWith('http://')) {
+    type = 'PROXY';
+    cleanHost = host.replace('http://', '');
+  }
+
+  // Handle case where port might be in the host string
+  if (cleanHost.includes(':')) {
+    const parts = cleanHost.split(':');
+    cleanHost = parts[0];
+  }
+
+  if (type === 'SOCKS5') {
+    return `"SOCKS5 ${cleanHost}:${port}; SOCKS ${cleanHost}:${port}"`;
+  }
+  // Default to PROXY for better compatibility unless HTTPS was explicitly requested
+  return `"${type} ${cleanHost}:${port}"`;
+}
+
+async function syncProxyState(proxyConfigs) {
+  if (!proxyConfigs || !Array.isArray(proxyConfigs)) return;
+
+  const { config } = await chrome.storage.local.get('config');
+  const globalEnabled = config?.globalProxyEnabled === true;
+  const globalId = config?.globalProxyId;
+
+  let scriptData = "function FindProxyForURL(url, host) { \n";
+  let hasSpecificRules = false;
+  let fallbackStr = "'DIRECT'";
+
+  for (const pc of proxyConfigs) {
+    const { host, port, domains = [], accepted, id } = pc;
+    if (!accepted || !host || !port) continue;
+
+    const proxyStr = getProxyString(pc);
+    const isTest = (id === _currentlyTestingId);
+    const activeDomains = expandDomains(domains.filter(d => d.enabled).map(d => d.host));
+
+    // 1. Add Domain-Specific Rules
+    if (activeDomains.length > 0 || isTest) {
+      const conditions = activeDomains.map(d => `host === "${d}" || dnsDomainIs(host, ".${d}")`);
+      if (isTest) conditions.push(`host === "${PROXY_TEST_DOMAIN}"`);
+      
+      scriptData += `  if (${conditions.join(' || ')}) return ${proxyStr};\n`;
+      hasSpecificRules = true;
     }
 
-    const conditions = activeDomains.map(d => `host === "${d}" || dnsDomainIs(host, ".${d}")`).join(' || ');
-    scriptData = `
-      function FindProxyForURL(url, host) {
-        if (${conditions}) {
-          return ${proxyStr};
-        }
-        return "DIRECT";
-      }
-    `;
+    // 2. Identify the Global Fallback
+    if (id === globalId && globalEnabled) {
+      fallbackStr = proxyStr;
+    }
+  }
+
+  scriptData += `  return ${fallbackStr};\n}`;
+
+  // Simplified PAC if no routing is actually happening
+  if (!hasSpecificRules && fallbackStr === "'DIRECT'") {
+    scriptData = "function FindProxyForURL(url, host) { return 'DIRECT'; }";
   }
 
   try {
@@ -656,22 +722,54 @@ async function syncProxyState(proxyConfig) {
       value: { mode: 'pac_script', pacScript: { data: scriptData } },
       scope: 'regular'
     });
-    if (DEBUG) console.log('[Chroma Ad-Blocker] Proxy PAC script synced. Active domains:', activeDomains.length);
+    if (DEBUG) console.log('[Chroma Ad-Blocker] Proxy PAC script synced. Total configs:', proxyConfigs.length);
   } catch (err) {
     if (DEBUG) console.error('[Chroma Ad-Blocker] Failed to set proxy PAC script:', err);
   }
 }
 
 // Listen for proxy config changes to update PAC script dynamically
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.proxyConfig) {
-    syncProxyState(changes.proxyConfig.newValue);
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area === 'local') {
+    if (changes.proxyConfigs) {
+      const oldConfigs = changes.proxyConfigs.oldValue || [];
+      const newConfigs = changes.proxyConfigs.newValue || [];
+      
+      // Cleanup globalProxyId if the proxy was deleted
+      if (oldConfigs.length > newConfigs.length) {
+        const { config } = await chrome.storage.local.get('config');
+        if (config?.globalProxyId) {
+          const stillExists = newConfigs.some(pc => pc.id === config.globalProxyId);
+          if (!stillExists) {
+            await chrome.storage.local.set({ config: { ...config, globalProxyId: null } });
+          }
+        }
+      }
+      syncProxyState(newConfigs);
+    }
+    
+    if (changes.config) {
+      const oldC = changes.config.oldValue;
+      const newC = changes.config.newValue;
+      if (oldC?.globalProxyEnabled !== newC?.globalProxyEnabled || oldC?.globalProxyId !== newC?.globalProxyId) {
+        const { proxyConfigs } = await chrome.storage.local.get('proxyConfigs');
+        syncProxyState(proxyConfigs);
+      }
+    }
   }
 });
 
-// Initialize proxy state on startup
-chrome.storage.local.get('proxyConfig').then(({ proxyConfig }) => {
-  if (proxyConfig) syncProxyState(proxyConfig);
+// Initialize proxy state on startup and handle migration
+chrome.storage.local.get(['proxyConfig', 'proxyConfigs']).then(async ({ proxyConfig, proxyConfigs }) => {
+  if (proxyConfig && !proxyConfigs) {
+    // Migrate legacy single config to new array format
+    const migrated = { ...proxyConfig, id: Date.now(), name: 'Main Server' };
+    await chrome.storage.local.set({ proxyConfigs: [migrated] });
+    await chrome.storage.local.remove('proxyConfig');
+    syncProxyState([migrated]);
+  } else if (proxyConfigs) {
+    syncProxyState(proxyConfigs);
+  }
 });
 
 // Proxy Authentication Handler
@@ -693,18 +791,32 @@ chrome.webRequest.onAuthRequired.addListener(
       return;
     }
 
-    chrome.storage.local.get('proxyConfig').then(async ({ proxyConfig }) => {
-      if (!proxyConfig || (!proxyConfig.username && !proxyConfig.authCipher)) {
-        if (DEBUG) console.warn('[Chroma Ad-Blocker] Proxy auth required but credentials missing.');
+    chrome.storage.local.get('proxyConfigs').then(async ({ proxyConfigs }) => {
+      if (!proxyConfigs || !Array.isArray(proxyConfigs)) {
         callback({ cancel: true });
         return;
       }
 
-      let username = proxyConfig.username;
-      let password = proxyConfig.password;
+      // Find the proxy config that matches the challenger
+      const challengerHost = details.challenger.host;
+      const challengerPort = details.challenger.port.toString();
 
-      if (proxyConfig.authCipher && proxyConfig.authIv) {
-        const auth = await decryptAuth(proxyConfig.authIv, proxyConfig.authCipher);
+      const pc = proxyConfigs.find(p => {
+        const pHost = p.host.replace(/^(https?|socks5):\/\//, '');
+        return pHost === challengerHost && p.port.toString() === challengerPort;
+      });
+
+      if (!pc || (!pc.username && !pc.authCipher)) {
+        if (DEBUG) console.warn('[Chroma Ad-Blocker] Proxy auth required but matching credentials missing.');
+        callback({ cancel: true });
+        return;
+      }
+
+      let username = pc.username;
+      let password = pc.password;
+
+      if (pc.authCipher && pc.authIv) {
+        const auth = await decryptAuth(pc.authIv, pc.authCipher);
         if (auth) {
           username = auth.username;
           password = auth.password;
