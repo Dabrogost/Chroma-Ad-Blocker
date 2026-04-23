@@ -166,6 +166,10 @@ test('popup.js functionality', async (t) => {
         SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
         UPDATE_CHECK: 'UPDATE_CHECK'
       },
+      window: {
+        addEventListener: (type, fn) => {},
+        removeEventListener: (type, fn) => {}
+      },
       notifyBackground: (msg) => chromeMock.runtime.sendMessage(msg).catch(() => null)
     };
 
