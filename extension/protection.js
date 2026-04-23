@@ -24,16 +24,12 @@
     stripping: true,
   };
 
-
-
   // ─── SECURE HANDSHAKE ─────
   /**
    * Securely transfers the configuration to the MAIN world.
    * SECURITY: Private Communication Channel Generation
    */
   function initHandshake() {
-
-
     const handleMainReady = (e) => {
       if (typeof e.stopImmediatePropagation === 'function') {
         e.stopImmediatePropagation();
@@ -101,7 +97,8 @@
     document.dispatchEvent(new CustomEvent('__EXT_INIT__', { 
       detail: { 
         active: CONFIG.enabled,
-        stripping: CONFIG.stripping 
+        stripping: CONFIG.stripping,
+        acceleration: CONFIG.acceleration
       } 
     }));
 

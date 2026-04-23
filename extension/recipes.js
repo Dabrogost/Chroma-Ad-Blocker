@@ -359,44 +359,61 @@ ${HIDE_SELECTORS.join(',\n')} {
     if (stripped) log('stripped injector onerror/onload', el.id || '(no id)');
   }
 
-  // Patch setAttribute so `el.setAttribute('src', url)` is caught too.
+  // ─── NATIVE INTEGRITY CHECK ─────
+  // Verify that setAttribute/getAttribute are still native before capturing.
+  // If a page script has already monkey-patched these prototypes, skip
+  // patching to avoid operating on untrusted code (dead-man's-switch).
+  const _fnToString = Function.prototype.toString;
+  function _isNative(fn) {
+    try {
+      return typeof fn === 'function' && _fnToString.call(fn).includes('[native code]');
+    } catch (_) { return false; }
+  }
+
   const _setAttr = Element.prototype.setAttribute;
-  Element.prototype.setAttribute = function (name, value) {
-    if (this.tagName === 'SCRIPT' && String(name).toLowerCase() === 'src' && isBadUrl(value)) {
-      log('neutered setAttribute src →', value);
-      _setAttr.call(this, 'data-chroma-neutered', '1');
-      return _setAttr.call(this, 'src', NOOP_SRC);
-    }
-    if (this.tagName === 'SCRIPT') {
-      const lname = String(name).toLowerCase();
-      if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(value)) {
-        log('blocked setAttribute', lname, 'on injector', this.id || '(no id)');
+  const _getAttr = Element.prototype.getAttribute;
+  const _prototypesTrusted = _isNative(_setAttr) && _isNative(_getAttr);
+
+  // Patch setAttribute so `el.setAttribute('src', url)` is caught too.
+  if (_prototypesTrusted) {
+    Element.prototype.setAttribute = function (name, value) {
+      if (this.tagName === 'SCRIPT' && String(name).toLowerCase() === 'src' && isBadUrl(value)) {
+        log('neutered setAttribute src →', value);
+        _setAttr.call(this, 'data-chroma-neutered', '1');
+        return _setAttr.call(this, 'src', NOOP_SRC);
+      }
+      if (this.tagName === 'SCRIPT') {
+        const lname = String(name).toLowerCase();
+        if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(value)) {
+          log('blocked setAttribute', lname, 'on injector', this.id || '(no id)');
+          return;
+        }
+      }
+      if (this.tagName === 'META' && String(name).toLowerCase() === 'content'
+          && looksLikeRedirectTrap(value)) {
+        log('blocked meta-refresh →', value);
         return;
       }
-    }
-    if (this.tagName === 'META' && String(name).toLowerCase() === 'content'
-        && looksLikeRedirectTrap(value)) {
-      log('blocked meta-refresh →', value);
-      return;
-    }
-    return _setAttr.call(this, name, value);
-  };
+      return _setAttr.call(this, name, value);
+    };
+  }
 
   // The HTML parser sets `onerror`/`onload` directly (not via setAttribute),
   // so a sibling inline script can eval the payload before any observer
   // fires. Intercept getAttribute so the reader script sees empty.
-  const _getAttr = Element.prototype.getAttribute;
-  Element.prototype.getAttribute = function (name) {
-    const v = _getAttr.call(this, name);
-    if (this.tagName === 'SCRIPT') {
-      const lname = String(name).toLowerCase();
-      if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(v)) {
-        log('hid injector', lname, 'from getAttribute');
-        return '';
+  if (_prototypesTrusted) {
+    Element.prototype.getAttribute = function (name) {
+      const v = _getAttr.call(this, name);
+      if (this.tagName === 'SCRIPT') {
+        const lname = String(name).toLowerCase();
+        if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(v)) {
+          log('hid injector', lname, 'from getAttribute');
+          return '';
+        }
       }
-    }
-    return v;
-  };
+      return v;
+    };
+  }
 
   Document.prototype.createElement = function (tag, opts) {
     return nativeCreateElement.call(this, tag, opts);

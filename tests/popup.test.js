@@ -35,7 +35,11 @@ test('popup.js functionality', async (t) => {
             },
             current: ''
           },
+          style: { display: '' },
           parentElement: parent,
+          appendChild: (child) => {},
+          querySelector: (sel) => getElement('temp-child-' + Math.random()),
+          querySelectorAll: (sel) => [],
           title: '',
           addEventListener(event, fn) {
             if (!this.listeners[event]) this.listeners[event] = [];
@@ -76,6 +80,24 @@ test('popup.js functionality', async (t) => {
           if (msg.type === 'STATS_RESET') {
             return { ok: true };
           }
+          if (msg.type === 'PROXY_CONFIG_GET') {
+            return [{ id: 1, name: 'Main', host: '1.2.3.4', port: '80', username: '', password: '', domains: [], accepted: false }];
+          }
+          if (msg.type === 'PROXY_CONFIG_SET') {
+            return { ok: true };
+          }
+          if (msg.type === 'PROXY_TEST') {
+            return { ok: true, ip: '1.2.3.4' };
+          }
+          if (msg.type === 'WHITELIST_GET') {
+            return { whitelist: [] };
+          }
+          if (msg.type === 'SUBSCRIPTION_GET') {
+            return [];
+          }
+          if (msg.type === 'UPDATE_CHECK') {
+            return { updateAvailable: false };
+          }
         },
         getManifest: () => ({ version: '1.0.0' })
       },
@@ -103,8 +125,17 @@ test('popup.js functionality', async (t) => {
       chrome: chromeMock,
       document: {
         getElementById: getElement,
+        createElement: (tag) => {
+          const el = getElement('temp-' + Math.random());
+          el.tagName = tag.toUpperCase();
+          el.appendChild = (child) => {};
+          el.querySelector = (sel) => getElement('temp-child-' + Math.random());
+          el.querySelectorAll = (sel) => [];
+          return el;
+        },
         querySelector: (sel) => {
           if (sel.startsWith('#')) return getElement(sel.slice(1));
+          if (sel === '.section-title') return getElement('sectionTitle');
           return null;
         },
         querySelectorAll: () => []
@@ -124,6 +155,16 @@ test('popup.js functionality', async (t) => {
         CONFIG_SET: 'CONFIG_SET',
         CONFIG_UPDATE: 'CONFIG_UPDATE',
         STATS_RESET: 'STATS_RESET',
+        PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
+        PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
+        PROXY_TEST: 'PROXY_TEST',
+        WHITELIST_GET: 'WHITELIST_GET',
+        WHITELIST_ADD: 'WHITELIST_ADD',
+        WHITELIST_REMOVE: 'WHITELIST_REMOVE',
+        SUBSCRIPTION_GET: 'SUBSCRIPTION_GET',
+        SUBSCRIPTION_SET: 'SUBSCRIPTION_SET',
+        SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
+        UPDATE_CHECK: 'UPDATE_CHECK'
       },
       notifyBackground: (msg) => chromeMock.runtime.sendMessage(msg).catch(() => null)
     };
@@ -141,6 +182,23 @@ test('popup.js functionality', async (t) => {
     getElement('statNetworkBlocked');
     getElement('resetStats');
     getElement('toggleWhitelist');
+    getElement('subscriptionList');
+    getElement('proxyRouterContainer');
+    getElement('addProxyServerBtn');
+    getElement('proxyActiveGroup');
+    getElement('proxyActiveText');
+    getElement('proxyAcceptBtn');
+    getElement('proxyClearSettingsBtn');
+    getElement('proxyHost');
+    getElement('proxyPort');
+    getElement('proxyUser');
+    getElement('proxyPass');
+    getElement('proxyDomainInput');
+    getElement('proxyAddDomainBtn');
+    getElement('proxyDomainList');
+    getElement('logToggleRow');
+    getElement('logToggleBtn');
+    getElement('logEntries');
 
     return { sandbox, elements, messages, chromeMock };
   }
@@ -198,6 +256,7 @@ test('popup.js functionality', async (t) => {
 
     chromeMock.runtime.sendMessage = async (msg) => {
       messages.push(msg);
+      if (msg.type === 'PROXY_CONFIG_GET') return [];
       return null;
     };
     chromeMock.storage.local.get = async () => ({}); // Simulate empty storage
@@ -207,8 +266,8 @@ test('popup.js functionality', async (t) => {
     // Initialization Cooldown: Async DOM settling delay.
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Based on lines 11-18 in popup.js, it should default to true for these
-    assert.strictEqual(elements['toggleAcceleration'].checked, true);
+    // Based on TOGGLES in popup.js, acceleration defaults to false, others true
+    assert.strictEqual(elements['toggleAcceleration'].checked, false);
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
     assert.strictEqual(elements['toggleWarnings'].checked, true);
 

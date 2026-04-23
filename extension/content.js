@@ -1,3 +1,9 @@
+/**
+ * Chroma Ad-Blocker — Cosmetic Filtering & Warning Suppression
+ * Runs as a content script on all URLs (Isolated World).
+ * Handles CSS injection, DOM mutation cleanup, and anti-adblock warning removal.
+ */
+
 (function() {
   'use strict';
 
@@ -331,9 +337,11 @@
   }
 
   // ─── MESSAGE LISTENER ─────
+  // Hardcoded type string — messaging.js is only injected on YouTube/Amazon,
+  // but content.js runs on <all_urls>. Using window.MSG here would silently
+  // drop config updates on all other sites.
   chrome.runtime.onMessage.addListener((msg) => {
-    const MSG = window.MSG;
-    if (MSG && msg.type === MSG.CONFIG_UPDATE) {
+    if (msg.type === 'CONFIG_UPDATE') {
       Object.assign(CONFIG, msg.config);
       
       if (!CONFIG.enabled) {
