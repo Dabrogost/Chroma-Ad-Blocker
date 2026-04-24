@@ -1,7 +1,7 @@
 {
-  "name": "app",
+  "name": "chroma-ad-blocker",
   "version": "0.9.8",
-  "description": "**Description:** Chroma Ad-Blocker is a powerful, low-resource extension designed for the modern web. Built specifically for Manifest V3, it employs a sophisticated three-layer strategy to ensure a clean, uninterrupted browsing experience.",
+  "description": "Low-resource Manifest V3 ad-blocker using a three-layer strategy: declarative network blocking, ad-acceleration, and cosmetic filtering.",
   "main": "extension/background.js",
   "scripts": {
     "test": "node --test"
@@ -10,7 +10,13 @@
     "type": "git",
     "url": "git+https://github.com/Dabrogost/Chroma-Ad-Blocker.git"
   },
-  "keywords": [],
+  "keywords": [
+    "chrome-extension",
+    "ad-blocker",
+    "manifest-v3",
+    "youtube",
+    "declarativenetrequest"
+  ],
   "author": "Dabrogost",
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "commonjs",

@@ -8,6 +8,15 @@
 
 const $ = id => document.getElementById(id);
 
+function escapeHTML(str) {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
 
 async function init() {
@@ -220,11 +229,6 @@ async function init() {
   });
 
   // ─── SUBSCRIPTION UI ─────
-  /** @param {string} str */
-  function escapeHTML(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
   async function loadSubscriptionUI() {
     const list = document.getElementById('subscriptionList');
     if (!list) return;
@@ -356,10 +360,10 @@ async function init() {
 
       card.innerHTML = `
         <div id="${inputGroupId}" class="proxy-grid" style="display: ${pc.accepted && pc.host && pc.port ? 'none' : 'grid'}">
-          <input type="text" class="chroma-input proxy-host" value="${pc.host || ''}" placeholder="Proxy Host (e.g. 1.2.3.4)" />
-          <input type="text" class="chroma-input proxy-port" value="${pc.port || ''}" placeholder="Port (e.g. 80)" />
-          <input type="text" class="chroma-input proxy-user" value="${pc.username || ''}" placeholder="Username" />
-          <input type="password" class="chroma-input proxy-pass" value="${pc.password || ''}" placeholder="Password" />
+          <input type="text" class="chroma-input proxy-host" value="${escapeHTML(pc.host)}" placeholder="Proxy Host (e.g. 1.2.3.4)" />
+          <input type="text" class="chroma-input proxy-port" value="${escapeHTML(pc.port)}" placeholder="Port (e.g. 80)" />
+          <input type="text" class="chroma-input proxy-user" value="${escapeHTML(pc.username)}" placeholder="Username" />
+          <input type="password" class="chroma-input proxy-pass" value="${escapeHTML(pc.password)}" placeholder="Password" />
           <div style="grid-column: 1 / -1; display: flex; gap: 8px;">
             <button class="reset-btn proxy-accept-btn" style="flex: 1; padding: 6px;">Accept Settings</button>
             <button class="reset-btn proxy-del-server-btn" style="padding: 1px 8px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 12px;" title="Delete Server">✕</button>
@@ -368,8 +372,8 @@ async function init() {
         
         <div id="${activeGroupId}" style="display: ${pc.accepted && pc.host && pc.port ? 'flex' : 'none'}; padding: 12px 14px; align-items: center; justify-content: space-between;">
           <div>
-            <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 2px;">Active: ${pc.name || 'Server ' + (index + 1)}</div>
-            <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text);">${pc.host}:${pc.port}</div>
+            <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 2px;">Active: ${escapeHTML(pc.name || 'Server ' + (index + 1))}</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text);">${escapeHTML(pc.host)}:${escapeHTML(pc.port)}</div>
             <div class="proxy-status-line" style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
               <span class="proxy-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 5px rgba(255,255,255,0.1);"></span>
               <span class="proxy-status-text" style="font-size: 9px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Checking...</span>
@@ -488,7 +492,7 @@ async function init() {
 
           const safeHost = escapeHTML(d.host);
           const isLinked = ['youtube.com', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'].some(h => safeHost === h || safeHost.endsWith('.' + h));
-          const badgeHtml = isLinked ? `<span class="badge" style="font-size:7px;">Smart-Link</span>` : '';
+          const badgeHtml = isLinked ? `<span class="badge purple" style="font-size:7px;" title="Automatically routed proxy domain">Smart-Link</span>` : '';
 
           dRow.innerHTML = `
             <div class="toggle-info">
@@ -716,7 +720,7 @@ async function init() {
         row.className = 'log-entry';
         row.innerHTML = `
           <span class="log-rt" style="background:${badge.color};color:${badge.text};">${badge.label}</span>
-          <span class="log-url" title="${entry.url}">${formatLogUrl(entry.url)}</span>
+          <span class="log-url" title="${escapeHTML(entry.url)}">${escapeHTML(formatLogUrl(entry.url))}</span>
           <span class="log-time">${formatTimeAgo(entry.ts)}</span>
         `;
         entries.appendChild(row);

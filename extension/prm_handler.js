@@ -17,7 +17,10 @@
     checkIntervalMs: 400,  // Interval between ad state checks (ms)
   });
 
-  // Whitelist of allowed config keys for secure updates
+  // Whitelist of allowed config keys for secure updates.
+  // Mirror of yt_handler.js — the enabled / acceleration / accelerationSpeed /
+  // checkIntervalMs validators are intentionally identical across both handlers;
+  // keep structurally aligned when changing shared keys.
   const VALID_CONFIG_KEYS = ['enabled', 'acceleration', 'accelerationSpeed', 'checkIntervalMs'];
 
   const CONFIG_VALIDATORS = Object.freeze({
@@ -723,7 +726,7 @@
     globalThis.handlePrimeAdAcceleration = handlePrimeAdAcceleration;
     globalThis.isAdShowing = isAdShowing;
   
-    // State Bridge: Expose internal state for legacy tests (Node/VM safe only)
+    // Test hook: exposes internal state to the Node vm test harness.
     globalThis.__CHROMA_STATE_BRIDGE__ = {
       get isAdActive() { return isAdActive; },
       set isAdActive(v) { isAdActive = v; }

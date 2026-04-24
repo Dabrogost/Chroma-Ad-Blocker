@@ -19,7 +19,12 @@ const backgroundJsCode = backgroundJsCodeRaw
     var removeSubscription   = globalThis._mockRemoveSubscription;
   `)
   .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;")
-  .replace("import { decryptAuth, encryptAuth } from './crypto.js';", "var decryptAuth = globalThis._mockDecryptAuth; var encryptAuth = globalThis._mockEncryptAuth;");
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/crypto\.js['"];?/s, "var decryptAuth = globalThis._mockDecryptAuth; var encryptAuth = globalThis._mockEncryptAuth;")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/messageTypes\.js['"];?/s, "var MSG = {};")
+  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
+  .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
+  .replace(/^export\s+/gm, "");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'defaultDynamicRules.js'), 'utf8');
 const defaultDynamicRulesCode = defaultDynamicRulesCodeRaw.replace('export function getDefaultDynamicRules', 'globalThis.getDefaultDynamicRules = function');

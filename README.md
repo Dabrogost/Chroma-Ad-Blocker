@@ -342,7 +342,6 @@ Chroma subscribes to the following lists to ensure real-time protection:
 
 Chroma is not affiliated with the following extensions, but I use them daily in tandem with Chroma for the ultimate browsing experience:
 
-- **[Privacy Badger](https://chromewebstore.google.com/detail/privacy-badger/pkehgijcmpdhfbdbbnkijodmdjhbjlgp)** — A privacy-focused extension that blocks invisible trackers.
 - **[SponsorBlock](https://chromewebstore.google.com/detail/sponsorblock-for-youtube-s/mnjggcdmjocbbbhaepdhchncahnbgone)** — Skip sponsor segments and other interruptions on YouTube.
 
 ---
