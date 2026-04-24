@@ -1,0 +1,27 @@
+/**
+ * Message type constants — ES module form, for the background service worker
+ * and other ES-module consumers.
+ *
+ * NOTE: Keep in sync with the `window.MSG` literal in messaging.js, which is
+ * loaded as a non-module content script and cannot import from here.
+ */
+
+export const MSG = {
+  CONFIG_GET: 'CONFIG_GET',
+  CONFIG_SET: 'CONFIG_SET',
+  CONFIG_UPDATE: 'CONFIG_UPDATE',
+  STATS_RESET: 'STATS_RESET',
+  WHITELIST_GET: 'WHITELIST_GET',
+  WHITELIST_ADD: 'WHITELIST_ADD',
+  WHITELIST_REMOVE: 'WHITELIST_REMOVE',
+  SUBSCRIPTION_GET:     'SUBSCRIPTION_GET',
+  SUBSCRIPTION_SET:     'SUBSCRIPTION_SET',
+  SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
+  SUBSCRIPTION_ADD:     'SUBSCRIPTION_ADD',
+  SUBSCRIPTION_REMOVE:  'SUBSCRIPTION_REMOVE',
+  LOG_GET: 'LOG_GET',
+  UPDATE_CHECK: 'UPDATE_CHECK',
+  PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
+  PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
+  PROXY_TEST: 'PROXY_TEST'
+};

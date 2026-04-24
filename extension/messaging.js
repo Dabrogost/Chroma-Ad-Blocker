@@ -8,6 +8,9 @@
 if (typeof window.MSG === 'undefined') {
   /**
    * Global message type definitions for consistent communication.
+   * NOTE: Keep in sync with messageTypes.js (the ES-module form used by
+   * background.js). Content scripts are loaded as non-modules so cannot
+   * import that file.
    */
   window.MSG = {
     CONFIG_GET: 'CONFIG_GET',

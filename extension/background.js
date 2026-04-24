@@ -12,15 +12,13 @@ import { getDefaultDynamicRules } from './defaultDynamicRules.js';
 import {
   initSubscriptions,
   ensureAlarm,
-  refreshAllStale,
-  refreshSubscription,
-  getSubscriptions,
-  setSubscriptionEnabled,
-  addSubscription,
-  removeSubscription
+  refreshAllStale
 } from './subscriptions/manager.js';
 import { initScriptletEngine } from './scriptlets/engine.js';
-import { decryptAuth, encryptAuth } from './crypto.js';
+import { decryptAuth } from './crypto.js';
+import { MSG } from './messageTypes.js';
+import * as router from './messageRouter.js';
+import { registerAll } from './handlers.js';
 
 const DEBUG = false;
 
@@ -37,7 +35,7 @@ function isNewerVersion(local, remote) {
   return rPat > lPat;
 }
 
-async function checkForUpdate() {
+export async function checkForUpdate() {
   try {
     const { updateCheckCache: cache } = await chrome.storage.local.get('updateCheckCache');
     const now = Date.now();
@@ -195,7 +193,7 @@ const STATIC_RULESETS = [
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END   = 99999;
 
-async function updateDNRState(isEnabled) {
+export async function updateDNRState(isEnabled) {
   try {
     if (isEnabled) {
       await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds: STATIC_RULESETS });
@@ -216,9 +214,8 @@ async function updateDNRState(isEnabled) {
  * Dynamic rules let us update blocking patterns WITHOUT a Chrome Web Store
  * review cycle — critical because YouTube changes ad delivery domains rapidly.
  * Up to 30,000 "safe" dynamic rules (block/allow) are supported.
- * @returns {Promise<void>}
  */
-async function syncDynamicRules() {
+export async function syncDynamicRules() {
   try {
     const { config } = await chrome.storage.local.get('config');
     const isAccelerationEnabled = config?.acceleration !== false;
@@ -245,9 +242,7 @@ async function syncDynamicRules() {
       addRules: rules,
     });
 
-    if (DEBUG) {
-      console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
-    }
+    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
   } catch (err) {
     if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }
@@ -258,7 +253,7 @@ async function syncDynamicRules() {
  * This ensures the extension is completely disabled on those sites even
  * if global blocking rules would otherwise match.
  */
-async function syncWhitelistRules() {
+export async function syncWhitelistRules() {
   try {
     const { whitelist = [] } = await chrome.storage.local.get('whitelist');
     
@@ -288,33 +283,8 @@ async function syncWhitelistRules() {
   }
 }
 
-// ─── MESSAGE TYPES ─────
-/**
- * Maintain parity with messaging.js. Content scripts and background workers 
- * operate in isolated scopes, requiring manual synchronization of constants.
- */
-const MSG = {
-  CONFIG_GET: 'CONFIG_GET',
-  CONFIG_SET: 'CONFIG_SET',
-  CONFIG_UPDATE: 'CONFIG_UPDATE',
-  STATS_RESET: 'STATS_RESET',
-  WHITELIST_GET: 'WHITELIST_GET',
-  WHITELIST_ADD: 'WHITELIST_ADD',
-  WHITELIST_REMOVE: 'WHITELIST_REMOVE',
-  SUBSCRIPTION_GET:     'SUBSCRIPTION_GET',
-  SUBSCRIPTION_SET:     'SUBSCRIPTION_SET',
-  SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
-  SUBSCRIPTION_ADD:     'SUBSCRIPTION_ADD',
-  SUBSCRIPTION_REMOVE:  'SUBSCRIPTION_REMOVE',
-  LOG_GET: 'LOG_GET',
-  UPDATE_CHECK: 'UPDATE_CHECK',
-  PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
-  PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
-  PROXY_TEST: 'PROXY_TEST'
-};
-
 // ─── CONFIGURATION VALIDATION ─────
-function validateConfig(inputConfig) {
+export function validateConfig(inputConfig) {
   const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId'];
   const validatedConfig = {};
 
@@ -341,231 +311,75 @@ function validateConfig(inputConfig) {
 }
 
 
-// ─── MESSAGE HANDLER ─────
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  const handler = async () => {
+// ─── MESSAGE HANDLER SUPPORT ─────
+/**
+ * Encapsulates the sequential lock + PAC-swap + fetch flow for a proxy test.
+ * Exposed so the PROXY_TEST handler doesn't need to reach into module state.
+ */
+export function runProxyTest(proxyId) {
+  const currentLock = _proxyTestLock;
+  const nextLock = (async () => {
+    await currentLock;
     try {
-      // SECURITY: Origin Authentication
-      const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
-      const isFromInternal = _sender.origin === extensionOrigin;
+      const { proxyConfigs = [] } = await chrome.storage.local.get('proxyConfigs');
+      const pc = proxyConfigs.find(p => p.id === proxyId) || proxyConfigs[0];
 
-      const SENSITIVE_TYPES = [
-        MSG.CONFIG_GET,
-        MSG.CONFIG_SET,
-        MSG.STATS_RESET,
-        MSG.PROXY_CONFIG_GET,
-        MSG.PROXY_CONFIG_SET
-      ];
-
-      if (SENSITIVE_TYPES.includes(msg.type) && !isFromInternal) {
-        if (DEBUG) console.error('[Chroma Security] Blocked unauthorized message from:', _sender.origin, msg.type);
-        return;
+      if (!pc || !pc.host || !pc.port || !pc.accepted) {
+        return { ok: false, error: 'Proxy not configured' };
       }
 
-      switch (msg.type) {
+      _currentlyTestingId = pc.id;
+      await syncProxyState(proxyConfigs);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-        case MSG.CONFIG_GET:
-          const { config: cGet } = await chrome.storage.local.get('config');
-          sendResponse(cGet);
-          break;
-
-        case MSG.CONFIG_SET:
-          const { config: cCurr } = await chrome.storage.local.get('config');
-          const validatedConfig = validateConfig(msg.config);
-          const newConfig = { ...cCurr, ...validatedConfig };
-          await chrome.storage.local.set({ config: newConfig });
-          const wasDNRActive = cCurr.enabled !== false && cCurr.networkBlocking !== false;
-          const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
-          if (isDNRActive !== wasDNRActive) {
-            await updateDNRState(isDNRActive);
-          } else if (isDNRActive && (cCurr.acceleration !== newConfig.acceleration)) {
-            // Acceleration toggle requires re-syncing default dynamic rules
-            await syncDynamicRules();
-          }
-          const tabs = await chrome.tabs.query({});
-          await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})));
-          sendResponse({ ok: true });
-          break;
-
-        case MSG.PROXY_CONFIG_GET:
-          const { proxyConfigs: pcsGet = [] } = await chrome.storage.local.get('proxyConfigs');
-          // Decrypt passwords for each config if needed
-          const decryptedConfigs = await Promise.all(pcsGet.map(async (pc) => {
-            const pcCopy = { ...pc };
-            if (pcCopy.authCipher && pcCopy.authIv) {
-              const auth = await decryptAuth(pcCopy.authIv, pcCopy.authCipher);
-              if (auth) {
-                pcCopy.username = auth.username;
-                pcCopy.password = auth.password;
-              }
-            }
-            return pcCopy;
-          }));
-          sendResponse(decryptedConfigs);
-          break;
-
-        case MSG.PROXY_CONFIG_SET:
-          const pcsNew = await Promise.all(msg.proxyConfigs.map(async (pc) => {
-            const pcNew = { ...pc };
-            // Encrypt if username/password are provided
-            if (pcNew.username || pcNew.password) {
-              const encrypted = await encryptAuth(pcNew.username, pcNew.password);
-              if (encrypted) {
-                pcNew.authIv = encrypted.iv;
-                pcNew.authCipher = encrypted.ciphertext;
-                delete pcNew.username;
-                delete pcNew.password;
-              }
-            }
-            return pcNew;
-          }));
-
-          await chrome.storage.local.set({ proxyConfigs: pcsNew });
-          sendResponse({ ok: true });
-          break;
-
-        case MSG.PROXY_TEST: {
-          // Use a sequential lock to prevent simultaneous tests from stomping on PAC state
-          const currentLock = _proxyTestLock;
-          const nextLock = (async () => {
-            await currentLock;
-            try {
-              const { proxyConfigs: pcsTest = [] } = await chrome.storage.local.get('proxyConfigs');
-              const pcTest = pcsTest.find(p => p.id === msg.proxyId) || pcsTest[0];
-              
-              if (!pcTest || !pcTest.host || !pcTest.port || !pcTest.accepted) {
-                return { ok: false, error: 'Proxy not configured' };
-              }
-
-              // Temporarily sync PAC script with test domain routed to target proxy
-              _currentlyTestingId = pcTest.id;
-              await syncProxyState(pcsTest);
-
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-              try {
-                // icanhazip.com is always proxied if a proxy is active (see PROXY_DOMAIN_EXPANSION)
-                const resWithText = await fetch('https://icanhazip.com', {
-                  signal: controller.signal,
-                  cache: 'no-cache'
-                });
-
-                clearTimeout(timeoutId);
-                if (resWithText.ok) {
-                  const ip = (await resWithText.text()).trim();
-                  return { ok: true, ip };
-                } else {
-                  return { ok: false, error: `HTTP ${resWithText.status}` };
-                }
-              } catch (fetchErr) {
-                clearTimeout(timeoutId);
-                return { ok: false, error: fetchErr.name === 'AbortError' ? 'Timeout' : fetchErr.message };
-              } finally {
-                // Restore normal PAC state
-                _currentlyTestingId = null;
-                await syncProxyState(pcsTest);
-              }
-            } catch (err) {
-              return { ok: false, error: err.message };
-            }
-          })();
-
-          _proxyTestLock = nextLock.then(() => {}, () => {}); // Always release even on error
-          nextLock.then(res => sendResponse(res));
-          break;
+      try {
+        // icanhazip.com is always proxied when a proxy is active (see PROXY_DOMAIN_EXPANSION)
+        const res = await fetch('https://icanhazip.com', {
+          signal: controller.signal,
+          cache: 'no-cache'
+        });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+          const ip = (await res.text()).trim();
+          return { ok: true, ip };
         }
-
-        case MSG.STATS_RESET:
-          _logBuffer = [];
-          _pendingBlocked = 0;
-          if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
-          await chrome.storage.local.set({ stats: { networkBlocked: 0 }, requestLog: [] });
-          sendResponse({ ok: true });
-          break;
-
-
-        case MSG.WHITELIST_GET:
-          const { whitelist: wlGet = [] } = await chrome.storage.local.get('whitelist');
-          sendResponse({ whitelist: wlGet });
-          break;
-
-        case MSG.WHITELIST_ADD:
-          const { whitelist: wlAdd = [] } = await chrome.storage.local.get('whitelist');
-          if (
-            typeof msg.domain === 'string' &&
-            msg.domain.length > 0 &&
-            msg.domain.length <= 253 &&
-            /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(msg.domain) &&
-            !wlAdd.includes(msg.domain)
-          ) {
-            wlAdd.push(msg.domain);
-            await chrome.storage.local.set({ whitelist: wlAdd });
-            await syncWhitelistRules();
-          }
-          sendResponse({ ok: true });
-          break;
-
-        case MSG.WHITELIST_REMOVE:
-          const { whitelist: wlRem = [] } = await chrome.storage.local.get('whitelist');
-          const wlNew = wlRem.filter(d => d !== msg.domain);
-          if (wlNew.length !== wlRem.length) {
-            await chrome.storage.local.set({ whitelist: wlNew });
-            await syncWhitelistRules();
-          }
-          sendResponse({ ok: true });
-          break;
-
-        case MSG.SUBSCRIPTION_GET:
-          sendResponse(await getSubscriptions());
-          break;
-
-        case MSG.SUBSCRIPTION_SET:
-          sendResponse(await setSubscriptionEnabled(msg.id, msg.enabled));
-          break;
-
-        case MSG.SUBSCRIPTION_REFRESH:
-          sendResponse(await refreshSubscription(msg.id));
-          break;
-
-        case MSG.SUBSCRIPTION_ADD:
-          sendResponse(await addSubscription(msg.subscription));
-          break;
-
-        case MSG.SUBSCRIPTION_REMOVE:
-          sendResponse(await removeSubscription(msg.id));
-          break;
-
-        case MSG.LOG_GET: {
-          // Merge in-memory buffer with stored log so unflushed entries are visible
-          const { requestLog: storedLog = [] } = await chrome.storage.local.get('requestLog');
-          const merged = [..._logBuffer, ...storedLog].slice(0, LOG_MAX_ENTRIES);
-          sendResponse(merged);
-          break;
-        }
-
-        case MSG.UPDATE_CHECK:
-          sendResponse(await checkForUpdate());
-          break;
+        return { ok: false, error: `HTTP ${res.status}` };
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        return { ok: false, error: fetchErr.name === 'AbortError' ? 'Timeout' : fetchErr.message };
+      } finally {
+        _currentlyTestingId = null;
+        await syncProxyState(proxyConfigs);
       }
     } catch (err) {
-      if (DEBUG) console.error('[Chroma] Error in message handler:', err);
+      return { ok: false, error: err.message };
     }
-  };
+  })();
 
-  const p = handler();
-  if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) return p;
-  return true;
-});
+  _proxyTestLock = nextLock.then(() => {}, () => {}); // always release even on error
+  return nextLock;
+}
+
+export async function resetRequestLog() {
+  _logBuffer = [];
+  _pendingBlocked = 0;
+  if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+  await chrome.storage.local.set({ stats: { networkBlocked: 0 }, requestLog: [] });
+}
+
+export async function getMergedLog() {
+  const { requestLog: storedLog = [] } = await chrome.storage.local.get('requestLog');
+  return [..._logBuffer, ...storedLog].slice(0, LOG_MAX_ENTRIES);
+}
 
 
 // ─── NETWORK BLOCK TRACKING (DNR) ─────
 /**
- * Developer Mode Check: onRuleMatchedDebug only fires when the extension
- * is loaded unpacked. Chroma is exclusively distributed unpacked via GitHub,
- * so this is the authoritative source for both stats and the request log.
- * Stats and log writes are batched to avoid excessive storage churn.
+ * onRuleMatchedDebug only fires for unpacked extensions, so stats and the
+ * request log depend on the extension being loaded in developer mode.
+ * Writes are batched to avoid excessive storage churn on rapid match bursts.
  */
 async function flushLog() {
   _flushTimer = null;
@@ -855,6 +669,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 // ─── TESTING EXPORTS ─────
 if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
-  /** @returns {Promise<void>} */
   globalThis.syncDynamicRules = syncDynamicRules;
 }
+
+// ─── MESSAGE ROUTER WIRING ─────
+// Must come after all exported handler dependencies are defined so that
+// handlers.js sees resolved bindings through the live ES-module import.
+registerAll(router);
+router.attachListener();

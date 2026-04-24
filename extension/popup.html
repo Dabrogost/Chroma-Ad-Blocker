@@ -338,10 +338,51 @@
     }
 
     .badge {
-      font-size: 8px; padding: 1px 5px; border-radius: 4px;
-      font-weight: 700; background: rgba(0, 255, 204, 0.1);
-      color: var(--c-cyan); margin-left: 6px; text-transform: uppercase;
-      border: 1px solid rgba(0, 255, 204, 0.2);
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7.5px;
+      padding: 1.5px 6px;
+      line-height: 1.2;
+      border-radius: 999px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-left: 6px;
+      
+      /* Default to Cyan (Primary) */
+      --b-color: 0, 255, 204;
+      --b-text: #80ffe5; /* Softer, lightened text */
+      
+      background: rgba(var(--b-color), 0.12);
+      backdrop-filter: blur(12px) saturate(180%);
+      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      color: var(--b-text);
+      border: 1px solid rgba(var(--b-color), 0.3);
+      box-shadow: 0 0 12px rgba(var(--b-color), 0.25);
+    }
+
+    .badge::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 999px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 100%);
+      pointer-events: none;
+    }
+
+    .badge.blue {
+      --b-color: 0, 136, 255;
+      --b-text: #80c4ff;
+    }
+    .badge.red {
+      --b-color: 255, 0, 85;
+      --b-text: #ff80ab;
+    }
+    .badge.purple {
+      --b-color: 108, 92, 231;
+      --b-text: #b6adff;
     }
 
     .toggle-row.disabled { opacity: 0.4; pointer-events: none; filter: grayscale(0.8); }
@@ -476,7 +517,7 @@
   <div class="protection-list">
     <div class="toggle-row">
       <div class="toggle-info">
-        <div class="name">Network Blocking <span class="badge">Primary</span></div>
+        <div class="name">Network Blocking <span class="badge" title="Core filtering engine">Primary</span></div>
         <div class="desc">Blocks known ad and tracker requests</div>
       </div>
       <label class="switch">
