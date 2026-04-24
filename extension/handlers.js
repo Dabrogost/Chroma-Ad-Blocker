@@ -22,10 +22,10 @@ import {
   syncDynamicRules,
   syncWhitelistRules,
   checkForUpdate,
-  runProxyTest,
   resetRequestLog,
   getMergedLog
 } from './background.js';
+import { runProxyTest } from './proxy.js';
 
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i;
 
