@@ -8,7 +8,7 @@
 
 'use strict';
 
-import { decryptAuth } from './crypto.js';
+import { decryptAuth } from '../core/crypto.js';
 
 const DEBUG = false;
 

@@ -13,10 +13,10 @@ import {
   initSubscriptions,
   ensureAlarm,
   refreshAllStale
-} from './subscriptions/manager.js';
-import { initScriptletEngine } from './scriptlets/engine.js';
-import { MSG } from './messageTypes.js';
-import * as router from './messageRouter.js';
+} from '../subscriptions/manager.js';
+import { initScriptletEngine } from '../scriptlets/engine.js';
+import { MSG } from '../core/messageTypes.js';
+import * as router from '../core/messageRouter.js';
 import { registerAll } from './handlers.js';
 import './proxy.js';
 

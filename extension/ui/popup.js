@@ -228,6 +228,17 @@ async function init() {
     if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = '0';
   });
 
+  const settingsIcon = $('settingsIcon');
+  if (settingsIcon) {
+    settingsIcon.addEventListener('click', () => {
+      if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+      } else {
+        window.open(chrome.runtime.getURL('ui/settings.html'));
+      }
+    });
+  }
+
   // ─── SUBSCRIPTION UI ─────
   async function loadSubscriptionUI() {
     const list = document.getElementById('subscriptionList');
