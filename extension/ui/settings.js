@@ -263,7 +263,8 @@ async function init() {
     const summaryBar = document.createElement('div');
     summaryBar.style.cssText = 'padding: 8px 14px 4px; font-size: 10px; color: var(--text-muted); text-align: center; letter-spacing: 0.03em;';
     const totalCosmetic = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.cosmetic || 0), 0);
-    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied to network filter · ${totalCosmetic.toLocaleString()} cosmetic`;
+    const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
+    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied · ${totalCosmetic.toLocaleString()} cosmetic · ${totalScriptlet.toLocaleString()} scriptlets`;
 
     list.innerHTML = '';
     list.appendChild(summaryBar);
@@ -276,13 +277,14 @@ async function init() {
         ? new Date(sub.lastUpdated).toLocaleDateString()
         : 'Never';
 
-      const countText = sub.ruleCount
-        ? sub.cosmeticOnly
-          ? `cosmetic only · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
-          : sub.id === 'chroma-hotfix'
-            ? `${sub.ruleCount.network.toLocaleString()} Network Rules · ${sub.ruleCount.cosmetic.toLocaleString()} Cosmetic Rules`
-            : `${sub.ruleCount.network.toLocaleString()} network · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
-        : '';
+      let countText = '';
+      if (sub.ruleCount) {
+        const parts = [];
+        if (!sub.cosmeticOnly && sub.ruleCount.network > 0) parts.push(`${sub.ruleCount.network.toLocaleString()} network`);
+        if (sub.ruleCount.cosmetic > 0) parts.push(`${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`);
+        if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
+        countText = parts.join(' · ');
+      }
 
       const safeName  = escapeHTML(sub.name);
       const safeId    = escapeHTML(sub.id);
