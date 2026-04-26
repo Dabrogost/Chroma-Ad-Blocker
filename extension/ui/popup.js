@@ -228,6 +228,17 @@ async function init() {
     if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = '0';
   });
 
+  const settingsIcon = $('settingsIcon');
+  if (settingsIcon) {
+    settingsIcon.addEventListener('click', () => {
+      if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+      } else {
+        window.open(chrome.runtime.getURL('ui/settings.html'));
+      }
+    });
+  }
+
   // ─── SUBSCRIPTION UI ─────
   async function loadSubscriptionUI() {
     const list = document.getElementById('subscriptionList');
@@ -252,7 +263,8 @@ async function init() {
     const summaryBar = document.createElement('div');
     summaryBar.style.cssText = 'padding: 8px 14px 4px; font-size: 10px; color: var(--text-muted); text-align: center; letter-spacing: 0.03em;';
     const totalCosmetic = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.cosmetic || 0), 0);
-    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied to network filter · ${totalCosmetic.toLocaleString()} cosmetic`;
+    const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
+    summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied · ${totalCosmetic.toLocaleString()} cosmetic · ${totalScriptlet.toLocaleString()} scriptlets`;
 
     list.innerHTML = '';
     list.appendChild(summaryBar);
@@ -265,13 +277,14 @@ async function init() {
         ? new Date(sub.lastUpdated).toLocaleDateString()
         : 'Never';
 
-      const countText = sub.ruleCount
-        ? sub.cosmeticOnly
-          ? `cosmetic only · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
-          : sub.id === 'chroma-hotfix'
-            ? `${sub.ruleCount.network.toLocaleString()} Network Rules · ${sub.ruleCount.cosmetic.toLocaleString()} Cosmetic Rules`
-            : `${sub.ruleCount.network.toLocaleString()} network · ${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`
-        : '';
+      let countText = '';
+      if (sub.ruleCount) {
+        const parts = [];
+        if (!sub.cosmeticOnly && sub.ruleCount.network > 0) parts.push(`${sub.ruleCount.network.toLocaleString()} network`);
+        if (sub.ruleCount.cosmetic > 0) parts.push(`${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`);
+        if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
+        countText = parts.join(' · ');
+      }
 
       const safeName  = escapeHTML(sub.name);
       const safeId    = escapeHTML(sub.id);
@@ -360,10 +373,17 @@ async function init() {
 
       card.innerHTML = `
         <div id="${inputGroupId}" class="proxy-grid" style="display: ${pc.accepted && pc.host && pc.port ? 'none' : 'grid'}">
+          <select class="chroma-input proxy-type" style="grid-column: 1 / -1; margin-bottom: 4px;">
+            <option value="PROXY" ${(pc.type === 'PROXY' || !pc.type) ? 'selected' : ''}>HTTP (Default)</option>
+            <option value="HTTPS" ${pc.type === 'HTTPS' ? 'selected' : ''}>HTTPS</option>
+            <option value="SOCKS4" ${pc.type === 'SOCKS4' ? 'selected' : ''}>SOCKS4</option>
+            <option value="SOCKS5" ${pc.type === 'SOCKS5' ? 'selected' : ''}>SOCKS5</option>
+          </select>
           <input type="text" class="chroma-input proxy-host" value="${escapeHTML(pc.host)}" placeholder="Proxy Host (e.g. 1.2.3.4)" />
           <input type="text" class="chroma-input proxy-port" value="${escapeHTML(pc.port)}" placeholder="Port (e.g. 80)" />
           <input type="text" class="chroma-input proxy-user" value="${escapeHTML(pc.username)}" placeholder="Username" />
           <input type="password" class="chroma-input proxy-pass" value="${escapeHTML(pc.password)}" placeholder="Password" />
+          <div class="proxy-auth-note" style="grid-column: 1 / -1; font-size: 10px; color: var(--text-muted); margin-top: -2px; display: none;">SOCKS auth isn't supported by Chrome — use IP whitelisting on your provider.</div>
           <div style="grid-column: 1 / -1; display: flex; gap: 8px;">
             <button class="reset-btn proxy-accept-btn" style="flex: 1; padding: 6px;">Accept Settings</button>
             <button class="reset-btn proxy-del-server-btn" style="padding: 1px 8px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 12px;" title="Delete Server">✕</button>
@@ -398,10 +418,29 @@ async function init() {
         </div>
       `;
 
+      const typeSelect = card.querySelector('.proxy-type');
       const hostInput = card.querySelector('.proxy-host');
       const portInput = card.querySelector('.proxy-port');
       const userInput = card.querySelector('.proxy-user');
       const passInput = card.querySelector('.proxy-pass');
+      const authNote = card.querySelector('.proxy-auth-note');
+
+      // Chrome's webRequest.onAuthRequired only fires for HTTP(S) 407 challenges,
+      // so SOCKS4/5 username+password auth can never succeed — hide the fields.
+      const applyAuthVisibility = () => {
+        const isSocks = typeSelect.value === 'SOCKS4' || typeSelect.value === 'SOCKS5';
+        userInput.style.display = isSocks ? 'none' : '';
+        passInput.style.display = isSocks ? 'none' : '';
+        if (authNote) authNote.style.display = isSocks ? 'block' : 'none';
+        if (isSocks) {
+          if (userInput.value) userInput.value = '';
+          if (passInput.value) passInput.value = '';
+          pc.username = null;
+          pc.password = null;
+        }
+      };
+      applyAuthVisibility();
+      typeSelect.addEventListener('change', applyAuthVisibility);
       const domainInput = card.querySelector('.proxy-domain-input');
       const addDomainBtn = card.querySelector('.proxy-add-domain-btn');
       const domainList = card.querySelector('.proxy-domain-list');
@@ -570,6 +609,7 @@ async function init() {
           host = 'https://' + host;
           hostInput.value = host;
         }
+        pc.type = typeSelect.value;
         pc.host = host;
         pc.port = portInput.value.trim();
         pc.username = userInput.value.trim() || null;
@@ -616,8 +656,9 @@ async function init() {
         if (e.key === 'Enter') addDomainBtn.click();
       });
 
-      [hostInput, portInput, userInput, passInput].forEach(el => {
+      [typeSelect, hostInput, portInput, userInput, passInput].forEach(el => {
         el.addEventListener('input', () => {
+          pc.type = typeSelect.value;
           pc.host = hostInput.value.trim();
           pc.port = portInput.value.trim();
           pc.username = userInput.value.trim();
@@ -643,6 +684,7 @@ async function init() {
     addBtn.onclick = async () => {
       const newPc = {
         id: Date.now(),
+        type: 'PROXY',
         host: '',
         port: '',
         username: '',

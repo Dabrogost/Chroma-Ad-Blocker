@@ -465,6 +465,19 @@
       box-shadow: 0 0 8px rgba(108, 92, 231, 0.3);
       background: rgba(108, 92, 231, 0.05);
     }
+    select.chroma-input {
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 30px;
+    }
+    .chroma-input option {
+      background-color: #0a0519;
+      color: var(--text);
+    }
     .proxy-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -490,7 +503,7 @@
 
   <header>
     <div class="pill-nav-inner">
-      <img src="icons/icon48.png" class="logo" alt="Logo" />
+      <img src="../icons/icon48.png" class="logo" alt="Logo" />
       <div class="title-group">
         <h1>Chroma Ad-Blocker</h1>
         <span>Ad-Blocker & Annoyance Eliminator</span>
@@ -506,9 +519,13 @@
   </header>
 
   <div class="stats-container">
-    <div class="stat-card" id="cardNetwork">
+    <div class="stat-card" id="cardNetwork" style="position: relative;">
       <div class="stat-value" id="statNetworkBlocked">0</div>
       <div class="stat-label">Ads Blocked</div>
+      <svg id="settingsIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position: absolute; bottom: 8px; right: 8px; width: 14px; height: 14px; color: var(--c-purple); cursor: pointer; transition: all 0.2s;" title="Open Settings">
+        <circle cx="12" cy="12" r="3"></circle>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+      </svg>
     </div>
   </div>
 
@@ -668,7 +685,7 @@
     </div>
   </footer>
 
-  <script src="messaging.js"></script>
+  <script src="../core/messaging.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

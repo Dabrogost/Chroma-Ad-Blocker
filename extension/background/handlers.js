@@ -7,15 +7,15 @@
 
 'use strict';
 
-import { MSG } from './messageTypes.js';
-import { decryptAuth, encryptAuth } from './crypto.js';
+import { MSG } from '../core/messageTypes.js';
+import { decryptAuth, encryptAuth } from '../core/crypto.js';
 import {
   getSubscriptions,
   setSubscriptionEnabled,
   refreshSubscription,
   addSubscription,
   removeSubscription
-} from './subscriptions/manager.js';
+} from '../subscriptions/manager.js';
 import {
   validateConfig,
   updateDNRState,

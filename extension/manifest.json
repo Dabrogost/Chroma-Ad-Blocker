@@ -46,7 +46,7 @@
     "*://*.weelicious.com/*"
   ],
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "background/background.js",
     "type": "module"
   },
   "content_scripts": [
@@ -55,7 +55,7 @@
         "<all_urls>"
       ],
       "js": [
-        "content.js"
+        "content/content.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -75,8 +75,8 @@
         "*://*.primevideo.com/*"
       ],
       "js": [
-        "messaging.js",
-        "protection.js"
+        "core/messaging.js",
+        "content/protection.js"
       ],
       "run_at": "document_start",
       "all_frames": true
@@ -95,7 +95,7 @@
         "*://*.primevideo.com/*"
       ],
       "js": [
-        "interceptor.js"
+        "content/interceptor.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",
@@ -107,7 +107,7 @@
         "*://*.youtube.com/*"
       ],
       "js": [
-        "yt_handler.js"
+        "content/yt_handler.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",
@@ -126,7 +126,7 @@
         "*://*.primevideo.com/*"
       ],
       "js": [
-        "prm_handler.js"
+        "content/prm_handler.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",
@@ -155,7 +155,7 @@
         "*://*.weelicious.com/*"
       ],
       "js": [
-        "recipes.js"
+        "content/recipes.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",
@@ -222,12 +222,16 @@
     ]
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "ui/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "options_ui": {
+    "page": "ui/settings.html",
+    "open_in_tab": true
   },
   "icons": {
     "16": "icons/icon16.png",
