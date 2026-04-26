@@ -10,12 +10,37 @@
 
 import { SCRIPTLET_MAP } from './lib.js';
 
-const DEBUG = false;
+const DEBUG = true;
 
 /**
  * Synchronizes the chrome.userScripts registry with the current rules in storage.
  */
-async function syncUserScripts() {
+// Serialize sync calls. storage.onChanged can fire multiple times in rapid
+// succession (once per subscription refresh); concurrent syncs race on the
+// unregister/register pair and collide on script IDs.
+let _syncInFlight = null;
+let _syncPending = false;
+
+function syncUserScripts() {
+  if (_syncInFlight) {
+    _syncPending = true;
+    return _syncInFlight;
+  }
+  _syncInFlight = (async () => {
+    try {
+      await _syncUserScriptsImpl();
+    } finally {
+      _syncInFlight = null;
+      if (_syncPending) {
+        _syncPending = false;
+        syncUserScripts();
+      }
+    }
+  })();
+  return _syncInFlight;
+}
+
+async function _syncUserScriptsImpl() {
   try {
     const { subscriptionScriptletRules = [] } = await chrome.storage.local.get('subscriptionScriptletRules');
     

@@ -18,6 +18,7 @@ import { DEFAULT_SUBSCRIPTIONS } from './lists.js';
 import { parseList }             from './parser.js';
 import { allocate }              from './budget.js';
 import { applySubscriptionRules, clearSubscriptionRules } from './dnr.js';
+import { SCRIPTLET_MAP } from '../scriptlets/lib.js';
 
 const DEBUG = false;
 const ALARM_NAME     = 'chroma-subscription-check';
@@ -242,7 +243,11 @@ export async function refreshSubscription(id) {
 
     netPerSub[id] = sub.cosmeticOnly ? [] : networkRules;
     cosPerSub[id] = cosmeticRules;
-    scrPerSub[id] = scriptletRules;
+    // Only keep scriptlet rules whose name matches an implementation we ship.
+    // Anything else would be silently dropped at engine registration anyway,
+    // so we drop it here to avoid storing thousands of dead rules.
+    const usableScriptlets = scriptletRules.filter(r => SCRIPTLET_MAP.has(r.scriptlet));
+    scrPerSub[id] = usableScriptlets;
 
     await chrome.storage.local.set({
       sub_network_rules:  netPerSub,
@@ -251,7 +256,7 @@ export async function refreshSubscription(id) {
     });
 
     // Update subscription metadata
-    sub.ruleCount   = { network: sub.cosmeticOnly ? 0 : networkRules.length, cosmetic: cosmeticRules.length, scriptlet: scriptletRules.length };
+    sub.ruleCount   = { network: sub.cosmeticOnly ? 0 : networkRules.length, cosmetic: cosmeticRules.length, scriptlet: usableScriptlets.length };
     sub.lastUpdated = Date.now();
     sub.version     = String(Date.now());
     sub.lastError   = null;

@@ -54,20 +54,27 @@ function expandDomains(domains) {
 }
 
 function getProxyString(pc) {
-  let { host, port } = pc;
+  let { host, port, type: pcType } = pc;
   if (!host || !port) return "'DIRECT'";
 
-  let type = 'PROXY';
+  // Prioritize explicit type if present, otherwise sniff from host prefix
+  let type = pcType || 'PROXY';
   let cleanHost = host;
 
   if (host.startsWith('socks5://')) {
-    type = 'SOCKS5';
+    if (!pcType) type = 'SOCKS5';
     cleanHost = host.replace('socks5://', '');
+  } else if (host.startsWith('socks4://')) {
+    if (!pcType) type = 'SOCKS4';
+    cleanHost = host.replace('socks4://', '');
+  } else if (host.startsWith('socks://')) {
+    if (!pcType) type = 'SOCKS';
+    cleanHost = host.replace('socks://', '');
   } else if (host.startsWith('https://')) {
-    type = 'HTTPS';
+    if (!pcType) type = 'HTTPS';
     cleanHost = host.replace('https://', '');
   } else if (host.startsWith('http://')) {
-    type = 'PROXY';
+    if (!pcType) type = 'PROXY';
     cleanHost = host.replace('http://', '');
   }
 
@@ -81,9 +88,12 @@ function getProxyString(pc) {
   }
 
   if (type === 'SOCKS5') {
-    return `"SOCKS5 ${cleanHost}:${effectivePort}; SOCKS ${cleanHost}:${effectivePort}"`;
+    return `"SOCKS5 ${cleanHost}:${effectivePort}"`;
   }
-  // Default to PROXY for better compatibility unless HTTPS was explicitly requested
+  if (type === 'SOCKS4' || type === 'SOCKS') {
+    return `"SOCKS4 ${cleanHost}:${effectivePort}"`;
+  }
+  // Default to PROXY (HTTP) for better compatibility unless HTTPS was explicitly requested
   return `"${type} ${cleanHost}:${effectivePort}"`;
 }
 
@@ -131,19 +141,24 @@ async function _syncProxyStateImpl(proxyConfigs) {
 
   scriptData += `  return ${fallbackStr};\n}`;
 
-  // Simplified PAC if no routing is actually happening
-  if (!hasSpecificRules && fallbackStr === "'DIRECT'") {
-    scriptData = "function FindProxyForURL(url, host) { return 'DIRECT'; }";
-  }
-
   try {
+    // When we have no routing to do, release chrome.proxy.settings so other
+    // proxy/VPN extensions can take control. Chrome only lets one extension
+    // own this setting at a time, and calling .set() — even with a no-op
+    // DIRECT PAC — would bump them to "controlled_by_other_extensions".
+    if (!hasSpecificRules && fallbackStr === "'DIRECT'") {
+      await chrome.proxy.settings.clear({ scope: 'regular' });
+      if (DEBUG) console.log('[Chroma Ad-Blocker] No active proxies; released proxy settings.');
+      return;
+    }
+
     await chrome.proxy.settings.set({
       value: { mode: 'pac_script', pacScript: { data: scriptData } },
       scope: 'regular'
     });
     if (DEBUG) console.log('[Chroma Ad-Blocker] Proxy PAC script synced. Total configs:', proxyConfigs.length);
   } catch (err) {
-    if (DEBUG) console.error('[Chroma Ad-Blocker] Failed to set proxy PAC script:', err);
+    if (DEBUG) console.error('[Chroma Ad-Blocker] Failed to update proxy settings:', err);
   }
 }
 
@@ -164,6 +179,7 @@ export function runProxyTest(proxyId) {
 
       _currentlyTestingId = pc.id;
       await syncProxyState(proxyConfigs);
+      await new Promise(r => setTimeout(r, 150)); // Tiny grace period for Chrome to apply PAC settings
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -270,9 +286,12 @@ chrome.webRequest.onAuthRequired.addListener(
       const challengerPort = details.challenger.port.toString();
 
       const pc = proxyConfigs.find(p => {
-        const pHost = p.host.replace(/^(https?|socks5):\/\//, '');
-        return pHost === challengerHost && p.port.toString() === challengerPort;
-      });
+        const pHost = p.host.replace(/^(https?|socks[45]?):\/\//, '').replace(/\/$/, '');
+        // Match by host and port, or just by port if it's a SOCKS proxy (which sometimes hides its host in auth)
+        const hostMatch = pHost === challengerHost;
+        const portMatch = p.port.toString() === challengerPort;
+        return portMatch && (hostMatch || p.type?.startsWith('SOCKS'));
+      }) || (proxyConfigs.length === 1 ? proxyConfigs[0] : null);
 
       if (!pc || (!pc.username && !pc.authCipher)) {
         if (DEBUG) console.warn('[Chroma Ad-Blocker] Proxy auth required but matching credentials missing.');
