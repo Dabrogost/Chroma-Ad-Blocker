@@ -113,7 +113,11 @@ async function rebuildNetworkRules(subscriptions) {
     if (sub.cosmeticOnly) continue;
     if (sub.enabled && perSubRules[sub.id]) {
       for (const rule of perSubRules[sub.id]) {
-        if (rule.action && rule.action.type === 'block') allRules.push(rule);
+        if (rule.action && rule.action.type === 'block') {
+          // Tag with sub id so we can count per-sub survivors after allocate().
+          // Stripped before passing to DNR.
+          allRules.push({ ...rule, _subId: sub.id });
+        }
       }
     }
   }
@@ -123,8 +127,17 @@ async function rebuildNetworkRules(subscriptions) {
     console.warn(`[Chroma Subscriptions] Budget trim: dropped ${trimCount} rules.`);
   }
 
-  await applySubscriptionRules(allocated);
-  await chrome.storage.local.set({ appliedNetworkRuleCount: allocated.length });
+  const perSubApplied = {};
+  const stripped = allocated.map(({ _subId, ...rule }) => {
+    if (_subId) perSubApplied[_subId] = (perSubApplied[_subId] || 0) + 1;
+    return rule;
+  });
+
+  await applySubscriptionRules(stripped);
+  await chrome.storage.local.set({
+    appliedNetworkRuleCount: stripped.length,
+    appliedNetworkRulesPerSub: perSubApplied
+  });
 }
 
 /**
@@ -328,11 +341,14 @@ export async function addSubscription(sub) {
   const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
   if (subscriptions.find(s => s.id === sub.id)) return { ok: false, error: 'ID already exists' };
 
+  if (subscriptions.find(s => s.url === sub.url)) return { ok: false, error: 'URL already added' };
+
   subscriptions.push({
     id: sub.id,
     name: sub.name,
     url: sub.url,
     enabled: true,
+    isCustom: true,
     intervalHours: sub.intervalHours || 24,
     lastUpdated: 0,
     version: null,
