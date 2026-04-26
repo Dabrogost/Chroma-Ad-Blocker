@@ -212,37 +212,6 @@
         video.play().catch(() => {});
       }
     }
-    if (isYouTube) {
-      removeScrollLock();
-    }
-  }
-
-  // ─── SCROLL LOCK PREVENTION ─────
-  let scrollLockObserver = null;
-
-  function removeScrollLock() {
-    const targets = [document.documentElement, document.body];
-    targets.forEach(el => {
-      if (!el) return;
-      const s = el.style;
-      if (s.overflow === 'hidden' || s.overflowY === 'hidden') {
-        s.removeProperty('overflow');
-        s.removeProperty('overflow-y');
-      }
-      // YouTube sometimes uses position:fixed on <body> to freeze scroll position
-      if (el === document.body && s.position === 'fixed') {
-        s.removeProperty('position');
-        s.removeProperty('top');
-      }
-    });
-  }
-
-  function startScrollLockObserver() {
-    if (scrollLockObserver) scrollLockObserver.disconnect();
-    scrollLockObserver = new MutationObserver(() => removeScrollLock());
-    const opts = { attributes: true, attributeFilter: ['style', 'class'] };
-    if (document.documentElement) scrollLockObserver.observe(document.documentElement, opts);
-    if (document.body) scrollLockObserver.observe(document.body, opts);
   }
 
   // ─── DOM OBSERVER ─────
@@ -413,20 +382,12 @@
       if (CONFIG.enabled) {
         startObserver();
         suppressAdblockWarnings();
-        if (isYouTube) {
-          removeScrollLock();
-          startScrollLockObserver();
-        }
       }
     } catch (err) {
       if (DEBUG) console.warn('[Chroma Ad-Blocker] Init fetch failed, using defaults.', err);
       injectAllCSS();
       startObserver();
       suppressAdblockWarnings();
-      if (isYouTube) {
-        removeScrollLock();
-        startScrollLockObserver();
-      }
     }
   }
 

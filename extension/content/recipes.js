@@ -7,106 +7,7 @@
   const nativeCreateElement = Document.prototype.createElement;
   const nativeQuerySelectorAll = Document.prototype.querySelectorAll;
 
-  // ─── STYLE ELEMENT PROTECTION ─────
-  // CafeMedia/Raptive sites (bellyfull.net, etc.) lose ALL <style> and
-  // <link rel="stylesheet"> elements from the DOM when ad scripts run.
-  // Prior investigation proved that freezing removeChild/remove with
-  // Object.defineProperty({configurable:false}) prevents the removal.
-  // We wrap the methods to selectively protect stylesheet elements, then
-  // freeze them so no page script can override our protection.
-  (function protectStyles() {
-    function isStyleElement(el) {
-      if (!el || el.nodeType !== 1) return false;
-      const tag = el.tagName;
-      if (tag === 'STYLE') return true;
-      if (tag === 'LINK') {
-        const rel = el.getAttribute('rel');
-        return rel && rel.toLowerCase().includes('stylesheet');
-      }
-      return false;
-    }
-
-    // Wrap Node.prototype.removeChild — skip removal of style elements
-    const origRemoveChild = Node.prototype.removeChild;
-    function guardedRemoveChild(child) {
-      if (isStyleElement(child)) {
-        if (DEBUG) log('blocked removeChild of', child.tagName, child.id || '');
-        return child; // no-op, return the child as spec says
-      }
-      return origRemoveChild.call(this, child);
-    }
-    Object.defineProperty(Node.prototype, 'removeChild', {
-      value: guardedRemoveChild,
-      writable: false,
-      configurable: false,
-      enumerable: true
-    });
-
-    // Wrap Element.prototype.remove — skip removal of style elements
-    const origRemove = Element.prototype.remove;
-    function guardedRemove() {
-      if (isStyleElement(this)) {
-        if (DEBUG) log('blocked .remove() on', this.tagName, this.id || '');
-        return;
-      }
-      return origRemove.call(this);
-    }
-    Object.defineProperty(Element.prototype, 'remove', {
-      value: guardedRemove,
-      writable: false,
-      configurable: false,
-      enumerable: true
-    });
-
-    // Also guard replaceChildren on <head> — some frameworks use it to
-    // replace head contents wholesale, dropping styles in the process.
-    const origReplaceChildren = Element.prototype.replaceChildren;
-    function guardedReplaceChildren(...newChildren) {
-      if (this === document.head || this === document.documentElement) {
-        // Collect existing style elements that would be removed
-        const existingStyles = [];
-        for (const child of this.children) {
-          if (isStyleElement(child)) existingStyles.push(child);
-        }
-        origReplaceChildren.call(this, ...newChildren);
-        // Re-append any style elements that were dropped
-        for (const style of existingStyles) {
-          if (!this.contains(style)) {
-            this.appendChild(style);
-          }
-        }
-        return;
-      }
-      return origReplaceChildren.call(this, ...newChildren);
-    }
-    Object.defineProperty(Element.prototype, 'replaceChildren', {
-      value: guardedReplaceChildren,
-      writable: false,
-      configurable: false,
-      enumerable: true
-    });
-
-    // Guard innerHTML setter — Dotdash Meredith/Mantle anti-adblock sets
-    // document.head.innerHTML = "" and document.body.innerHTML = "" in a
-    // setInterval loop when it detects blocked ad scripts. Lock this down
-    // at document_start so page scripts can't override or restore native.
-    const _innerHTMLDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-    if (_innerHTMLDesc && _innerHTMLDesc.configurable) {
-      Object.defineProperty(Element.prototype, 'innerHTML', {
-        get() { return _innerHTMLDesc.get.call(this); },
-        set(v) {
-          if ((this === document.body || this === document.documentElement || this === document.head)
-              && (v == null || String(v).trim() === '')) {
-            log('blocked innerHTML clear on', this.tagName);
-            return;
-          }
-          return _innerHTMLDesc.set.call(this, v);
-        },
-        configurable: false,
-        enumerable: true,
-      });
-    }
-  })();
+  // ─── SITE DETECTION ─────
 
   const host = (location.hostname || '').toLowerCase();
 
@@ -241,7 +142,6 @@
   // ─── COSMETIC CSS ─────
   // Only use display:none — heavier properties (height:0, width:0, opacity:0)
   // cause cascade conflicts with WP Rocket / CafeMedia critical CSS.
-  // Scroll-lock reversal is handled dynamically by releaseScrollLock().
   const CSS = `
 ${HIDE_SELECTORS.join(',\n')} {
   display: none !important;
@@ -258,33 +158,6 @@ ${HIDE_SELECTORS.join(',\n')} {
       style.setAttribute('data-chroma-recipes', '1');
       style.textContent = CSS;
       (document.head || document.documentElement).appendChild(style);
-    }
-  }
-
-  // ─── SCROLL LOCK RELEASE ─────
-  function releaseScrollLock() {
-    for (const el of [document.documentElement, document.body]) {
-      if (!el) continue;
-      const s = el.style;
-      if (s.overflow === 'hidden' || s.overflowY === 'hidden') {
-        s.removeProperty('overflow');
-        s.removeProperty('overflow-y');
-      }
-      if (el === document.body) {
-        if (s.position === 'fixed') {
-          s.removeProperty('position');
-          s.removeProperty('top');
-        }
-        // Counter anti-adblock body-hiding (html-load.com sets display:none !important)
-        if (s.display === 'none') {
-          s.removeProperty('display');
-          log('reversed body display:none');
-        }
-        if (s.visibility === 'hidden') {
-          s.removeProperty('visibility');
-          log('reversed body visibility:hidden');
-        }
-      }
     }
   }
 
@@ -539,17 +412,11 @@ ${HIDE_SELECTORS.join(',\n')} {
           pending.clear();
           scheduled = false;
           for (const n of batch) sweep(n);
-          releaseScrollLock();
         });
       }
     });
 
     observer.observe(document.documentElement, { childList: true, subtree: true });
-
-    // style/class changes on <html>/<body> (scroll lock)
-    const lockObs = new MutationObserver(() => releaseScrollLock());
-    if (document.documentElement) lockObs.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class'] });
-    if (document.body) lockObs.observe(document.body, { attributes: true, attributeFilter: ['style', 'class'] });
   }
 
   // ─── BOOT ─────
@@ -558,12 +425,10 @@ ${HIDE_SELECTORS.join(',\n')} {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       sweep(document);
-      releaseScrollLock();
       startObserver();
     }, { once: true });
   } else {
     sweep(document);
-    releaseScrollLock();
     startObserver();
   }
 })();

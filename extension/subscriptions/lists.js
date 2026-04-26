@@ -17,6 +17,17 @@ export const DEFAULT_SUBSCRIPTIONS = [
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
   },
   {
+    id: 'chroma-lib',
+    name: 'Chroma Scriptlet Library',
+    url: chrome.runtime.getURL('subscriptions/chroma-lib.txt'),
+    enabled: true,
+    intervalHours: 9999,
+    lastUpdated: 0,
+    version: null,
+    lastError: null,
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+  },
+  {
     id: 'chroma-hotfix',
     name: 'Chroma Hotfix Rules',
     url: 'https://raw.githubusercontent.com/Dabrogost/Chroma-Ad-Blocker/master/subscriptions/hotfix.txt',
