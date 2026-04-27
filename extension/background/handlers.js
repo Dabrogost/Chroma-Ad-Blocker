@@ -92,6 +92,43 @@ async function handleWhitelistRemove(msg) {
   return { ok: true };
 }
 
+// ─── FPR WHITELIST ─────
+// Separate from the main whitelist so users can disable Fingerprint
+// Randomization on a site (e.g. for bot-check / login flows) without also
+// disabling ad-blocking. The scriptlet engine watches storage.fprWhitelist
+// and updates excludeMatches; no DNR-side sync is needed.
+
+async function handleFprWhitelistGet() {
+  const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
+  return { fprWhitelist };
+}
+
+async function handleFprWhitelistAdd(msg) {
+  const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
+  const domain = msg.domain;
+  const valid =
+    typeof domain === 'string' &&
+    domain.length > 0 &&
+    domain.length <= 253 &&
+    DOMAIN_RE.test(domain) &&
+    !fprWhitelist.includes(domain);
+
+  if (valid) {
+    fprWhitelist.push(domain);
+    await chrome.storage.local.set({ fprWhitelist });
+  }
+  return { ok: true };
+}
+
+async function handleFprWhitelistRemove(msg) {
+  const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
+  const next = fprWhitelist.filter(d => d !== msg.domain);
+  if (next.length !== fprWhitelist.length) {
+    await chrome.storage.local.set({ fprWhitelist: next });
+  }
+  return { ok: true };
+}
+
 // ─── PROXY ─────
 
 async function handleProxyConfigGet() {
@@ -171,6 +208,9 @@ export function registerAll(router) {
   router.registerHandler(MSG.WHITELIST_GET,        handleWhitelistGet);
   router.registerHandler(MSG.WHITELIST_ADD,        handleWhitelistAdd);
   router.registerHandler(MSG.WHITELIST_REMOVE,     handleWhitelistRemove);
+  router.registerHandler(MSG.FPR_WHITELIST_GET,    handleFprWhitelistGet);
+  router.registerHandler(MSG.FPR_WHITELIST_ADD,    handleFprWhitelistAdd);
+  router.registerHandler(MSG.FPR_WHITELIST_REMOVE, handleFprWhitelistRemove);
   router.registerHandler(MSG.PROXY_CONFIG_GET,     handleProxyConfigGet);
   router.registerHandler(MSG.PROXY_CONFIG_SET,     handleProxyConfigSet);
   router.registerHandler(MSG.PROXY_TEST,           handleProxyTest);

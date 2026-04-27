@@ -633,6 +633,28 @@
 
     <div class="toggle-row">
       <div class="toggle-info">
+        <div class="name">Fingerprint Randomization <span class="badge purple" title="Experimental — opt-in">Beta</span></div>
+        <div class="desc">Per-site noise to break cross-site tracking (does not lower uniqueness scores)</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleFingerprintRandomization" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row" id="rowFprWhitelist" style="display: none;">
+      <div class="toggle-info">
+        <div class="name">Disable FPR on this site</div>
+        <div class="desc">For sites broken by canvas/audio noise (bot checks, captchas)</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="toggleFprWhitelist" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-row">
+      <div class="toggle-info">
         <div class="name">Whitelist this site</div>
         <div class="desc">Disable blocking on current domain</div>
       </div>

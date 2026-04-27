@@ -1,7 +1,7 @@
 /**
- * Chroma Ad-Blocker — Popup UI Controller
- * Manages the extension popup: feature toggles, stats display,
- * subscription management, proxy router configuration, and request log.
+ * Chroma Ad-Blocker — Settings UI Controller
+ * Manages the extension settings: feature toggles, stats display,
+ * subscription management, and proxy router configuration.
  */
 
 'use strict';
@@ -82,6 +82,7 @@ async function init() {
     ['toggleMerch',        'hideMerch',                true],
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
+    ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
   ];
 
   const syncUI = (cfg, masterOn) => {
@@ -202,17 +203,47 @@ async function init() {
 
     $('toggleWhitelist').addEventListener('change', async (e) => {
       const isChecked = e.target.checked;
-      
+
       if (isChecked) {
         await notifyBackground({ type: MSG.WHITELIST_ADD, domain: baseDomain });
       } else {
         await notifyBackground({ type: MSG.WHITELIST_REMOVE, domain: baseDomain });
       }
-      
+
       chrome.tabs.reload(activeTab.id);
     });
+
+    // ─── FPR PER-SITE WHITELIST ─────
+    const rowFpr = $('rowFprWhitelist');
+    const fprToggle = $('toggleFingerprintRandomization');
+    const fprSiteToggle = $('toggleFprWhitelist');
+
+    const updateFprRowVisibility = () => {
+      const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled').checked);
+      if (rowFpr) rowFpr.style.display = visible ? '' : 'none';
+    };
+    updateFprRowVisibility();
+    if (fprToggle) fprToggle.addEventListener('change', updateFprRowVisibility);
+    $('toggleEnabled').addEventListener('change', updateFprRowVisibility);
+
+    const { fprWhitelist = [] } = await notifyBackground({ type: MSG.FPR_WHITELIST_GET }) || { fprWhitelist: [] };
+    if (fprSiteToggle) fprSiteToggle.checked = fprWhitelist.includes(baseDomain);
+
+    if (fprSiteToggle) {
+      fprSiteToggle.addEventListener('change', async (e) => {
+        const isChecked = e.target.checked;
+        if (isChecked) {
+          await notifyBackground({ type: MSG.FPR_WHITELIST_ADD, domain: baseDomain });
+        } else {
+          await notifyBackground({ type: MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
+        }
+        chrome.tabs.reload(activeTab.id);
+      });
+    }
   } else {
     $('toggleWhitelist').parentElement.parentElement.classList.add('disabled');
+    const rowFpr = $('rowFprWhitelist');
+    if (rowFpr) rowFpr.style.display = 'none';
   }
 
   // ─── EXTERNAL LINKS ─────

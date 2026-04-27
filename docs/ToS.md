@@ -2,21 +2,20 @@
 layout: default
 title: Terms of Service
 layout-class: layout-prose
-description: Chroma Ad-Blocker terms of service — personal, non-commercial use under the PolyForm Noncommercial License.
+description: Chroma Ad-Blocker terms of service — free and open-source under the GNU GPL v3.
 ---
 
 # Terms of Service for Chroma Ad-Blocker
 
-**Effective Date:** March 28, 2026
+**Effective Date:** April 26, 2026
 
 ## 1. Acceptance of Terms
 By installing and using the Chroma Ad-Blocker browser extension ("the Extension"), you agree to be bound by these Terms of Service. If you do not agree to these terms, do not install or use the Extension.
 
 ## 2. License and Use
-The Extension is licensed under the **PolyForm Noncommercial License 1.0.0**. 
-- You may use the Extension for personal, non-commercial purposes only.
-- You may not use the Extension for any commercial application.
-- You may modify the Extension for your own personal use, provided you comply with the terms of the PolyForm license.
+The Extension is licensed under the **GNU General Public License v3 (GPLv3)**. 
+- You may use, modify, and distribute the Extension in accordance with the terms of the GPLv3.
+- Any derivative works or distributions must also be licensed under the GPLv3 and provide access to the source code.
 
 ## 3. Description of Service
 Chroma Ad-Blocker provides tools to manage your browsing experience, including:

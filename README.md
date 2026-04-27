@@ -1,6 +1,6 @@
 # Chroma Ad-Blocker
 
-**Chroma Ad-Blocker** is an advanced, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to maintain functionality across a wide range of websites while maintaining a minimal resource footprint. Chroma is free, source-available, and privacy-focused. For optimal performance, it is recommended to disable other ad-blocking extensions while using Chroma.
+**Chroma Ad-Blocker** is an advanced, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to maintain functionality across a wide range of websites while maintaining a minimal resource footprint. Chroma is free, open-source (GPLv3), and privacy-focused. For optimal performance, it is recommended to disable other ad-blocking extensions while using Chroma.
 
 <div align="center">
   <img src="assets/popup.gif" alt="Chroma Ad-Blocker Popup Preview" width="360">
@@ -18,7 +18,7 @@
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
 - **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on YouTube and Amazon Prime Video (Twitch uses server-side ad insertion and does not support ad acceleration), serving as a robust fallback when stripping is disabled.
-- **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of **Google Chrome 120+** (and other Chromium-based browsers with engine version 120+). This version is required to support the 11-part static ruleset.
+- **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of **Google Chrome 122+** (and other Chromium-based browsers with engine version 122+). This version is required to support the 11-part static ruleset.
 
 ---
 
