@@ -1,6 +1,6 @@
 {
   "name": "chroma-ad-blocker",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "description": "Low-resource Manifest V3 ad-blocker using a three-layer strategy: declarative network blocking, ad-acceleration, and cosmetic filtering.",
   "main": "extension/background.js",
   "scripts": {
