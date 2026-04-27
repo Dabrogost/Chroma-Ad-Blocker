@@ -230,6 +230,177 @@ export function preventXhr(args) {
 }
 
 /**
+ * Hides elements matching a CSS selector and watches for re-addition.
+ * args[0]: CSS selector
+ */
+export function hideElement(args) {
+  const selector = args[0];
+  if (!selector) return;
+
+  const hide = () => {
+    try {
+      document.querySelectorAll(selector).forEach(el => {
+        if (el.style.display !== 'none') {
+          el.style.setProperty('display', 'none', 'important');
+        }
+      });
+    } catch (e) {}
+  };
+
+  hide();
+
+  new MutationObserver(hide).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+}
+
+
+/**
+ * Reverses 'overflow: hidden' on <html> or <body> and removes fixed positioning.
+ * Useful for bypassing "Adblock Detected" overlays that freeze the page.
+ */
+export function releaseScrollLock() {
+  const release = () => {
+    for (const el of [document.documentElement, document.body]) {
+      if (!el) continue;
+      const s = el.style;
+      if (s.overflow === 'hidden' || s.overflowY === 'hidden') {
+        s.removeProperty('overflow');
+        s.removeProperty('overflow-y');
+      }
+      if (el === document.body && s.position === 'fixed') {
+        s.removeProperty('position');
+        s.removeProperty('top');
+      }
+    }
+  };
+
+  release();
+  new MutationObserver(release).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['style', 'class'],
+    subtree: true
+  });
+}
+
+
+/**
+ * Protects <style> and <link rel="stylesheet"> elements from being removed.
+ * Some sites (Raptive/CafeMedia) delete their own CSS when they detect adblockers.
+ */
+export function protectStylesheets() {
+  const isStyle = (el) => {
+    if (!el || el.nodeType !== 1) return false;
+    const tag = el.tagName;
+    if (tag === 'STYLE') return true;
+    if (tag === 'LINK') {
+      const rel = el.getAttribute('rel');
+      return rel && rel.toLowerCase().includes('stylesheet');
+    }
+    return false;
+  };
+
+  // Wrap Node.prototype.removeChild
+  const origRemoveChild = Node.prototype.removeChild;
+  Object.defineProperty(Node.prototype, 'removeChild', {
+    value: function(child) {
+      if (isStyle(child)) return child;
+      return origRemoveChild.call(this, child);
+    },
+    configurable: false,
+    writable: false
+  });
+
+  // Wrap Element.prototype.remove
+  const origRemove = Element.prototype.remove;
+  Object.defineProperty(Element.prototype, 'remove', {
+    value: function() {
+      if (isStyle(this)) return;
+      return origRemove.call(this);
+    },
+    configurable: false,
+    writable: false
+  });
+
+  // Wrap Element.prototype.replaceChildren
+  const origReplaceChildren = Element.prototype.replaceChildren;
+  Object.defineProperty(Element.prototype, 'replaceChildren', {
+    value: function(...newChildren) {
+      if (this === document.head || this === document.documentElement) {
+        const existing = Array.from(this.children).filter(isStyle);
+        origReplaceChildren.call(this, ...newChildren);
+        for (const s of existing) {
+          if (!this.contains(s)) this.appendChild(s);
+        }
+        return;
+      }
+      return origReplaceChildren.call(this, ...newChildren);
+    },
+    configurable: false,
+    writable: false
+  });
+}
+
+
+/**
+ * Prevents scripts from clearing the document, body, or head via innerHTML.
+ * Used to bypass Dotdash Meredith/Mantle anti-adblock logic.
+ */
+export function preventInnerHTMLClear() {
+  const desc = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  if (!desc || !desc.configurable) return;
+
+  Object.defineProperty(Element.prototype, 'innerHTML', {
+    get() { return desc.get.call(this); },
+    set(v) {
+      if ((this === document.body || this === document.documentElement || this === document.head)
+          && (v == null || String(v).trim() === '')) {
+        return;
+      }
+      return desc.set.call(this, v);
+    },
+    configurable: false,
+    enumerable: true,
+  });
+}
+
+
+/**
+ * Hides an element matching a selector, or one of its ancestors.
+ * args[0]: selector to find the ad
+ * args[1]: (optional) ancestor selector to hide instead. If omitted, hides the element itself.
+ */
+export function hideUpward(args) {
+  const selector = args[0];
+  const ancestor = args[1];
+  if (!selector) return;
+
+  const hide = () => {
+    try {
+      document.querySelectorAll(selector).forEach(el => {
+        let target = el;
+        if (ancestor) {
+          const up = el.closest(ancestor);
+          if (up) target = up;
+        }
+        if (target.style.display !== 'none') {
+          target.style.setProperty('display', 'none', 'important');
+        }
+      });
+    } catch (e) {}
+  };
+
+  hide();
+
+  new MutationObserver(hide).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+}
+
+
+/**
  * Removes a CSS class from matching elements and watches for re-addition.
  * Useful for removing classes that trigger paywall overlays.
  * args[0]: class name to remove
@@ -1090,5 +1261,10 @@ export const SCRIPTLET_MAP = new Map([
   ['nowoif',                  preventWindowOpen], // uBlock alias
   ['no-window-open-if',       preventWindowOpen], // alt name
   ['no-eval-if',              noEvalIf],
-  ['json-prune',              jsonPrune]
+  ['json-prune',              jsonPrune],
+  ['hide-element',            hideElement],
+  ['hide-upward',             hideUpward],
+  ['release-scroll-lock',     releaseScrollLock],
+  ['protect-stylesheets',     protectStylesheets],
+  ['prevent-innerhtml-clear',  preventInnerHTMLClear]
 ]);

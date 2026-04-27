@@ -11,7 +11,7 @@ Thanks for your interest. Here's what you need to know.
 
 ## Ground Rules
 
-- This project is licensed under the **PolyForm Noncommercial License**. By contributing, you agree your changes fall under the same terms.
+- This project is licensed under the **GNU General Public License v3 (GPLv3)**. By contributing, you agree your changes fall under the same terms.
 - Keep PRs focused. One fix or feature per PR.
 - Don't break the security model. The `MessageChannel` handshake, session tokens, and origin checks exist for a reason — changes that weaken these will not be accepted.
 - AI-assisted contributions are fine, but you are responsible for reviewing and understanding what you submit.

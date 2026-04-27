@@ -1,7 +1,7 @@
 /**
- * Chroma Ad-Blocker — Popup UI Controller
- * Manages the extension popup: feature toggles, stats display,
- * subscription management, proxy router configuration, and request log.
+ * Chroma Ad-Blocker — Settings UI Controller
+ * Manages the extension settings: feature toggles, stats display,
+ * subscription management, and proxy router configuration.
  */
 
 'use strict';
@@ -82,6 +82,7 @@ async function init() {
     ['toggleMerch',        'hideMerch',                true],
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
+    ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
   ];
 
   const syncUI = (cfg, masterOn) => {
@@ -202,17 +203,47 @@ async function init() {
 
     $('toggleWhitelist').addEventListener('change', async (e) => {
       const isChecked = e.target.checked;
-      
+
       if (isChecked) {
         await notifyBackground({ type: MSG.WHITELIST_ADD, domain: baseDomain });
       } else {
         await notifyBackground({ type: MSG.WHITELIST_REMOVE, domain: baseDomain });
       }
-      
+
       chrome.tabs.reload(activeTab.id);
     });
+
+    // ─── FPR PER-SITE WHITELIST ─────
+    const rowFpr = $('rowFprWhitelist');
+    const fprToggle = $('toggleFingerprintRandomization');
+    const fprSiteToggle = $('toggleFprWhitelist');
+
+    const updateFprRowVisibility = () => {
+      const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled').checked);
+      if (rowFpr) rowFpr.style.display = visible ? '' : 'none';
+    };
+    updateFprRowVisibility();
+    if (fprToggle) fprToggle.addEventListener('change', updateFprRowVisibility);
+    $('toggleEnabled').addEventListener('change', updateFprRowVisibility);
+
+    const { fprWhitelist = [] } = await notifyBackground({ type: MSG.FPR_WHITELIST_GET }) || { fprWhitelist: [] };
+    if (fprSiteToggle) fprSiteToggle.checked = fprWhitelist.includes(baseDomain);
+
+    if (fprSiteToggle) {
+      fprSiteToggle.addEventListener('change', async (e) => {
+        const isChecked = e.target.checked;
+        if (isChecked) {
+          await notifyBackground({ type: MSG.FPR_WHITELIST_ADD, domain: baseDomain });
+        } else {
+          await notifyBackground({ type: MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
+        }
+        chrome.tabs.reload(activeTab.id);
+      });
+    }
   } else {
     $('toggleWhitelist').parentElement.parentElement.classList.add('disabled');
+    const rowFpr = $('rowFprWhitelist');
+    if (rowFpr) rowFpr.style.display = 'none';
   }
 
   // ─── EXTERNAL LINKS ─────
@@ -252,7 +283,8 @@ async function init() {
       return 0;
     });
 
-    const { appliedNetworkRuleCount = 0 } = await chrome.storage.local.get('appliedNetworkRuleCount');
+    const { appliedNetworkRuleCount = 0, appliedNetworkRulesPerSub = {} } =
+      await chrome.storage.local.get(['appliedNetworkRuleCount', 'appliedNetworkRulesPerSub']);
     const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
     if (subscriptions.length === 0) {
@@ -280,7 +312,10 @@ async function init() {
       let countText = '';
       if (sub.ruleCount) {
         const parts = [];
-        if (!sub.cosmeticOnly && sub.ruleCount.network > 0) parts.push(`${sub.ruleCount.network.toLocaleString()} network`);
+        if (!sub.cosmeticOnly && sub.ruleCount.network > 0) {
+          const applied = sub.enabled ? (appliedNetworkRulesPerSub[sub.id] || 0) : 0;
+          parts.push(`${applied.toLocaleString()} / ${sub.ruleCount.network.toLocaleString()} network`);
+        }
         if (sub.ruleCount.cosmetic > 0) parts.push(`${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`);
         if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
         countText = parts.join(' · ');
@@ -294,6 +329,10 @@ async function init() {
         ? `<div style="font-size:10px;color:var(--c-red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${safeError}">Error: ${safeError}</div>`
         : '';
 
+      const deleteBtnHtml = sub.isCustom
+        ? `<button data-id="${safeId}" class="sub-delete-btn reset-btn" style="padding: 1px 4px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 12px;" title="Remove List">✕</button><span style="display:inline-block; width:1px; height:14px; background:rgba(255,255,255,0.08); align-self:center;"></span>`
+        : '';
+
       row.innerHTML = `
         <div class="toggle-info">
           <div class="name">${safeName}</div>
@@ -302,6 +341,7 @@ async function init() {
           ${errorText}
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          ${deleteBtnHtml}
           <button data-id="${safeId}" class="sub-refresh-btn reset-btn" style="font-size:9px;padding:3px 8px;" title="Force refresh">↻</button>
           <label class="switch">
             <input type="checkbox" class="sub-toggle" data-id="${safeId}" ${sub.enabled ? 'checked' : ''} />
@@ -335,9 +375,89 @@ async function init() {
         }, 1500); // 1500ms visual feedback delay before resetting refresh button state
       });
     });
+
+    // Delete button handler (custom lists only)
+    list.querySelectorAll('.sub-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const id = e.target.dataset.id;
+        if (!confirm('Remove this filter list?')) return;
+        await notifyBackground({ type: MSG.SUBSCRIPTION_REMOVE, id });
+        loadSubscriptionUI();
+      });
+    });
   }
 
   await loadSubscriptionUI();
+
+  // ─── ADD-SUBSCRIPTION FORM ─────
+  (() => {
+    const addBtn    = $('addSubscriptionBtn');
+    const form      = $('addSubscriptionForm');
+    const nameInput = $('newSubName');
+    const urlInput  = $('newSubUrl');
+    const errEl     = $('newSubError');
+    const submitBtn = $('newSubAddBtn');
+    const cancelBtn = $('newSubCancelBtn');
+    if (!addBtn || !form) return;
+
+    const showError = (m) => { errEl.textContent = m; errEl.style.display = 'block'; };
+    const closeForm = () => {
+      form.style.display = 'none';
+      nameInput.value = '';
+      urlInput.value = '';
+      errEl.style.display = 'none';
+      errEl.textContent = '';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Add';
+    };
+
+    addBtn.addEventListener('click', () => {
+      if (form.style.display === 'none') {
+        form.style.display = 'block';
+        urlInput.focus();
+      } else {
+        closeForm();
+      }
+    });
+    cancelBtn.addEventListener('click', closeForm);
+
+    const submitAdd = async () => {
+      errEl.style.display = 'none';
+      const url = urlInput.value.trim();
+      if (!url) return showError('URL required.');
+      let parsed;
+      try { parsed = new URL(url); } catch { return showError('Invalid URL.'); }
+      if (parsed.protocol !== 'https:') return showError('Only https:// URLs are allowed.');
+
+      const name = nameInput.value.trim() || parsed.hostname;
+      const id = 'custom_' + Date.now();
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Adding…';
+
+      const addRes = await notifyBackground({ type: MSG.SUBSCRIPTION_ADD, subscription: { id, name, url } });
+      if (!addRes || !addRes.ok) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add';
+        return showError(addRes?.error || 'Add failed.');
+      }
+
+      const refRes = await notifyBackground({ type: MSG.SUBSCRIPTION_REFRESH, id });
+      if (!refRes || !refRes.ok) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add';
+        showError('Added, but fetch failed: ' + (refRes?.error || 'unknown'));
+        await loadSubscriptionUI();
+        return;
+      }
+
+      closeForm();
+      await loadSubscriptionUI();
+    };
+
+    submitBtn.addEventListener('click', submitAdd);
+    urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
+    nameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
+  })();
 
   // ─── PROXY ROUTER UI ─────
   async function loadProxyRouterUI() {
@@ -398,6 +518,7 @@ async function init() {
               <span class="proxy-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 5px rgba(255,255,255,0.1);"></span>
               <span class="proxy-status-text" style="font-size: 9px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Checking...</span>
               <button class="reset-btn proxy-refresh-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; opacity: 0.5;" title="Refresh Connection">↻</button>
+              <span style="display:inline-block; width:1px; height:12px; background:rgba(255,255,255,0.08); align-self:center;"></span>
               <button class="reset-btn proxy-clear-settings-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; color: var(--c-red); opacity: 0.7;" title="Clear Settings">✕</button>
             </div>
           </div>
@@ -539,6 +660,7 @@ async function init() {
             </div>
             <div style="display:flex;align-items:center;gap:12px;">
               <button class="reset-btn d-del-btn" style="padding: 1px 4px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;" title="Remove Domain">✕</button>
+              <span style="display:inline-block; width:1px; height:14px; background:rgba(255,255,255,0.08); align-self:center;"></span>
               <label class="switch switch-sm">
                 <input type="checkbox" class="d-toggle" ${d.enabled ? 'checked' : ''} />
                 <span class="slider"></span>

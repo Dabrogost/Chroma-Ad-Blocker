@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "minimum_chrome_version": "120",
+  "minimum_chrome_version": "122",
   "name": "Chroma Ad-Blocker",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "description": "Multi-layered ad-blocker using ad-acceleration, network blocking, and cosmetic filtering.",
   "permissions": [
     "declarativeNetRequest",
