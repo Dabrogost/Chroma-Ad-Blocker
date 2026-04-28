@@ -3,6 +3,7 @@
 
 dailymail.com,dailymail.co.uk##+js(hide-upward, .dmg-ads-container, li)
 youtube.com##+js(release-scroll-lock)
+wowhead.com##+js(hide-element, #zaf-adhesion-container)
 bellyfull.net,allrecipes.com,foodnetwork.com,epicurious.com,bbcgoodfood.com,thekitchn.com,seriouseats.com,recipetineats.com,smittenkitchen.com,budgetbytes.com,pinchofyum.com,sallysbakingaddiction.com,minimalistbaker.com,thewoksoflife.com,americastestkitchen.com,cooking.nytimes.com,weelicious.com##+js(protect-stylesheets)
 bellyfull.net,allrecipes.com,foodnetwork.com,epicurious.com,bbcgoodfood.com,thekitchn.com,seriouseats.com,recipetineats.com,smittenkitchen.com,budgetbytes.com,pinchofyum.com,sallysbakingaddiction.com,minimalistbaker.com,thewoksoflife.com,americastestkitchen.com,cooking.nytimes.com,weelicious.com##+js(prevent-innerhtml-clear)
 bellyfull.net,allrecipes.com,foodnetwork.com,epicurious.com,bbcgoodfood.com,thekitchn.com,seriouseats.com,recipetineats.com,smittenkitchen.com,budgetbytes.com,pinchofyum.com,sallysbakingaddiction.com,minimalistbaker.com,thewoksoflife.com,americastestkitchen.com,cooking.nytimes.com,weelicious.com##+js(release-scroll-lock)

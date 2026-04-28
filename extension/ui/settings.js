@@ -275,7 +275,15 @@ async function init() {
     const list = document.getElementById('subscriptionList');
     if (!list) return;
 
-    const subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+    let subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+
+    // Filter out chroma-hotfix if it has 0 rules (as it is rarely used)
+    subscriptions = subscriptions.filter(s => {
+      if (s.id !== 'chroma-hotfix') return true;
+      const totalRules = (s.ruleCount?.network || 0) + (s.ruleCount?.cosmetic || 0) + (s.ruleCount?.scriptlet || 0);
+      return totalRules > 0;
+    });
+
     // Sort: chroma-hotfix always at the bottom
     subscriptions.sort((a, b) => {
       if (a.id === 'chroma-hotfix') return 1;
