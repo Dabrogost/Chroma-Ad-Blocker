@@ -63,7 +63,7 @@ function createMockElement(tag = 'div') {
   };
 }
 
-const scriptPath = path.join(__dirname, '..', 'extension', 'yt_handler.js');
+const scriptPath = path.join(__dirname, '..', 'extension', 'content', 'yt_handler.js');
 const youtubeJsCode = fs.readFileSync(scriptPath, 'utf8');
 
 // ─── AD FIELD STRIPPING ─────

@@ -477,12 +477,41 @@ async function init() {
     if (!container || !addBtn) return;
 
     let proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+    proxyConfigs.forEach(pc => {
+      pc.credentialAction = 'preserve';
+      delete pc.username;
+      delete pc.password;
+      delete pc.authIv;
+      delete pc.authCipher;
+    });
 
     let saveTimeout = null;
+    const buildProxySavePayload = () => proxyConfigs
+      .filter(pc => pc.accepted === true)
+      .map(pc => {
+      const action = pc.credentialAction || 'preserve';
+      const hasReplacement = !!(pc.username && pc.password);
+      const out = {
+        id: pc.id,
+        name: pc.name,
+        host: pc.host,
+        port: pc.port,
+        type: pc.type,
+        accepted: pc.accepted,
+        domains: pc.domains,
+        credentialAction: action === 'replace' && !hasReplacement ? 'preserve' : action
+      };
+      if (out.credentialAction === 'replace') {
+        out.username = pc.username || '';
+        out.password = pc.password || '';
+      }
+      return out;
+    });
+
     const saveAllConfigs = (immediate = false) => {
       if (saveTimeout) clearTimeout(saveTimeout);
       const perform = async () => {
-        await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfigs });
+        await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfigs: buildProxySavePayload() });
         saveTimeout = null;
       };
       if (immediate) {
@@ -512,8 +541,12 @@ async function init() {
           </select>
           <input type="text" class="chroma-input proxy-host" value="${escapeHTML(pc.host)}" placeholder="Proxy Host (e.g. 1.2.3.4)" />
           <input type="text" class="chroma-input proxy-port" value="${escapeHTML(pc.port)}" placeholder="Port (e.g. 80)" />
-          <input type="text" class="chroma-input proxy-user" value="${escapeHTML(pc.username)}" placeholder="Username" />
-          <input type="password" class="chroma-input proxy-pass" value="${escapeHTML(pc.password)}" placeholder="Password" />
+          <input type="text" class="chroma-input proxy-user" value="" placeholder="Username" />
+          <input type="password" class="chroma-input proxy-pass" value="" placeholder="${pc.hasCredentials ? 'Password saved' : 'Password'}" />
+          <div style="grid-column: 1 / -1; font-size: 10px; color: var(--text-muted); margin-top: -2px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span>${pc.hasCredentials ? 'Credentials saved locally. Leave fields blank to keep them.' : 'Credentials are stored locally in encrypted extension storage and used for proxy auth.'}</span>
+            <button class="reset-btn proxy-clear-credentials-btn" style="display: ${pc.hasCredentials ? 'inline-block' : 'none'}; padding: 1px 6px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;">Clear</button>
+          </div>
           <div class="proxy-auth-note" style="grid-column: 1 / -1; font-size: 10px; color: var(--text-muted); margin-top: -2px; display: none;">SOCKS auth isn't supported by Chrome — use IP whitelisting on your provider.</div>
           <div style="grid-column: 1 / -1; display: flex; gap: 8px;">
             <button class="reset-btn proxy-accept-btn" style="flex: 1; padding: 6px;">Accept Settings</button>
@@ -556,23 +589,44 @@ async function init() {
       const userInput = card.querySelector('.proxy-user');
       const passInput = card.querySelector('.proxy-pass');
       const authNote = card.querySelector('.proxy-auth-note');
+      const clearCredentialsBtn = card.querySelector('.proxy-clear-credentials-btn');
+
+      const resetCredentialStateAfterSave = () => {
+        delete pc.username;
+        delete pc.password;
+        pc.credentialAction = 'preserve';
+      };
+
+      const stageCredentialsFromInputs = () => {
+        const username = userInput.value.trim();
+        const password = passInput.value;
+        if (username || password) {
+          pc.credentialAction = 'replace';
+          pc.username = username;
+          pc.password = password;
+        } else if (pc.credentialAction !== 'clear') {
+          resetCredentialStateAfterSave();
+        }
+      };
 
       // Chrome's webRequest.onAuthRequired only fires for HTTP(S) 407 challenges,
       // so SOCKS4/5 username+password auth can never succeed — hide the fields.
-      const applyAuthVisibility = () => {
+      const applyAuthVisibility = (clearForSocks = false) => {
         const isSocks = typeSelect.value === 'SOCKS4' || typeSelect.value === 'SOCKS5';
         userInput.style.display = isSocks ? 'none' : '';
         passInput.style.display = isSocks ? 'none' : '';
         if (authNote) authNote.style.display = isSocks ? 'block' : 'none';
-        if (isSocks) {
+        if (isSocks && clearForSocks) {
           if (userInput.value) userInput.value = '';
           if (passInput.value) passInput.value = '';
-          pc.username = null;
-          pc.password = null;
+          pc.credentialAction = 'clear';
+          pc.hasCredentials = false;
+          delete pc.username;
+          delete pc.password;
         }
       };
       applyAuthVisibility();
-      typeSelect.addEventListener('change', applyAuthVisibility);
+      typeSelect.addEventListener('change', () => applyAuthVisibility(true));
       const domainInput = card.querySelector('.proxy-domain-input');
       const addDomainBtn = card.querySelector('.proxy-add-domain-btn');
       const domainList = card.querySelector('.proxy-domain-list');
@@ -581,6 +635,19 @@ async function init() {
       const delServerBtn = card.querySelector('.proxy-del-server-btn');
       const refreshBtn = card.querySelector('.proxy-refresh-btn');
       const globalToggle = card.querySelector('.proxy-global-toggle');
+
+      clearCredentialsBtn?.addEventListener('click', async () => {
+        userInput.value = '';
+        passInput.value = '';
+        pc.credentialAction = 'clear';
+        pc.hasCredentials = false;
+        delete pc.username;
+        delete pc.password;
+        await saveAllConfigs(true);
+        resetCredentialStateAfterSave();
+        container.innerHTML = '';
+        proxyConfigs.forEach((p, i) => container.appendChild(renderProxyCard(p, i)));
+      });
 
       const updateGlobalUI = async () => {
         if (!globalToggle) return;
@@ -705,6 +772,10 @@ async function init() {
 
       globalToggle?.addEventListener('change', async (e) => {
         const isChecked = e.target.checked;
+        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain route matches. Enable it?')) {
+          e.target.checked = false;
+          return;
+        }
         await notifyBackground({ 
           type: MSG.CONFIG_SET, 
           config: { 
@@ -745,11 +816,16 @@ async function init() {
         pc.type = typeSelect.value;
         pc.host = host;
         pc.port = portInput.value.trim();
-        pc.username = userInput.value.trim() || null;
-        pc.password = passInput.value.trim() || null;
+        stageCredentialsFromInputs();
+        if (pc.credentialAction === 'replace' && (!pc.username || !pc.password)) {
+          alert('Enter both username and password, or leave both blank to keep saved credentials.');
+          return;
+        }
         pc.accepted = true;
         
         await saveAllConfigs(true); // Force immediate save and wait for background to sync
+        if (pc.credentialAction === 'replace') pc.hasCredentials = true;
+        resetCredentialStateAfterSave();
         
         container.innerHTML = '';
         proxyConfigs.forEach((p, i) => container.appendChild(renderProxyCard(p, i)));
@@ -757,7 +833,7 @@ async function init() {
 
       clearBtn.addEventListener('click', async () => {
         pc.accepted = false;
-        await saveAllConfigs();
+        await saveAllConfigs(true);
         container.innerHTML = '';
         proxyConfigs.forEach((p, i) => container.appendChild(renderProxyCard(p, i)));
       });
@@ -779,7 +855,7 @@ async function init() {
           if (!pc.domains.find(x => x.host === d)) {
             pc.domains.push({ host: d, enabled: true });
             domainInput.value = '';
-            await saveAllConfigs();
+            if (pc.accepted) await saveAllConfigs();
             renderDomains();
           }
         }
@@ -789,15 +865,16 @@ async function init() {
         if (e.key === 'Enter') addDomainBtn.click();
       });
 
-      [typeSelect, hostInput, portInput, userInput, passInput].forEach(el => {
+      [typeSelect, hostInput, portInput].forEach(el => {
         el.addEventListener('input', () => {
           pc.type = typeSelect.value;
           pc.host = hostInput.value.trim();
           pc.port = portInput.value.trim();
-          pc.username = userInput.value.trim();
-          pc.password = passInput.value.trim();
-          saveAllConfigs();
         });
+      });
+
+      [userInput, passInput].forEach(el => {
+        el.addEventListener('input', stageCredentialsFromInputs);
       });
 
       return card;
@@ -820,10 +897,10 @@ async function init() {
         type: 'PROXY',
         host: '',
         port: '',
-        username: '',
-        password: '',
         accepted: false,
-        domains: []
+        domains: [],
+        hasCredentials: false,
+        credentialAction: 'preserve'
       };
       proxyConfigs.push(newPc);
       renderAll();

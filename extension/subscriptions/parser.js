@@ -44,12 +44,13 @@ const SKIP_OPTIONS = new Set([
  * @returns {'comment'|'network'|'exception'|'cosmetic'|'cosmetic-exception'|'scriptlet'|'extended-css'}
  */
 function classifyLine(line) {
-  if (!line || line.startsWith('!') || line.startsWith('[') || line.startsWith('#')) return 'comment';
+  if (!line || line.startsWith('!') || line.startsWith('[')) return 'comment';
   if (line.includes('##+js(')) return 'scriptlet';
   if (line.startsWith('@@')) return 'exception';
   if (line.includes('#@#')) return 'cosmetic-exception';
   if (line.includes('#?#')) return 'extended-css'; // Procedural — not supported
   if (line.includes('##')) return 'cosmetic';
+  if (line.startsWith('#')) return 'comment';
   return 'network';
 }
 
@@ -111,7 +112,13 @@ function parseOptions(optionsStr) {
     }
 
     // Negated resource types — no clean DNR equivalent, skipped
-    if (trimmed.startsWith('~')) continue;
+    if (trimmed.startsWith('~')) {
+      if (RESOURCE_TYPE_MAP[trimmed.slice(1)]) {
+        result.hasSkipOption = true;
+        return result;
+      }
+      continue;
+    }
 
     const mappedType = RESOURCE_TYPE_MAP[trimmed];
     if (mappedType) {
@@ -237,6 +244,73 @@ function translateScriptletRegex(pattern) {
   return `/${regexStr}/`;
 }
 
+function splitScriptletArgs(inner) {
+  const out = [];
+  let current = '';
+  let quote = null;
+  let escape = false;
+  let inRegex = false;
+
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+
+    if (escape) {
+      current += ch;
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      current += ch;
+      escape = true;
+      continue;
+    }
+
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+
+    if (inRegex) {
+      current += ch;
+      if (ch === '/') inRegex = false;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+
+    if (ch === '/' && current.trim() === '') {
+      inRegex = true;
+      current += ch;
+      continue;
+    }
+
+    if (ch === ',') {
+      out.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += ch;
+  }
+
+  out.push(current.trim());
+  return out;
+}
+
+function unquoteScriptletArg(arg) {
+  if (arg.length < 2) return arg;
+  const first = arg[0];
+  const last = arg[arg.length - 1];
+  if ((first !== '"' && first !== "'") || first !== last) return arg;
+  return arg.slice(1, -1).replace(new RegExp(`\\\\${first}`, 'g'), first);
+}
+
 /**
  * Parses a scriptlet rule line. Stored as opaque data — Phase 2 engine executes.
  * @param {string} line
@@ -255,7 +329,7 @@ function parseScriptletRule(line) {
     const inner = scriptletPart.slice(0, closingParen).trim();
     if (!inner) return null;
 
-    const parts      = inner.split(',').map(s => s.trim());
+    const parts      = splitScriptletArgs(inner).map(unquoteScriptletArg);
     const scriptletName = parts[0];
     const args       = parts.slice(1);
 

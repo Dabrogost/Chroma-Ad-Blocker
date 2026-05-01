@@ -41,7 +41,7 @@ function createMockElement(tag = 'div') {
   return el;
 }
 
-const contentJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content.js'), 'utf8');
+const contentJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'content.js'), 'utf8');
 
 // ─── CONTENT SCRIPT GENERIC FUNCTIONALITY ─────
 test('Content script generic functionality', async (t) => {

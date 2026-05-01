@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const interceptorJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'interceptor.js'), 'utf8');
+const interceptorJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'interceptor.js'), 'utf8');
 
 const makeNative = (fn) => {
   fn.toString = () => 'function () { [native code] }';
@@ -168,4 +168,3 @@ test('Security Hardening - Bridge Lockdown', async (t) => {
     assert.strictEqual(sandbox.window.__CHROMA_INTERNAL__, undefined, 'Bridge should NOT exist on example.com');
   });
 });
-

@@ -10,7 +10,7 @@
 
 import { SCRIPTLET_MAP } from './lib.js';
 
-const DEBUG = true;
+const DEBUG = false;
 
 // FPR is registered via chrome.scripting.registerContentScripts (not via the
 // userScripts API used for subscription scriptlets) because the scripting API
@@ -84,7 +84,11 @@ const CHUNK_SIZE = 100;
 
 async function _syncUserScriptsImpl() {
   try {
-    const { subscriptionScriptletRules = [] } = await chrome.storage.local.get(['subscriptionScriptletRules']);
+    const {
+      subscriptionScriptletRules = [],
+      whitelist = []
+    } = await chrome.storage.local.get(['subscriptionScriptletRules', 'whitelist']);
+    const excludeMatches = whitelistToExcludeMatches(whitelist);
 
     // Clear existing registered scripts
     const existing = await chrome.userScripts.getScripts();
@@ -124,13 +128,15 @@ async function _syncUserScriptsImpl() {
       const argsStr = JSON.stringify(rule.args || []);
       const code = `(${fn.toString()})(${argsStr});`;
 
-      userScripts.push({
+      const script = {
         id: `scriptlet_${++scriptCounter}`,
         matches: matches,
         js: [{ code }],
         runAt: rule.runAt || 'document_start',
         world: 'MAIN'
-      });
+      };
+      if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
+      userScripts.push(script);
     }
 
     if (userScripts.length === 0) return;
@@ -279,6 +285,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
       if (DEBUG) console.log('[Chroma FPR] Config changed, re-syncing.');
       syncFpr();
     }
+  }
+  if (changes.whitelist) {
+    if (DEBUG) console.log('[Chroma Scriptlets] Whitelist changed, re-syncing userScripts.');
+    syncUserScripts();
   }
   if (changes.whitelist || changes.fprWhitelist) {
     if (DEBUG) console.log('[Chroma FPR] Whitelist changed, re-syncing.');

@@ -18,6 +18,7 @@ let _proxyTestLock = Promise.resolve();
 // older PAC win at chrome.proxy.settings.set().
 let _syncQueue = Promise.resolve();
 const PROXY_TEST_DOMAIN = 'icanhazip.com';
+const VALID_PAC_TYPES = new Set(['PROXY', 'HTTPS', 'SOCKS4', 'SOCKS5']);
 const PROXY_DOMAIN_EXPANSION = {
   'youtube.com':   ['googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com'],
   'twitch.tv':     ['ttvnw.net', 'jtvnw.net', 'twitchcdn.net'],
@@ -54,47 +55,64 @@ function expandDomains(domains) {
 }
 
 function getProxyString(pc) {
-  let { host, port, type: pcType } = pc;
-  if (!host || !port) return "'DIRECT'";
+  const type = VALID_PAC_TYPES.has(pc.type) ? pc.type : null;
+  const host = typeof pc.host === 'string' ? pc.host : '';
+  const port = Number(pc.port);
 
-  // Prioritize explicit type if present, otherwise sniff from host prefix
-  let type = pcType || 'PROXY';
-  let cleanHost = host;
-
-  if (host.startsWith('socks5://')) {
-    if (!pcType) type = 'SOCKS5';
-    cleanHost = host.replace('socks5://', '');
-  } else if (host.startsWith('socks4://')) {
-    if (!pcType) type = 'SOCKS4';
-    cleanHost = host.replace('socks4://', '');
-  } else if (host.startsWith('socks://')) {
-    if (!pcType) type = 'SOCKS';
-    cleanHost = host.replace('socks://', '');
-  } else if (host.startsWith('https://')) {
-    if (!pcType) type = 'HTTPS';
-    cleanHost = host.replace('https://', '');
-  } else if (host.startsWith('http://')) {
-    if (!pcType) type = 'PROXY';
-    cleanHost = host.replace('http://', '');
+  if (!type || !host || !Number.isInteger(port) || port < 1 || port > 65535) {
+    return "'DIRECT'";
   }
 
-  // If the user embedded a port in the host string, it takes precedence —
-  // it reflects more recent intent than the separately-stored port field.
-  let effectivePort = port;
-  if (cleanHost.includes(':')) {
-    const [h, p] = cleanHost.split(':');
-    cleanHost = h;
-    if (p) effectivePort = p;
-  }
+  return JSON.stringify(`${type} ${host}:${port}`);
+}
 
-  if (type === 'SOCKS5') {
-    return `"SOCKS5 ${cleanHost}:${effectivePort}"`;
-  }
-  if (type === 'SOCKS4' || type === 'SOCKS') {
-    return `"SOCKS4 ${cleanHost}:${effectivePort}"`;
-  }
-  // Default to PROXY (HTTP) for better compatibility unless HTTPS was explicitly requested
-  return `"${type} ${cleanHost}:${effectivePort}"`;
+function isSafeHost(host) {
+  return typeof host === 'string' &&
+    host.length > 0 &&
+    host.length <= 253 &&
+    /^[a-z0-9.-]+$/i.test(host) &&
+    !host.includes('..') &&
+    !host.startsWith('.') &&
+    !host.endsWith('.');
+}
+
+function isSafeProxyConfig(pc) {
+  return !!(
+    pc &&
+    pc.accepted === true &&
+    VALID_PAC_TYPES.has(pc.type) &&
+    isSafeHost(pc.host) &&
+    Number.isInteger(Number(pc.port)) &&
+    Number(pc.port) >= 1 &&
+    Number(pc.port) <= 65535
+  );
+}
+
+function hasStoredAuth(pc) {
+  return !!(pc && pc.authIv && pc.authCipher);
+}
+
+function getEnabledRouteDomains(pc) {
+  if (!Array.isArray(pc.domains)) return [];
+  return pc.domains
+    .filter(d => d && d.enabled !== false && typeof d.host === 'string')
+    .map(d => d.host)
+    .filter(h => /^[a-z0-9.-]+$/i.test(h) && !h.includes('..'));
+}
+
+function findAuthProxyConfig(proxyConfigs, challengerHost, challengerPort) {
+  const host = String(challengerHost || '').toLowerCase().replace(/\.$/, '');
+  const accepted = proxyConfigs.filter(p =>
+    isSafeProxyConfig(p) &&
+    hasStoredAuth(p) &&
+    String(p.port) === String(challengerPort)
+  );
+
+  const exact = accepted.find(p => p.host === host);
+  if (exact) return exact;
+
+  const socks = accepted.filter(p => p.type === 'SOCKS4' || p.type === 'SOCKS5');
+  return socks.length === 1 ? socks[0] : null;
 }
 
 export function syncProxyState(proxyConfigs) {
@@ -109,18 +127,33 @@ async function _syncProxyStateImpl(proxyConfigs) {
   const { config } = await chrome.storage.local.get('config');
   const globalEnabled = config?.globalProxyEnabled === true;
   const globalId = config?.globalProxyId;
+  const validGlobalProxy = globalEnabled && globalId != null
+    ? proxyConfigs.find(pc => pc.id === globalId && isSafeProxyConfig(pc))
+    : null;
+
+  if (globalEnabled && globalId != null && !validGlobalProxy) {
+    await chrome.storage.local.set({
+      config: {
+        ...config,
+        globalProxyEnabled: false,
+        globalProxyId: null
+      }
+    });
+    return;
+  }
 
   let scriptData = "function FindProxyForURL(url, host) { \n";
   let hasSpecificRules = false;
   let fallbackStr = "'DIRECT'";
 
   for (const pc of proxyConfigs) {
-    const { host, port, domains = [], accepted, id } = pc;
-    if (!accepted || !host || !port) continue;
+    if (!isSafeProxyConfig(pc)) continue;
+
+    const { id } = pc;
 
     const proxyStr = getProxyString(pc);
     const isTest = (id === _currentlyTestingId);
-    const activeDomains = expandDomains(domains.filter(d => d.enabled).map(d => d.host));
+    const activeDomains = expandDomains(getEnabledRouteDomains(pc));
 
     // 1. Add Domain-Specific Rules
     if (activeDomains.length > 0 || isTest) {
@@ -134,7 +167,7 @@ async function _syncProxyStateImpl(proxyConfigs) {
     }
 
     // 2. Identify the Global Fallback
-    if (id === globalId && globalEnabled) {
+    if (validGlobalProxy && id === globalId) {
       fallbackStr = proxyStr;
     }
   }
@@ -171,9 +204,11 @@ export function runProxyTest(proxyId) {
     await currentLock;
     try {
       const { proxyConfigs = [] } = await chrome.storage.local.get('proxyConfigs');
-      const pc = proxyConfigs.find(p => p.id === proxyId) || proxyConfigs[0];
+      const pc = proxyId === undefined
+        ? proxyConfigs.find(isSafeProxyConfig)
+        : proxyConfigs.find(p => p.id === proxyId && isSafeProxyConfig(p));
 
-      if (!pc || !pc.host || !pc.port || !pc.accepted) {
+      if (!pc) {
         return { ok: false, error: 'Proxy not configured' };
       }
 
@@ -193,7 +228,7 @@ export function runProxyTest(proxyId) {
         clearTimeout(timeoutId);
         if (res.ok) {
           const ip = (await res.text()).trim();
-          return { ok: true, ip };
+          return { ok: true, proxyId: pc.id, ip };
         }
         return { ok: false, error: `HTTP ${res.status}` };
       } catch (fetchErr) {
@@ -225,7 +260,13 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
         if (config?.globalProxyId) {
           const stillExists = newConfigs.some(pc => pc.id === config.globalProxyId);
           if (!stillExists) {
-            await chrome.storage.local.set({ config: { ...config, globalProxyId: null } });
+            await chrome.storage.local.set({
+              config: {
+                ...config,
+                globalProxyEnabled: false,
+                globalProxyId: null
+              }
+            });
           }
         }
       }
@@ -243,14 +284,11 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
   }
 });
 
-// Initialize proxy state on startup and handle migration
+// Initialize proxy state on startup and drop legacy single-config storage.
 chrome.storage.local.get(['proxyConfig', 'proxyConfigs']).then(async ({ proxyConfig, proxyConfigs }) => {
   if (proxyConfig && !proxyConfigs) {
-    // Migrate legacy single config to new array format
-    const migrated = { ...proxyConfig, id: Date.now(), name: 'Main Server' };
-    await chrome.storage.local.set({ proxyConfigs: [migrated] });
     await chrome.storage.local.remove('proxyConfig');
-    syncProxyState([migrated]);
+    syncProxyState([]);
   } else if (proxyConfigs) {
     syncProxyState(proxyConfigs);
   }
@@ -281,34 +319,19 @@ chrome.webRequest.onAuthRequired.addListener(
         return;
       }
 
-      // Find the proxy config that matches the challenger
-      const challengerHost = details.challenger.host;
-      const challengerPort = details.challenger.port.toString();
+      const challengerHost = details.challenger?.host;
+      const challengerPort = details.challenger?.port;
+      const pc = findAuthProxyConfig(proxyConfigs, challengerHost, challengerPort);
 
-      const pc = proxyConfigs.find(p => {
-        const pHost = p.host.replace(/^(https?|socks[45]?):\/\//, '').replace(/\/$/, '');
-        // Match by host and port, or just by port if it's a SOCKS proxy (which sometimes hides its host in auth)
-        const hostMatch = pHost === challengerHost;
-        const portMatch = p.port.toString() === challengerPort;
-        return portMatch && (hostMatch || p.type?.startsWith('SOCKS'));
-      }) || (proxyConfigs.length === 1 ? proxyConfigs[0] : null);
-
-      if (!pc || (!pc.username && !pc.authCipher)) {
+      if (!pc) {
         if (DEBUG) console.warn('[Chroma Ad-Blocker] Proxy auth required but matching credentials missing.');
         callback({ cancel: true });
         return;
       }
 
-      let username = pc.username;
-      let password = pc.password;
-
-      if (pc.authCipher && pc.authIv) {
-        const auth = await decryptAuth(pc.authIv, pc.authCipher);
-        if (auth) {
-          username = auth.username;
-          password = auth.password;
-        }
-      }
+      const auth = await decryptAuth(pc.authIv, pc.authCipher);
+      const username = auth?.username;
+      const password = auth?.password;
 
       if (!username || !password) {
         callback({ cancel: true });

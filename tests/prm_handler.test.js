@@ -137,8 +137,8 @@ function createMockQuerySelector(baseSelection = {}, container = null) {
   };
 }
 
-const primeJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'prm_handler.js'), 'utf8');
-const messagingJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'messaging.js'), 'utf8');
+const primeJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'prm_handler.js'), 'utf8');
+const messagingJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'messaging.js'), 'utf8');
 
 // ─── AMAZON PRIME VIDEO AD ACCELERATION ─────
 test('Amazon Prime Video ad acceleration', async (t) => {

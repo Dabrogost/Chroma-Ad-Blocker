@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'popup.js'), 'utf8');
+const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.js'), 'utf8');
+const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
+const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 
 // ─── POPUP.JS FUNCTIONALITY ─────
 test('popup.js functionality', async (t) => {
@@ -81,7 +83,7 @@ test('popup.js functionality', async (t) => {
             return { ok: true };
           }
           if (msg.type === 'PROXY_CONFIG_GET') {
-            return [{ id: 1, name: 'Main', host: '1.2.3.4', port: '80', username: '', password: '', domains: [], accepted: false }];
+            return [{ id: 1, name: 'Main', host: '1.2.3.4', port: '80', hasCredentials: true, domains: [], accepted: false }];
           }
           if (msg.type === 'PROXY_CONFIG_SET') {
             return { ok: true };
@@ -332,4 +334,18 @@ test('popup.js functionality', async (t) => {
     const result = await sandbox.notifyBackground({ type: 'TEST_ERROR' });
     assert.strictEqual(result, null, 'Should return null on messaging error');
   });
+});
+
+test('UI hardening copy', () => {
+  assert.match(popupHtmlCode, /changes anti-detection network behavior/);
+  assert.match(settingsHtmlCode, /changes anti-detection network behavior/);
+  assert.match(settingsHtmlCode, /<script src="popup\.js"><\/script>/);
+  assert.match(popupJsCode, /Leave fields blank to keep them/);
+  assert.match(popupJsCode, /const action = pc\.credentialAction \|\| 'preserve'/);
+  assert.match(popupJsCode, /\.filter\(pc => pc\.accepted === true\)/);
+  assert.match(popupJsCode, /out\.credentialAction === 'replace'/);
+  assert.match(popupJsCode, /applyAuthVisibility\(true\)/);
+  assert.doesNotMatch(popupJsCode, /\[typeSelect, hostInput, portInput\][\s\S]{0,220}saveAllConfigs\(\)/);
+  assert.match(popupJsCode, /clearBtn\.addEventListener\('click', async \(\) => \{[\s\S]*?pc\.accepted = false;[\s\S]*?await saveAllConfigs\(true\);/);
+  assert.match(popupJsCode, /Global proxy mode can route all browser traffic/);
 });

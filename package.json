@@ -4,7 +4,7 @@
   "description": "Low-resource Manifest V3 ad-blocker using a three-layer strategy: declarative network blocking, ad-acceleration, and cosmetic filtering.",
   "main": "extension/background.js",
   "scripts": {
-    "test": "node --test"
+    "test": "node tests/run-all.js"
   },
   "repository": {
     "type": "git",
