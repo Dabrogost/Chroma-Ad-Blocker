@@ -11,7 +11,7 @@
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
 - **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Features AES-256-GCM encryption for credentials and real-time connectivity verification.
 - **Multi-Part DNR Network Blocking**: Utilizes an 11-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
-- **Live Filter List Subscriptions**: Subscribes to external filter lists (Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance) with automatic refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
+- **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Main-World Safety Exclusions**: Bypasses Chroma's MAIN-world interception layer on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network and cosmetic blocking remain user-controllable through per-domain whitelisting.
@@ -261,7 +261,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
 | `tabs` | Required to read the active tab's URL for whitelist matching in the popup and to reload the tab when the whitelist is toggled. |
 | `alarms` | Powers periodic subscription refresh checks. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
-| `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. |
+| `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
 | `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
 | `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
 | `webRequest` | Used to intercept authentication challenges from proxy servers. |
@@ -290,7 +290,10 @@ Chroma implements several advanced security measures to ensure extension integri
 2. Open `chrome://extensions` in Chrome.
 3. Toggle on **Developer Mode** in the top-right corner.
 4. Click **Load unpacked** and select the `extension/` folder inside the extracted directory.
-5. Done — Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
+5. Enable User Scripts support:
+   - **Chrome 138+**: On the Chroma extension card, click **Details**, then enable **Allow User Scripts**.
+   - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
+6. Done — Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
 
 ## Configuration
 
@@ -329,6 +332,7 @@ Chroma utilizes logic and patterns derived from the following open-source projec
 Chroma subscribes to the following lists to ensure real-time protection:
 
 - **Chroma Hotfix** — Maintainer-controlled list for platform-specific overrides.
+- **Chroma Scriptlet Library** — Bundled Chroma-maintained scriptlet rules for targeted anti-adblock, recipe/blog, and platform compatibility fixes.
 - **Hagezi Pro Mini** — High-performance DNS and ad-blocking rules.
 - **EasyList** — The primary filter for cosmetic ad-blocking and element hiding.
 - **Fanboy Annoyance** — Blocks social widgets, popups, and other non-ad annoyances.
@@ -338,11 +342,18 @@ Chroma subscribes to the following lists to ensure real-time protection:
 
 ---
 
-## Recommended Extensions
+## Recommended Companion Extension
 
-Chroma is not affiliated with the following extensions, but I use them daily in tandem with Chroma for the ultimate browsing experience:
+Chroma is designed to be used without another ad blocker enabled. Running multiple content blockers at the same time can cause overlapping rules, false positives, or broken pages. The only extension I recommend pairing directly with Chroma is:
 
 - **[SponsorBlock](https://chromewebstore.google.com/detail/sponsorblock-for-youtube-s/mnjggcdmjocbbbhaepdhchncahnbgone)** — Skip sponsor segments and other interruptions on YouTube.
+
+## Recommended Alternatives
+
+Chroma is a sideloaded, Chrome/Chromium-focused project. If you do not want to use Chroma, these are excellent alternatives:
+
+- **Chrome / Chromium:** [uBlock Origin Lite](https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh?hl=en) — Store-installed Manifest V3 content blocker for users who prefer the Chrome Web Store path.
+- **Firefox:** [uBlock Origin](https://addons.mozilla.org/firefox/addon/ublock-origin/) + [FoxyProxy](https://getfoxyproxy.org/) — Recommended for users who want full uBlock Origin support plus dedicated proxy management on Firefox.
 
 ---
 

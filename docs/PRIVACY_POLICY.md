@@ -34,7 +34,7 @@ The Extension requires specific permissions to function effectively. Below is a 
 - **`storage` and `unlimitedStorage`**: Save settings, whitelists, proxy configuration, subscription metadata, cached rules, statistics, and request-log data locally.
 - **`tabs`**: Reads the active tab URL for whitelist controls and opens extension pages or links from the popup/settings UI.
 - **`alarms`**: Schedules recurring subscription refresh checks in the MV3 service worker.
-- **`userScripts`**: Registers subscription scriptlets in the page context using Chrome's native userScripts API.
+- **`userScripts`**: Registers subscription scriptlets in the page context using Chrome's native userScripts API. In Chrome 138 and newer, this API also requires the user to enable Chrome's per-extension **Allow User Scripts** toggle.
 - **`scripting`**: Supports supplemental extension-controlled script registration, including fingerprint-randomization logic when enabled.
 - **`proxy`**: Applies browser-level PAC scripts for split-tunnel and global fallback proxy routing.
 - **`webRequest` and `webRequestAuthProvider`**: Responds to proxy authentication challenges when an HTTP/HTTPS proxy requires credentials.
