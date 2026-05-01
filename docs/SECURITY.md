@@ -3,13 +3,14 @@
 We take the security of Chroma Ad-Blocker seriously. If you believe you have found a security vulnerability, please follow the disclosure process below.
 
 **Supported Versions**
-Currently, only the latest version of Chroma Ad-Blocker (the `master` branch) is actively supported with security updates. (Branch: master)
+Currently, only the latest released version of Chroma Ad-Blocker and the `master` branch are actively supported with security updates.
 
 **Reporting a Vulnerability**
 If you discover a vulnerability, please send an email to **dabrogost@gmail.com**. Include a description, reproduction steps, and potential impact. (Private Disclosure)
 
 ## Safe Harbor
 Chroma Ad-Blocker supports responsible security research. We will not pursue legal action against researchers who discover and report vulnerabilities in good faith, provided they: make a reasonable effort to avoid privacy violations or disruption to other users, do not exploit the vulnerability beyond what is necessary to demonstrate it, and report the issue privately before any public disclosure.
+
 ## Disclosure Process
 
 We value the work of developers and security researchers. Once a report is received:

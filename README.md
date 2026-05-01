@@ -117,7 +117,7 @@ graph TD
 
 ## System Layers
 
-### Layer 1: Network-Level Blocking (rules/, background.js, subscriptions/)
+### Layer 1: Network-Level Blocking (extension/rules/, extension/background/background.js, extension/subscriptions/)
 The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into an 11-part system (10 primary sets + 1 specialized recipe layer) covering over 290,000 static DNR rules.
 
 #### Why 290,000+ Rules Do Not Impact Performance
@@ -260,7 +260,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
 | `tabs` | Required to read the active tab's URL for whitelist matching in the popup and to reload the tab when the whitelist is toggled. |
-| `alarms` | Powers the 24-hour subscription refresh cycle. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
+| `alarms` | Powers periodic subscription refresh checks. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
 | `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. |
 | `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
 | `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
