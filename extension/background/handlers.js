@@ -185,14 +185,14 @@ function validateProxyConfig(pc, index) {
 }
 
 function hasEncryptedProxyAuth(pc) {
+  const validBlob = (value, maxLen) => (
+    (typeof value === 'string' && value.length > 0 && value.length <= maxLen) ||
+    (Array.isArray(value) && value.length > 0 && value.length <= maxLen && value.every(n => Number.isInteger(n) && n >= 0 && n <= 255))
+  );
   return !!(
     pc &&
-    typeof pc.authIv === 'string' &&
-    typeof pc.authCipher === 'string' &&
-    pc.authIv.length > 0 &&
-    pc.authIv.length <= MAX_PROXY_AUTH_IV_LEN &&
-    pc.authCipher.length > 0 &&
-    pc.authCipher.length <= MAX_PROXY_AUTH_CIPHER_LEN
+    validBlob(pc.authIv, MAX_PROXY_AUTH_IV_LEN) &&
+    validBlob(pc.authCipher, MAX_PROXY_AUTH_CIPHER_LEN)
   );
 }
 

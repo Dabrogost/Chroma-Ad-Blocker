@@ -18,6 +18,23 @@ function escapeHTML(str) {
 }
 
 const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
+const PROXY_SETTINGS_PATH = 'ui/settings.html#proxy';
+
+function isSettingsPage() {
+  const path = globalThis.location?.pathname || '';
+  return path.endsWith('/settings.html') || path.endsWith('\\settings.html');
+}
+
+function openProxySettings() {
+  const url = chrome.runtime.getURL(PROXY_SETTINGS_PATH);
+  if (chrome.tabs?.create) {
+    chrome.tabs.create({ url });
+  } else if (chrome.runtime.openOptionsPage) {
+    chrome.runtime.openOptionsPage();
+  } else {
+    window.open(url);
+  }
+}
 
 async function init() {
   const manifest = chrome.runtime.getManifest();
@@ -474,8 +491,10 @@ async function init() {
   async function loadProxyRouterUI() {
     const container = $('proxyRouterContainer');
     const addBtn = $('addProxyServerBtn');
-    if (!container || !addBtn) return;
+    if (!container) return;
 
+    const settingsMode = isSettingsPage();
+    if (settingsMode && !addBtn) return;
     let proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
     proxyConfigs.forEach(pc => {
       pc.credentialAction = 'preserve';
@@ -485,12 +504,138 @@ async function init() {
       delete pc.authCipher;
     });
 
-    let saveTimeout = null;
-    const buildProxySavePayload = () => proxyConfigs
+    if (!settingsMode) {
+      const { config: proxyConfigState = {} } = await chrome.storage.local.get('config');
+      if (addBtn) {
+        addBtn.title = 'Manage Proxies';
+        addBtn.onclick = openProxySettings;
+      }
+
+      const renderPopupCard = (pc, index) => {
+        const accepted = !!(pc.accepted && pc.host && pc.port);
+        const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
+        const isGlobal = !!(accepted && proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
+        const routeSummary = isGlobal
+          ? 'global fallback'
+          : `${activeDomainCount} routed`;
+        const card = document.createElement('div');
+        card.className = 'protection-list';
+        card.style.marginBottom = '12px';
+        card.innerHTML = `
+          <div style="padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <div style="min-width: 0;">
+              <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 2px;">${escapeHTML(pc.name || 'Server ' + (index + 1))}</div>
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${accepted ? `${escapeHTML(pc.host)}:${escapeHTML(pc.port)}` : 'Not configured'}</div>
+              <div class="proxy-meta-text" style="font-size: 9px; color: var(--text-dim); margin-top: 2px;">${escapeHTML(pc.type || 'PROXY')} &middot; ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} &middot; ${routeSummary}</div>
+              <div class="proxy-status-line" style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                <span class="proxy-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 5px rgba(255,255,255,0.1);"></span>
+                <span class="proxy-status-text" style="font-size: 9px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${accepted ? 'Checking...' : 'Open settings to configure'}</span>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
+              ${accepted ? `
+                <button class="reset-btn proxy-refresh-btn" style="font-size:9px;padding:3px 8px;" title="Refresh Connection">↻</button>
+                <label class="switch switch-sm" title="Use as Global Fallback">
+                  <input type="checkbox" class="proxy-global-toggle" />
+                  <span class="slider"></span>
+                </label>
+              ` : ''}
+            </div>
+          </div>
+        `;
+
+        const txt = card.querySelector('.proxy-status-text');
+        const dot = card.querySelector('.proxy-status-dot');
+        const meta = card.querySelector('.proxy-meta-text');
+        const refreshBtn = card.querySelector('.proxy-refresh-btn');
+        const globalToggle = card.querySelector('.proxy-global-toggle');
+
+        const setConnectedStatus = (ip = '') => {
+          if (!txt || !dot) return;
+          const ipSuffix = ip ? ` (${ip})` : '';
+          if (globalToggle?.checked) {
+            txt.textContent = `GLOBAL VPN ACTIVE${ipSuffix}`;
+            if (meta) meta.textContent = `${pc.type || 'PROXY'} · ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} · global fallback`;
+          } else if (activeDomainCount > 0) {
+            txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
+            if (meta) meta.textContent = `${pc.type || 'PROXY'} · ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} · ${activeDomainCount} routed`;
+          } else {
+            txt.textContent = `CONNECTED${ipSuffix}`;
+            if (meta) meta.textContent = `${pc.type || 'PROXY'} · ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} · 0 routed`;
+          }
+          dot.style.background = 'var(--c-cyan)';
+          dot.style.boxShadow = '0 0 8px var(--c-cyan)';
+        };
+
+        if (globalToggle) {
+          globalToggle.checked = !!(proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
+          globalToggle.addEventListener('change', async (e) => {
+            const isChecked = e.target.checked;
+            if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
+              e.target.checked = false;
+              return;
+            }
+            const result = await notifyBackground({
+              type: MSG.CONFIG_SET,
+              config: {
+                globalProxyEnabled: isChecked,
+                globalProxyId: isChecked ? pc.id : null
+              }
+            });
+            if (!result || result.ok === false) {
+              e.target.checked = !isChecked;
+              setConnectedStatus();
+              return;
+            }
+            if (isChecked) {
+              document.querySelectorAll('.proxy-global-toggle').forEach(t => {
+                if (t !== globalToggle) t.checked = false;
+              });
+            }
+            await loadProxyRouterUI();
+          });
+        }
+
+        const testConnection = async () => {
+          if (!accepted || !txt || !dot) return;
+          dot.style.background = 'var(--text-muted)';
+          txt.textContent = 'Verifying...';
+          const res = await notifyBackground({ type: MSG.PROXY_TEST, proxyId: pc.id });
+          if (res && res.ok) {
+            setConnectedStatus(res.ip);
+          } else {
+            dot.style.background = 'var(--c-red)';
+            dot.style.boxShadow = '0 0 8px var(--c-red)';
+            txt.textContent = res ? `Offline (${res.error})` : 'Offline';
+          }
+        };
+
+        refreshBtn?.addEventListener('click', testConnection);
+        if (accepted) testConnection();
+        return card;
+      };
+
+      container.innerHTML = '';
+      if (proxyConfigs.length === 0) {
+        container.innerHTML = '<div class="protection-list" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 11px;">No proxy servers configured.</div>';
+      } else {
+        proxyConfigs.forEach((pc, i) => container.appendChild(renderPopupCard(pc, i)));
+      }
+
+      const manage = document.createElement('button');
+      manage.className = 'reset-btn';
+      manage.style.cssText = 'width: calc(100% - 24px); margin: 0 12px 12px; padding: 8px; font-size: 11px;';
+      manage.textContent = 'Manage proxies';
+      manage.addEventListener('click', openProxySettings);
+      container.appendChild(manage);
+      return;
+    }
+
+    const buildProxySavePayload = (credentialById = new Map()) => proxyConfigs
       .filter(pc => pc.accepted === true)
       .map(pc => {
-      const action = pc.credentialAction || 'preserve';
-      const hasReplacement = !!(pc.username && pc.password);
+      const credential = credentialById.get(pc.id) || {};
+      const action = credential.action || pc.credentialAction || 'preserve';
       const out = {
         id: pc.id,
         name: pc.name,
@@ -499,27 +644,17 @@ async function init() {
         type: pc.type,
         accepted: pc.accepted,
         domains: pc.domains,
-        credentialAction: action === 'replace' && !hasReplacement ? 'preserve' : action
+        credentialAction: action
       };
       if (out.credentialAction === 'replace') {
-        out.username = pc.username || '';
-        out.password = pc.password || '';
+        out.username = credential.username || '';
+        out.password = credential.password || '';
       }
       return out;
     });
 
-    const saveAllConfigs = (immediate = false) => {
-      if (saveTimeout) clearTimeout(saveTimeout);
-      const perform = async () => {
-        await notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfigs: buildProxySavePayload() });
-        saveTimeout = null;
-      };
-      if (immediate) {
-        return perform();
-      } else {
-        saveTimeout = setTimeout(perform, 400);
-        return Promise.resolve();
-      }
+    const saveAllConfigs = async (credentialById = new Map()) => {
+      return notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfigs: buildProxySavePayload(credentialById) });
     };
 
     const renderProxyCard = (pc, index) => {
@@ -539,18 +674,20 @@ async function init() {
             <option value="SOCKS4" ${pc.type === 'SOCKS4' ? 'selected' : ''}>SOCKS4</option>
             <option value="SOCKS5" ${pc.type === 'SOCKS5' ? 'selected' : ''}>SOCKS5</option>
           </select>
+          <input type="text" class="chroma-input proxy-name" value="${escapeHTML(pc.name || '')}" placeholder="Display name (optional)" style="grid-column: 1 / -1;" />
           <input type="text" class="chroma-input proxy-host" value="${escapeHTML(pc.host)}" placeholder="Proxy Host (e.g. 1.2.3.4)" />
           <input type="text" class="chroma-input proxy-port" value="${escapeHTML(pc.port)}" placeholder="Port (e.g. 80)" />
           <input type="text" class="chroma-input proxy-user" value="" placeholder="Username" />
           <input type="password" class="chroma-input proxy-pass" value="" placeholder="${pc.hasCredentials ? 'Password saved' : 'Password'}" />
           <div style="grid-column: 1 / -1; font-size: 10px; color: var(--text-muted); margin-top: -2px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-            <span>${pc.hasCredentials ? 'Credentials saved locally. Leave fields blank to keep them.' : 'Credentials are stored locally in encrypted extension storage and used for proxy auth.'}</span>
-            <button class="reset-btn proxy-clear-credentials-btn" style="display: ${pc.hasCredentials ? 'inline-block' : 'none'}; padding: 1px 6px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;">Clear</button>
+            <span class="proxy-credential-help">${pc.hasCredentials ? 'Credentials saved locally. Leave fields blank to keep them.' : 'Credentials are stored locally in encrypted extension storage and used only for proxy authentication.'}</span>
+            <button class="reset-btn proxy-clear-credentials-btn" style="display: ${pc.hasCredentials ? 'inline-block' : 'none'}; padding: 1px 6px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;">Clear credentials</button>
           </div>
           <div class="proxy-auth-note" style="grid-column: 1 / -1; font-size: 10px; color: var(--text-muted); margin-top: -2px; display: none;">SOCKS auth isn't supported by Chrome — use IP whitelisting on your provider.</div>
+          <div class="proxy-error" style="grid-column: 1 / -1; display: none; font-size: 10px; color: var(--c-red);"></div>
           <div style="grid-column: 1 / -1; display: flex; gap: 8px;">
             <button class="reset-btn proxy-accept-btn" style="flex: 1; padding: 6px;">Accept Settings</button>
-            <button class="reset-btn proxy-del-server-btn" style="padding: 1px 8px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 12px;" title="Delete Server">✕</button>
+            <button class="reset-btn proxy-del-server-btn" style="padding: 1px 8px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;" title="Delete Server">Delete</button>
           </div>
         </div>
         
@@ -561,9 +698,10 @@ async function init() {
             <div class="proxy-status-line" style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
               <span class="proxy-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 5px rgba(255,255,255,0.1);"></span>
               <span class="proxy-status-text" style="font-size: 9px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Checking...</span>
-              <button class="reset-btn proxy-refresh-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; opacity: 0.5;" title="Refresh Connection">↻</button>
+              <button class="reset-btn proxy-edit-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; opacity: 0.7;" title="Edit Server">Edit</button>
+              <button class="reset-btn proxy-refresh-btn" style="font-size:9px;padding:3px 8px;" title="Refresh Connection">↻</button>
               <span style="display:inline-block; width:1px; height:12px; background:rgba(255,255,255,0.08); align-self:center;"></span>
-              <button class="reset-btn proxy-clear-settings-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; color: var(--c-red); opacity: 0.7;" title="Clear Settings">✕</button>
+              <button class="reset-btn proxy-clear-settings-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; color: var(--c-red); opacity: 0.7;" title="Clear Settings">Clear</button>
             </div>
           </div>
           <div style="display: flex; align-items: center; justify-content: center; height: 100%;">
@@ -584,46 +722,83 @@ async function init() {
       `;
 
       const typeSelect = card.querySelector('.proxy-type');
+      const nameInput = card.querySelector('.proxy-name');
       const hostInput = card.querySelector('.proxy-host');
       const portInput = card.querySelector('.proxy-port');
       const userInput = card.querySelector('.proxy-user');
       const passInput = card.querySelector('.proxy-pass');
       const authNote = card.querySelector('.proxy-auth-note');
       const clearCredentialsBtn = card.querySelector('.proxy-clear-credentials-btn');
+      const errorEl = card.querySelector('.proxy-error');
 
-      const resetCredentialStateAfterSave = () => {
-        delete pc.username;
-        delete pc.password;
-        pc.credentialAction = 'preserve';
+      const replaceThisCard = () => {
+        card.replaceWith(renderProxyCard(pc, proxyConfigs.indexOf(pc)));
       };
 
-      const stageCredentialsFromInputs = () => {
+      let pendingCredentialAction = pc.credentialAction || 'preserve';
+      let displayedHasCredentials = !!pc.hasCredentials;
+
+      const resetCredentialStateAfterSave = () => {
+        pc.credentialAction = 'preserve';
+        pendingCredentialAction = 'preserve';
+      };
+
+      const showProxyError = (message) => {
+        if (!errorEl) return;
+        errorEl.textContent = message;
+        errorEl.style.display = message ? 'block' : 'none';
+      };
+
+      const clearCredentialInputs = () => {
+        userInput.value = '';
+        passInput.value = '';
+      };
+
+      const updateCredentialHelp = () => {
+        const help = card.querySelector('.proxy-credential-help');
+        if (help) {
+          help.textContent = displayedHasCredentials
+            ? 'Credentials saved locally. Leave fields blank to keep them.'
+            : 'Credentials are stored locally in encrypted extension storage and used only for proxy authentication.';
+        }
+        if (passInput) passInput.placeholder = displayedHasCredentials ? 'Password saved' : 'Password';
+        if (clearCredentialsBtn) clearCredentialsBtn.style.display = displayedHasCredentials ? 'inline-block' : 'none';
+      };
+
+      const readCredentialAction = () => {
         const username = userInput.value.trim();
         const password = passInput.value;
-        if (username || password) {
-          pc.credentialAction = 'replace';
-          pc.username = username;
-          pc.password = password;
-        } else if (pc.credentialAction !== 'clear') {
-          resetCredentialStateAfterSave();
-        }
+        const isSocks = typeSelect.value === 'SOCKS4' || typeSelect.value === 'SOCKS5';
+        if (isSocks) return { ok: true, credential: { action: pendingCredentialAction === 'clear' ? 'clear' : 'preserve' } };
+        if (username && password) return { ok: true, credential: { action: 'replace', username, password } };
+        if (!username && !password) return { ok: true, credential: { action: pendingCredentialAction === 'clear' ? 'clear' : 'preserve' } };
+        return { ok: false, error: 'Enter both username and password, or leave both blank to keep saved credentials.' };
       };
 
       // Chrome's webRequest.onAuthRequired only fires for HTTP(S) 407 challenges,
       // so SOCKS4/5 username+password auth can never succeed — hide the fields.
-      const applyAuthVisibility = (clearForSocks = false) => {
+      let previousType = typeSelect.value;
+      const applyAuthVisibility = (fromUserChange = false) => {
         const isSocks = typeSelect.value === 'SOCKS4' || typeSelect.value === 'SOCKS5';
+        userInput.disabled = isSocks;
+        passInput.disabled = isSocks;
         userInput.style.display = isSocks ? 'none' : '';
         passInput.style.display = isSocks ? 'none' : '';
-        if (authNote) authNote.style.display = isSocks ? 'block' : 'none';
-        if (isSocks && clearForSocks) {
-          if (userInput.value) userInput.value = '';
-          if (passInput.value) passInput.value = '';
-          pc.credentialAction = 'clear';
-          pc.hasCredentials = false;
-          delete pc.username;
-          delete pc.password;
+        if (authNote) {
+          authNote.textContent = 'SOCKS username/password auth is not supported by Chrome here. Use provider-side IP allowlisting or an HTTP/HTTPS proxy.';
+          authNote.style.display = isSocks ? 'block' : 'none';
         }
+        if (isSocks && fromUserChange && (displayedHasCredentials || userInput.value || passInput.value)) {
+          if (typeof confirm === 'function' && !confirm('SOCKS username/password auth is not supported by Chrome here. Clear saved credentials for this proxy?')) {
+            typeSelect.value = previousType;
+            return applyAuthVisibility(false);
+          }
+          clearCredentialInputs();
+          pendingCredentialAction = 'clear';
+          displayedHasCredentials = false;
+          updateCredentialHelp();
+        }
+        previousType = typeSelect.value;
       };
       applyAuthVisibility();
       typeSelect.addEventListener('change', () => applyAuthVisibility(true));
@@ -633,20 +808,20 @@ async function init() {
       const acceptBtn = card.querySelector('.proxy-accept-btn');
       const clearBtn = card.querySelector('.proxy-clear-settings-btn');
       const delServerBtn = card.querySelector('.proxy-del-server-btn');
+      const editBtn = card.querySelector('.proxy-edit-btn');
       const refreshBtn = card.querySelector('.proxy-refresh-btn');
       const globalToggle = card.querySelector('.proxy-global-toggle');
 
       clearCredentialsBtn?.addEventListener('click', async () => {
-        userInput.value = '';
-        passInput.value = '';
+        clearCredentialInputs();
         pc.credentialAction = 'clear';
         pc.hasCredentials = false;
-        delete pc.username;
-        delete pc.password;
-        await saveAllConfigs(true);
+        pendingCredentialAction = 'clear';
+        displayedHasCredentials = false;
+        updateCredentialHelp();
+        await saveAllConfigs(new Map([[pc.id, { action: 'clear' }]]));
         resetCredentialStateAfterSave();
-        container.innerHTML = '';
-        proxyConfigs.forEach((p, i) => container.appendChild(renderProxyCard(p, i)));
+        replaceThisCard();
       });
 
       const updateGlobalUI = async () => {
@@ -737,7 +912,7 @@ async function init() {
               <div class="name" style="font-family: 'JetBrains Mono', monospace; font-size: 10px;">${safeHost} ${badgeHtml}</div>
             </div>
             <div style="display:flex;align-items:center;gap:12px;">
-              <button class="reset-btn d-del-btn" style="padding: 1px 4px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;" title="Remove Domain">✕</button>
+              <button class="reset-btn d-del-btn" style="padding: 1px 4px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;" title="Remove Domain">Remove</button>
               <span style="display:inline-block; width:1px; height:14px; background:rgba(255,255,255,0.08); align-self:center;"></span>
               <label class="switch switch-sm">
                 <input type="checkbox" class="d-toggle" ${d.enabled ? 'checked' : ''} />
@@ -748,13 +923,13 @@ async function init() {
           
           dRow.querySelector('.d-toggle').addEventListener('change', async (e) => {
             pc.domains[dIdx].enabled = e.target.checked;
-            await saveAllConfigs(true);
+            await saveAllConfigs();
             updateStatusLine();
           });
 
           dRow.querySelector('.d-del-btn').addEventListener('click', async () => {
             pc.domains.splice(dIdx, 1);
-            await saveAllConfigs(true);
+            await saveAllConfigs();
             renderDomains();
             updateStatusLine();
           });
@@ -772,7 +947,7 @@ async function init() {
 
       globalToggle?.addEventListener('change', async (e) => {
         const isChecked = e.target.checked;
-        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain route matches. Enable it?')) {
+        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
           e.target.checked = false;
           return;
         }
@@ -808,41 +983,59 @@ async function init() {
       });
 
       acceptBtn.addEventListener('click', async () => {
+        showProxyError('');
         let host = hostInput.value.trim();
         if (host.includes('.com') && !host.includes('://')) {
           host = 'https://' + host;
           hostInput.value = host;
         }
+        pc.name = nameInput.value.trim();
         pc.type = typeSelect.value;
         pc.host = host;
         pc.port = portInput.value.trim();
-        stageCredentialsFromInputs();
-        if (pc.credentialAction === 'replace' && (!pc.username || !pc.password)) {
-          alert('Enter both username and password, or leave both blank to keep saved credentials.');
+        const credentialResult = readCredentialAction();
+        if (!credentialResult.ok) {
+          showProxyError(credentialResult.error);
           return;
         }
         pc.accepted = true;
         
-        await saveAllConfigs(true); // Force immediate save and wait for background to sync
-        if (pc.credentialAction === 'replace') pc.hasCredentials = true;
+        const result = await saveAllConfigs(new Map([[pc.id, credentialResult.credential]])); // Force immediate save and wait for background to sync
+        if (!result || result.ok === false || result.errors?.length) {
+          showProxyError(result?.error || result?.errors?.[0] || 'Unable to save proxy settings.');
+          return;
+        }
+        if (credentialResult.credential.action === 'replace') pc.hasCredentials = true;
+        if (credentialResult.credential.action === 'clear') pc.hasCredentials = false;
+        clearCredentialInputs();
         resetCredentialStateAfterSave();
-        
-        container.innerHTML = '';
-        proxyConfigs.forEach((p, i) => container.appendChild(renderProxyCard(p, i)));
+
+        replaceThisCard();
       });
 
       clearBtn.addEventListener('click', async () => {
         pc.accepted = false;
-        await saveAllConfigs(true);
-        container.innerHTML = '';
-        proxyConfigs.forEach((p, i) => container.appendChild(renderProxyCard(p, i)));
+        await saveAllConfigs();
+        replaceThisCard();
+      });
+
+      editBtn?.addEventListener('click', () => {
+        const inputGroup = document.getElementById(inputGroupId);
+        const activeGroup = document.getElementById(activeGroupId);
+        if (inputGroup) inputGroup.style.display = 'grid';
+        if (activeGroup) activeGroup.style.display = 'none';
+        hostInput.focus?.();
       });
 
       delServerBtn.addEventListener('click', async () => {
-        proxyConfigs.splice(index, 1);
+        const idx = proxyConfigs.findIndex(p => p.id === pc.id);
+        if (idx > -1) proxyConfigs.splice(idx, 1);
         await saveAllConfigs();
-        container.innerHTML = '';
-        proxyConfigs.forEach((p, i) => container.appendChild(renderProxyCard(p, i)));
+        if (proxyConfigs.length === 0) {
+          renderAll();
+        } else {
+          card.remove();
+        }
       });
 
       refreshBtn?.addEventListener('click', testConnection);
@@ -863,18 +1056,6 @@ async function init() {
 
       domainInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') addDomainBtn.click();
-      });
-
-      [typeSelect, hostInput, portInput].forEach(el => {
-        el.addEventListener('input', () => {
-          pc.type = typeSelect.value;
-          pc.host = hostInput.value.trim();
-          pc.port = portInput.value.trim();
-        });
-      });
-
-      [userInput, passInput].forEach(el => {
-        el.addEventListener('input', stageCredentialsFromInputs);
       });
 
       return card;
@@ -908,14 +1089,17 @@ async function init() {
       container.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
     };
 
-    window.addEventListener('pagehide', () => {
-      saveAllConfigs(true);
-    });
-
     renderAll();
   }
 
   await loadProxyRouterUI();
+
+  if (isSettingsPage() && globalThis.location?.hash === '#proxy') {
+    setTimeout(() => {
+      const section = $('proxySection') || $('proxyRouterContainer');
+      section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }
 
   // ─── REQUEST LOG UI ─────
   const RT_BADGE = {

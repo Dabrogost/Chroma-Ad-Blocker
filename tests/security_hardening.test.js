@@ -378,6 +378,58 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
+  await t.test('proxy config get recognizes encrypted byte-array credentials', async () => {
+    const sandbox = loadHandlers({
+      storage: {
+        proxyConfigs: [{
+          id: 13,
+          name: 'Array Auth',
+          host: 'proxy.example.com',
+          port: 8080,
+          type: 'PROXY',
+          accepted: true,
+          domains: [],
+          authIv: [1, 2, 3, 4],
+          authCipher: [5, 6, 7, 8]
+        }]
+      }
+    });
+
+    const result = await sandbox.handleProxyConfigGet();
+
+    assert.strictEqual(result[0].hasCredentials, true);
+    assert.strictEqual('authIv' in result[0], false);
+    assert.strictEqual('authCipher' in result[0], false);
+  });
+
+  await t.test('proxy credential preserve keeps encrypted byte-array auth', async () => {
+    const existing = [{
+      id: 15,
+      name: 'Existing Array',
+      host: 'proxy.example.com',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      domains: [],
+      authIv: [1, 2, 3],
+      authCipher: [4, 5, 6]
+    }];
+
+    const result = await loadHandlers().validateProxyConfigsForStorage([{
+      id: 15,
+      name: 'Edited Array',
+      host: 'proxy.example.com',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      domains: [],
+      credentialAction: 'preserve'
+    }], existing);
+
+    assert.deepStrictEqual(plain(result.configs[0].authIv), [1, 2, 3]);
+    assert.deepStrictEqual(plain(result.configs[0].authCipher), [4, 5, 6]);
+  });
+
   await t.test('proxy credential actions preserve replace and clear encrypted auth', async () => {
     const existing = [{
       id: 1,

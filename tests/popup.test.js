@@ -101,7 +101,8 @@ test('popup.js functionality', async (t) => {
             return { updateAvailable: false };
           }
         },
-        getManifest: () => ({ version: '1.0.0' })
+        getManifest: () => ({ version: '1.0.0' }),
+        getURL: (path) => `chrome-extension://test/${path}`
       },
       storage: {
         local: {
@@ -119,7 +120,9 @@ test('popup.js functionality', async (t) => {
         onChanged: { addListener: () => {} }
       },
       tabs: {
-        query: async () => [{ url: 'https://www.youtube.com/', id: 1, hostname: 'www.youtube.com' }]
+        created: [],
+        query: async () => [{ url: 'https://www.youtube.com/', id: 1, hostname: 'www.youtube.com' }],
+        create: async (info) => { chromeMock.tabs.created.push(info); return { id: 99, ...info }; }
       }
     };
 
@@ -172,6 +175,7 @@ test('popup.js functionality', async (t) => {
         addEventListener: (type, fn) => {},
         removeEventListener: (type, fn) => {}
       },
+      location: { pathname: '/ui/popup.html', hash: '' },
       notifyBackground: (msg) => chromeMock.runtime.sendMessage(msg).catch(() => null)
     };
 
@@ -334,18 +338,45 @@ test('popup.js functionality', async (t) => {
     const result = await sandbox.notifyBackground({ type: 'TEST_ERROR' });
     assert.strictEqual(result, null, 'Should return null on messaging error');
   });
+
+  await t.test('popup proxy manage helper opens settings hash without saving credentials', async () => {
+    const { sandbox, elements, messages, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(popupJsCode, sandbox);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    messages.length = 0;
+    assert.strictEqual(typeof sandbox.openProxySettings, 'function');
+    await sandbox.openProxySettings();
+
+    assert.strictEqual(chromeMock.tabs.created.at(-1)?.url, 'chrome-extension://test/ui/settings.html#proxy');
+    assert.strictEqual(messages.some(m =>
+      m.type === 'PROXY_CONFIG_SET' &&
+      JSON.stringify(m).match(/username|password|credentialAction":"replace/)
+    ), false);
+  });
 });
 
 test('UI hardening copy', () => {
   assert.match(popupHtmlCode, /changes anti-detection network behavior/);
   assert.match(settingsHtmlCode, /changes anti-detection network behavior/);
   assert.match(settingsHtmlCode, /<script src="popup\.js"><\/script>/);
-  assert.match(popupJsCode, /Leave fields blank to keep them/);
-  assert.match(popupJsCode, /const action = pc\.credentialAction \|\| 'preserve'/);
+  assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
+  assert.match(popupJsCode, /function openProxySettings\(\)/);
+  assert.match(popupJsCode, /ui\/settings\.html#proxy/);
+  assert.match(popupJsCode, /if \(!settingsMode\)/);
   assert.match(popupJsCode, /\.filter\(pc => pc\.accepted === true\)/);
-  assert.match(popupJsCode, /out\.credentialAction === 'replace'/);
-  assert.match(popupJsCode, /applyAuthVisibility\(true\)/);
-  assert.doesNotMatch(popupJsCode, /\[typeSelect, hostInput, portInput\][\s\S]{0,220}saveAllConfigs\(\)/);
-  assert.match(popupJsCode, /clearBtn\.addEventListener\('click', async \(\) => \{[\s\S]*?pc\.accepted = false;[\s\S]*?await saveAllConfigs\(true\);/);
-  assert.match(popupJsCode, /Global proxy mode can route all browser traffic/);
+  assert.match(popupJsCode, /Manage proxies/);
+  assert.doesNotMatch(popupHtmlCode, /id="addProxyServerBtn"/);
+  assert.match(settingsHtmlCode, /id="addProxyServerBtn"/);
+  assert.match(popupJsCode, /Leave fields blank to keep them/);
+  assert.match(popupJsCode, /readCredentialAction/);
+  assert.match(popupJsCode, /Enter both username and password, or leave both blank to keep saved credentials\./);
+  assert.match(popupJsCode, /Clear credentials/);
+  assert.match(popupJsCode, /SOCKS username\/password auth is not supported by Chrome here/);
+  assert.match(popupJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\. Enable it\?/);
+  assert.match(settingsHtmlCode, /id="proxySection"/);
+  assert.match(popupJsCode, /location\?\.hash === '#proxy'/);
+  assert.doesNotMatch(popupJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);
+  assert.doesNotMatch(popupJsCode, /stageCredentialsFromInputs/);
 });
