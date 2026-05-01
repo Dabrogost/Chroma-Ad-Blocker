@@ -378,7 +378,7 @@ Chroma is designed to be used without another ad blocker enabled. Running multip
 
 Chroma is a sideloaded, Chrome/Chromium-focused project. If you do not want to use Chroma, these are excellent alternatives:
 
-- **Chrome / Chromium:** [uBlock Origin Lite](https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh?hl=en) — Store-installed Manifest V3 content blocker for users who prefer the Chrome Web Store path.
+- **Chrome / Chromium:** [uBlock Origin Lite](https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh?hl=en) + [FoxyProxy](https://chromewebstore.google.com/detail/foxyproxy/gcknhkkoolaabfmlnjonogaaifnjlfnp?hl=en) — Store-installed Manifest V3 content blocking plus dedicated proxy management for users who prefer the Chrome Web Store path.
 - **Firefox:** [uBlock Origin](https://addons.mozilla.org/firefox/addon/ublock-origin/) + [FoxyProxy](https://getfoxyproxy.org/) — Recommended for users who want full uBlock Origin support plus dedicated proxy management on Firefox.
 
 ---
@@ -408,5 +408,5 @@ Chroma is a solo project dedicated to restoring the web to its fast, private, an
 </div>
 
 <p align="right">
-  <sub>Copyright 2026 Dabrogost</sub>
+  <sub>Copyright 2026 Dabrogost • GPL-3.0-or-later</sub>
 </p>
