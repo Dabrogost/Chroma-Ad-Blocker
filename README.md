@@ -340,6 +340,16 @@ Chroma subscribes to the following lists to ensure real-time protection:
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
 
+### Custom Filter List Subscriptions
+
+Chroma also supports user-added filter list subscriptions. You can host your own list in a GitHub repository, GitHub Gist, or any HTTPS endpoint that serves raw filter-list text, then paste the raw `https://` URL into Chroma's subscription manager.
+
+Custom subscriptions can include supported Adblock/uBO-style network rules, cosmetic rules, cosmetic exceptions, and scriptlet rules. During refresh, Chroma parses the list into network, cosmetic, and scriptlet buckets, drops unsupported or malformed rules, deduplicates network rules already covered by the bundled static ruleset, and only keeps scriptlets that map to Chroma's shipped scriptlet library.
+
+Network rules are allocated by priority before being applied to DNR. Exception/allow rules are preserved first, `$important` block rules receive a higher score, domain/resource-type-specific rules are favored next, and earlier list position acts as a final tiebreaker. This lets custom lists express urgency while still respecting Manifest V3 dynamic-rule budgets.
+
+Custom subscription URLs must use `https://`, must not include credentials, must use the default HTTPS port, and cannot point to local/private network hosts. New custom lists default to a 24-hour refresh interval unless a different valid interval is supplied by the UI or message API.
+
 ---
 
 ## Recommended Companion Extension
