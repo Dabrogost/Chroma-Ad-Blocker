@@ -335,10 +335,10 @@ Chroma subscribes to the following lists to ensure real-time protection:
 - **Chroma Scriptlet Library** — Bundled Chroma-maintained scriptlet rules for targeted anti-adblock, recipe/blog, and platform compatibility fixes.
 - **Hagezi Pro Mini** — High-performance DNS and ad-blocking rules.
 - **EasyList** — The primary filter for cosmetic ad-blocking and element hiding.
-- **Fanboy Annoyance** — Blocks social widgets, popups, and other non-ad annoyances.
+- **Fanboy Annoyance** — Blocks social widgets, popups, and other non-ad annoyances through cosmetic rules and supported scriptlets.
 
 > [!NOTE]
-> To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are utilized exclusively for the **Cosmetic Filtering Layer**. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
+> To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
 
 ---
 
