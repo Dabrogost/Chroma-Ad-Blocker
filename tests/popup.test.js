@@ -4,7 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
+const proxyUiJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.js'), 'utf8');
+const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.js'), 'utf8');
+const uiScriptsCode = [appJsCode, proxyUiJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 
@@ -216,7 +220,7 @@ test('popup.js functionality', async (t) => {
   await t.test('initializes with correct config and stats', async () => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
 
     // Initialization Cooldown: Async DOM settling delay.
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -233,7 +237,7 @@ test('popup.js functionality', async (t) => {
   await t.test('toggle event listeners trigger SET_CONFIG', async () => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
     // Initialization Cooldown: Async DOM settling delay.
     await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -248,7 +252,7 @@ test('popup.js functionality', async (t) => {
   await t.test('reset stats button triggers RESET_STATS and updates UI', async () => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
     // Initialization Cooldown: Async DOM settling delay.
     await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -272,7 +276,7 @@ test('popup.js functionality', async (t) => {
     chromeMock.storage.local.get = async () => ({}); // Simulate empty storage
 
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
     // Initialization Cooldown: Async DOM settling delay.
     await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -287,7 +291,7 @@ test('popup.js functionality', async (t) => {
   await t.test('notifyBackground wrapper function - passes message correctly', async () => {
     const { sandbox, messages } = createSandbox();
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
 
     // Wait for initial init() calls to finish
     // Initialization Cooldown: Async DOM settling delay.
@@ -304,7 +308,7 @@ test('popup.js functionality', async (t) => {
   await t.test('notifyBackground wrapper function - returns response correctly', async () => {
     const { sandbox, chromeMock } = createSandbox();
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
 
     // Wait for initial init() calls to finish
     // Initialization Cooldown: Async DOM settling delay.
@@ -320,7 +324,7 @@ test('popup.js functionality', async (t) => {
   await t.test('notifyBackground wrapper function - propagates errors correctly', async () => {
     const { sandbox, chromeMock } = createSandbox();
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
 
     // Wait for initial init() calls to finish
     // Initialization Cooldown: Async DOM settling delay.
@@ -342,7 +346,7 @@ test('popup.js functionality', async (t) => {
   await t.test('popup proxy manage helper opens settings hash without saving credentials', async () => {
     const { sandbox, elements, messages, chromeMock } = createSandbox();
     vm.createContext(sandbox);
-    vm.runInContext(popupJsCode, sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
     await new Promise(resolve => setTimeout(resolve, 50));
 
     messages.length = 0;
@@ -360,23 +364,30 @@ test('popup.js functionality', async (t) => {
 test('UI hardening copy', () => {
   assert.match(popupHtmlCode, /changes anti-detection network behavior/);
   assert.match(settingsHtmlCode, /changes anti-detection network behavior/);
-  assert.match(settingsHtmlCode, /<script src="popup\.js"><\/script>/);
+  assert.match(popupHtmlCode, /<script src="app\.js"><\/script>/);
+  assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
+  assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="app\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
-  assert.match(popupJsCode, /function openProxySettings\(\)/);
-  assert.match(popupJsCode, /ui\/settings\.html#proxy/);
-  assert.match(popupJsCode, /if \(!settingsMode\)/);
-  assert.match(popupJsCode, /\.filter\(pc => pc\.accepted === true\)/);
-  assert.match(popupJsCode, /Manage proxies/);
+  assert.match(appJsCode, /function openProxySettings\(\)/);
+  assert.match(appJsCode, /ui\/settings\.html#proxy/);
+  assert.match(proxyUiJsCode, /if \(!settingsMode\)/);
+  assert.match(proxyUiJsCode, /\.filter\(pc => pc\.accepted === true\)/);
+  assert.match(proxyUiJsCode, /Manage proxies/);
   assert.doesNotMatch(popupHtmlCode, /id="addProxyServerBtn"/);
   assert.match(settingsHtmlCode, /id="addProxyServerBtn"/);
-  assert.match(popupJsCode, /Leave fields blank to keep them/);
-  assert.match(popupJsCode, /readCredentialAction/);
-  assert.match(popupJsCode, /Enter both username and password, or leave both blank to keep saved credentials\./);
-  assert.match(popupJsCode, /Clear credentials/);
-  assert.match(popupJsCode, /SOCKS username\/password auth is not supported by Chrome here/);
-  assert.match(popupJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\. Enable it\?/);
+  assert.match(proxyUiJsCode, /Leave fields blank to keep them/);
+  assert.match(proxyUiJsCode, /readCredentialAction/);
+  assert.match(proxyUiJsCode, /Enter both username and password, or leave both blank to keep saved credentials\./);
+  assert.match(proxyUiJsCode, /Clear credentials/);
+  assert.match(proxyUiJsCode, /SOCKS username\/password auth is not supported by Chrome here/);
+  assert.match(proxyUiJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\. Enable it\?/);
   assert.match(settingsHtmlCode, /id="proxySection"/);
-  assert.match(popupJsCode, /location\?\.hash === '#proxy'/);
-  assert.doesNotMatch(popupJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);
-  assert.doesNotMatch(popupJsCode, /stageCredentialsFromInputs/);
+  assert.match(settingsJsCode, /scrollToProxyHash/);
+  assert.match(appJsCode, /location\?\.hash !== '#proxy'/);
+  assert.doesNotMatch(proxyUiJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);
+  assert.doesNotMatch(proxyUiJsCode, /stageCredentialsFromInputs/);
 });
+
