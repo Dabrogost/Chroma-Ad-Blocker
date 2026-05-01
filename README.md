@@ -346,9 +346,25 @@ Chroma also supports user-added filter list subscriptions. You can host your own
 
 Custom subscriptions can include supported Adblock/uBO-style network rules, cosmetic rules, cosmetic exceptions, and scriptlet rules. During refresh, Chroma parses the list into network, cosmetic, and scriptlet buckets, drops unsupported or malformed rules, deduplicates network rules already covered by the bundled static ruleset, and only keeps scriptlets that map to Chroma's shipped scriptlet library.
 
-Network rules are allocated by priority before being applied to DNR. Exception/allow rules are preserved first, `$important` block rules receive a higher score, domain/resource-type-specific rules are favored next, and earlier list position acts as a final tiebreaker. This lets custom lists express urgency while still respecting Manifest V3 dynamic-rule budgets.
+Network rules are allocated by Chroma's internal priority score before being applied to DNR. Exception/allow rules are preserved first, `$important` block rules receive a higher score, domain/resource-type-specific rules are favored next, and earlier list position acts as a final tiebreaker. This lets custom lists express urgency while still respecting Manifest V3 dynamic-rule budgets.
 
 Custom subscription URLs must use `https://`, must not include credentials, must use the default HTTPS port, and cannot point to local/private network hosts. New custom lists default to a 24-hour refresh interval unless a different valid interval is supplied by the UI or message API.
+
+Example custom list:
+
+```adblock
+! Higher-priority network block. `$important` receives a stronger Chroma allocation score.
+||example-ad-server.com^$script,third-party,important
+
+! Cosmetic rule: hide sponsored cards on one site.
+example.com##.sponsored-card
+
+! Cosmetic exception: preserve a subset if the broad cosmetic rule is too aggressive.
+example.com#@#.sponsored-card.keep-visible
+
+! Scriptlet rule: run a supported Chroma/uBO-style scriptlet on a site.
+example.com##+js(set-constant, adsEnabled, false)
+```
 
 ---
 
