@@ -18,32 +18,7 @@
     "webRequestAuthProvider"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "*://*.youtube.com/*",
-    "*://*.doubleclick.net/*",
-    "*://*.googleads.g.doubleclick.net/*",
-    "*://*.googlesyndication.com/*",
-    "*://*.google-analytics.com/*",
-    "*://*.adservice.google.com/*",
-    "*://*.ytimg.com/*",
-    "*://*.ggpht.com/*",
-    "*://*.bellyfull.net/*",
-    "*://*.allrecipes.com/*",
-    "*://*.foodnetwork.com/*",
-    "*://*.epicurious.com/*",
-    "*://*.bbcgoodfood.com/*",
-    "*://*.thekitchn.com/*",
-    "*://*.seriouseats.com/*",
-    "*://*.recipetineats.com/*",
-    "*://*.smittenkitchen.com/*",
-    "*://*.budgetbytes.com/*",
-    "*://*.pinchofyum.com/*",
-    "*://*.sallysbakingaddiction.com/*",
-    "*://*.minimalistbaker.com/*",
-    "*://*.thewoksoflife.com/*",
-    "*://*.americastestkitchen.com/*",
-    "*://cooking.nytimes.com/*",
-    "*://*.weelicious.com/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background/background.js",
@@ -152,7 +127,8 @@
         "*://*.thewoksoflife.com/*",
         "*://*.americastestkitchen.com/*",
         "*://cooking.nytimes.com/*",
-        "*://*.weelicious.com/*"
+        "*://*.weelicious.com/*",
+        "*://*.pcgamer.com/*"
       ],
       "js": [
         "content/recipes.js"

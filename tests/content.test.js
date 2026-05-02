@@ -147,6 +147,54 @@ test('Content script generic functionality', async (t) => {
     assert.ok(sandbox.document.adoptedStyleSheets[0].content.includes('display: none'), 'Stylesheet should contain hiding rules');
   });
 
+  await t.test('invalid cosmetic selectors do not drop the whole hide sheet', async (st) => {
+    const sandbox = createSandbox((doc) => {
+      const originalQuerySelector = doc.querySelector;
+      doc.querySelector = (sel) => {
+        if (sel === 'BAD[') throw new Error('Invalid selector');
+        return originalQuerySelector(sel);
+      };
+    });
+
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.cosmetic = true;
+    sandbox.CONFIG.hideMerch = false;
+    sandbox.CONFIG.hideOffers = false;
+    sandbox.CONFIG.hideShorts = false;
+    sandbox.CONFIG.suppressWarnings = false;
+    sandbox.setHideSelectors(['.ad-showing', 'BAD[', '#masthead-ad']);
+
+    sandbox.injectAllCSS();
+
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 1, 'Should keep the cosmetic stylesheet');
+    const css = sandbox.document.adoptedStyleSheets[0].content;
+    assert.match(css, /\.ad-showing\s*\{/);
+    assert.match(css, /#masthead-ad\s*\{/);
+    assert.doesNotMatch(css, /BAD\[/);
+  });
+
+  await t.test('injectAllCSS refreshes cosmetic CSS when hide selectors change', async (st) => {
+    const sandbox = createSandbox();
+
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.cosmetic = true;
+    sandbox.CONFIG.hideMerch = false;
+    sandbox.CONFIG.hideOffers = false;
+    sandbox.CONFIG.hideShorts = false;
+    sandbox.CONFIG.suppressWarnings = false;
+
+    sandbox.setHideSelectors(['.first-ad']);
+    sandbox.injectAllCSS();
+    const firstSheet = sandbox.document.adoptedStyleSheets[0];
+
+    sandbox.setHideSelectors(['.second-ad']);
+    sandbox.injectAllCSS();
+
+    assert.notStrictEqual(sandbox.document.adoptedStyleSheets[0], firstSheet, 'Should replace stale cosmetic sheet');
+    assert.match(sandbox.document.adoptedStyleSheets[0].content, /\.second-ad\s*\{/);
+    assert.doesNotMatch(sandbox.document.adoptedStyleSheets[0].content, /\.first-ad\s*\{/);
+  });
+
   await t.test('suppressAdblockWarnings functionality', async (st) => {
     let removed = false;
     const warning = createMockElement();

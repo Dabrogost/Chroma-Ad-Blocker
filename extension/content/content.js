@@ -30,6 +30,45 @@
   
   // Track our adopted stylesheets to allow toggling without clobbering other extensions
   const chromaSheets = new Map();
+  const chromaSheetContent = new Map();
+
+  function getValidSelectors(selectors) {
+    if (!Array.isArray(selectors)) return [];
+
+    const out = [];
+    const seen = new Set();
+
+    for (const raw of selectors) {
+      if (typeof raw !== 'string') continue;
+      const selector = raw.trim();
+      if (!selector || seen.has(selector)) continue;
+
+      try {
+        document.querySelector(selector);
+        out.push(selector);
+        seen.add(selector);
+      } catch {
+        if (DEBUG) console.warn('[Chroma] Dropping invalid cosmetic selector:', selector);
+      }
+    }
+
+    return out;
+  }
+
+  function buildHideCSS(selectors) {
+    const body = `
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      height: 0 !important;
+      width: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+    `;
+
+    return selectors.map(selector => `${selector} {${body}}`).join('\n');
+  }
 
   // ─── COSMETIC FILTERING ─────
   function injectAllCSS() {
@@ -37,16 +76,7 @@
       {
         id: 'chroma-cosmetic',
         content: `
-          ${HIDE_SELECTORS.join(',\n    ')} {
-            display: none !important;
-            visibility: hidden !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-            height: 0 !important;
-            width: 0 !important;
-            min-height: 0 !important;
-            overflow: hidden !important;
-          }
+          ${buildHideCSS(HIDE_SELECTORS)}
           #player-theater-container, #player-container-id {
             max-width: unset !important;
           }
@@ -149,15 +179,25 @@
 
     styles.forEach(styleDef => {
       let sheet = chromaSheets.get(styleDef.id);
-      if (!sheet) {
-        sheet = new CSSStyleSheet();
+      if (!sheet || chromaSheetContent.get(styleDef.id) !== styleDef.content) {
+        const nextSheet = new CSSStyleSheet();
         try {
-          sheet.replaceSync(styleDef.content);
-          chromaSheets.set(styleDef.id, sheet);
+          nextSheet.replaceSync(styleDef.content);
         } catch (e) {
           if (DEBUG) console.error(`[Chroma] Failed to parse CSS for ${styleDef.id}:`, e);
           return;
         }
+
+        if (sheet) {
+          const currentSheets = document.adoptedStyleSheets || [];
+          if (currentSheets.includes(sheet)) {
+            document.adoptedStyleSheets = currentSheets.map(s => s === sheet ? nextSheet : s);
+          }
+        }
+
+        sheet = nextSheet;
+        chromaSheets.set(styleDef.id, sheet);
+        chromaSheetContent.set(styleDef.id, styleDef.content);
       }
 
       const isEnabled = styleDef.isEnabled();
@@ -343,7 +383,7 @@
       }
       
       if (data.HIDE_SELECTORS) {
-        HIDE_SELECTORS = data.HIDE_SELECTORS;
+        HIDE_SELECTORS = getValidSelectors(data.HIDE_SELECTORS);
       }
 
       // Merge subscription cosmetic rules applicable to the current hostname.
@@ -366,11 +406,7 @@
           )
           .map(r => r.selector);
 
-        const validated = additional.filter(sel => {
-          try { document.querySelector(sel); return true; } catch { return false; }
-        });
-
-        HIDE_SELECTORS = [...HIDE_SELECTORS, ...validated];
+        HIDE_SELECTORS = getValidSelectors([...HIDE_SELECTORS, ...additional]);
       }
       
       if (data.WARNING_SELECTORS) {
@@ -406,6 +442,6 @@
     /** @param {string} val @returns {void} */
     globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
     /** @param {string[]} val @returns {void} */
-    globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = val; };
+    globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = getValidSelectors(val); };
   }
 })();

@@ -183,6 +183,106 @@ test('no-eval-if', async (t) => {
   });
 });
 
+test('reddit-promoted-ads', async (t) => {
+  await t.test('crawls from promoted marker and hides the containing post', () => {
+    const makeElement = ({ tag = 'div', id = '', className = '', text = '' } = {}) => ({
+      nodeType: 1,
+      tagName: tag.toUpperCase(),
+      id,
+      className,
+      textContent: text,
+      parentElement: null,
+      children: [],
+      attrs: {},
+      style: {
+        display: '',
+        setProperty(name, value) {
+          if (name === 'display') this.display = value;
+        }
+      },
+      appendChild(child) {
+        child.parentElement = this;
+        this.children.push(child);
+        return child;
+      },
+      getAttribute(name) {
+        return this.attrs[name] || null;
+      },
+      setAttribute(name, value) {
+        this.attrs[name] = String(value);
+      },
+      matches(selector) {
+        return selector === '.promoted-name-container, [class*="promoted-name-container"]'
+          && this.className.includes('promoted-name-container');
+      },
+      closest(selector) {
+        let current = this;
+        while (current) {
+          if (selector.includes('shreddit-post') && current.tagName === 'SHREDDIT-POST') return current;
+          if (selector.includes('[id^="t3_"]') && current.id.startsWith('t3_')) return current;
+          current = current.parentElement;
+        }
+        return null;
+      },
+      querySelectorAll(selector) {
+        const out = [];
+        const walk = (node) => {
+          for (const child of node.children) {
+            if (child.matches(selector)) out.push(child);
+            walk(child);
+          }
+        };
+        walk(this);
+        return out;
+      },
+      querySelector(selector) {
+        let found = null;
+        const walk = (node) => {
+          if (found) return;
+          if (selector.startsWith('#') && node.id === selector.slice(1)) {
+            found = node;
+            return;
+          }
+          for (const child of node.children) walk(child);
+        };
+        walk(this);
+        return found;
+      }
+    });
+
+    const documentElement = makeElement({ tag: 'html' });
+    const body = documentElement.appendChild(makeElement({ tag: 'body' }));
+    const promotedPost = body.appendChild(makeElement({ tag: 'shreddit-post', id: 't3_promoted' }));
+    const wrapper = promotedPost.appendChild(makeElement({ className: 'flex' }));
+    wrapper.appendChild(makeElement({ className: 'promoted-name-container flex', text: 'Promoted' }));
+    const regularPost = body.appendChild(makeElement({ tag: 'shreddit-post', id: 't3_regular' }));
+    regularPost.appendChild(makeElement({ className: 'title', text: 'Regular post' }));
+
+    const document = {
+      nodeType: 9,
+      documentElement,
+      body,
+      querySelectorAll: selector => documentElement.querySelectorAll(selector),
+      querySelector: selector => documentElement.querySelector(selector),
+      addEventListener: () => {}
+    };
+
+    const sandbox = runScriptlet('redditPromotedAds', [], {
+      document,
+      MutationObserver: class { observe() {} },
+      setTimeout
+    });
+
+    const promoted = sandbox.document.querySelector('#t3_promoted');
+    const regular = sandbox.document.querySelector('#t3_regular');
+
+    assert.strictEqual(promoted.getAttribute('data-chroma-reddit-promoted'), '1');
+    assert.strictEqual(promoted.getAttribute('aria-hidden'), 'true');
+    assert.strictEqual(promoted.style.display, 'none');
+    assert.notStrictEqual(regular.style.display, 'none');
+  });
+});
+
 function loadScriptletEngine(storageState) {
   const registered = [];
   let changeListener = null;
