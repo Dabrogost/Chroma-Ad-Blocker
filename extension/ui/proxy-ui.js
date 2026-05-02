@@ -8,174 +8,178 @@
 const ChromaProxyUI = (() => {
   const { $, escapeHTML, isSettingsPage, openProxySettings } = globalThis.ChromaApp;
 
-  async function loadProxyRouterUI() {
-    const container = $('proxyRouterContainer');
-    const addBtn = $('addProxyServerBtn');
-    if (!container) return;
+  function routeSummary(activeDomainCount, isGlobal) {
+    return isGlobal ? 'global fallback' : `${activeDomainCount} routed`;
+  }
 
-    const settingsMode = isSettingsPage();
-    if (settingsMode && !addBtn) return;
-    let proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
-    proxyConfigs.forEach(pc => {
-      pc.credentialAction = 'preserve';
-      delete pc.username;
-      delete pc.password;
-      delete pc.authIv;
-      delete pc.authCipher;
+  function setOnlineStatus({ txt, dot, meta, pc, activeDomainCount, isGlobal, ip = '' }) {
+    if (!txt || !dot) return;
+    const ipSuffix = ip ? ` (${ip})` : '';
+    const type = pc.type || 'PROXY';
+    const credentials = pc.hasCredentials ? 'credentials saved' : 'no credentials';
+
+    if (isGlobal) {
+      txt.textContent = `GLOBAL VPN ACTIVE${ipSuffix}`;
+      if (meta) meta.textContent = `${type} - ${credentials} - global fallback`;
+    } else if (activeDomainCount > 0) {
+      txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
+      if (meta) meta.textContent = `${type} - ${credentials} - ${activeDomainCount} routed`;
+    } else {
+      txt.textContent = `CONNECTED${ipSuffix}`;
+      if (meta) meta.textContent = `${type} - ${credentials} - 0 routed`;
+    }
+    dot.style.background = 'var(--c-cyan)';
+    dot.style.boxShadow = '0 0 8px var(--c-cyan)';
+  }
+
+  function renderPopupProxyCard(pc, index, proxyConfigState) {
+    const accepted = !!(pc.accepted && pc.host && pc.port);
+    const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
+    const isGlobal = !!(accepted && proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
+    const card = document.createElement('div');
+    card.className = 'protection-list';
+    card.style.marginBottom = '12px';
+    card.innerHTML = `
+      <div style="padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <div style="min-width: 0;">
+          <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 2px;">${escapeHTML(pc.name || 'Server ' + (index + 1))}</div>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${accepted ? `${escapeHTML(pc.host)}:${escapeHTML(pc.port)}` : 'Not configured'}</div>
+          <div class="proxy-meta-text" style="font-size: 9px; color: var(--text-dim); margin-top: 2px;">${escapeHTML(pc.type || 'PROXY')} &middot; ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} &middot; ${routeSummary(activeDomainCount, isGlobal)}</div>
+          <div class="proxy-status-line" style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <span class="proxy-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 5px rgba(255,255,255,0.1);"></span>
+            <span class="proxy-status-text" style="font-size: 9px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${accepted ? 'Checking...' : 'Open settings to configure'}</span>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
+          ${accepted ? `
+            <button class="reset-btn proxy-refresh-btn" style="font-size:9px;padding:3px 8px;" title="Refresh Connection">&#x21bb;</button>
+            <label class="switch switch-sm" title="Use as Global Fallback">
+              <input type="checkbox" class="proxy-global-toggle" />
+              <span class="slider"></span>
+            </label>
+          ` : ''}
+        </div>
+      </div>
+    `;
+
+    const txt = card.querySelector('.proxy-status-text');
+    const dot = card.querySelector('.proxy-status-dot');
+    const meta = card.querySelector('.proxy-meta-text');
+    const refreshBtn = card.querySelector('.proxy-refresh-btn');
+    const globalToggle = card.querySelector('.proxy-global-toggle');
+
+    const getStatusContext = (ip = '') => ({
+      txt,
+      dot,
+      meta,
+      pc,
+      activeDomainCount,
+      isGlobal: !!globalToggle?.checked,
+      ip
     });
 
-    if (!settingsMode) {
-      const { config: proxyConfigState = {} } = await chrome.storage.local.get('config');
-      if (addBtn) {
-        addBtn.title = 'Manage Proxies';
-        addBtn.onclick = openProxySettings;
-      }
-
-      const renderPopupCard = (pc, index) => {
-        const accepted = !!(pc.accepted && pc.host && pc.port);
-        const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
-        const isGlobal = !!(accepted && proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
-        const routeSummary = isGlobal
-          ? 'global fallback'
-          : `${activeDomainCount} routed`;
-        const card = document.createElement('div');
-        card.className = 'protection-list';
-        card.style.marginBottom = '12px';
-        card.innerHTML = `
-          <div style="padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-            <div style="min-width: 0;">
-              <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 2px;">${escapeHTML(pc.name || 'Server ' + (index + 1))}</div>
-              <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${accepted ? `${escapeHTML(pc.host)}:${escapeHTML(pc.port)}` : 'Not configured'}</div>
-              <div class="proxy-meta-text" style="font-size: 9px; color: var(--text-dim); margin-top: 2px;">${escapeHTML(pc.type || 'PROXY')} &middot; ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} &middot; ${routeSummary}</div>
-              <div class="proxy-status-line" style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
-                <span class="proxy-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 5px rgba(255,255,255,0.1);"></span>
-                <span class="proxy-status-text" style="font-size: 9px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${accepted ? 'Checking...' : 'Open settings to configure'}</span>
-              </div>
-            </div>
-            <div style="display: flex; align-items: center; justify-content: center; gap: 8px; flex-shrink: 0;">
-              ${accepted ? `
-                <button class="reset-btn proxy-refresh-btn" style="font-size:9px;padding:3px 8px;" title="Refresh Connection">↻</button>
-                <label class="switch switch-sm" title="Use as Global Fallback">
-                  <input type="checkbox" class="proxy-global-toggle" />
-                  <span class="slider"></span>
-                </label>
-              ` : ''}
-            </div>
-          </div>
-        `;
-
-        const txt = card.querySelector('.proxy-status-text');
-        const dot = card.querySelector('.proxy-status-dot');
-        const meta = card.querySelector('.proxy-meta-text');
-        const refreshBtn = card.querySelector('.proxy-refresh-btn');
-        const globalToggle = card.querySelector('.proxy-global-toggle');
-
-        const setConnectedStatus = (ip = '') => {
-          if (!txt || !dot) return;
-          const ipSuffix = ip ? ` (${ip})` : '';
-          if (globalToggle?.checked) {
-            txt.textContent = `GLOBAL VPN ACTIVE${ipSuffix}`;
-            if (meta) meta.textContent = `${pc.type || 'PROXY'} · ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} · global fallback`;
-          } else if (activeDomainCount > 0) {
-            txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
-            if (meta) meta.textContent = `${pc.type || 'PROXY'} · ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} · ${activeDomainCount} routed`;
-          } else {
-            txt.textContent = `CONNECTED${ipSuffix}`;
-            if (meta) meta.textContent = `${pc.type || 'PROXY'} · ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} · 0 routed`;
+    if (globalToggle) {
+      globalToggle.checked = isGlobal;
+      globalToggle.addEventListener('change', async (e) => {
+        const isChecked = e.target.checked;
+        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
+          e.target.checked = false;
+          return;
+        }
+        const result = await notifyBackground({
+          type: MSG.CONFIG_SET,
+          config: {
+            globalProxyEnabled: isChecked,
+            globalProxyId: isChecked ? pc.id : null
           }
-          dot.style.background = 'var(--c-cyan)';
-          dot.style.boxShadow = '0 0 8px var(--c-cyan)';
-        };
-
-        if (globalToggle) {
-          globalToggle.checked = !!(proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
-          globalToggle.addEventListener('change', async (e) => {
-            const isChecked = e.target.checked;
-            if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
-              e.target.checked = false;
-              return;
-            }
-            const result = await notifyBackground({
-              type: MSG.CONFIG_SET,
-              config: {
-                globalProxyEnabled: isChecked,
-                globalProxyId: isChecked ? pc.id : null
-              }
-            });
-            if (!result || result.ok === false) {
-              e.target.checked = !isChecked;
-              setConnectedStatus();
-              return;
-            }
-            if (isChecked) {
-              document.querySelectorAll('.proxy-global-toggle').forEach(t => {
-                if (t !== globalToggle) t.checked = false;
-              });
-            }
-            await loadProxyRouterUI();
+        });
+        if (!result || result.ok === false) {
+          e.target.checked = !isChecked;
+          setOnlineStatus(getStatusContext());
+          return;
+        }
+        if (isChecked) {
+          document.querySelectorAll('.proxy-global-toggle').forEach(t => {
+            if (t !== globalToggle) t.checked = false;
           });
         }
-
-        const testConnection = async () => {
-          if (!accepted || !txt || !dot) return;
-          dot.style.background = 'var(--text-muted)';
-          txt.textContent = 'Verifying...';
-          const res = await notifyBackground({ type: MSG.PROXY_TEST, proxyId: pc.id });
-          if (res && res.ok) {
-            setConnectedStatus(res.ip);
-          } else {
-            dot.style.background = 'var(--c-red)';
-            dot.style.boxShadow = '0 0 8px var(--c-red)';
-            txt.textContent = res ? `Offline (${res.error})` : 'Offline';
-          }
-        };
-
-        refreshBtn?.addEventListener('click', testConnection);
-        if (accepted) testConnection();
-        return card;
-      };
-
-      container.innerHTML = '';
-      if (proxyConfigs.length === 0) {
-        container.innerHTML = '<div class="protection-list" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 11px;">No proxy servers configured.</div>';
-      } else {
-        proxyConfigs.forEach((pc, i) => container.appendChild(renderPopupCard(pc, i)));
-      }
-
-      const manage = document.createElement('button');
-      manage.className = 'reset-btn';
-      manage.style.cssText = 'width: calc(100% - 24px); margin: 0 12px 12px; padding: 8px; font-size: 11px;';
-      manage.textContent = 'Manage proxies';
-      manage.addEventListener('click', openProxySettings);
-      container.appendChild(manage);
-      return;
+        await loadProxyRouterUI();
+      });
     }
 
+    const testConnection = async () => {
+      if (!accepted || !txt || !dot) return;
+      dot.style.background = 'var(--text-muted)';
+      txt.textContent = 'Verifying...';
+      const res = await notifyBackground({ type: MSG.PROXY_TEST, proxyId: pc.id });
+      if (res && res.ok) {
+        setOnlineStatus(getStatusContext(res.ip));
+      } else {
+        dot.style.background = 'var(--c-red)';
+        dot.style.boxShadow = '0 0 8px var(--c-red)';
+        txt.textContent = res ? `Offline (${res.error})` : 'Offline';
+      }
+    };
+
+    refreshBtn?.addEventListener('click', testConnection);
+    if (accepted) testConnection();
+    return card;
+  }
+
+  async function renderPopupSummary(container, addBtn, proxyConfigs) {
+    const { config: proxyConfigState = {} } = await chrome.storage.local.get('config');
+    if (addBtn) {
+      addBtn.title = 'Manage Proxies';
+      addBtn.onclick = openProxySettings;
+    }
+
+    container.innerHTML = '';
+    if (proxyConfigs.length === 0) {
+      container.innerHTML = '<div class="protection-list" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 11px;">No proxy servers configured.</div>';
+    } else {
+      proxyConfigs.forEach((pc, i) => container.appendChild(renderPopupProxyCard(pc, i, proxyConfigState)));
+    }
+
+    const manage = document.createElement('button');
+    manage.className = 'reset-btn';
+    manage.style.cssText = 'width: calc(100% - 24px); margin: 0 12px 12px; padding: 8px; font-size: 11px;';
+    manage.textContent = 'Manage proxies';
+    manage.addEventListener('click', openProxySettings);
+    container.appendChild(manage);
+  }
+
+  function createProxyStore(proxyConfigs) {
     const buildProxySavePayload = (credentialById = new Map()) => proxyConfigs
       .filter(pc => pc.accepted === true)
       .map(pc => {
-      const credential = credentialById.get(pc.id) || {};
-      const action = credential.action || pc.credentialAction || 'preserve';
-      const out = {
-        id: pc.id,
-        name: pc.name,
-        host: pc.host,
-        port: pc.port,
-        type: pc.type,
-        accepted: pc.accepted,
-        domains: pc.domains,
-        credentialAction: action
-      };
-      if (out.credentialAction === 'replace') {
-        out.username = credential.username || '';
-        out.password = credential.password || '';
-      }
-      return out;
-    });
+        const credential = credentialById.get(pc.id) || {};
+        const action = credential.action || pc.credentialAction || 'preserve';
+        const out = {
+          id: pc.id,
+          name: pc.name,
+          host: pc.host,
+          port: pc.port,
+          type: pc.type,
+          accepted: pc.accepted,
+          domains: pc.domains,
+          credentialAction: action
+        };
+        if (out.credentialAction === 'replace') {
+          out.username = credential.username || '';
+          out.password = credential.password || '';
+        }
+        return out;
+      });
 
-    const saveAllConfigs = async (credentialById = new Map()) => {
+    const saveAllConfigs = (credentialById = new Map()) => {
       return notifyBackground({ type: MSG.PROXY_CONFIG_SET, proxyConfigs: buildProxySavePayload(credentialById) });
     };
+
+    return { saveAllConfigs };
+  }
+
+  function renderSettingsEditor(container, addBtn, proxyConfigs) {
+    const { saveAllConfigs } = createProxyStore(proxyConfigs);
 
     const renderProxyCard = (pc, index) => {
       const card = document.createElement('div');
@@ -203,7 +207,7 @@ const ChromaProxyUI = (() => {
             <span class="proxy-credential-help">${pc.hasCredentials ? 'Credentials saved locally. Leave fields blank to keep them.' : 'Credentials are stored locally in encrypted extension storage and used only for proxy authentication.'}</span>
             <button class="reset-btn proxy-clear-credentials-btn" style="display: ${pc.hasCredentials ? 'inline-block' : 'none'}; padding: 1px 6px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 10px;">Clear credentials</button>
           </div>
-          <div class="proxy-auth-note" style="grid-column: 1 / -1; font-size: 10px; color: var(--text-muted); margin-top: -2px; display: none;">SOCKS auth isn't supported by Chrome — use IP whitelisting on your provider.</div>
+          <div class="proxy-auth-note" style="grid-column: 1 / -1; font-size: 10px; color: var(--text-muted); margin-top: -2px; display: none;">SOCKS auth isn't supported by Chrome - use IP whitelisting on your provider.</div>
           <div class="proxy-error" style="grid-column: 1 / -1; display: none; font-size: 10px; color: var(--c-red);"></div>
           <div style="grid-column: 1 / -1; display: flex; gap: 8px;">
             <button class="reset-btn proxy-accept-btn" style="flex: 1; padding: 6px;">Accept Settings</button>
@@ -219,7 +223,7 @@ const ChromaProxyUI = (() => {
               <span class="proxy-status-dot" style="width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); box-shadow: 0 0 5px rgba(255,255,255,0.1);"></span>
               <span class="proxy-status-text" style="font-size: 9px; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">Checking...</span>
               <button class="reset-btn proxy-edit-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; opacity: 0.7;" title="Edit Server">Edit</button>
-              <button class="reset-btn proxy-refresh-btn" style="font-size:9px;padding:3px 8px;" title="Refresh Connection">↻</button>
+              <button class="reset-btn proxy-refresh-btn" style="font-size:9px;padding:3px 8px;" title="Refresh Connection">&#x21bb;</button>
               <span style="display:inline-block; width:1px; height:12px; background:rgba(255,255,255,0.08); align-self:center;"></span>
               <button class="reset-btn proxy-clear-settings-btn" style="font-size: 10px; padding: 1px 4px; line-height: 1; border: none; background: transparent; color: var(--c-red); opacity: 0.7;" title="Clear Settings">Clear</button>
             </div>
@@ -296,7 +300,7 @@ const ChromaProxyUI = (() => {
       };
 
       // Chrome's webRequest.onAuthRequired only fires for HTTP(S) 407 challenges,
-      // so SOCKS4/5 username+password auth can never succeed — hide the fields.
+      // so SOCKS4/5 username+password auth can never succeed - hide the fields.
       let previousType = typeSelect.value;
       const applyAuthVisibility = (fromUserChange = false) => {
         const isSocks = typeSelect.value === 'SOCKS4' || typeSelect.value === 'SOCKS5';
@@ -609,6 +613,30 @@ const ChromaProxyUI = (() => {
     };
 
     renderAll();
+  }
+
+  async function loadProxyRouterUI() {
+    const container = $('proxyRouterContainer');
+    const addBtn = $('addProxyServerBtn');
+    if (!container) return;
+
+    const settingsMode = isSettingsPage();
+    if (settingsMode && !addBtn) return;
+    let proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+    proxyConfigs.forEach(pc => {
+      pc.credentialAction = 'preserve';
+      delete pc.username;
+      delete pc.password;
+      delete pc.authIv;
+      delete pc.authCipher;
+    });
+
+    if (!settingsMode) {
+      await renderPopupSummary(container, addBtn, proxyConfigs);
+      return;
+    }
+
+    renderSettingsEditor(container, addBtn, proxyConfigs);
   }
 
   return { loadProxyRouterUI };

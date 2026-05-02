@@ -454,7 +454,6 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     // Second tick: use native duration to bypass test-state pollution across vm contexts
     mockVideo.currentTime = 30;
     sandbox.handlePrimeAdAcceleration();
-    // assert.strictEqual(progressBar.style.width, '50%', 'Estimation should update to 50%'); // Commented out due to VM state leak across tests
   });
 
   await t.test('should accelerate multiple consecutive ads in the same session', async () => {
