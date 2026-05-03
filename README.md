@@ -29,67 +29,37 @@ Chroma utilizes a multi-layered execution model designed to survive the ephemera
 
 **Diagram 1 — Page Execution Flow**
 
-How Chroma operates inside a browser tab. Some layers run on every page; MAIN-world handlers are scoped by the manifest or registered dynamically.
+How Chroma operates inside a browser tab. The always-on isolated content script handles cosmetics; MAIN-world logic only runs where the manifest or registered scriptlets match.
 
 ```mermaid
 graph TD
-    classDef main      fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
-    classDef isolated  fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
-    classDef dom       fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
-    classDef actor     fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
-    classDef registry  fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
+    classDef ext fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
+    classDef main fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
+    classDef page fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
+    classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
-    TAB["Browser Tab"]:::actor
-    NET["Network Responses"]:::actor
-    PAGE["Page JS / Media Player / DOM"]:::dom
+    LOAD["Page load"]:::actor
+    PAGE["Page DOM / Media Player"]:::page
     USER["User"]:::actor
 
-    subgraph MW["Main World (Page Context)"]
-        INTERCEPT["interceptor.js<br/>(YouTube + Amazon/Prime; safety exclusions)"]:::main
-        YT_H["yt_handler.js<br/>(YouTube only)"]:::main
-        PRM_H["prm_handler.js<br/>(Amazon/Prime only)"]:::main
-        RECIPES["recipes.js<br/>(recipe/blog sites only)"]:::main
-    end
+    LOAD --> CONTENT["content.js<br/>all URLs, isolated world"]:::ext
+    CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
 
-    subgraph IW["Isolated World (Extension Context)"]
-        CONT["content.js<br/>(all URLs)"]:::isolated
-        PROT["protection.js<br/>(YouTube + Amazon/Prime)"]:::isolated
-        ZAP["zapper.js<br/>(on demand)"]:::isolated
-    end
+    LOAD --> MEDIA{"YouTube or Amazon/Prime?"}:::actor
+    MEDIA -->|"yes"| BRIDGE["protection.js + interceptor.js<br/>secure config bridge"]:::main
+    BRIDGE --> HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
+    HANDLERS --> PAGE
 
-    subgraph REG["Dynamically Registered MAIN-World Scripts"]
-        SCRIPTS["Filter-list Scriptlets<br/>(chrome.userScripts)"]:::registry
-        FPR["Fingerprint Randomization<br/>(optional registered content script)"]:::registry
-    end
+    LOAD --> RECIPES{"Recipe/blog allowlist?"}:::actor
+    RECIPES -->|"yes"| RECIPE["recipes.js<br/>layout protection + anti-adblock containment"]:::main
+    RECIPE --> PAGE
 
-    TAB -->|"manifest: document_start, all URLs"| CONT
-    TAB -->|"manifest: document_start, matching media sites"| PROT
-    TAB -->|"manifest: MAIN, matching media sites"| INTERCEPT
-    TAB -->|"manifest: MAIN, YouTube"| YT_H
-    TAB -->|"manifest: MAIN, Amazon/Prime"| PRM_H
-    TAB -->|"manifest: MAIN, recipe/blog allowlist"| RECIPES
-    TAB -->|"service worker registration"| REG
+    LOAD --> SCRIPTLETS["Registered scriptlets / optional FPR<br/>MAIN world, matched by rule"]:::main
+    SCRIPTLETS --> PAGE
 
-    PROT <-->|"nonce + MessageChannel config"| INTERCEPT
-    PROT -->|"__EXT_INIT__ / config events"| YT_H
-    PROT -->|"__EXT_INIT__ / config events"| PRM_H
-    INTERCEPT -->|"pristine API bridge + config event"| YT_H
-    INTERCEPT -->|"pristine API bridge + config event"| PRM_H
-
-    NET -->|"YouTube API JSON via fetch/XHR/JSON.parse"| YT_H
-    YT_H -->|"sanitized payloads + optional ad acceleration"| PAGE
-    PRM_H -->|"Prime/Amazon ad acceleration"| PAGE
-    RECIPES -->|"script containment + layout protection"| PAGE
-    CONT -->|"cosmetic CSS + MutationObserver cleanup"| PAGE
-    ZAP -->|"temporary picker; saved local cosmetic rule"| CONT
-    SCRIPTS -->|"filter-list API/DOM patches"| PAGE
-    FPR -->|"optional canvas/audio/API randomization"| PAGE
+    ZAP["Element zapper<br/>injected only from popup"]:::ext -->|"saved local cosmetic rule"| CONTENT
 
     PAGE --> USER
-
-    style MW fill:none,stroke:#880e4f,stroke-width:1px,stroke-dasharray:4
-    style IW fill:none,stroke:#1b5e20,stroke-width:1px,stroke-dasharray:4
-    style REG fill:none,stroke:#311b92,stroke-width:1px,stroke-dasharray:4
 ```
 
 ---
@@ -100,68 +70,38 @@ How Chroma manages rules, storage, and network-level blocking from the service w
 
 ```mermaid
 graph TD
-    classDef sw       fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
-    classDef storage  fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
-    classDef dnr      fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
-    classDef actor    fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
-    classDef browser  fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
+    classDef sw fill:#e1f5fe,color:#01579b,stroke:#01579b,stroke-width:2px
+    classDef storage fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
+    classDef dnr fill:#ede7f6,color:#311b92,stroke:#311b92,stroke-width:2px
+    classDef browser fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
+    classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
-    REQUESTS["Browser Requests"]:::browser
-    ALLOWED["Allowed / Routed Network Traffic"]:::browser
-    FILTERS["Remote Filter Lists"]:::actor
-    UI["popup.js / settings.js"]:::actor
-    TABS["Open Tabs / Content Scripts"]:::actor
-    STORAGE[("chrome.storage.local")]:::storage
-    STATIC["Static DNR Rulesets<br/>(11 manifest resources)"]:::dnr
-    DYNAMIC["Dynamic DNR Rules<br/>(default, whitelist, subscriptions)"]:::dnr
-    USERSCRIPTS["chrome.userScripts Registry"]:::browser
-    FPR_REG["Registered FPR Content Script"]:::browser
-    PROXY_API["chrome.proxy PAC + webRequest auth"]:::browser
+    UI["Popup / Settings UI"]:::actor
+    SW["Service Worker<br/>background.js + handlers.js"]:::sw
+    STORE[("chrome.storage.local")]:::storage
+    SUBS["subscriptions/manager.js<br/>fetch, parse, dedupe, allocate"]:::sw
+    SCRIPTS["scriptlets/engine.js<br/>register userScripts + optional FPR"]:::sw
+    DNR["Declarative Net Request<br/>static rules + dynamic rules"]:::dnr
+    PROXY["proxy.js<br/>optional PAC routing + auth"]:::sw
+    REQ["Browser Requests"]:::browser
+    NET["Network"]:::browser
+    TABS["Open Tabs"]:::actor
 
-    subgraph SW["Service Worker"]
-        BG["background.js"]:::sw
-        ROUTER["messageRouter.js"]:::sw
-        HANDLERS["handlers.js"]:::sw
-        SUBS["subscriptions/manager.js"]:::sw
-        SCRPT["scriptlets/engine.js"]:::sw
-        PROXY["proxy.js"]:::sw
-    end
+    UI -->|"runtime messages"| SW
+    SW <-->|"config, stats, whitelist, proxy settings"| STORE
+    SW -->|"CONFIG_UPDATE"| TABS
+    SW -->|"enable static rules / sync dynamic rules"| DNR
 
-    subgraph DNR_LAYER["Declarative Net Request (Browser Engine)"]
-        STATIC
-        DYNAMIC
-    end
+    SW -->|"install, startup, alarm, manual refresh"| SUBS
+    SUBS -->|"parsed network rules"| DNR
+    SUBS -->|"cosmetic + scriptlet rules"| STORE
+    STORE --> SCRIPTS
+    SCRIPTS -->|"registered MAIN-world scripts"| TABS
 
-    BG -->|"register handlers + attach listener"| ROUTER
-    ROUTER -->|"validated dispatch"| HANDLERS
-    UI -->|"runtime messages"| ROUTER
-    UI -->|"direct storage reads for display-only stats"| STORAGE
-
-    HANDLERS <-->|"config, stats, whitelist, proxy configs"| STORAGE
-    HANDLERS -->|"enable / disable static sets"| STATIC
-    HANDLERS -->|"sync default + whitelist rules"| DYNAMIC
-    HANDLERS -->|"broadcast CONFIG_UPDATE"| TABS
-    HANDLERS -->|"inject zapper.js on demand"| TABS
-
-    BG -->|"install / startup / alarms"| SUBS
-    SUBS -->|"fetch"| FILTERS
-    SUBS <-->|"metadata + parsed rules"| STORAGE
-    SUBS -->|"allocated subscription network rules"| DYNAMIC
-    STORAGE -->|"subscriptionScriptletRules + whitelists"| SCRPT
-    SCRPT -->|"register / unregister filter-list scriptlets"| USERSCRIPTS
-    SCRPT -->|"register / update optional FPR script"| FPR_REG
-
-    STORAGE -->|"proxyConfigs + global proxy setting"| PROXY
-    PROXY -->|"PAC routing + proxy credentials"| PROXY_API
-
-    REQUESTS --> STATIC
-    REQUESTS --> DYNAMIC
-    STATIC -->|"block / allow decisions before network"| ALLOWED
-    DYNAMIC -->|"block / allow decisions before network"| ALLOWED
-    PROXY_API -->|"routes matching allowed requests"| ALLOWED
-
-    style SW fill:none,stroke:#01579b,stroke-width:1px,stroke-dasharray:4
-    style DNR_LAYER fill:none,stroke:#311b92,stroke-width:1px,stroke-dasharray:4
+    STORE --> PROXY
+    REQ -->|"blocked or allowed before network"| DNR
+    DNR -->|"allowed requests"| PROXY
+    PROXY -->|"direct or proxied"| NET
 ```
 
 ---
