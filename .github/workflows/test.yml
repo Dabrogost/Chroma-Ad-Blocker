@@ -55,6 +55,3 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && steps.browser.outputs.available == 'true'
         timeout-minutes: 15
         run: npm run test:e2e
-
-      - name: Package extension
-        run: npm run package:extension
