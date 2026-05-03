@@ -36,6 +36,14 @@ const ChromaApp = (() => {
     }
   }
 
+  function openSettingsPage() {
+    if (chrome.runtime.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+    } else {
+      window.open(chrome.runtime.getURL('ui/settings.html'));
+    }
+  }
+
   async function initSharedUI() {
     const manifest = chrome.runtime.getManifest();
     if ($('versionText')) {
@@ -267,6 +275,28 @@ const ChromaApp = (() => {
     }
 
     // ─── EXTERNAL LINKS ─────
+    const zapBtn = $('zapElementBtn');
+    const zapStatus = $('zapperStatus');
+    if (zapBtn) {
+      if (!activeTab?.id || !currentDomain) {
+        zapBtn.disabled = true;
+        if (zapStatus) zapStatus.textContent = 'Unavailable on this page';
+      } else {
+        zapBtn.addEventListener('click', async () => {
+          zapBtn.disabled = true;
+          if (zapStatus) zapStatus.textContent = 'Starting...';
+          const result = await notifyBackground({ type: MSG.ZAPPER_START, tabId: activeTab.id });
+          if (result?.ok) {
+            if (zapStatus) zapStatus.textContent = 'Click an element on the page';
+            setTimeout(() => window.close?.(), 250);
+          } else {
+            if (zapStatus) zapStatus.textContent = result?.error || 'Could not start zapper';
+            zapBtn.disabled = false;
+          }
+        });
+      }
+    }
+
     document.querySelectorAll('a[target="_blank"]').forEach(link => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
@@ -281,13 +311,17 @@ const ChromaApp = (() => {
 
     const settingsIcon = $('settingsIcon');
     if (settingsIcon) {
-      settingsIcon.addEventListener('click', () => {
-        if (chrome.runtime.openOptionsPage) {
-          chrome.runtime.openOptionsPage();
-        } else {
-          window.open(chrome.runtime.getURL('ui/settings.html'));
-        }
+      settingsIcon.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openSettingsPage();
       });
+    }
+
+    const cardNetwork = $('cardNetwork');
+    if (cardNetwork && settingsIcon) {
+      cardNetwork.style.cursor = 'pointer';
+      cardNetwork.title = 'Open Settings';
+      cardNetwork.addEventListener('click', openSettingsPage);
     }
 
     // ─── SUBSCRIPTION UI ─────
@@ -493,6 +527,73 @@ const ChromaApp = (() => {
     }
 
     // ─── REQUEST LOG UI ─────
+    async function loadLocalZapperRulesUI() {
+      if (!isSettingsPage()) return;
+      const list = $('localZapperRules');
+      if (!list) return;
+
+      const res = await notifyBackground({ type: MSG.ZAPPER_RULES_GET }) || { rules: [] };
+      const rules = Array.isArray(res.rules) ? res.rules : [];
+      list.innerHTML = '';
+
+      if (rules.length === 0) {
+        list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No local zapper rules saved.</span></div>';
+        return;
+      }
+
+      const grouped = rules.reduce((map, rule) => {
+        const key = rule.domain || 'unknown';
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(rule);
+        return map;
+      }, new Map());
+
+      for (const [domain, domainRules] of grouped) {
+        const header = document.createElement('div');
+        header.style.cssText = 'padding: 8px 20px 4px; font-size: 11px; color: var(--c-cyan); font-family: JetBrains Mono, monospace;';
+        header.textContent = domain;
+        list.appendChild(header);
+
+        for (const rule of domainRules) {
+          const row = document.createElement('div');
+          row.className = 'toggle-row';
+          row.innerHTML = `
+            <div class="toggle-info">
+              <div class="zapper-rule-selector" title="${escapeHTML(rule.selector)}">${escapeHTML(rule.selector)}</div>
+              <div class="desc">Saved ${new Date(rule.createdAt || Date.now()).toLocaleDateString()}</div>
+            </div>
+            <div class="zapper-rule-actions">
+              <label class="switch switch-sm" title="${rule.enabled ? 'Disable rule' : 'Enable rule'}">
+                <input type="checkbox" class="zapper-rule-toggle" data-id="${escapeHTML(rule.id)}" ${rule.enabled ? 'checked' : ''} />
+                <span class="slider"></span>
+              </label>
+              <button class="reset-btn zapper-rule-delete" data-id="${escapeHTML(rule.id)}" title="Delete rule" style="padding: 3px 8px;">Delete</button>
+            </div>
+          `;
+          list.appendChild(row);
+        }
+      }
+
+      list.querySelectorAll('.zapper-rule-toggle').forEach(input => {
+        input.addEventListener('change', async (event) => {
+          await notifyBackground({
+            type: MSG.ZAPPER_RULE_SET,
+            id: event.target.dataset.id,
+            enabled: event.target.checked
+          });
+        });
+      });
+
+      list.querySelectorAll('.zapper-rule-delete').forEach(button => {
+        button.addEventListener('click', async (event) => {
+          await notifyBackground({ type: MSG.ZAPPER_RULE_REMOVE, id: event.target.dataset.id });
+          await loadLocalZapperRulesUI();
+        });
+      });
+    }
+
+    await loadLocalZapperRulesUI();
+
     const RT_BADGE = {
       script:         { label: 'JS',  color: 'rgba(0,255,204,0.15)',  text: 'var(--c-cyan)' },
       xmlhttprequest: { label: 'XHR', color: 'rgba(0,136,255,0.15)', text: 'var(--c-blue)' },

@@ -70,6 +70,7 @@ test('popup.js functionality', async (t) => {
 
     const chromeMock = {
       runtime: {
+        optionsOpened: 0,
         sendMessage: async (msg) => {
           messages.push(msg);
           if (msg.type === 'CONFIG_GET') {
@@ -106,7 +107,8 @@ test('popup.js functionality', async (t) => {
           }
         },
         getManifest: () => ({ version: '1.0.0' }),
-        getURL: (path) => `chrome-extension://test/${path}`
+        getURL: (path) => `chrome-extension://test/${path}`,
+        openOptionsPage: () => { chromeMock.runtime.optionsOpened++; }
       },
       storage: {
         local: {
@@ -167,6 +169,10 @@ test('popup.js functionality', async (t) => {
         PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
         PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
         PROXY_TEST: 'PROXY_TEST',
+        ZAPPER_START: 'ZAPPER_START',
+        ZAPPER_RULES_GET: 'ZAPPER_RULES_GET',
+        ZAPPER_RULE_REMOVE: 'ZAPPER_RULE_REMOVE',
+        ZAPPER_RULE_SET: 'ZAPPER_RULE_SET',
         WHITELIST_GET: 'WHITELIST_GET',
         WHITELIST_ADD: 'WHITELIST_ADD',
         WHITELIST_REMOVE: 'WHITELIST_REMOVE',
@@ -194,6 +200,8 @@ test('popup.js functionality', async (t) => {
     getElement('toggleOffers');
     getElement('toggleWarnings');
     getElement('statNetworkBlocked');
+    getElement('cardNetwork');
+    getElement('settingsIcon');
     getElement('resetStats');
     getElement('toggleWhitelist');
     getElement('subscriptionList');
@@ -358,6 +366,18 @@ test('popup.js functionality', async (t) => {
       m.type === 'PROXY_CONFIG_SET' &&
       JSON.stringify(m).match(/username|password|credentialAction":"replace/)
     ), false);
+  });
+
+  await t.test('ads blocked card opens settings', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    await elements['cardNetwork'].dispatchEvent('click');
+
+    assert.strictEqual(chromeMock.runtime.optionsOpened, 1);
+    assert.strictEqual(elements['cardNetwork'].style.cursor, 'pointer');
   });
 });
 

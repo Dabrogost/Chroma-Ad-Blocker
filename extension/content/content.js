@@ -26,7 +26,9 @@
   // ─── STATE ─────
   let observer = null;
   let HIDE_SELECTORS = [];
+  let LOCAL_ZAPPER_SELECTORS = [];
   let WARNING_SELECTOR_COMBINED = '';
+  let IS_WHITELISTED = false;
   
   // Track our adopted stylesheets to allow toggling without clobbering other extensions
   const chromaSheets = new Map();
@@ -70,6 +72,31 @@
     return selectors.map(selector => `${selector} {${body}}`).join('\n');
   }
 
+  function buildLocalZapperCSS(selectors) {
+    return selectors.map(selector => `${selector} { display: none !important; }`).join('\n');
+  }
+
+  function domainMatches(hostname, domain) {
+    return hostname === domain || hostname.endsWith('.' + domain);
+  }
+
+  function getMatchingLocalZapperSelectors(rules, hostname = window.location.hostname) {
+    if (!Array.isArray(rules)) return [];
+
+    return getValidSelectors(
+      rules
+        .filter(rule =>
+          rule &&
+          rule.source === 'zapper' &&
+          rule.enabled === true &&
+          typeof rule.domain === 'string' &&
+          typeof rule.selector === 'string' &&
+          domainMatches(hostname, rule.domain.toLowerCase())
+        )
+        .map(rule => rule.selector)
+    );
+  }
+
   // ─── COSMETIC FILTERING ─────
   function injectAllCSS() {
     const styles = [
@@ -85,6 +112,11 @@
           }
         `,
         isEnabled: () => CONFIG.enabled && CONFIG.cosmetic
+      },
+      {
+        id: 'chroma-local-zapper',
+        content: buildLocalZapperCSS(LOCAL_ZAPPER_SELECTORS),
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && LOCAL_ZAPPER_SELECTORS.length > 0
       },
       {
         id: 'chroma-shorts',
@@ -366,14 +398,24 @@
     }
   });
 
+  if (chrome.storage?.onChanged?.addListener) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes.localCosmeticRules) return;
+      if (IS_WHITELISTED) return;
+      LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(changes.localCosmeticRules.newValue || []);
+      injectAllCSS();
+    });
+  }
+
   // ─── INIT ─────
   async function init() {
     try {
-      const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist', 'subscriptionCosmeticRules']);
+      const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist', 'subscriptionCosmeticRules', 'localCosmeticRules']);
       
       const whitelist = data.whitelist || [];
       const hostname = window.location.hostname;
-      if (whitelist.some(d => hostname === d || hostname.endsWith('.' + d))) {
+      IS_WHITELISTED = whitelist.some(d => hostname === d || hostname.endsWith('.' + d));
+      if (IS_WHITELISTED) {
         if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
         return;
       }
@@ -408,6 +450,8 @@
 
         HIDE_SELECTORS = getValidSelectors([...HIDE_SELECTORS, ...additional]);
       }
+
+      LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(data.localCosmeticRules || [], hostname);
       
       if (data.WARNING_SELECTORS) {
         WARNING_SELECTOR_COMBINED = data.WARNING_SELECTORS.join(',');
@@ -443,5 +487,9 @@
     globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
     /** @param {string[]} val @returns {void} */
     globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = getValidSelectors(val); };
+    /** @param {Object[]} val @param {string} [hostname] @returns {string[]} */
+    globalThis.getMatchingLocalZapperSelectors = getMatchingLocalZapperSelectors;
+    /** @param {Object[]} val @returns {void} */
+    globalThis.setLocalZapperRules = (val) => { LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(val); };
   }
 })();

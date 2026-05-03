@@ -439,6 +439,27 @@ footer {
   border-color: var(--c-purple);
   color: var(--text);
 }
+.zapper-action-row {
+  cursor: default;
+}
+.zapper-action-row .reset-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.zapper-rule-selector {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zapper-rule-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 .chroma-input {
   width: 100%;
   background: rgba(0, 0, 0, 0.2);
