@@ -14,6 +14,7 @@
 - **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
+- **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from the popup without editing filter lists.
 - **Main-World Safety Exclusions**: Bypasses Chroma's MAIN-world interception layer on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network and cosmetic blocking remain user-controllable through per-domain whitelisting.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
@@ -141,6 +142,9 @@ The advanced surgical layer of the extension, migrated to the high-performance `
 ### Layer 4: Cosmetic & Warning Suppression (content.js)
 Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
 
+### Layer 4b: Element Zapper (content/zapper.js, background/handlers.js)
+An on-demand cosmetic rule builder for elements that are too site-specific or personal to belong in a shared filter list. From the popup, click **Zap Element**, choose the page element, and Chroma generates a scoped selector preview before saving it as a local rule. Saved zapper rules are stored locally, applied by the cosmetic layer, and can be enabled, disabled, or removed from the popup.
+
 ### Layer 5: Universal Protection (protection.js, interceptor.js)
 A proactive security layer that maintains extension integrity across execution contexts. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, dispatches the `__EXT_INIT__` document event to signal the MAIN world handlers, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
 
@@ -249,6 +253,19 @@ Instead of reacting to ads after they appear, the Stripper operates at the data 
 
 ---
 
+## Element Zapper
+
+The **Element Zapper** is a manual cleanup tool for one-off annoyances that filter lists do not catch: sticky banners, leftover ad containers, newsletter blocks, floating widgets, or site-specific clutter.
+
+1. Open the Chroma popup on an `http://` or `https://` page.
+2. Click **Zap Element**.
+3. Click the unwanted page element. Press `Esc` to cancel.
+4. Review the selector prompt and save it.
+
+Zapper rules are local to your browser and are stored as cosmetic rules with a `zapper` source. Chroma rejects invalid selectors and warns when a selector matches too many elements, helping avoid accidental broad hiding. Saved rules can be toggled or deleted from the popup at any time.
+
+---
+
 ## Permissions
 
 Chroma requests the following permissions. Each is required for a specific, documented purpose.
@@ -305,6 +322,7 @@ Chroma implements several advanced security measures to ensure extension integri
 | `acceleration` | Enables accelerated ad playback (as a fallback). | `false` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (×4, ×8, ×12, or ×16). | `8` |
 | `cosmetic` | Enables hiding ad placeholders via CSS. | `true` |
+| `localCosmeticRules` | Stores locally created Element Zapper cosmetic rules. | `[]` |
 | `hideShorts` | Removes Shorts component modules. | `false` |
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offer modules. | `true` |

@@ -28,3 +28,4 @@ descriptions.txt
 tmp/
 *.log
 *.local
+docs/testing.md
