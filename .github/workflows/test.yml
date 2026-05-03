@@ -46,8 +46,14 @@ jobs:
           echo "CHROME_BIN=$browser" >> "$GITHUB_ENV"
           echo "CHROME_PATH=$browser" >> "$GITHUB_ENV"
 
-      - name: Run browser E2E
+      - name: Run loaded-extension E2E
         if: steps.browser.outputs.available == 'true'
+        timeout-minutes: 5
+        run: npm run test:e2e:load
+
+      - name: Run full browser E2E
+        if: github.event_name == 'workflow_dispatch' && steps.browser.outputs.available == 'true'
+        timeout-minutes: 15
         run: npm run test:e2e
 
       - name: Package extension
