@@ -8,6 +8,71 @@
   const WARN_SELECTOR_MATCHES = 1;
   const BLOCKED_TAGS = new Set(['HTML', 'BODY', 'HEAD', 'SCRIPT', 'STYLE', 'IFRAME']);
   const RANDOM_RE = /(?:^|[-_])(?:\d{4,}|[a-f0-9]{8,}|[a-z0-9]{10,})(?:$|[-_])/i;
+  const ZAPPER_FONT = '12px/1.25 system-ui,-apple-system,Segoe UI,sans-serif';
+  const PANEL_STYLES = {
+    position: 'fixed',
+    zIndex: '2147483647',
+    background: '#080815',
+    border: '1px solid rgba(0,255,204,0.55)',
+    borderRadius: '8px',
+    boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
+    font: ZAPPER_FONT
+  };
+  const OUTLINE_STYLES = {
+    position: 'fixed',
+    zIndex: '2147483646',
+    pointerEvents: 'none',
+    border: '2px solid #00ffcc',
+    background: 'rgba(0,255,204,0.08)',
+    boxShadow: '0 0 0 1px rgba(0,0,0,0.45),0 0 20px rgba(0,255,204,0.35)',
+    display: 'none'
+  };
+  const TOOLTIP_STYLES = {
+    ...PANEL_STYLES,
+    pointerEvents: 'none',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+    color: '#fff',
+    font: '12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif',
+    display: 'none'
+  };
+  const MENU_STYLES = {
+    ...PANEL_STYLES,
+    display: 'flex',
+    gap: '6px',
+    padding: '8px'
+  };
+  const SAVE_MENU_STYLES = {
+    ...PANEL_STYLES,
+    display: 'grid',
+    gap: '7px',
+    maxWidth: '320px',
+    padding: '9px',
+    color: '#fff'
+  };
+  const BUTTON_STYLES = {
+    border: '1px solid rgba(255,255,255,0.14)',
+    borderRadius: '6px',
+    background: 'rgba(255,255,255,0.06)',
+    color: '#fff',
+    padding: '6px 9px',
+    cursor: 'pointer',
+    font: 'inherit'
+  };
+  const SELECTOR_PREVIEW_STYLES = {
+    maxWidth: '300px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    font: '11px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace',
+    color: '#00ffcc'
+  };
+  const SAVE_ACTION_STYLES = {
+    display: 'flex',
+    gap: '6px',
+    justifyContent: 'flex-end'
+  };
 
   let token = null;
   let active = false;
@@ -142,34 +207,18 @@
     return el;
   }
 
+  function applyStyles(element, styles) {
+    Object.assign(element.style, styles);
+  }
+
   function ensureUi() {
     if (outline) return;
 
     outline = makeRoot('div');
-    outline.style.cssText = [
-      'position:fixed',
-      'z-index:2147483646',
-      'pointer-events:none',
-      'border:2px solid #00ffcc',
-      'background:rgba(0,255,204,0.08)',
-      'box-shadow:0 0 0 1px rgba(0,0,0,0.45),0 0 20px rgba(0,255,204,0.35)',
-      'display:none'
-    ].join(';');
+    applyStyles(outline, OUTLINE_STYLES);
 
     tooltip = makeRoot('div');
-    tooltip.style.cssText = [
-      'position:fixed',
-      'z-index:2147483647',
-      'pointer-events:none',
-      'padding:4px 8px',
-      'border-radius:6px',
-      'background:#080815',
-      'border:1px solid rgba(0,255,204,0.55)',
-      'color:#fff',
-      'font:12px/1.35 system-ui,-apple-system,Segoe UI,sans-serif',
-      'box-shadow:0 8px 24px rgba(0,0,0,0.35)',
-      'display:none'
-    ].join(';');
+    applyStyles(tooltip, TOOLTIP_STYLES);
     tooltip.textContent = 'Click to zap. Esc to cancel.';
 
     document.documentElement.append(outline, tooltip);
@@ -211,15 +260,7 @@
     button.type = 'button';
     button.dataset.action = action;
     button.textContent = label;
-    button.style.cssText = [
-      'border:1px solid rgba(255,255,255,0.14)',
-      'border-radius:6px',
-      'background:rgba(255,255,255,0.06)',
-      'color:#fff',
-      'padding:6px 9px',
-      'cursor:pointer',
-      'font:inherit'
-    ].join(';');
+    applyStyles(button, BUTTON_STYLES);
     return button;
   }
 
@@ -234,18 +275,7 @@
     lastMenuPoint = { x, y };
     menu = makeRoot('div');
     menu.setAttribute(MENU_ATTR, 'true');
-    menu.style.cssText = [
-      'position:fixed',
-      'z-index:2147483647',
-      'display:flex',
-      'gap:6px',
-      'padding:8px',
-      'border-radius:8px',
-      'background:#080815',
-      'border:1px solid rgba(0,255,204,0.55)',
-      'box-shadow:0 12px 32px rgba(0,0,0,0.45)',
-      'font:12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif'
-    ].join(';');
+    applyStyles(menu, MENU_STYLES);
 
     const actions = [
       ['hideOnce', 'Hide once'],
@@ -265,40 +295,20 @@
     pendingSelector = result;
     menu = makeRoot('div');
     menu.setAttribute(MENU_ATTR, 'true');
-    menu.style.cssText = [
-      'position:fixed',
-      'z-index:2147483647',
-      'display:grid',
-      'gap:7px',
-      'max-width:320px',
-      'padding:9px',
-      'border-radius:8px',
-      'background:#080815',
-      'border:1px solid rgba(0,255,204,0.55)',
-      'box-shadow:0 12px 32px rgba(0,0,0,0.45)',
-      'font:12px/1.25 system-ui,-apple-system,Segoe UI,sans-serif',
-      'color:#fff'
-    ].join(';');
+    applyStyles(menu, SAVE_MENU_STYLES);
 
     const selectorText = makeRoot('div');
     selectorText.textContent = result.selector;
-    selectorText.style.cssText = [
-      'max-width:300px',
-      'overflow:hidden',
-      'text-overflow:ellipsis',
-      'white-space:nowrap',
-      'font:11px/1.3 ui-monospace,SFMono-Regular,Consolas,monospace',
-      'color:#00ffcc'
-    ].join(';');
+    applyStyles(selectorText, SELECTOR_PREVIEW_STYLES);
 
     const warning = makeRoot('div');
     warning.textContent = result.count > WARN_SELECTOR_MATCHES
       ? `This selector matches ${result.count} elements. Save it anyway?`
       : 'Save this selector for the site?';
-    warning.style.cssText = 'color:#fff';
+    warning.style.color = '#fff';
 
     const actions = makeRoot('div');
-    actions.style.cssText = 'display:flex;gap:6px;justify-content:flex-end';
+    applyStyles(actions, SAVE_ACTION_STYLES);
     actions.append(
       menuButton('confirmSave', 'Save'),
       menuButton('cancel', 'Cancel')
