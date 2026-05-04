@@ -30,6 +30,9 @@ jobs:
       - name: Validate DNR rules
         run: npm run test:rules
 
+      - name: Verify release package
+        run: npm run package:extension
+
       - name: Locate Chromium or Chrome
         id: browser
         shell: bash
