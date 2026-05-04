@@ -26,12 +26,13 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(proxyUiJs, /Enter both username and password, or leave both blank to keep saved credentials\./);
   });
 
-  await t.test('zapper rules render escaped selector text and expose disable/delete actions', () => {
-    assert.match(appJs, /title="\$\{escapeHTML\(rule\.selector\)\}"/);
-    assert.match(appJs, />\$\{escapeHTML\(rule\.selector\)\}<\/div>/);
+  await t.test('zapper rules render selector text safely and expose disable/delete actions', () => {
+    assert.match(appJs, /appendElement\(info, 'div', 'zapper-rule-selector', rule\.selector\)/);
+    assert.match(appJs, /selector\.title = rule\.selector/);
     assert.match(appJs, /type: MSG\.ZAPPER_RULE_SET/);
     assert.match(appJs, /type: MSG\.ZAPPER_RULE_REMOVE/);
-    assert.doesNotMatch(appJs, /zapper-rule-selector[\s\S]{0,120}\$\{rule\.selector\}/);
+    assert.doesNotMatch(appJs, /escapeHTML\(rule\.selector\)/);
+    assert.doesNotMatch(appJs, /zapper-rule-selector[\s\S]{0,200}innerHTML/);
   });
 
   await t.test('settings page supports direct proxy hash entry points', () => {

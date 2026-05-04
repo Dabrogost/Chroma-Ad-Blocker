@@ -8,6 +8,7 @@ const TIERS = {
     'background.test.js',
     'content.test.js',
     'interceptor.test.js',
+    'message-types.test.js',
     'popup.test.js',
     'prm_handler.test.js',
     'proxy.test.js',
@@ -20,6 +21,7 @@ const TIERS = {
   security: [
     'dnr-id-ranges.test.js',
     'interceptor.test.js',
+    'message-types.test.js',
     'proxy.test.js',
     'scriptlets.test.js',
     'security_hardening.test.js',

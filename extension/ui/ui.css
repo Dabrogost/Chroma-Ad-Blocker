@@ -905,6 +905,7 @@ select.chroma-input {
 
 .smart-link-badge {
   font-size: 7px;
+  margin-left: 6px;
 }
 
 /* Popup layout overrides */

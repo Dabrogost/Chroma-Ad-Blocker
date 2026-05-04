@@ -17,6 +17,14 @@ const ChromaApp = (() => {
       .replace(/'/g, '&#39;');
   }
 
+  function appendElement(parent, tagName, className = '', textContent = '') {
+    const element = document.createElement(tagName);
+    if (className) element.className = className;
+    if (textContent !== '') element.textContent = textContent;
+    parent.appendChild(element);
+    return element;
+  }
+
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxy';
 
@@ -49,10 +57,10 @@ const ChromaApp = (() => {
 
     const manifest = chrome.runtime.getManifest();
     if ($('versionText')) {
-      $('versionText').textContent = `v${manifest.version} · MV3`;
+      $('versionText').textContent = `v${manifest.version} \u00b7 MV3`;
     }
 
-    // Update check — runs async, inserts banner if update available
+    // Update check - runs async, inserts banner if update available
     notifyBackground({ type: MSG.UPDATE_CHECK }).then(result => {
       if (!result || !result.updateAvailable) return;
       const latestVersion = result.latestVersion;
@@ -65,7 +73,7 @@ const ChromaApp = (() => {
       updateLink.href = RELEASES_PAGE;
       updateLink.target = '_blank';
       updateLink.className = 'update-banner__link';
-      updateLink.textContent = `↑ v${latestVersion} available`;
+      updateLink.textContent = `\u2191 v${latestVersion} available`;
 
       const githubSpan = document.createElement('span');
       githubSpan.className = 'update-banner__source';
@@ -75,7 +83,7 @@ const ChromaApp = (() => {
       dismissBtn.id = 'dismissUpdate';
       dismissBtn.className = 'update-banner__dismiss';
       dismissBtn.title = 'Dismiss';
-      dismissBtn.textContent = '✕';
+      dismissBtn.textContent = '\u2715';
 
       banner.appendChild(updateLink);
       banner.appendChild(githubSpan);
@@ -198,7 +206,7 @@ const ChromaApp = (() => {
       }
     }
 
-    // ─── WHITELIST LOGIC ─────
+    // WHITELIST LOGIC
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     let currentDomain = '';
     if (activeTab && activeTab.url) {
@@ -230,9 +238,9 @@ const ChromaApp = (() => {
         chrome.tabs.reload(activeTab.id);
       });
 
-      // ─── FPR PER-SITE WHITELIST ─────
+      // FPR PER-SITE WHITELIST
       // Row only shown when global FPR toggle is on (and master is on). Lets
-      // the user disable just FPR on the current domain — independent of the
+      // the user disable just FPR on the current domain - independent of the
       // main whitelist that disables ad-blocking too.
       const rowFpr = $('rowFprWhitelist');
       const fprToggle = $('toggleFingerprintRandomization');
@@ -266,7 +274,7 @@ const ChromaApp = (() => {
       if (rowFpr) rowFpr.classList.remove('is-visible');
     }
 
-    // ─── EXTERNAL LINKS ─────
+    // EXTERNAL LINKS
     const zapBtn = $('zapElementBtn');
     const zapStatus = $('zapperStatus');
     if (zapBtn) {
@@ -316,7 +324,7 @@ const ChromaApp = (() => {
       cardNetwork.addEventListener('click', openSettingsPage);
     }
 
-    // ─── SUBSCRIPTION UI ─────
+    // SUBSCRIPTION UI
     async function loadSubscriptionUI() {
       const list = document.getElementById('subscriptionList');
       if (!list) return;
@@ -350,7 +358,7 @@ const ChromaApp = (() => {
       summaryBar.className = 'subscription-summary';
       const totalCosmetic = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.cosmetic || 0), 0);
       const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
-      summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied · ${totalCosmetic.toLocaleString()} cosmetic · ${totalScriptlet.toLocaleString()} scriptlets`;
+      summaryBar.textContent = `${totalParsed.toLocaleString()} parsed \u00b7 ${appliedNetworkRuleCount.toLocaleString()} applied \u00b7 ${totalCosmetic.toLocaleString()} cosmetic \u00b7 ${totalScriptlet.toLocaleString()} scriptlets`;
 
       list.innerHTML = '';
       list.appendChild(summaryBar);
@@ -372,37 +380,36 @@ const ChromaApp = (() => {
           }
           if (sub.ruleCount.cosmetic > 0) parts.push(`${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`);
           if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
-          countText = parts.join(' · ');
+          countText = parts.join(' \u00b7 ');
         }
 
-        const safeName  = escapeHTML(sub.name);
-        const safeId    = escapeHTML(sub.id);
-        const safeError = sub.lastError ? escapeHTML(sub.lastError) : '';
+        const info = appendElement(row, 'div', 'toggle-info');
+        appendElement(info, 'div', 'name', sub.name);
+        appendElement(info, 'div', 'desc', `Updated: ${lastUpdatedText}`);
+        if (countText) appendElement(info, 'div', 'desc', countText);
+        if (sub.lastError) {
+          const error = appendElement(info, 'div', 'subscription-error', `Error: ${sub.lastError}`);
+          error.title = sub.lastError;
+        }
 
-        const errorText = safeError
-          ? `<div class="subscription-error" title="${safeError}">Error: ${safeError}</div>`
-          : '';
+        const actions = appendElement(row, 'div', 'subscription-actions');
+        if (sub.isCustom) {
+          const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn', '\u00d7');
+          deleteBtn.dataset.id = sub.id;
+          deleteBtn.title = 'Remove List';
+          appendElement(actions, 'span', 'inline-separator');
+        }
 
-        const deleteBtnHtml = sub.isCustom
-          ? `<button data-id="${safeId}" class="sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn" title="Remove List">✕</button><span class="inline-separator"></span>`
-          : '';
+        const refreshBtn = appendElement(actions, 'button', 'sub-refresh-btn reset-btn compact-action-btn', '\u21bb');
+        refreshBtn.dataset.id = sub.id;
+        refreshBtn.title = 'Force refresh';
 
-        row.innerHTML = `
-          <div class="toggle-info">
-            <div class="name">${safeName}</div>
-            <div class="desc">Updated: ${lastUpdatedText}</div>
-            ${countText ? `<div class="desc">${countText}</div>` : ''}
-            ${errorText}
-          </div>
-          <div class="subscription-actions">
-            ${deleteBtnHtml}
-            <button data-id="${safeId}" class="sub-refresh-btn reset-btn compact-action-btn" title="Force refresh">↻</button>
-            <label class="switch">
-              <input type="checkbox" class="sub-toggle" data-id="${safeId}" ${sub.enabled ? 'checked' : ''} />
-              <span class="slider"></span>
-            </label>
-          </div>
-        `;
+        const toggleLabel = appendElement(actions, 'label', 'switch');
+        const toggleInput = appendElement(toggleLabel, 'input', 'sub-toggle');
+        toggleInput.type = 'checkbox';
+        toggleInput.dataset.id = sub.id;
+        toggleInput.checked = !!sub.enabled;
+        appendElement(toggleLabel, 'span', 'slider');
 
         list.appendChild(row);
       }
@@ -418,12 +425,12 @@ const ChromaApp = (() => {
       list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = e.target.dataset.id;
-          e.target.textContent = '…';
+          e.target.textContent = '\u2026';
           e.target.disabled = true;
           const result = await notifyBackground({ type: MSG.SUBSCRIPTION_REFRESH, id });
-          e.target.textContent = result && result.ok ? '✓' : '✗';
+          e.target.textContent = result && result.ok ? '\u2713' : '\u2717';
           setTimeout(() => {
-            e.target.textContent = '↻';
+            e.target.textContent = '\u21bb';
             e.target.disabled = false;
             loadSubscriptionUI();
           }, 1500); // 1500ms visual feedback delay before resetting refresh button state
@@ -443,7 +450,7 @@ const ChromaApp = (() => {
 
     await loadSubscriptionUI();
 
-    // ─── ADD-SUBSCRIPTION FORM ─────
+    // ADD-SUBSCRIPTION FORM
     (() => {
       const addBtn    = $('addSubscriptionBtn');
       const form      = $('addSubscriptionForm');
@@ -486,7 +493,7 @@ const ChromaApp = (() => {
         const name = nameInput.value.trim() || parsed.hostname;
         const id = 'custom_' + Date.now();
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Adding…';
+        submitBtn.textContent = 'Adding\u2026';
 
         const addRes = await notifyBackground({ type: MSG.SUBSCRIPTION_ADD, subscription: { id, name, url } });
         if (!addRes || !addRes.ok) {
@@ -513,12 +520,12 @@ const ChromaApp = (() => {
       nameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
     })();
 
-    // ─── PROXY ROUTER UI ─────
+    // PROXY ROUTER UI
     if (globalThis.ChromaProxyUI?.loadProxyRouterUI) {
       await globalThis.ChromaProxyUI.loadProxyRouterUI();
     }
 
-    // ─── REQUEST LOG UI ─────
+    // REQUEST LOG UI
     async function loadLocalZapperRulesUI() {
       if (!isSettingsPage()) return;
       const list = $('localZapperRules');
@@ -549,19 +556,24 @@ const ChromaApp = (() => {
         for (const rule of domainRules) {
           const row = document.createElement('div');
           row.className = 'toggle-row';
-          row.innerHTML = `
-            <div class="toggle-info">
-              <div class="zapper-rule-selector" title="${escapeHTML(rule.selector)}">${escapeHTML(rule.selector)}</div>
-              <div class="desc">Saved ${new Date(rule.createdAt || Date.now()).toLocaleDateString()}</div>
-            </div>
-            <div class="zapper-rule-actions">
-              <label class="switch switch-sm" title="${rule.enabled ? 'Disable rule' : 'Enable rule'}">
-                <input type="checkbox" class="zapper-rule-toggle" data-id="${escapeHTML(rule.id)}" ${rule.enabled ? 'checked' : ''} />
-                <span class="slider"></span>
-              </label>
-              <button class="reset-btn zapper-rule-delete compact-action-btn" data-id="${escapeHTML(rule.id)}" title="Delete rule">Delete</button>
-            </div>
-          `;
+
+          const info = appendElement(row, 'div', 'toggle-info');
+          const selector = appendElement(info, 'div', 'zapper-rule-selector', rule.selector);
+          selector.title = rule.selector;
+          appendElement(info, 'div', 'desc', `Saved ${new Date(rule.createdAt || Date.now()).toLocaleDateString()}`);
+
+          const actions = appendElement(row, 'div', 'zapper-rule-actions');
+          const toggleLabel = appendElement(actions, 'label', 'switch switch-sm');
+          toggleLabel.title = rule.enabled ? 'Disable rule' : 'Enable rule';
+          const toggleInput = appendElement(toggleLabel, 'input', 'zapper-rule-toggle');
+          toggleInput.type = 'checkbox';
+          toggleInput.dataset.id = rule.id;
+          toggleInput.checked = !!rule.enabled;
+          appendElement(toggleLabel, 'span', 'slider');
+
+          const deleteBtn = appendElement(actions, 'button', 'reset-btn zapper-rule-delete compact-action-btn', 'Delete');
+          deleteBtn.dataset.id = rule.id;
+          deleteBtn.title = 'Delete rule';
           list.appendChild(row);
         }
       }
@@ -603,7 +615,7 @@ const ChromaApp = (() => {
     function formatLogUrl(url) {
       try {
         const u = new URL(url);
-        const userPath = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '…' : u.pathname;
+        const userPath = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '\u2026' : u.pathname;
         return u.hostname + userPath;
       } catch {
         return url.slice(0, 40);
@@ -638,11 +650,10 @@ const ChromaApp = (() => {
           const badge = RT_BADGE[entry.rt] || { label: '???', className: 'unknown' };
           const row = document.createElement('div');
           row.className = 'log-entry';
-          row.innerHTML = `
-            <span class="log-rt log-rt--${badge.className}">${badge.label}</span>
-            <span class="log-url" title="${escapeHTML(entry.url)}">${escapeHTML(formatLogUrl(entry.url))}</span>
-            <span class="log-time">${formatTimeAgo(entry.ts)}</span>
-          `;
+          appendElement(row, 'span', `log-rt log-rt--${badge.className}`, badge.label);
+          const url = appendElement(row, 'span', 'log-url', formatLogUrl(entry.url));
+          url.title = entry.url;
+          appendElement(row, 'span', 'log-time', formatTimeAgo(entry.ts));
           entries.appendChild(row);
         }
       }
