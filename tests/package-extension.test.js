@@ -50,3 +50,16 @@ test('package verification rejects repo-only and temporary paths', () => {
     );
   }
 });
+
+test('package verification rejects duplicate release entries', () => {
+  const errors = verifyReleaseEntries([
+    ...validReleaseEntries,
+    'background/background.js',
+    'background\\background.js'
+  ]);
+
+  assert.ok(
+    errors.some(error => error.includes('duplicate release entry: background/background.js')),
+    'expected duplicate normalized ZIP entry to be rejected'
+  );
+});

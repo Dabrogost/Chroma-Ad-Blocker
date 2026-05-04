@@ -19,7 +19,7 @@ Thanks for your interest. Here's what you need to know.
 ## Before Opening a PR
 
 1. Test the extension locally via `chrome://extensions/` -> **Load unpacked**.
-2. Run `npm test` (or `npm.cmd test` on Windows PowerShell if script execution policy blocks `npm.ps1`).
+2. Run `npm test` (or `npm.cmd test` on Windows PowerShell if script execution policy blocks `npm.ps1`). For faster local iteration, use `npm.cmd run test:quick`; before opening a release PR, use `npm.cmd run test:ci`.
 3. Verify your change doesn't break the popup, proxy routing, subscriptions, ad acceleration, YouTube stripping, cosmetic filtering, or network blocking.
 4. When testing scriptlets in Chrome 138+, open the extension's **Details** page and enable **Allow User Scripts**. On Chrome 122-137, Developer Mode enables the `userScripts` API.
 5. If you're changing `extension/background/`, `extension/content/interceptor.js`, `extension/content/protection.js`, `extension/core/`, or `extension/scriptlets/`, pay extra attention to the security notes in those files.

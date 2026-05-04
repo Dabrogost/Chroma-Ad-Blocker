@@ -12,6 +12,12 @@ const uiScriptsCode = [appJsCode, proxyUiJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 
+async function settlePopupAsyncWork(turns = 20) {
+  for (let i = 0; i < turns; i++) {
+    await Promise.resolve();
+  }
+}
+
 // ─── POPUP.JS FUNCTIONALITY ─────
 test('popup.js functionality', async (t) => {
   function createSandbox() {
@@ -230,8 +236,7 @@ test('popup.js functionality', async (t) => {
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
 
-    // Initialization Cooldown: Async DOM settling delay.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     assert.strictEqual(elements['toggleAcceleration'].checked, false);
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
@@ -246,8 +251,7 @@ test('popup.js functionality', async (t) => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
-    // Initialization Cooldown: Async DOM settling delay.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     messages.length = 0;
 
@@ -261,8 +265,7 @@ test('popup.js functionality', async (t) => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
-    // Initialization Cooldown: Async DOM settling delay.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     messages.length = 0;
 
@@ -285,8 +288,7 @@ test('popup.js functionality', async (t) => {
 
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
-    // Initialization Cooldown: Async DOM settling delay.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     // Based on TOGGLES in popup.js, acceleration defaults to false, others true
     assert.strictEqual(elements['toggleAcceleration'].checked, false);
@@ -301,9 +303,7 @@ test('popup.js functionality', async (t) => {
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
 
-    // Wait for initial init() calls to finish
-    // Initialization Cooldown: Async DOM settling delay.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
     messages.length = 0;
 
     const testMsg = { type: 'TEST_PING', data: 123 };
@@ -318,9 +318,7 @@ test('popup.js functionality', async (t) => {
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
 
-    // Wait for initial init() calls to finish
-    // Initialization Cooldown: Async DOM settling delay.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     const mockResponse = { success: true, data: { status: 'ok' } };
     chromeMock.runtime.sendMessage = async () => mockResponse;
@@ -334,9 +332,7 @@ test('popup.js functionality', async (t) => {
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
 
-    // Wait for initial init() calls to finish
-    // Initialization Cooldown: Async DOM settling delay.
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     const testError = new Error('Background script failed');
     const originalSendMessage = chromeMock.runtime.sendMessage;
@@ -355,7 +351,7 @@ test('popup.js functionality', async (t) => {
     const { sandbox, elements, messages, chromeMock } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     messages.length = 0;
     assert.strictEqual(typeof sandbox.openProxySettings, 'function');
@@ -372,7 +368,7 @@ test('popup.js functionality', async (t) => {
     const { sandbox, elements, chromeMock } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await settlePopupAsyncWork();
 
     await elements['cardNetwork'].dispatchEvent('click');
 

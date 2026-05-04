@@ -18,8 +18,8 @@ function startServer() {
         <title>Zapper Fixture</title>
         <style>
           body { font-family: sans-serif; min-height: 900px; }
-          #ad-box, #normal-box, #danger-root { width: 180px; height: 80px; margin: 20px; padding: 8px; }
-          #ad-box { background: #ffd6d6; }
+          #zapper-target, #normal-box, #danger-root { width: 180px; height: 80px; margin: 20px; padding: 8px; }
+          #zapper-target { background: #ffd6d6; }
           #normal-box { background: #d6ffd6; }
           #nested-popup { padding: 12px; margin: 20px; background: #eee; }
           .popup-ad { width: 120px; height: 40px; background: #ffeb99; }
@@ -27,7 +27,7 @@ function startServer() {
       </head>
       <body>
         <main id="danger-root">
-          <div id="ad-box" class="ad-card">ad fixture</div>
+          <div id="zapper-target" class="fixture-target">zapper fixture</div>
           <div id="normal-box">normal content</div>
           <div id="nested-popup"><div class="popup-ad">popup ad</div></div>
         </main>
@@ -71,8 +71,13 @@ async function activateFixturePage(browser, page) {
 }
 
 async function reloadPage(browser, sessionId) {
+  await evaluate(browser.cdp, sessionId, 'window.__chromaReloadMarker = true; true');
   await browser.cdp.send('Page.reload', { ignoreCache: true }, sessionId);
-  await waitFor(() => evaluate(browser.cdp, sessionId, 'document.readyState === "complete"'), 'page reload');
+  await waitFor(() => evaluate(
+    browser.cdp,
+    sessionId,
+    'document.readyState === "complete" && window.__chromaReloadMarker !== true'
+  ), 'page reload');
 }
 
 async function displayOf(browser, sessionId, selector) {
@@ -102,19 +107,19 @@ test('zapper browser interaction E2E', async (t) => {
   await t.test('Hide once affects only the current page session', async () => {
     await startZapper(browser, extensionPage, tabId);
     await activateFixturePage(browser, page);
-    await clickCenter(browser, page.sessionId, '#ad-box');
+    await clickCenter(browser, page.sessionId, '#zapper-target');
     await waitFor(() => evaluate(browser.cdp, page.sessionId, '!!document.querySelector("[data-chroma-zapper-menu]")'), 'zapper menu');
     await evaluate(browser.cdp, page.sessionId, 'document.querySelector("[data-chroma-zapper-menu] button[data-action=\\"hideOnce\\"]").click()');
-    await waitFor(async () => (await displayOf(browser, page.sessionId, '#ad-box')) === 'none', 'hide once display none');
+    await waitFor(async () => (await displayOf(browser, page.sessionId, '#zapper-target')) === 'none', 'hide once display none');
 
     await reloadPage(browser, page.sessionId);
-    assert.notStrictEqual(await displayOf(browser, page.sessionId, '#ad-box'), 'none', 'hide once should not persist after reload');
+    assert.notStrictEqual(await displayOf(browser, page.sessionId, '#zapper-target'), 'none', 'hide once should not persist after reload');
   });
 
   await t.test('Save for this site persists, applies on reload, and can be disabled/deleted', async () => {
     await startZapper(browser, extensionPage, tabId);
     await activateFixturePage(browser, page);
-    await clickCenter(browser, page.sessionId, '#ad-box');
+    await clickCenter(browser, page.sessionId, '#zapper-target');
     await waitFor(() => evaluate(browser.cdp, page.sessionId, '!!document.querySelector("[data-chroma-zapper-menu]")'), 'zapper menu');
     await evaluate(browser.cdp, page.sessionId, 'document.querySelector("[data-chroma-zapper-menu] button[data-action=\\"save\\"]").click()');
     await waitFor(() => evaluate(browser.cdp, page.sessionId, '!!document.querySelector("[data-chroma-zapper-menu] button[data-action=\\"confirmSave\\"]")'), 'save confirmation');
@@ -127,15 +132,40 @@ test('zapper browser interaction E2E', async (t) => {
     assert.strictEqual(savedRules[0].domain, '127.0.0.1');
 
     await reloadPage(browser, page.sessionId);
-    await waitFor(async () => (await displayOf(browser, page.sessionId, '#ad-box')) === 'none', 'persistent zapper rule');
+    await waitFor(async () => (await displayOf(browser, page.sessionId, '#zapper-target')) === 'none', 'persistent zapper rule');
     assert.notStrictEqual(await displayOf(browser, page.sessionId, '#normal-box'), 'none', 'normal content should remain visible');
 
     await sendRuntimeMessage(browser.cdp, extensionPage.sessionId, { type: 'ZAPPER_RULE_SET', id: savedRules[0].id, enabled: false });
+    await waitFor(async () => {
+      const res = await sendRuntimeMessage(browser.cdp, extensionPage.sessionId, { type: 'ZAPPER_RULES_GET' });
+      const rule = res.rules?.find(item => item.id === savedRules[0].id);
+      return rule?.enabled === false ? rule : null;
+    }, 'disabled zapper rule');
     await reloadPage(browser, page.sessionId);
-    assert.notStrictEqual(await displayOf(browser, page.sessionId, '#ad-box'), 'none', 'disabled zapper rule should not apply');
+    await waitFor(async () => (await displayOf(browser, page.sessionId, '#zapper-target')) !== 'none', 'disabled zapper rule not applied')
+      .catch(async (err) => {
+        const diagnostic = await evaluate(browser.cdp, page.sessionId, `(() => {
+          const el = document.querySelector('#zapper-target');
+          return {
+            display: el ? getComputedStyle(el).display : null,
+            inlineStyle: el?.getAttribute('style') || '',
+            adoptedSheets: Array.from(document.adoptedStyleSheets || []).map(sheet => {
+              try {
+                return Array.from(sheet.cssRules || []).map(rule => rule.cssText).join('\\n').slice(0, 500);
+              } catch {
+                return '[unreadable]';
+              }
+            }).filter(Boolean)
+          };
+        })()`);
+        throw new Error(`${err.message}\nDisabled rule diagnostic: ${JSON.stringify(diagnostic)}`);
+      });
 
     await sendRuntimeMessage(browser.cdp, extensionPage.sessionId, { type: 'ZAPPER_RULE_REMOVE', id: savedRules[0].id });
-    const afterDelete = await sendRuntimeMessage(browser.cdp, extensionPage.sessionId, { type: 'ZAPPER_RULES_GET' });
+    const afterDelete = await waitFor(async () => {
+      const res = await sendRuntimeMessage(browser.cdp, extensionPage.sessionId, { type: 'ZAPPER_RULES_GET' });
+      return res.rules?.some(item => item.id === savedRules[0].id) ? null : res;
+    }, 'deleted zapper rule');
     assert.strictEqual(afterDelete.rules.length, 0);
   });
 
@@ -148,8 +178,10 @@ test('zapper browser interaction E2E', async (t) => {
       document.documentElement.dispatchEvent(new MouseEvent('click', options));
       return true;
     })()`);
-    await new Promise(resolve => setTimeout(resolve, 200));
-    assert.strictEqual(await evaluate(browser.cdp, page.sessionId, '!!document.querySelector("[data-chroma-zapper-menu]")'), false);
+    assert.strictEqual(
+      await evaluate(browser.cdp, page.sessionId, '!!document.querySelector("[data-chroma-zapper-menu]")'),
+      false
+    );
     await browser.cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape' }, page.sessionId);
   });
 });

@@ -11,6 +11,8 @@ const expectedRulesets = manifest.declarative_net_request.rule_resources
   .filter(resource => resource.enabled)
   .map(resource => resource.id)
   .sort();
+let sharedBrowserPromise = null;
+let sharedBrowser = null;
 
 function findChrome() {
   const candidates = [
@@ -42,7 +44,13 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function waitFor(predicate, label, timeoutMs = 15000) {
+function positiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function waitFor(predicate, label, timeoutMs = positiveNumber(process.env.CHROMA_E2E_WAIT_MS, 15000)) {
+  const pollMs = positiveNumber(process.env.CHROMA_E2E_POLL_MS, 50);
   const started = Date.now();
   let lastError;
   while (Date.now() - started < timeoutMs) {
@@ -52,7 +60,7 @@ async function waitFor(predicate, label, timeoutMs = 15000) {
     } catch (err) {
       lastError = err;
     }
-    await sleep(100);
+    await sleep(pollMs);
   }
   throw new Error(`${label} timed out${lastError ? `: ${lastError.message}` : ''}`);
 }
@@ -247,7 +255,7 @@ async function startChrome() {
   };
 }
 
-async function startExtensionBrowser() {
+async function startExtensionBrowserInstance() {
   const browser = await startChrome();
   let foundWorker;
   try {
@@ -261,6 +269,33 @@ async function startExtensionBrowser() {
   }
   const extensionId = foundWorker.worker.url.match(/^chrome-extension:\/\/([^/]+)\//)[1];
   return { ...browser, extensionId, worker: foundWorker.worker, workerSession: foundWorker.sessionId };
+}
+
+async function startExtensionBrowser() {
+  if (process.env.CHROMA_E2E_REUSE_BROWSER !== '1') {
+    return startExtensionBrowserInstance();
+  }
+
+  if (!sharedBrowserPromise) {
+    sharedBrowserPromise = startExtensionBrowserInstance().then(browser => {
+      sharedBrowser = browser;
+      return browser;
+    });
+  }
+
+  const browser = await sharedBrowserPromise;
+  await refreshExtensionWorker(browser);
+  return {
+    ...browser,
+    cleanup: async () => {}
+  };
+}
+
+async function cleanupSharedExtensionBrowser() {
+  const browser = sharedBrowser || (sharedBrowserPromise ? await sharedBrowserPromise.catch(() => null) : null);
+  sharedBrowser = null;
+  sharedBrowserPromise = null;
+  if (browser) await browser.cleanup();
 }
 
 async function refreshExtensionWorker(browser) {
@@ -306,6 +341,7 @@ module.exports = {
   manifest,
   openExtensionPage,
   repoRoot,
+  cleanupSharedExtensionBrowser,
   refreshExtensionWorker,
   sendRuntimeMessage,
   startExtensionBrowser,

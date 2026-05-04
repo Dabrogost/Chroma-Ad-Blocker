@@ -100,6 +100,7 @@ function normalizeZipEntry(entryName) {
 function verifyReleaseEntries(entries) {
   const normalizedEntries = entries.map(normalizeZipEntry);
   const entrySet = new Set(normalizedEntries);
+  const seenEntries = new Set();
   const errors = [];
 
   for (const requiredFile of REQUIRED_RELEASE_FILES) {
@@ -109,6 +110,12 @@ function verifyReleaseEntries(entries) {
   }
 
   for (const entry of normalizedEntries) {
+    if (seenEntries.has(entry)) {
+      errors.push(`Release ZIP contains duplicate release entry: ${entry}`);
+    } else {
+      seenEntries.add(entry);
+    }
+
     if (path.posix.isAbsolute(entry) || entry.split('/').includes('..')) {
       errors.push(`Release ZIP contains unsafe path: ${entry}`);
     }
