@@ -4,11 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const componentsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
 const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.js'), 'utf8');
 const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.js'), 'utf8');
-const uiScriptsCode = [appJsCode, proxyUiJsCode, popupJsCode].join('\n');
+const uiScriptsCode = [componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 
@@ -378,14 +379,20 @@ test('popup.js functionality', async (t) => {
 });
 
 test('UI hardening copy', () => {
-  assert.match(popupHtmlCode, /changes anti-detection network behavior/);
-  assert.match(settingsHtmlCode, /changes anti-detection network behavior/);
-  assert.match(popupHtmlCode, /<script src="app\.js"><\/script>/);
+  assert.match(componentsJsCode, /changes anti-detection network behavior/);
+  assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
+  assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
-  assert.match(settingsHtmlCode, /<script src="app\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<div id="appShell"><\/div>/);
+  assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
+  assert.doesNotMatch(popupHtmlCode, /<header>|Protection Layers|Filter Lists|Request Log/);
+  assert.doesNotMatch(settingsHtmlCode, /<header>|Protection Layers|Filter Lists|Request Log|Local Zapper Rules/);
+  assert.doesNotMatch(popupHtmlCode, /style="/);
+  assert.doesNotMatch(settingsHtmlCode, /style="/);
+  assert.doesNotMatch(componentsJsCode, /style="/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
   assert.match(appJsCode, /function openProxySettings\(\)/);
   assert.match(appJsCode, /ui\/settings\.html#proxy/);
@@ -393,14 +400,14 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /\.filter\(pc => pc\.accepted === true\)/);
   assert.match(proxyUiJsCode, /Manage proxies/);
   assert.doesNotMatch(popupHtmlCode, /id="addProxyServerBtn"/);
-  assert.match(settingsHtmlCode, /id="addProxyServerBtn"/);
+  assert.match(componentsJsCode, /id="addProxyServerBtn"/);
   assert.match(proxyUiJsCode, /Leave fields blank to keep them/);
   assert.match(proxyUiJsCode, /readCredentialAction/);
   assert.match(proxyUiJsCode, /Enter both username and password, or leave both blank to keep saved credentials\./);
   assert.match(proxyUiJsCode, /Clear credentials/);
   assert.match(proxyUiJsCode, /SOCKS username\/password auth is not supported by Chrome here/);
   assert.match(proxyUiJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\. Enable it\?/);
-  assert.match(settingsHtmlCode, /id="proxySection"/);
+  assert.match(componentsJsCode, /id="proxySection"/);
   assert.match(settingsJsCode, /scrollToProxyHash/);
   assert.match(appJsCode, /location\?\.hash !== '#proxy'/);
   assert.doesNotMatch(proxyUiJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);

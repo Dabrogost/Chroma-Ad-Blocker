@@ -3,9 +3,9 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
+const componentsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
-const settingsHtml = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 
 test('settings page proxy and zapper management safety', async (t) => {
   await t.test('proxy credential UI never hydrates password fields from stored config', () => {
@@ -35,7 +35,7 @@ test('settings page proxy and zapper management safety', async (t) => {
   });
 
   await t.test('settings page supports direct proxy hash entry points', () => {
-    assert.match(settingsHtml, /id="proxySection"/);
+    assert.match(componentsJs, /id="proxySection"/);
     assert.match(appJs, /location\?\.hash !== '#proxy'/);
     assert.match(appJs, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
   });

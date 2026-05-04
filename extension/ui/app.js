@@ -45,6 +45,8 @@ const ChromaApp = (() => {
   }
 
   async function initSharedUI() {
+    globalThis.ChromaComponents?.renderPageShell({ settingsMode: isSettingsPage() });
+
     const manifest = chrome.runtime.getManifest();
     if ($('versionText')) {
       $('versionText').textContent = `v${manifest.version} · MV3`;
@@ -248,7 +250,7 @@ const ChromaApp = (() => {
 
       const updateFprRowVisibility = () => {
         const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled').checked);
-        if (rowFpr) rowFpr.style.display = visible ? '' : 'none';
+        if (rowFpr) rowFpr.style.display = visible ? 'flex' : 'none';
       };
       updateFprRowVisibility();
       if (fprToggle) fprToggle.addEventListener('change', updateFprRowVisibility);
@@ -474,7 +476,7 @@ const ChromaApp = (() => {
       };
 
       addBtn.addEventListener('click', () => {
-        if (form.style.display === 'none') {
+        if (form.style.display === 'none' || form.style.display === '') {
           form.style.display = 'block';
           urlInput.focus();
         } else {
