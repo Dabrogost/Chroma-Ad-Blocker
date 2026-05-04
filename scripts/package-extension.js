@@ -8,18 +8,22 @@ const extensionRoot = path.join(repoRoot, 'extension');
 const manifestPath = path.join(extensionRoot, 'manifest.json');
 const distDir = path.join(repoRoot, 'dist');
 
-if (!fs.existsSync(manifestPath)) {
-  console.error('Missing extension/manifest.json; cannot package extension.');
-  process.exit(1);
-}
+const REQUIRED_RELEASE_FILES = [
+  'manifest.json',
+  'README.md',
+  'LICENSE.md',
+  'docs/PRIVACY_POLICY.md'
+];
 
-const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-const version = manifest.version;
-if (typeof version !== 'string' || !/^\d+(?:\.\d+){1,3}$/.test(version)) {
-  console.error('extension/manifest.json must have a numeric dotted version before packaging.');
-  process.exit(1);
-}
-const zipPath = path.join(distDir, `chroma-ad-blocker-v${version}.zip`);
+const FORBIDDEN_RELEASE_PATH_PATTERNS = [
+  { label: 'tests/', regex: /^tests\// },
+  { label: 'node_modules/', regex: /^node_modules\// },
+  { label: '.git/', regex: /^\.git\// },
+  { label: '.github/', regex: /^\.github\// },
+  { label: 'logs/', regex: /(^|\/)logs\// },
+  { label: 'tmp/', regex: /(^|\/)(tmp|temp)\// },
+  { label: 'temporary files', regex: /(^|\/)(Thumbs\.db|\.DS_Store|.*\.(log|tmp|temp|swp))$/i }
+];
 
 function crc32(buffer) {
   let crc = 0 ^ -1;
@@ -89,6 +93,74 @@ function releaseFiles() {
   return files.sort((a, b) => a.zipName.localeCompare(b.zipName));
 }
 
+function normalizeZipEntry(entryName) {
+  return entryName.replace(/\\/g, '/');
+}
+
+function verifyReleaseEntries(entries) {
+  const normalizedEntries = entries.map(normalizeZipEntry);
+  const entrySet = new Set(normalizedEntries);
+  const errors = [];
+
+  for (const requiredFile of REQUIRED_RELEASE_FILES) {
+    if (!entrySet.has(requiredFile)) {
+      errors.push(`Release ZIP is missing required file: ${requiredFile}`);
+    }
+  }
+
+  for (const entry of normalizedEntries) {
+    if (path.posix.isAbsolute(entry) || entry.split('/').includes('..')) {
+      errors.push(`Release ZIP contains unsafe path: ${entry}`);
+    }
+
+    for (const pattern of FORBIDDEN_RELEASE_PATH_PATTERNS) {
+      if (pattern.regex.test(entry)) {
+        errors.push(`Release ZIP contains forbidden ${pattern.label} entry: ${entry}`);
+      }
+    }
+  }
+
+  return errors;
+}
+
+function readZipEntries(zipBuffer) {
+  const endSignature = 0x06054b50;
+  let endOffset = -1;
+  const minEndOffset = Math.max(0, zipBuffer.length - 22 - 0xffff);
+  for (let offset = zipBuffer.length - 22; offset >= minEndOffset; offset--) {
+    if (zipBuffer.readUInt32LE(offset) === endSignature) {
+      endOffset = offset;
+      break;
+    }
+  }
+  if (endOffset === -1) {
+    throw new Error('Release ZIP is missing an end-of-central-directory record.');
+  }
+
+  const entryCount = zipBuffer.readUInt16LE(endOffset + 10);
+  let offset = zipBuffer.readUInt32LE(endOffset + 16);
+  const entries = [];
+
+  for (let index = 0; index < entryCount; index++) {
+    if (zipBuffer.readUInt32LE(offset) !== 0x02014b50) {
+      throw new Error(`Release ZIP central directory entry ${index} is malformed.`);
+    }
+    const nameLength = zipBuffer.readUInt16LE(offset + 28);
+    const extraLength = zipBuffer.readUInt16LE(offset + 30);
+    const commentLength = zipBuffer.readUInt16LE(offset + 32);
+    const nameStart = offset + 46;
+    const nameEnd = nameStart + nameLength;
+    entries.push(normalizeZipEntry(zipBuffer.subarray(nameStart, nameEnd).toString('utf8')));
+    offset = nameEnd + extraLength + commentLength;
+  }
+
+  return entries;
+}
+
+function verifyZipContents(zipBuffer) {
+  return verifyReleaseEntries(readZipEntries(zipBuffer));
+}
+
 function makeZip(files) {
   const localParts = [];
   const centralParts = [];
@@ -152,12 +224,47 @@ function makeZip(files) {
   return Buffer.concat([...localParts, ...centralParts, end]);
 }
 
-fs.mkdirSync(distDir, { recursive: true });
-const files = releaseFiles();
-const zip = makeZip(files);
-fs.writeFileSync(zipPath, zip);
+function main() {
+  if (!fs.existsSync(manifestPath)) {
+    console.error('Missing extension/manifest.json; cannot package extension.');
+    process.exit(1);
+  }
 
-const hash = crypto.createHash('sha256').update(zip).digest('hex');
-console.log(`ZIP: ${zipPath}`);
-console.log(`Bytes: ${zip.length}`);
-console.log(`SHA-256: ${hash}`);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const version = manifest.version;
+  if (typeof version !== 'string' || !/^\d+(?:\.\d+){1,3}$/.test(version)) {
+    console.error('extension/manifest.json must have a numeric dotted version before packaging.');
+    process.exit(1);
+  }
+  const zipPath = path.join(distDir, `chroma-ad-blocker-v${version}.zip`);
+
+  fs.mkdirSync(distDir, { recursive: true });
+  const files = releaseFiles();
+  const zip = makeZip(files);
+  const verificationErrors = verifyZipContents(zip);
+  if (verificationErrors.length > 0) {
+    console.error('Release ZIP verification failed:');
+    verificationErrors.forEach(error => console.error(`- ${error}`));
+    process.exit(1);
+  }
+
+  fs.writeFileSync(zipPath, zip);
+
+  const hash = crypto.createHash('sha256').update(zip).digest('hex');
+  console.log(`ZIP: ${zipPath}`);
+  console.log(`Bytes: ${zip.length}`);
+  console.log(`SHA-256: ${hash}`);
+  console.log('ZIP verification passed.');
+}
+
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  FORBIDDEN_RELEASE_PATH_PATTERNS,
+  REQUIRED_RELEASE_FILES,
+  readZipEntries,
+  verifyReleaseEntries,
+  verifyZipContents
+};

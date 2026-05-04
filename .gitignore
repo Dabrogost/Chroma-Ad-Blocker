@@ -24,6 +24,7 @@ docs/.jekyll-metadata
 docs/.sass-cache/
 
 # Project Specific
+AGENTS.md
 gemini.md
 descriptions.txt
 tmp/
