@@ -59,37 +59,27 @@ const ChromaApp = (() => {
 
       const banner = document.createElement('div');
       banner.id = 'updateBanner';
+      banner.className = 'update-banner';
 
       const updateLink = document.createElement('a');
       updateLink.href = RELEASES_PAGE;
       updateLink.target = '_blank';
-      updateLink.style.cssText = 'color:var(--c-cyan);text-decoration:none;font-weight:600;';
+      updateLink.className = 'update-banner__link';
       updateLink.textContent = `↑ v${latestVersion} available`;
 
       const githubSpan = document.createElement('span');
-      githubSpan.style.cssText = 'color:var(--text-muted);margin-left:4px;font-size:9px;';
+      githubSpan.className = 'update-banner__source';
       githubSpan.textContent = 'on GitHub';
 
       const dismissBtn = document.createElement('button');
       dismissBtn.id = 'dismissUpdate';
-      dismissBtn.style.cssText = 'margin-left:auto;background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px;padding:0 2px;line-height:1;';
+      dismissBtn.className = 'update-banner__dismiss';
       dismissBtn.title = 'Dismiss';
       dismissBtn.textContent = '✕';
 
       banner.appendChild(updateLink);
       banner.appendChild(githubSpan);
       banner.appendChild(dismissBtn);
-      banner.style.cssText = `
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 7px 14px;
-        font-size: 11px;
-        background: rgba(0, 255, 204, 0.06);
-        border-top: 1px solid rgba(0, 255, 204, 0.15);
-        border-bottom: 1px solid rgba(0, 255, 204, 0.15);
-        font-family: 'JetBrains Mono', monospace;
-      `;
 
       // Insert before the Protection Layers section title
       const sectionTitle = document.querySelector('.section-title');
@@ -250,7 +240,7 @@ const ChromaApp = (() => {
 
       const updateFprRowVisibility = () => {
         const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled').checked);
-        if (rowFpr) rowFpr.style.display = visible ? 'flex' : 'none';
+        if (rowFpr) rowFpr.classList.toggle('is-visible', visible);
       };
       updateFprRowVisibility();
       if (fprToggle) fprToggle.addEventListener('change', updateFprRowVisibility);
@@ -273,7 +263,7 @@ const ChromaApp = (() => {
     } else {
       $('toggleWhitelist').parentElement.parentElement.classList.add('disabled');
       const rowFpr = $('rowFprWhitelist');
-      if (rowFpr) rowFpr.style.display = 'none';
+      if (rowFpr) rowFpr.classList.remove('is-visible');
     }
 
     // ─── EXTERNAL LINKS ─────
@@ -321,7 +311,7 @@ const ChromaApp = (() => {
 
     const cardNetwork = $('cardNetwork');
     if (cardNetwork && settingsIcon) {
-      cardNetwork.style.cursor = 'pointer';
+      cardNetwork.classList.add('stat-card--clickable');
       cardNetwork.title = 'Open Settings';
       cardNetwork.addEventListener('click', openSettingsPage);
     }
@@ -352,12 +342,12 @@ const ChromaApp = (() => {
       const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
       if (subscriptions.length === 0) {
-        list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No subscriptions configured.</span></div>';
+        list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No subscriptions configured.</span></div>';
         return;
       }
 
       const summaryBar = document.createElement('div');
-      summaryBar.style.cssText = 'padding: 8px 14px 4px; font-size: 10px; color: var(--text-muted); text-align: center; letter-spacing: 0.03em;';
+      summaryBar.className = 'subscription-summary';
       const totalCosmetic = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.cosmetic || 0), 0);
       const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
       summaryBar.textContent = `${totalParsed.toLocaleString()} parsed · ${appliedNetworkRuleCount.toLocaleString()} applied · ${totalCosmetic.toLocaleString()} cosmetic · ${totalScriptlet.toLocaleString()} scriptlets`;
@@ -390,11 +380,11 @@ const ChromaApp = (() => {
         const safeError = sub.lastError ? escapeHTML(sub.lastError) : '';
 
         const errorText = safeError
-          ? `<div style="font-size:10px;color:var(--c-red);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${safeError}">Error: ${safeError}</div>`
+          ? `<div class="subscription-error" title="${safeError}">Error: ${safeError}</div>`
           : '';
 
         const deleteBtnHtml = sub.isCustom
-          ? `<button data-id="${safeId}" class="sub-delete-btn reset-btn" style="padding: 1px 4px; border: none; background: transparent; color: var(--c-red); opacity: 0.7; font-size: 12px;" title="Remove List">✕</button><span style="display:inline-block; width:1px; height:14px; background:rgba(255,255,255,0.08); align-self:center;"></span>`
+          ? `<button data-id="${safeId}" class="sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn" title="Remove List">✕</button><span class="inline-separator"></span>`
           : '';
 
         row.innerHTML = `
@@ -404,9 +394,9 @@ const ChromaApp = (() => {
             ${countText ? `<div class="desc">${countText}</div>` : ''}
             ${errorText}
           </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <div class="subscription-actions">
             ${deleteBtnHtml}
-            <button data-id="${safeId}" class="sub-refresh-btn reset-btn" style="font-size:9px;padding:3px 8px;" title="Force refresh">↻</button>
+            <button data-id="${safeId}" class="sub-refresh-btn reset-btn compact-action-btn" title="Force refresh">↻</button>
             <label class="switch">
               <input type="checkbox" class="sub-toggle" data-id="${safeId}" ${sub.enabled ? 'checked' : ''} />
               <span class="slider"></span>
@@ -539,7 +529,7 @@ const ChromaApp = (() => {
       list.innerHTML = '';
 
       if (rules.length === 0) {
-        list.innerHTML = '<div class="toggle-row" style="justify-content: center;"><span style="font-size:11px;color:var(--text-muted);">No local zapper rules saved.</span></div>';
+        list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No local zapper rules saved.</span></div>';
         return;
       }
 
@@ -552,7 +542,7 @@ const ChromaApp = (() => {
 
       for (const [domain, domainRules] of grouped) {
         const header = document.createElement('div');
-        header.style.cssText = 'padding: 8px 20px 4px; font-size: 11px; color: var(--c-cyan); font-family: JetBrains Mono, monospace;';
+        header.className = 'zapper-domain-header';
         header.textContent = domain;
         list.appendChild(header);
 
@@ -569,7 +559,7 @@ const ChromaApp = (() => {
                 <input type="checkbox" class="zapper-rule-toggle" data-id="${escapeHTML(rule.id)}" ${rule.enabled ? 'checked' : ''} />
                 <span class="slider"></span>
               </label>
-              <button class="reset-btn zapper-rule-delete" data-id="${escapeHTML(rule.id)}" title="Delete rule" style="padding: 3px 8px;">Delete</button>
+              <button class="reset-btn zapper-rule-delete compact-action-btn" data-id="${escapeHTML(rule.id)}" title="Delete rule">Delete</button>
             </div>
           `;
           list.appendChild(row);
@@ -597,17 +587,17 @@ const ChromaApp = (() => {
     await loadLocalZapperRulesUI();
 
     const RT_BADGE = {
-      script:         { label: 'JS',  color: 'rgba(0,255,204,0.15)',  text: 'var(--c-cyan)' },
-      xmlhttprequest: { label: 'XHR', color: 'rgba(0,136,255,0.15)', text: 'var(--c-blue)' },
-      image:          { label: 'IMG', color: 'rgba(153,0,255,0.15)', text: '#b388ff' },
-      sub_frame:      { label: 'FRM', color: 'rgba(230,126,34,0.15)', text: '#e67e22' },
-      main_frame:     { label: 'DOC', color: 'rgba(231,76,60,0.15)',  text: '#e74c3c' },
-      stylesheet:     { label: 'CSS', color: 'rgba(39,174,96,0.15)',  text: '#2ecc71' },
-      media:          { label: 'MED', color: 'rgba(243,156,18,0.15)', text: '#f39c12' },
-      websocket:      { label: 'WS',  color: 'rgba(26,188,156,0.15)', text: '#1abc9c' },
-      ping:           { label: 'PNG', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
-      other:          { label: 'OTH', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
-      object:         { label: 'OBJ', color: 'rgba(149,165,166,0.1)', text: '#95a5a6' },
+      script:         { label: 'JS',  className: 'script' },
+      xmlhttprequest: { label: 'XHR', className: 'xhr' },
+      image:          { label: 'IMG', className: 'image' },
+      sub_frame:      { label: 'FRM', className: 'frame' },
+      main_frame:     { label: 'DOC', className: 'document' },
+      stylesheet:     { label: 'CSS', className: 'css' },
+      media:          { label: 'MED', className: 'media' },
+      websocket:      { label: 'WS',  className: 'websocket' },
+      ping:           { label: 'PNG', className: 'muted' },
+      other:          { label: 'OTH', className: 'muted' },
+      object:         { label: 'OBJ', className: 'muted' },
     };
 
     function formatLogUrl(url) {
@@ -645,11 +635,11 @@ const ChromaApp = (() => {
         }
 
         for (const entry of log) {
-          const badge = RT_BADGE[entry.rt] || { label: '???', color: 'rgba(255,255,255,0.05)', text: 'var(--text-muted)' };
+          const badge = RT_BADGE[entry.rt] || { label: '???', className: 'unknown' };
           const row = document.createElement('div');
           row.className = 'log-entry';
           row.innerHTML = `
-            <span class="log-rt" style="background:${badge.color};color:${badge.text};">${badge.label}</span>
+            <span class="log-rt log-rt--${badge.className}">${badge.label}</span>
             <span class="log-url" title="${escapeHTML(entry.url)}">${escapeHTML(formatLogUrl(entry.url))}</span>
             <span class="log-time">${formatTimeAgo(entry.ts)}</span>
           `;

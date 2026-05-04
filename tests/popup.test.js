@@ -374,7 +374,7 @@ test('popup.js functionality', async (t) => {
     await elements['cardNetwork'].dispatchEvent('click');
 
     assert.strictEqual(chromeMock.runtime.optionsOpened, 1);
-    assert.strictEqual(elements['cardNetwork'].style.cursor, 'pointer');
+    assert.match(elements['cardNetwork'].classList.current, /stat-card--clickable/);
   });
 });
 
@@ -393,6 +393,9 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(popupHtmlCode, /style="/);
   assert.doesNotMatch(settingsHtmlCode, /style="/);
   assert.doesNotMatch(componentsJsCode, /style="/);
+  assert.doesNotMatch(appJsCode, /style="/);
+  assert.doesNotMatch(proxyUiJsCode, /style="/);
+  assert.doesNotMatch(proxyUiJsCode, /style\.cssText/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
   assert.match(appJsCode, /function openProxySettings\(\)/);
   assert.match(appJsCode, /ui\/settings\.html#proxy/);
