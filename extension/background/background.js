@@ -176,19 +176,10 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 // ─── DYNAMIC RULE UPDATES ─────
-const STATIC_RULESETS = [
-  'yt_original_rules',
-  'yt_ad_rules_part1',
-  'yt_ad_rules_part2',
-  'yt_ad_rules_part3',
-  'yt_ad_rules_part4',
-  'yt_ad_rules_part5',
-  'yt_ad_rules_part6',
-  'yt_ad_rules_part7',
-  'yt_ad_rules_part8',
-  'yt_ad_rules_part9',
-  'recipe_ad_rules'
-];
+const STATIC_RULESETS = chrome.runtime.getManifest()
+  .declarative_net_request
+  .rule_resources
+  .map(resource => resource.id);
 
 // Range 1000 - 99999 reserved for local/default dynamic rules (Anti-Detection/Acceleration)
 const DEFAULT_RULE_ID_START = 1000;

@@ -4,11 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background.js'), 'utf8');
+const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'background.js'), 'utf8');
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/subscriptions\/manager\.js['"];?/s, `
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/subscriptions\/manager\.js['"];?/s, `
     var initSubscriptions   = globalThis._mockInitSubscriptions;
     var ensureAlarm          = globalThis._mockEnsureAlarm;
     var refreshAllStale      = globalThis._mockRefreshAllStale;
@@ -18,15 +19,14 @@ const backgroundJsCode = backgroundJsCodeRaw
     var addSubscription      = globalThis._mockAddSubscription;
     var removeSubscription   = globalThis._mockRemoveSubscription;
   `)
-  .replace("import { initScriptletEngine } from './scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;")
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/crypto\.js['"];?/s, "var decryptAuth = globalThis._mockDecryptAuth; var encryptAuth = globalThis._mockEncryptAuth;")
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/messageTypes\.js['"];?/s, "var MSG = {};")
-  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
+  .replace("import { initScriptletEngine } from '../scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
+  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace(/^export\s+/gm, "");
 
-const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'defaultDynamicRules.js'), 'utf8');
+const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'defaultDynamicRules.js'), 'utf8');
 const defaultDynamicRulesCode = defaultDynamicRulesCodeRaw.replace('export function getDefaultDynamicRules', 'globalThis.getDefaultDynamicRules = function');
 
 // ─── GETDEFAULTDYNAMICRULES ─────
@@ -35,6 +35,7 @@ test('getDefaultDynamicRules', async (t) => {
 
   const chromeMock = {
     runtime: {
+      getManifest: () => manifest,
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }
@@ -142,6 +143,7 @@ test('syncDynamicRules successful syncing', async (t) => {
 
   const chromeMock = {
     runtime: {
+      getManifest: () => manifest,
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }
@@ -261,6 +263,7 @@ test('syncDynamicRules error handling', async (t) => {
 
   const chromeMock = {
     runtime: {
+      getManifest: () => manifest,
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }

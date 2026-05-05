@@ -399,6 +399,70 @@ export function hideUpward(args) {
   });
 }
 
+/**
+ * Crawls Reddit's feed for promoted markers and hides the containing post.
+ * The promoted marker is more stable than Reddit's generated post ids, so this
+ * walks upward from that marker instead of targeting a single #t3_* element.
+ */
+export function redditPromotedAds() {
+  const MARKER_SELECTOR = '.promoted-name-container, [class*="promoted-name-container"]';
+  const POST_SELECTOR = 'shreddit-post, article, [data-testid="post-container"], [id^="t3_"]';
+  const PROMOTED_RE = /\b(promoted|sponsored)\b/i;
+  let pending = false;
+
+  const isPromotedMarker = (el) => {
+    const text = (el && el.textContent || '').replace(/\s+/g, ' ').trim();
+    return !text || PROMOTED_RE.test(text);
+  };
+
+  const hidePost = (post) => {
+    if (!post || post.nodeType !== 1 || post.getAttribute('data-chroma-reddit-promoted') === '1') return;
+    post.setAttribute('data-chroma-reddit-promoted', '1');
+    post.setAttribute('aria-hidden', 'true');
+    if (post.style) post.style.setProperty('display', 'none', 'important');
+  };
+
+  const crawl = (root) => {
+    try {
+      const found = [];
+      if (root && root.nodeType === 1 && root.matches && root.matches(MARKER_SELECTOR)) found.push(root);
+      const queryRoot = root && (root.nodeType === 1 || root.nodeType === 9 || root.nodeType === 11) ? root : document;
+      if (queryRoot && queryRoot.querySelectorAll) {
+        queryRoot.querySelectorAll(MARKER_SELECTOR).forEach(el => found.push(el));
+      }
+
+      found.forEach(marker => {
+        if (!isPromotedMarker(marker)) return;
+        hidePost(marker.closest(POST_SELECTOR));
+      });
+    } catch (e) {}
+  };
+
+  const scheduleCrawl = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      crawl(document);
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  const start = () => {
+    crawl(document);
+    const root = document.documentElement || document.body;
+    if (!root) return;
+    new MutationObserver(scheduleCrawl).observe(root, {
+      childList: true,
+      subtree: true
+    });
+  };
+
+  if (document.documentElement || document.body) start();
+  else document.addEventListener('DOMContentLoaded', start, { once: true });
+}
+
 
 /**
  * Removes a CSS class from matching elements and watches for re-addition.
@@ -1264,6 +1328,8 @@ export const SCRIPTLET_MAP = new Map([
   ['json-prune',              jsonPrune],
   ['hide-element',            hideElement],
   ['hide-upward',             hideUpward],
+  ['reddit-promoted-ads',     redditPromotedAds],
+  ['reddit-promoted',         redditPromotedAds],
   ['release-scroll-lock',     releaseScrollLock],
   ['protect-stylesheets',     protectStylesheets],
   ['prevent-innerhtml-clear',  preventInnerHTMLClear]

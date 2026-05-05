@@ -1,10 +1,23 @@
 {
   "name": "chroma-ad-blocker",
-  "version": "0.9.9",
-  "description": "Low-resource Manifest V3 ad-blocker using a three-layer strategy: declarative network blocking, ad-acceleration, and cosmetic filtering.",
-  "main": "extension/background.js",
+  "version": "1.0.0",
+  "description": "Low-resource Manifest V3 ad-blocker using network blocking, YouTube ad stripping, scriptlets, cosmetic filtering, proxy routing, and ad-acceleration fallback.",
+  "main": "extension/background/background.js",
   "scripts": {
-    "test": "node --test"
+    "test": "node tests/run-all.js",
+    "test:quick": "node tests/run-all.js --tier=quick",
+    "test:security": "node tests/run-all.js --tier=security",
+    "test:policy": "node tests/run-all.js --tier=policy",
+    "test:ci": "node tests/run-all.js && node tests/tools/validate-rules.js && node scripts/package-extension.js",
+    "test:rules": "node tests/tools/validate-rules.js",
+    "rules:update:oisd": "node scripts/update-oisd-rules.js",
+    "test:e2e": "node tests/e2e/run-all.js --tier=full",
+    "test:e2e:smoke": "node tests/e2e/run-all.js --tier=smoke",
+    "test:e2e:load": "node tests/e2e/load-extension.e2e.js",
+    "test:e2e:dnr": "node tests/e2e/dnr-match.e2e.js",
+    "test:e2e:sw": "node tests/e2e/service-worker-restart.e2e.js",
+    "test:e2e:zapper": "node tests/e2e/zapper.e2e.js",
+    "package:extension": "node scripts/package-extension.js"
   },
   "repository": {
     "type": "git",

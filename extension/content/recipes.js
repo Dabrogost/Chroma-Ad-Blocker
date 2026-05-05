@@ -17,6 +17,7 @@
     'smittenkitchen.com', 'budgetbytes.com', 'pinchofyum.com',
     'sallysbakingaddiction.com', 'minimalistbaker.com', 'thewoksoflife.com',
     'americastestkitchen.com', 'cooking.nytimes.com', 'weelicious.com',
+    'pcgamer.com',
   ];
 
   const siteKey = SITE_KEYS.find(k => host === k || host.endsWith('.' + k));

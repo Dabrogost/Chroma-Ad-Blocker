@@ -1,0 +1,65 @@
+name: Test
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Node, policy, and package checks
+        run: npm run test:ci
+
+      - name: Locate Chromium or Chrome for Testing
+        id: browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser="$(command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$browser" ]; then
+            for candidate in \
+              /opt/chrome-for-testing/chrome-linux64/chrome \
+              /opt/google/chrome-for-testing/chrome \
+              "$HOME/chrome-for-testing/chrome-linux64/chrome"; do
+              if [ -x "$candidate" ]; then
+                browser="$candidate"
+                break
+              fi
+            done
+          fi
+          if [ -z "$browser" ]; then
+            echo "No Chromium or Chrome for Testing binary found; skipping E2E."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Using browser: $browser"
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "CHROME_BIN=$browser" >> "$GITHUB_ENV"
+          echo "CHROME_PATH=$browser" >> "$GITHUB_ENV"
+
+      - name: Run loaded-extension E2E smoke
+        if: steps.browser.outputs.available == 'true'
+        timeout-minutes: 5
+        run: npm run test:e2e:smoke
+
+      - name: Run full browser E2E
+        if: github.event_name == 'workflow_dispatch' && steps.browser.outputs.available == 'true'
+        timeout-minutes: 15
+        run: npm run test:e2e

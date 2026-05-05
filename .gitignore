@@ -15,6 +15,7 @@ Thumbs.db
 _metadata/
 *.crx
 *.pem
+dist/
 
 # Jekyll / GitHub Pages (Build Artifacts)
 docs/_site/
@@ -23,8 +24,10 @@ docs/.jekyll-metadata
 docs/.sass-cache/
 
 # Project Specific
+AGENTS.md
 gemini.md
 descriptions.txt
 tmp/
 *.log
 *.local
+docs/testing.md

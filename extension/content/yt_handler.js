@@ -46,8 +46,9 @@
     }
   }
 
-  // Returns true only when acceleration polling should run on YouTube.
-  // When stripping is active it handles ad removal upstream, so polling is redundant.
+  // Returns true when the user explicitly enables YouTube ad acceleration.
+  // Stripping and acceleration can run together: stripping handles API payloads,
+  // while acceleration remains a fallback for ads that still reach playback.
   function shouldAccelerate() {
     return CONFIG.acceleration;
   }

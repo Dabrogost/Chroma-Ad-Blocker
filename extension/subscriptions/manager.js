@@ -66,18 +66,11 @@ function deduplicateCosmeticRules(rules) {
  * @returns {Promise<Set<string>>}
  */
 async function buildStaticUrlFilterSet() {
-  const files = [
-    'rules/rules.json',
-    'rules/rules_1.json',
-    'rules/rules_2.json',
-    'rules/rules_3.json',
-    'rules/rules_4.json',
-    'rules/rules_5.json',
-    'rules/rules_6.json',
-    'rules/rules_7.json',
-    'rules/rules_8.json',
-    'rules/rules_9.json'
-  ];
+  const files = chrome.runtime
+    .getManifest()
+    .declarative_net_request
+    .rule_resources
+    .map(resource => resource.path);
 
   const set = new Set();
   await Promise.all(files.map(async (file) => {

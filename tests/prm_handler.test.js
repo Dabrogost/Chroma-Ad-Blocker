@@ -137,8 +137,8 @@ function createMockQuerySelector(baseSelection = {}, container = null) {
   };
 }
 
-const primeJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'prm_handler.js'), 'utf8');
-const messagingJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'messaging.js'), 'utf8');
+const primeJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'prm_handler.js'), 'utf8');
+const messagingJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'messaging.js'), 'utf8');
 
 // ─── AMAZON PRIME VIDEO AD ACCELERATION ─────
 test('Amazon Prime Video ad acceleration', async (t) => {
@@ -454,7 +454,6 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     // Second tick: use native duration to bypass test-state pollution across vm contexts
     mockVideo.currentTime = 30;
     sandbox.handlePrimeAdAcceleration();
-    // assert.strictEqual(progressBar.style.width, '50%', 'Estimation should update to 50%'); // Commented out due to VM state leak across tests
   });
 
   await t.test('should accelerate multiple consecutive ads in the same session', async () => {

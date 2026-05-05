@@ -127,7 +127,7 @@
         "bbcgoodfood.com","thekitchn.com","seriouseats.com","recipetineats.com",
         "smittenkitchen.com","budgetbytes.com","pinchofyum.com",
         "sallysbakingaddiction.com","minimalistbaker.com","thewoksoflife.com",
-        "americastestkitchen.com","nytimes.com","weelicious.com"
+        "americastestkitchen.com","nytimes.com","weelicious.com","pcgamer.com"
       ],
       "resourceTypes": ["script","sub_frame","xmlhttprequest","image","ping","other"]
     }
@@ -143,7 +143,7 @@
         "bbcgoodfood.com","thekitchn.com","seriouseats.com","recipetineats.com",
         "smittenkitchen.com","budgetbytes.com","pinchofyum.com",
         "sallysbakingaddiction.com","minimalistbaker.com","thewoksoflife.com",
-        "americastestkitchen.com","nytimes.com","weelicious.com"
+        "americastestkitchen.com","nytimes.com","weelicious.com","pcgamer.com"
       ],
       "resourceTypes": ["script","sub_frame","xmlhttprequest","image","ping","other"]
     }
