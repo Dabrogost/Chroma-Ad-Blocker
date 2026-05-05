@@ -651,6 +651,13 @@ footer {
   padding: 3px 8px;
 }
 
+.inline-danger-btn.compact-action-btn {
+  border: 1px solid var(--border-glass);
+  background: rgba(108, 92, 231, 0.12);
+  color: var(--text-dim);
+  opacity: 1;
+}
+
 .inline-separator {
   display: inline-block;
   width: 1px;
@@ -892,9 +899,11 @@ select.chroma-input {
   border-top: 1px solid rgba(255,255,255,0.03);
 }
 
-.proxy-domain-name {
+.toggle-info .proxy-domain-name {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .proxy-domain-actions {

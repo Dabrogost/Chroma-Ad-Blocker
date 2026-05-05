@@ -571,7 +571,7 @@ const ChromaApp = (() => {
           toggleInput.checked = !!rule.enabled;
           appendElement(toggleLabel, 'span', 'slider');
 
-          const deleteBtn = appendElement(actions, 'button', 'reset-btn zapper-rule-delete compact-action-btn', 'Delete');
+          const deleteBtn = appendElement(actions, 'button', 'reset-btn zapper-rule-delete inline-danger-btn compact-action-btn', 'Delete');
           deleteBtn.dataset.id = rule.id;
           deleteBtn.title = 'Delete rule';
           list.appendChild(row);

@@ -6,6 +6,7 @@ const path = require('path');
 const componentsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
+const uiCss = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
 
 test('settings page proxy and zapper management safety', async (t) => {
   await t.test('proxy credential UI never hydrates password fields from stored config', () => {
@@ -24,6 +25,28 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(proxyUiJs, /out\.password = credential\.password \|\| '';/);
     assert.match(proxyUiJs, /action: pendingCredentialAction === 'clear' \? 'clear' : 'preserve'/);
     assert.match(proxyUiJs, /Enter both username and password, or leave both blank to keep saved credentials\./);
+  });
+
+  await t.test('adding another proxy preserves unsaved proxy card drafts', () => {
+    const addHandler = proxyUiJs.match(/addBtn\.onclick = async \(\) => \{[\s\S]*?container\.lastElementChild\?\.scrollIntoView/);
+    assert.ok(addHandler, 'expected settings add-proxy handler');
+    assert.match(addHandler[0], /container\.appendChild\(renderProxyCard\(newPc, proxyConfigs\.length - 1\)\)/);
+    assert.doesNotMatch(addHandler[0], /renderAll\(\)/);
+  });
+
+  await t.test('proxy destructive actions use compact button styling', () => {
+    assert.match(proxyUiJs, /proxy-del-server-btn inline-danger-btn compact-action-btn/);
+    assert.match(proxyUiJs, /d-del-btn inline-danger-btn compact-action-btn/);
+    assert.match(proxyUiJs, /proxy-clear-settings-btn inline-danger-btn compact-action-btn/);
+    assert.match(appJs, /zapper-rule-delete inline-danger-btn compact-action-btn/);
+    assert.match(uiCss, /\.inline-danger-btn\.compact-action-btn\s*\{/);
+    assert.match(uiCss, /\.inline-danger-btn\.compact-action-btn\s*\{[\s\S]*border: 1px solid var\(--border-glass\)/);
+    assert.match(uiCss, /\.inline-danger-btn\.compact-action-btn\s*\{[\s\S]*background: rgba\(108, 92, 231, 0\.12\)/);
+  });
+
+  await t.test('proxy domain names override generic toggle heading size', () => {
+    assert.match(uiCss, /\.toggle-info \.name \{ font-size: 16px/);
+    assert.match(uiCss, /\.toggle-info \.proxy-domain-name\s*\{[\s\S]*font-size: 13px/);
   });
 
   await t.test('zapper rules render selector text safely and expose disable/delete actions', () => {

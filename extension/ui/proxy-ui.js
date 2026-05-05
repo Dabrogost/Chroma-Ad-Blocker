@@ -87,7 +87,7 @@ const ChromaProxyUI = (() => {
         <div class="proxy-error proxy-grid-wide is-hidden"></div>
         <div class="proxy-form-actions">
           <button class="reset-btn proxy-accept-btn form-submit-btn">Accept Settings</button>
-          <button class="reset-btn proxy-del-server-btn inline-danger-btn" title="Delete Server">Delete</button>
+          <button class="reset-btn proxy-del-server-btn inline-danger-btn compact-action-btn" title="Delete Server">Delete</button>
         </div>
       </div>
 
@@ -136,7 +136,7 @@ const ChromaProxyUI = (() => {
     }
 
     const actions = appendElement(row, 'div', 'proxy-domain-actions');
-    const removeBtn = appendElement(actions, 'button', 'reset-btn d-del-btn inline-danger-btn', 'Remove');
+    const removeBtn = appendElement(actions, 'button', 'reset-btn d-del-btn inline-danger-btn compact-action-btn', 'Remove');
     removeBtn.title = 'Remove Domain';
     appendElement(actions, 'span', 'inline-separator');
 
@@ -641,8 +641,8 @@ const ChromaProxyUI = (() => {
         credentialAction: 'preserve'
       };
       proxyConfigs.push(newPc);
-      renderAll();
-      // Scroll to bottom
+      container.querySelector('.proxy-empty')?.remove();
+      container.appendChild(renderProxyCard(newPc, proxyConfigs.length - 1));
       container.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
     };
 
