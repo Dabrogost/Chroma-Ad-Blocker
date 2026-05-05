@@ -27,14 +27,25 @@ jobs:
       - name: Run Node, policy, and package checks
         run: npm run test:ci
 
-      - name: Locate Chromium or Chrome
+      - name: Locate Chromium or Chrome for Testing
         id: browser
         shell: bash
         run: |
           set -euo pipefail
-          browser="$(command -v chromium || command -v chromium-browser || command -v google-chrome || command -v google-chrome-stable || true)"
+          browser="$(command -v chromium || command -v chromium-browser || true)"
           if [ -z "$browser" ]; then
-            echo "No Chromium/Chrome binary found; skipping E2E."
+            for candidate in \
+              /opt/chrome-for-testing/chrome-linux64/chrome \
+              /opt/google/chrome-for-testing/chrome \
+              "$HOME/chrome-for-testing/chrome-linux64/chrome"; do
+              if [ -x "$candidate" ]; then
+                browser="$candidate"
+                break
+              fi
+            done
+          fi
+          if [ -z "$browser" ]; then
+            echo "No Chromium or Chrome for Testing binary found; skipping E2E."
             echo "available=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

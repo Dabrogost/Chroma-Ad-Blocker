@@ -10,7 +10,7 @@ description: Chroma Ad-Blocker privacy policy - your data stays on your device.
 **Effective Date:** April 26, 2026
 
 ## Overview
-Chroma Ad-Blocker ("we," "our," or "the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information in connection with your use of the Extension. **Our core principle is that your data stays on your device.**
+Chroma Ad-Blocker ("we," "our," or "the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information in connection with your use of the Extension. **Core extension settings, logs, and cached rules are stored on your device; optional features may contact the external list, update, proxy-test, or proxy services described below.**
 
 ## 1. Information Collection and Use
 Chroma Ad-Blocker **does not collect, store, or transmit personal information to Chroma-controlled servers**. Chroma does not operate any telemetry, analytics, or tracking backend. Core extension operations are performed locally on your device.
@@ -20,7 +20,7 @@ The Extension uses your browser's local storage (`chrome.storage.local`) to save
 - **User Settings**: Your preferred toggles for network blocking, YouTube stripping, ad acceleration, cosmetic filtering, fingerprint randomization, proxy routing, and related options.
 - **Whitelists**: Domains you choose to exempt from Chroma protection or fingerprint randomization.
 - **Filter List Data**: Subscription metadata and cached parsed rules from enabled filter lists.
-- **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are encrypted locally before storage and used only for proxy authentication.
+- **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are locally obfuscated/encrypted with a bundled extension key before storage and used only for proxy authentication.
 - **Local Statistics and Request Log**: Local blocked-request counts and a bounded request log used for the popup display. The log can include blocked request URLs, request types, timestamps, and matched rule IDs. This data is stored locally and can be reset from the extension UI.
 
 ### No Tracking and Cookies

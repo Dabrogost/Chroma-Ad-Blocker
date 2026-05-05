@@ -1,6 +1,6 @@
 # Chroma Ad-Blocker
 
-**Chroma Ad-Blocker** is an advanced, high-performance browser extension built for Manifest V3 (MV3). It employs a sophisticated multi-layered strategy to maintain functionality across a wide range of websites while maintaining a minimal resource footprint. Chroma is free, open-source (GPLv3), and privacy-focused. For optimal performance, it is recommended to disable other ad-blocking extensions while using Chroma.
+**Chroma Ad-Blocker** is an advanced browser extension built for Manifest V3 (MV3). It combines several local protection layers to maintain functionality across a wide range of websites while aiming to keep resource use low. Chroma is free, open-source (GPLv3), and privacy-focused. For best results, it is recommended to disable other ad-blocking extensions while using Chroma.
 
 <div align="center">
   <img src="assets/popup.gif" alt="Chroma Ad-Blocker Popup Preview" width="360">
@@ -9,12 +9,12 @@
 ## Key Features
 
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
-- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Features AES-256-GCM encryption for credentials and real-time connectivity verification.
+- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Uses local AES-256-GCM credential obfuscation and real-time connectivity verification.
 - **Multi-Part DNR Network Blocking**: Utilizes an 11-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
-- **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from the popup without editing filter lists.
+- **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from settings without editing filter lists.
 - **Main-World Safety Exclusions**: Bypasses Chroma's MAIN-world interception layer on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network and cosmetic blocking remain user-controllable through per-domain whitelisting.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
@@ -25,7 +25,7 @@
 
 ## Architecture Overview
 
-Chroma utilizes a multi-layered execution model designed to survive the ephemeral lifecycle of Manifest V3 service workers while maintaining maximum performance and security.
+Chroma utilizes a multi-layered execution model designed to survive the ephemeral lifecycle of Manifest V3 service workers while preserving clear performance and security boundaries.
 
 **Diagram 1 — Page Execution Flow**
 
@@ -111,11 +111,11 @@ graph TD
 ### Layer 1: Network-Level Blocking (extension/rules/, extension/background/background.js, extension/subscriptions/)
 The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into an 11-part system (10 primary sets + 1 specialized recipe layer) covering over 290,000 static DNR rules.
 
-#### Why 290,000+ Rules Do Not Impact Performance
-Users often wonder how a database of nearly 300,000 rules can operate without slowing down the browser. Chroma achieves this through three key architectural advantages:
-- **Engine-Level Matching**: Unlike legacy ad-blockers that use the `webRequest` API (which requires waking up a JavaScript process for every single network request), DNR rules are handed off to the browser's core C++ networking engine. Matching happens at the system level before the request even leaves the browser.
-- **Binary Pre-Optimization**: Upon installation and update, Chromium compiles these JSON rulesets into a highly optimized binary format (similar to a Bloom filter). This allows the browser to perform "O(1)" or near-instant lookups regardless of whether there are 10 rules or 300,000.
-- **Zero JS Overhead**: Because the matching logic lives outside of the extension's execution context, there is no main-thread contention. Your CPU remains free for page rendering while the networking stack silently drops ad-related packets.
+#### How Chroma Keeps Large Static Rulesets Practical
+Users often wonder how a database of nearly 300,000 rules can operate without moving every request through extension JavaScript. Chroma relies on three architectural advantages:
+- **Engine-Level Matching**: Unlike legacy ad-blockers that use the `webRequest` API for request decisions, DNR rules are handed off to Chromium's Declarative Net Request implementation before matching.
+- **Browser-Managed Indexing**: Chromium validates and indexes static rulesets when the extension is installed or updated. Chroma does not depend on a specific internal data structure or lookup guarantee.
+- **Low JS Request-Path Overhead**: Because the matching logic lives outside of the extension's execution context, Chroma avoids waking its own service worker for every blocked request.
 - **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This ensures that the dynamic rule budget is reserved only for unique, high-priority threats.
 
 
@@ -133,7 +133,7 @@ The advanced surgical layer of the extension, migrated to the high-performance `
 Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
 
 ### Layer 4b: Element Zapper (content/zapper.js, background/handlers.js)
-An on-demand cosmetic rule builder for elements that are too site-specific or personal to belong in a shared filter list. From the popup, click **Zap Element**, choose the page element, and Chroma generates a scoped selector preview before saving it as a local rule. Saved zapper rules are stored locally, applied by the cosmetic layer, and can be enabled, disabled, or removed from the popup.
+An on-demand cosmetic rule builder for elements that are too site-specific or personal to belong in a shared filter list. From the popup, click **Zap Element**, choose the page element, and Chroma generates a scoped selector preview before saving it as a local rule. Saved zapper rules are stored locally, applied by the cosmetic layer, and can be enabled, disabled, or removed from settings.
 
 ### Layer 5: Universal Protection (protection.js, interceptor.js)
 A proactive security layer that maintains extension integrity across execution contexts. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, dispatches the `__EXT_INIT__` document event to signal the MAIN world handlers, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
@@ -159,36 +159,15 @@ Chroma does not intercept or store any data from these requests. For a full expl
 
 ---
 
-## Why Not the Chrome Web Store?
-
-Ad-blocking in the modern web is a high-stakes "cat-and-mouse" game where trust is the most valuable currency. Chroma is deliberately **not** hosted on the Chrome Web Store, and it never will be. This is a strategic decision rooted in transparency and technical freedom:
-
-### 1. Conflict of Interest
-Google is an advertising company first. As the gatekeeper of the Chrome Web Store, they have an inherent conflict of interest regarding tools that neutralize their primary revenue stream. By remaining independent, Chroma is not subject to arbitrary policy changes, forced feature deprecations, or the risk of sudden removal that "authorized" blockers frequently face.
-
-### 2. Full Auditability (Zero Obfuscation)
-Web Store extensions often arrive as "black boxes" with bundled or obfuscated code. Chroma is distributed as raw, human-readable source code. By loading it as an unpacked extension, you (and the community) can audit every single line of JavaScript. There are no hidden analytics, no telemetry backdoors, and no "Acceptable Ads" programs that allow paid bypasses.
-
-### 3. Unrestricted API Power
-Chroma utilizes advanced, performance-heavy APIs—such as the `userScripts` engine and high-volume `declarativeNetRequest` rule-sets—that are often restricted, capped, or heavily throttled for Web Store submissions. Bypassing the store allows us to use the browser's full hardware-acceleration capabilities without corporate handcuffs.
-
-### 4. Zero-Day Hotfixes
-When YouTube or other platforms update their ad-delivery algorithms, we can push a hotfix to GitHub in minutes. Web Store reviews can take days or even weeks. In the world of ad-blocking, a three-day delay is an eternity. Staying off the store ensures that you are always running the most potent version of the engine.
-
-> [!IMPORTANT]
-> Sideloading an extension requires a higher level of trust. We encourage you to review the [Permissions](#permissions) and [Security Hardening](#security-hardening) sections to understand exactly how Chroma protects your session.
-
----
-
 ## Media Proxy Router (Split-Tunneling)
 
 Chroma includes a built-in split-tunnel proxy router that allows you to route traffic for specific domains through a proxy server while keeping the rest of your browser traffic on your direct, local connection. This operates entirely within the browser via dynamic Proxy Auto-Configuration (PAC) scripts, meaning it does not require a system-level VPN installation.
 
 ### Supported Protocols
-Chroma supports `HTTP`, `HTTPS`, and `SOCKS5` proxies. You can force a specific protocol by adding a prefix to the proxy host (e.g., `https://` or `socks5://`). In the popup UI, entering a `.com` host without a protocol will automatically default to `https://`. Otherwise, it defaults to standard `HTTP` (PROXY).
+Chroma supports `HTTP`, `HTTPS`, `SOCKS4`, and `SOCKS5` proxies. Choose the protocol from the proxy setup dropdown, then enter the proxy host without a protocol prefix.
 
 ### Security
-Your proxy credentials (username and password) are encrypted locally using AES-256-GCM via the native Web Crypto API before being stored to disk. They are decrypted dynamically in-memory only when the proxy server challenges the browser for authentication, providing excellent obfuscation against disk-level inspection.
+Your proxy credentials (username and password) are locally obfuscated using AES-256-GCM via the native Web Crypto API before being stored to disk. They are decrypted dynamically in memory only when the proxy server challenges the browser for authentication. This protects against casual disk-level inspection, but it is not a substitute for operating-system or browser-profile security.
 
 ### Connection Verification
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
@@ -205,11 +184,12 @@ The Chroma popup provides real-time feedback on your routing state. The status l
 ### Example: Setting up NordVPN
 Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN HTTPS proxy server (e.g., Albania #80):
 
-1. **Host:** Enter `https://al80.nordvpn.com` *(Note the `https://` prefix, as this selects Chroma's HTTPS proxy mode)*
-2. **Port:** Enter `89` *(commonly used by NordVPN HTTPS/HTTP SSL proxy endpoints)*
-3. **Username & Password:** You **cannot** use your standard NordAccount email/password. You must use your auto-generated **Service Credentials**, which can be found in your NordAccount dashboard under *Services > NordVPN > Manual Setup*.
-4. **Domains:** Add the domains you want to route (e.g., `youtube.com`) to the active list.
-5. Click **Accept Settings**.
+1. **Protocol:** Select `HTTPS` from the dropdown.
+2. **Host:** Enter `al80.nordvpn.com`.
+3. **Port:** Enter `89` *(commonly used by NordVPN HTTPS/HTTP SSL proxy endpoints)*.
+4. **Username & Password:** You **cannot** use your standard NordAccount email/password. You must use your auto-generated **Service Credentials**, which can be found in your NordAccount dashboard under *Services > NordVPN > Manual Setup*.
+5. **Domains:** Add the domains you want to route (e.g., `youtube.com`) to the active list.
+6. Click **Accept Settings**.
 
 ### Smart-Link Auto-Expansion
 To prevent "infinite spin" and geo-blocking issues caused by IP mismatches between a site's UI and its video delivery network, Chroma includes a **Smart-Link** system. When you add a major streaming service to your proxy list, Chroma automatically identifies and proxies its associated media delivery networks (CDNs).
@@ -239,7 +219,7 @@ Instead of reacting to ads after they appear, the Stripper operates at the data 
 - **Feed & Search Optimization**: Beyond the video player, it strips promoted "Sparkles" ads, suggested products, and sponsored results from your home feed and search results.
 
 > [!TIP]
-> While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience. The stripper will always have a slight delay (inherent to how the YouTube player processes ad-free data), but will never show mid-roll ads. Because a proxy payload contains no ad-data from the start, it remains the only true zero-delay solution. 
+> While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience. The stripper can still have a slight delay while the YouTube player processes cleaned data, and behavior can change when YouTube changes its delivery pipeline. Proxy-side ad-free payloads can reduce delay in supported setups because the payload starts without ad data.
 
 ---
 
@@ -252,7 +232,7 @@ The **Element Zapper** is a manual cleanup tool for one-off annoyances that filt
 3. Click the unwanted page element. Press `Esc` to cancel.
 4. Review the selector prompt and save it.
 
-Zapper rules are local to your browser and are stored as cosmetic rules with a `zapper` source. Chroma rejects invalid selectors and warns when a selector matches too many elements, helping avoid accidental broad hiding. Saved rules can be toggled or deleted from the popup at any time.
+Zapper rules are local to your browser and are stored as cosmetic rules with a `zapper` source. Chroma rejects invalid selectors and warns when a selector matches too many elements, helping avoid accidental broad hiding. Saved rules can be toggled or deleted from settings at any time.
 
 ---
 
@@ -296,7 +276,7 @@ Chroma implements several advanced security measures to ensure extension integri
 1. Get the latest release from [GitHub](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest), and extract the ZIP file.
 2. Open `chrome://extensions` in Chrome.
 3. Toggle on **Developer Mode** in the top-right corner.
-4. Click **Load unpacked** and select the `extension/` folder inside the extracted directory.
+4. Click **Load unpacked** and select the extracted folder that contains `manifest.json`.
 5. Enable User Scripts support:
    - **Chrome 138+**: On the Chroma extension card, click **Details**, then enable **Allow User Scripts**.
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
@@ -407,6 +387,27 @@ If you prefer a store-installed extension, a Firefox-first setup, or a dedicated
 
 ---
 
+## Why Not the Chrome Web Store?
+
+Ad-blocking in the modern web is a high-stakes "cat-and-mouse" game where trust is the most valuable currency. Chroma is deliberately **not** hosted on the Chrome Web Store, and it never will be. This is a strategic decision rooted in transparency and technical freedom:
+
+### 1. Conflict of Interest
+Google is an advertising company first. As the gatekeeper of the Chrome Web Store, they have an inherent conflict of interest regarding tools that neutralize their primary revenue stream. By remaining independent, Chroma is not subject to arbitrary policy changes, forced feature deprecations, or the risk of sudden removal that "authorized" blockers frequently face.
+
+### 2. Full Auditability (Zero Obfuscation)
+Web Store extensions often arrive as "black boxes" with bundled or obfuscated code. Chroma is distributed as raw, human-readable source code. By loading it as an unpacked extension, you (and the community) can audit every single line of JavaScript. There are no hidden analytics, no telemetry backdoors, and no "Acceptable Ads" programs that allow paid bypasses.
+
+### 3. Unrestricted API Power
+Chroma utilizes advanced MV3 APIs such as the `userScripts` engine and high-volume `declarativeNetRequest` rule-sets. Bypassing the store keeps those capabilities transparent and source-auditable without waiting on store review cycles.
+
+### 4. Zero-Day Hotfixes
+When YouTube or other platforms update their ad-delivery algorithms, Chroma can ship a hotfix through GitHub quickly. Web Store reviews can take days or even weeks. In the world of ad-blocking, a three-day delay is an eternity. Staying off the store helps keep the engine responsive to platform changes.
+
+> [!IMPORTANT]
+> Sideloading an extension requires a higher level of trust. Review the [Permissions](#permissions) and [Security Hardening](#security-hardening) sections to understand exactly how Chroma protects your session.
+
+---
+
 ## AI Usage & Quality Assurance Disclosure
 
 Portions of this codebase, including initial logic structures and documentation, were developed with the assistance of agentic AI coding assistants. To ensure project integrity, every AI-assisted component has been manually audited, refactored, and verified to meet strict security and performance standards. This collaborative approach combines the efficiency of advanced tooling with focused oversight and robust test coverage.
@@ -423,7 +424,7 @@ Portions of this codebase, including initial logic structures and documentation,
 
 ## Security Policy
 
-For information on how to report security vulnerabilities, please see our [Security Policy](docs/SECURITY.md).
+For information on how to report security vulnerabilities, please see the [Security Policy](docs/SECURITY.md).
 
 ---
 

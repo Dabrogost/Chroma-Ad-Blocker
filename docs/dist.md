@@ -9,7 +9,7 @@ npm.cmd run package:extension
 The script writes:
 
 ```text
-dist/chroma-ad-blocker-v0.9.9.zip
+dist/chroma-ad-blocker-v1.0.0.zip
 ```
 
 The version comes from `extension/manifest.json`. That zip is the file to distribute.

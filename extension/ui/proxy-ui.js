@@ -80,7 +80,7 @@ const ChromaProxyUI = (() => {
         <input type="text" class="chroma-input proxy-user" value="" placeholder="Username" />
         <input type="password" class="chroma-input proxy-pass" value="" placeholder="${pc.hasCredentials ? 'Password saved' : 'Password'}" />
         <div class="proxy-credential-row">
-          <span class="proxy-credential-help">${pc.hasCredentials ? 'Credentials saved locally. Leave fields blank to keep them.' : 'Credentials are stored locally in encrypted extension storage and used only for proxy authentication.'}</span>
+          <span class="proxy-credential-help">${pc.hasCredentials ? 'Credentials saved locally. Leave fields blank to keep them.' : 'Credentials are locally obfuscated in extension storage and used only for proxy authentication.'}</span>
           <button class="reset-btn proxy-clear-credentials-btn inline-danger-btn ${pc.hasCredentials ? '' : 'is-hidden'}">Clear credentials</button>
         </div>
         <div class="proxy-auth-note proxy-grid-wide is-hidden">SOCKS auth isn't supported by Chrome - use IP whitelisting on your provider.</div>
@@ -343,7 +343,7 @@ const ChromaProxyUI = (() => {
         if (help) {
           help.textContent = displayedHasCredentials
             ? 'Credentials saved locally. Leave fields blank to keep them.'
-            : 'Credentials are stored locally in encrypted extension storage and used only for proxy authentication.';
+            : 'Credentials are locally obfuscated in extension storage and used only for proxy authentication.';
         }
         if (passInput) passInput.placeholder = displayedHasCredentials ? 'Password saved' : 'Password';
         setHidden(clearCredentialsBtn, !displayedHasCredentials);
