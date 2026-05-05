@@ -10,6 +10,7 @@
     "test:policy": "node tests/run-all.js --tier=policy",
     "test:ci": "node tests/run-all.js && node tests/tools/validate-rules.js && node scripts/package-extension.js",
     "test:rules": "node tests/tools/validate-rules.js",
+    "rules:update:oisd": "node scripts/update-oisd-rules.js",
     "test:e2e": "node tests/e2e/run-all.js --tier=full",
     "test:e2e:smoke": "node tests/e2e/run-all.js --tier=smoke",
     "test:e2e:load": "node tests/e2e/load-extension.e2e.js",

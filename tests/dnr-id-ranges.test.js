@@ -25,6 +25,9 @@ const backgroundJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension',
   .replace(/^export\s+/gm, '')
   + '\nglobalThis.__backgroundExports = { updateDNRState, syncDynamicRules, syncWhitelistRules };\n';
 
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
+const staticRulesetIds = manifest.declarative_net_request.rule_resources.map(resource => resource.id);
+
 const subscriptionDnrCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'subscriptions', 'dnr.js'), 'utf8')
   .replace("import { SUBSCRIPTION_ID_START, SUBSCRIPTION_ID_END } from './budget.js';", `
     var SUBSCRIPTION_ID_START = 100000;
@@ -38,6 +41,7 @@ function loadBackground({ storage = {}, existingRules = [] } = {}) {
   const updateEnabledRulesetsCalls = [];
   const chrome = {
     runtime: {
+      getManifest: () => manifest,
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }
@@ -189,17 +193,7 @@ test('DNR dynamic ID ranges stay isolated', async (t) => {
     await bg.updateDNRState(false);
 
     assert.deepStrictEqual(plain(bg.updateEnabledRulesetsCalls[0].disableRulesetIds), [
-      'yt_original_rules',
-      'yt_ad_rules_part1',
-      'yt_ad_rules_part2',
-      'yt_ad_rules_part3',
-      'yt_ad_rules_part4',
-      'yt_ad_rules_part5',
-      'yt_ad_rules_part6',
-      'yt_ad_rules_part7',
-      'yt_ad_rules_part8',
-      'yt_ad_rules_part9',
-      'recipe_ad_rules'
+      ...staticRulesetIds
     ]);
     assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].removeRuleIds), [1000, 100000, 9000000]);
   });
@@ -212,7 +206,7 @@ test('DNR dynamic ID ranges stay isolated', async (t) => {
 
     await bg.updateDNRState(true);
 
-    assert.ok(bg.updateEnabledRulesetsCalls[0].enableRulesetIds.includes('yt_original_rules'));
+    assert.deepStrictEqual(plain(bg.updateEnabledRulesetsCalls[0].enableRulesetIds), staticRulesetIds);
     assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].removeRuleIds, [1000]);
     assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id), [1000, 1001]);
     assert.deepStrictEqual(bg.updateDynamicRulesCalls[1].removeRuleIds, [9000000]);

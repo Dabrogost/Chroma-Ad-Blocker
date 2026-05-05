@@ -33,15 +33,15 @@ const ALLOWED_RESOURCE_TYPES = new Set([
 ]);
 
 const errors = [];
-const warnings = [];
 const counts = [];
+const priorityCounts = new Map();
+
+const MAX_DECLARED_STATIC_RULESETS = 100;
+const MAX_ENABLED_STATIC_RULESETS = 50;
+const MAX_RULES_PER_STATIC_RULESET = 30000;
 
 function addError(message) {
   errors.push(message);
-}
-
-function addWarning(message) {
-  warnings.push(message);
 }
 
 function readJson(filePath, label) {
@@ -119,6 +119,10 @@ function validateRule(rule, label, ids) {
 
   validateAction(rule, label);
   validateCondition(rule, label);
+
+  const actionType = rule.action && rule.action.type ? rule.action.type : 'unknown';
+  const priorityKey = `${actionType}:priority-${rule.priority}`;
+  priorityCounts.set(priorityKey, (priorityCounts.get(priorityKey) || 0) + 1);
 }
 
 function main() {
@@ -132,7 +136,17 @@ function main() {
     addError('manifest declarative_net_request.rule_resources must be a non-empty array');
   }
 
+  if ((resources || []).length > MAX_DECLARED_STATIC_RULESETS) {
+    addError(`manifest declares ${(resources || []).length} static rulesets; Chrome allows at most ${MAX_DECLARED_STATIC_RULESETS}`);
+  }
+
+  const enabledResources = (resources || []).filter(resource => resource && resource.enabled !== false);
+  if (enabledResources.length > MAX_ENABLED_STATIC_RULESETS) {
+    addError(`manifest enables ${enabledResources.length} static rulesets; Chrome allows at most ${MAX_ENABLED_STATIC_RULESETS}`);
+  }
+
   const rulesetIds = new Set();
+  const globalRuleIds = new Map();
   for (const [index, resource] of (resources || []).entries()) {
     const resourceLabel = `rule_resources[${index}]`;
     if (!resource || typeof resource !== 'object') {
@@ -163,16 +177,34 @@ function main() {
       continue;
     }
 
+    if (rules.length > MAX_RULES_PER_STATIC_RULESET) {
+      addError(`${resource.path} has ${rules.length} rules; Chrome allows at most ${MAX_RULES_PER_STATIC_RULESET} per static ruleset`);
+    }
+
     const ids = new Set();
     rules.forEach((rule, ruleIndex) => {
       validateRule(rule, `${resource.id || resource.path}[${ruleIndex}]`, ids);
+      if (Number.isInteger(rule.id) && rule.id > 0) {
+        const firstSeen = globalRuleIds.get(rule.id);
+        const currentLabel = `${resource.id || resource.path}[${ruleIndex}]`;
+        if (firstSeen) {
+          addError(`${currentLabel} reuses global static rule id ${rule.id}; first seen at ${firstSeen}`);
+        } else {
+          globalRuleIds.set(rule.id, currentLabel);
+        }
+      }
+      if (resource.id && resource.id.startsWith('oisd_rules_')) {
+        if (rule.priority !== 1 || rule.action?.type !== 'block') {
+          addError(`${resource.id || resource.path}[${ruleIndex}] OISD rules must stay block priority 1`);
+        }
+      }
     });
     counts.push({ id: resource.id, path: resource.path, count: rules.length });
   }
 
   const totalRules = counts.reduce((sum, item) => sum + item.count, 0);
   if (totalRules > 300000) {
-    addWarning(`Total static rule count ${totalRules} exceeds Chrome's global static-rule guidance of 300,000`);
+    addError(`Total static rule count ${totalRules} exceeds configured cap of 300,000`);
   }
 
   console.log('DNR ruleset validation summary');
@@ -181,9 +213,9 @@ function main() {
   for (const item of counts) {
     console.log(`- ${item.id}: ${item.count} rules (${item.path})`);
   }
-  if (warnings.length > 0) {
-    console.log('\nWarnings:');
-    warnings.forEach(message => console.log(`- ${message}`));
+  console.log('\nPriority/action distribution:');
+  for (const [key, count] of [...priorityCounts.entries()].sort()) {
+    console.log(`- ${key}: ${count}`);
   }
   if (errors.length > 0) {
     console.error('\nErrors:');

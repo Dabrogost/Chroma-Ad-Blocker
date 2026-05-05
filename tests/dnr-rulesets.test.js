@@ -42,18 +42,18 @@ function loadRules(resource) {
 
 test('Manifest-declared static DNR rulesets', async (t) => {
   await t.test('declares the expected enabled ruleset ids', () => {
-    assert.strictEqual(ruleResources.length, 11, 'manifest should declare all 11 static DNR rulesets');
     assert.deepStrictEqual(ruleResources.map(r => r.id), [
-      'yt_original_rules',
-      'yt_ad_rules_part1',
-      'yt_ad_rules_part2',
-      'yt_ad_rules_part3',
-      'yt_ad_rules_part4',
-      'yt_ad_rules_part5',
-      'yt_ad_rules_part6',
-      'yt_ad_rules_part7',
-      'yt_ad_rules_part8',
-      'yt_ad_rules_part9',
+      'oisd_rules_1',
+      'oisd_rules_2',
+      'oisd_rules_3',
+      'oisd_rules_4',
+      'oisd_rules_5',
+      'oisd_rules_6',
+      'oisd_rules_7',
+      'oisd_rules_8',
+      'oisd_rules_9',
+      'oisd_rules_10',
+      'custom_static_rules',
       'recipe_ad_rules'
     ]);
     assert.ok(ruleResources.every(r => r.enabled === true), 'all static rulesets should be enabled by default');

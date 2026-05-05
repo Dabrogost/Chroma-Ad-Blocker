@@ -10,7 +10,7 @@
 
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
 - **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Uses local AES-256-GCM credential obfuscation and real-time connectivity verification.
-- **Multi-Part DNR Network Blocking**: Utilizes an 11-part static Declarative Net Request (DNR) ruleset supplemented by runtime dynamic rules, blocking trackers, invasive analytics, and traditional banner ads at the browser engine level.
+- **Source-Generated DNR Network Blocking**: Uses a generated OISD Big static Declarative Net Request (DNR) ruleset, a protected custom static layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
@@ -19,7 +19,7 @@
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
 - **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on YouTube and Amazon Prime Video (Twitch uses server-side ad insertion and does not support ad acceleration), serving as a robust fallback when stripping is disabled.
-- **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of **Google Chrome 122+** (and other Chromium-based browsers with engine version 122+). This version is required to support the 11-part static ruleset.
+- **Platform Compatibility**: Fully compatible with **Windows**, **macOS**, and **Linux** versions of **Google Chrome 122+** (and other Chromium-based browsers with engine version 122+). This version is required to support the multi-part static ruleset.
 
 ---
 
@@ -109,10 +109,10 @@ graph TD
 ## System Layers
 
 ### Layer 1: Network-Level Blocking (extension/rules/, extension/background/background.js, extension/subscriptions/)
-The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into an 11-part system (10 primary sets + 1 specialized recipe layer) covering over 290,000 static DNR rules.
+The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into source-owned static rulesets: generated OISD Big rules, a protected custom static layer, and a specialized recipe layer.
 
 #### How Chroma Keeps Large Static Rulesets Practical
-Users often wonder how a database of nearly 300,000 rules can operate without moving every request through extension JavaScript. Chroma relies on three architectural advantages:
+Users often wonder how static rules can operate without moving every request through extension JavaScript. Chroma relies on three architectural advantages:
 - **Engine-Level Matching**: Unlike legacy ad-blockers that use the `webRequest` API for request decisions, DNR rules are handed off to Chromium's Declarative Net Request implementation before matching.
 - **Browser-Managed Indexing**: Chromium validates and indexes static rulesets when the extension is installed or updated. Chroma does not depend on a specific internal data structure or lookup guarantee.
 - **Low JS Request-Path Overhead**: Because the matching logic lives outside of the extension's execution context, Chroma avoids waking its own service worker for every blocked request.
@@ -307,7 +307,7 @@ Chroma utilizes logic and patterns derived from the following open-source projec
 
 - **Brave Browser** — The YouTube ad-stripping logic (payload metadata pruning) is derived from Brave's ad-blocking scriptlets ([MPL 2.0](https://mozilla.org/MPL/2.0/)).
 - **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists) — [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE)
-- **Peter Lowe's List** by [Peter Lowe](https://pgl.yoyo.org/adservers/) — [Terms of Use](https://pgl.yoyo.org/adservers/policy.php)
+- **OISD Big** by [oisd](https://oisd.nl) — [License](https://github.com/sjhgvr/oisd/blob/main/LICENSE)
 
 ## Filter List Subscriptions
 

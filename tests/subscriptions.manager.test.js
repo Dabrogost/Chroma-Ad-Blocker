@@ -77,6 +77,13 @@ function loadManager(options = {}) {
       }
     },
     runtime: {
+      getManifest: () => ({
+        declarative_net_request: {
+          rule_resources: options.ruleResources || [
+            { id: 'static_test_rules', enabled: true, path: 'rules/rules_oisd_1.json' }
+          ]
+        }
+      }),
       getURL: file => `chrome-extension://chroma/${file}`
     }
   };

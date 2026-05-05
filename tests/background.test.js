@@ -5,6 +5,7 @@ const path = require('path');
 const vm = require('vm');
 
 const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'background.js'), 'utf8');
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
@@ -34,6 +35,7 @@ test('getDefaultDynamicRules', async (t) => {
 
   const chromeMock = {
     runtime: {
+      getManifest: () => manifest,
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }
@@ -141,6 +143,7 @@ test('syncDynamicRules successful syncing', async (t) => {
 
   const chromeMock = {
     runtime: {
+      getManifest: () => manifest,
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }
@@ -260,6 +263,7 @@ test('syncDynamicRules error handling', async (t) => {
 
   const chromeMock = {
     runtime: {
+      getManifest: () => manifest,
       onInstalled: { addListener: () => {} },
       onStartup: { addListener: () => {} },
       onMessage: { addListener: () => {} }

@@ -1,52 +1,67 @@
-// Run in Service Worker Console
+// Run in the extension service worker console.
 (async () => {
-  const { 
-    config, 
-    stats, 
-    subscriptions = [], 
+  const {
+    config,
+    stats,
+    subscriptions = [],
     appliedNetworkRuleCount = 0,
+    appliedNetworkRulesPerSub = {},
     subscriptionCosmeticRules = [],
     subscriptionScriptletRules = []
   } = await chrome.storage.local.get(null);
-  const dynamicDNR = await chrome.declarativeNetRequest.getDynamicRules();
+
+  const manifestRulesets = chrome.runtime.getManifest().declarative_net_request.rule_resources;
+  const dynamicRules = await chrome.declarativeNetRequest.getDynamicRules();
   const enabledRulesets = await chrome.declarativeNetRequest.getEnabledRulesets();
 
-  const antiDetectionRules = dynamicDNR.filter(r => r.id >= 1001 && r.id <= 1999);
-  const subscriptionDNR = dynamicDNR.filter(r => r.id >= 100000 && r.id < 9000000);
-  const whitelistRules = dynamicDNR.filter(r => r.id >= 9000000);
+  const defaultDynamicRules = dynamicRules.filter(rule => rule.id >= 1000 && rule.id <= 99999);
+  const subscriptionRules = dynamicRules.filter(rule => rule.id >= 100000 && rule.id < 9000000);
+  const whitelistRules = dynamicRules.filter(rule => rule.id >= 9000000);
 
-  console.group("%c📊 Chroma Ad-Blocker - Rule Audit", "color: #00ffcc; font-weight: bold; font-size: 14px;");
+  console.group('Chroma Ad-Blocker Rule Audit');
 
-  console.log("%c1. Network Layer (DNR)", "font-weight: bold; color: #ffcc00;");
-  console.table({
-    "Static Rulesets Enabled": enabledRulesets.length,
-    "Anti-Detection Exemptions": antiDetectionRules.length,
-    "Subscription Block Rules (Applied)": appliedNetworkRuleCount,
-    "Whitelist Rules": whitelistRules.length,
-    "Total Dynamic Rules": dynamicDNR.length
-  });
-
-  console.log("%c2. Scriptlet Engine", "font-weight: bold; color: #ffcc00;");
-  console.table({
-    "Total Active Scriptlets": subscriptionScriptletRules.length,
-    "Unique Patterns": new Set(subscriptionScriptletRules.map(r => r.scriptlet)).size
-  });
-
-  console.log("%c3. Cosmetic Layer", "font-weight: bold; color: #ffcc00;");
-  console.table({
-    "Subscription Cosmetic Rules": subscriptionCosmeticRules.length,
-    "Extension Internal Hiders": (await chrome.storage.local.get('HIDE_SELECTORS')).HIDE_SELECTORS.length
-  });
-
-  console.log("%c4. Subscription Health", "font-weight: bold; color: #ffcc00;");
-  console.table(subscriptions.map(s => ({
-    "Name": s.name,
-    "Status": s.enabled ? "✅ Enabled" : "❌ Disabled",
-    "Net": s.ruleCount.network,
-    "Cos": s.ruleCount.cosmetic,
-    "Scr": s.ruleCount.scriptlet,
-    "Last Update": new Date(s.lastUpdated).toLocaleString()
+  console.log('1. Static DNR rulesets');
+  console.table(manifestRulesets.map(resource => ({
+    id: resource.id,
+    path: resource.path,
+    manifestEnabled: resource.enabled !== false,
+    currentlyEnabled: enabledRulesets.includes(resource.id)
   })));
+
+  console.log('2. Dynamic DNR rules');
+  console.table({
+    defaultDynamicRules: defaultDynamicRules.length,
+    subscriptionRules: subscriptionRules.length,
+    whitelistRules: whitelistRules.length,
+    totalDynamicRules: dynamicRules.length,
+    appliedNetworkRuleCount
+  });
+
+  console.log('3. Subscription health');
+  console.table(subscriptions.map(subscription => ({
+    name: subscription.name,
+    enabled: subscription.enabled,
+    network: subscription.ruleCount?.network || 0,
+    cosmetic: subscription.ruleCount?.cosmetic || 0,
+    scriptlet: subscription.ruleCount?.scriptlet || 0,
+    appliedNetwork: appliedNetworkRulesPerSub[subscription.id] || 0,
+    lastUpdate: subscription.lastUpdated ? new Date(subscription.lastUpdated).toLocaleString() : 'never',
+    lastError: subscription.lastError || ''
+  })));
+
+  console.log('4. Cosmetic and scriptlet layers');
+  console.table({
+    subscriptionCosmeticRules: subscriptionCosmeticRules.length,
+    subscriptionScriptletRules: subscriptionScriptletRules.length,
+    uniqueScriptlets: new Set(subscriptionScriptletRules.map(rule => rule.scriptlet)).size
+  });
+
+  console.log('5. Stored state');
+  console.table({
+    enabled: config?.enabled,
+    networkBlocking: config?.networkBlocking,
+    statsNetworkBlocked: stats?.networkBlocked || 0
+  });
 
   console.groupEnd();
 })();

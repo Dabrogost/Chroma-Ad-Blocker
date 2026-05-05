@@ -12,7 +12,7 @@ const validReleaseEntries = [
   'LICENSE.md',
   'docs/PRIVACY_POLICY.md',
   'background/background.js',
-  'rules/rules.json'
+  'rules/rules_oisd_1.json'
 ];
 
 test('package verification accepts the expected release contents', () => {
