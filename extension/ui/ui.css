@@ -408,14 +408,6 @@ footer {
   pointer-events: none;
 }
 
-.badge.blue {
-  --b-color: 0, 136, 255;
-  --b-text: #80c4ff;
-}
-.badge.red {
-  --b-color: 255, 0, 85;
-  --b-text: #ff80ab;
-}
 .badge.purple {
   --b-color: 108, 92, 231;
   --b-text: #b6adff;
