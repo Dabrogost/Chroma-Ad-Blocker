@@ -6,6 +6,19 @@
   <img src="assets/popup.gif" alt="Chroma Ad-Blocker Popup Preview" width="360">
 </div>
 
+## Index
+
+- [Key Features](#key-features)
+- [Architecture Overview](#architecture-overview)
+- [System Layers](#system-layers)
+- [Privacy & Transparency](#privacy--transparency)
+- [Media Proxy Router](#media-proxy-router-split-tunneling)
+- [YouTube Ad Stripping](#youtube-ad-stripping-the-stripper)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Filter List Subscriptions](#filter-list-subscriptions)
+- [Why Not the Chrome Web Store?](#why-not-the-chrome-web-store)
+
 ## Key Features
 
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, including sponsored Shorts overlay payloads, providing a seamless, high-performance viewing experience without the need for acceleration.
