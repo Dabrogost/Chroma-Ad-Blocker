@@ -7,6 +7,7 @@ const TIERS = {
   quick: [
     'background.test.js',
     'content.test.js',
+    'health.test.js',
     'interceptor.test.js',
     'message-types.test.js',
     'popup.test.js',
@@ -20,6 +21,7 @@ const TIERS = {
   ],
   security: [
     'dnr-id-ranges.test.js',
+    'health.test.js',
     'interceptor.test.js',
     'message-types.test.js',
     'proxy.test.js',

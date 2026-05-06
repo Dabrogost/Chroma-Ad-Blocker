@@ -9,7 +9,7 @@
 ## Key Features
 
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
-- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Uses local AES-256-GCM credential obfuscation and real-time connectivity verification.
+- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Proxy credentials are stored locally in an obfuscated form and used only for proxy authentication. Includes real-time connectivity verification.
 - **Source-Generated DNR Network Blocking**: Uses a generated OISD Big static Declarative Net Request (DNR) ruleset, a protected custom static layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
@@ -167,7 +167,7 @@ Chroma includes a built-in split-tunnel proxy router that allows you to route tr
 Chroma supports `HTTP`, `HTTPS`, `SOCKS4`, and `SOCKS5` proxies. Choose the protocol from the proxy setup dropdown, then enter the proxy host without a protocol prefix.
 
 ### Security
-Your proxy credentials (username and password) are locally obfuscated using AES-256-GCM via the native Web Crypto API before being stored to disk. They are decrypted dynamically in memory only when the proxy server challenges the browser for authentication. This protects against casual disk-level inspection, but it is not a substitute for operating-system or browser-profile security.
+Your proxy credentials (username and password) are stored locally in an obfuscated form using a bundled extension key. They are decoded in memory only when the proxy server challenges the browser for authentication. This can reduce casual readability in extension storage, but it is not strong encryption and is not a substitute for operating-system or browser-profile security.
 
 ### Connection Verification
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
@@ -299,6 +299,12 @@ Chroma implements several advanced security measures to ensure extension integri
 | `suppressWarnings` | Removes unsolicited overlay dialogs that restrict content access. | `true` |
 | `whitelist` | Toggles blocking for the current domain. | `false` |
 
+## Health Panel
+
+The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, proxy routing, whitelists, and request-log/debug availability.
+
+The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents. DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts; when that logging is unavailable, blocking can still work normally.
+
 ---
 
 ## Third-Party Credits
@@ -318,6 +324,8 @@ Chroma subscribes to the following lists to ensure real-time protection:
 - **Hagezi Pro Mini** — High-performance DNS and ad-blocking rules.
 - **EasyList** — The primary filter for cosmetic ad-blocking and element hiding.
 - **Fanboy Annoyance** — Blocks social widgets, popups, and other non-ad annoyances through cosmetic rules and supported scriptlets.
+
+The **Chroma Hotfix** list is intentionally quiet when it has no active rules. It may be enabled internally, but the Filter Lists UI and Health panel hide it from user-facing subscription totals until a maintainer-published hotfix actually contains rules. This keeps normal installs from showing a confusing extra enabled list when there is nothing for users to manage.
 
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.

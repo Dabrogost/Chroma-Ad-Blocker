@@ -26,6 +26,7 @@ import {
   getMergedLog
 } from './background.js';
 import { runProxyTest } from './proxy.js';
+import { getHealthStatus } from './health.js';
 
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i;
 const SUBSCRIPTION_ID_RE = /^[a-z0-9_-]{1,80}$/i;
@@ -344,7 +345,7 @@ async function validateProxyConfigsForStorage(proxyConfigs, existingProxyConfigs
       }
       const enc = await encryptAuth(credential.username, credential.password);
       if (!enc) {
-        errors.push(`proxy[${i}]: failed to encrypt credentials`);
+        errors.push(`proxy[${i}]: failed to store credentials`);
         continue;
       }
       out.authIv = enc.iv;
@@ -355,7 +356,7 @@ async function validateProxyConfigsForStorage(proxyConfigs, existingProxyConfigs
         out.authCipher = existing.authCipher;
       }
     } else if (action === 'clear') {
-      // Intentionally leave encrypted auth fields unset.
+      // Intentionally leave stored auth fields unset.
     } else {
       errors.push(`proxy[${i}]: invalid credential action`);
       continue;
@@ -734,6 +735,10 @@ async function handleLogGet() {
   return getMergedLog();
 }
 
+async function handleHealthGet() {
+  return getHealthStatus();
+}
+
 // ─── SYSTEM ─────
 
 async function handleUpdateCheck() {
@@ -748,6 +753,7 @@ export function registerAll(router) {
   router.markSensitive(MSG.CONFIG_SET);
   router.markSensitive(MSG.STATS_RESET);
   router.markSensitive(MSG.LOG_GET);
+  router.markSensitive(MSG.HEALTH_GET);
   router.markSensitive(MSG.WHITELIST_ADD);
   router.markSensitive(MSG.WHITELIST_REMOVE);
   router.markSensitive(MSG.FPR_WHITELIST_ADD);
@@ -787,5 +793,6 @@ export function registerAll(router) {
   router.registerHandler(MSG.SUBSCRIPTION_REMOVE,  handleSubscriptionRemove);
   router.registerHandler(MSG.STATS_RESET,          handleStatsReset);
   router.registerHandler(MSG.LOG_GET,              handleLogGet);
+  router.registerHandler(MSG.HEALTH_GET,           handleHealthGet);
   router.registerHandler(MSG.UPDATE_CHECK,         handleUpdateCheck);
 }

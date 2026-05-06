@@ -52,6 +52,7 @@ const MSG = {
   SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
   SUBSCRIPTION_ADD: 'SUBSCRIPTION_ADD',
   SUBSCRIPTION_REMOVE: 'SUBSCRIPTION_REMOVE',
+  HEALTH_GET: 'HEALTH_GET',
   UPDATE_CHECK: 'UPDATE_CHECK',
   PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
   PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
@@ -223,6 +224,7 @@ test('Security Hardening - handlers.js', async (t) => {
       MSG.CONFIG_SET,
       MSG.STATS_RESET,
       MSG.LOG_GET,
+      MSG.HEALTH_GET,
       MSG.PROXY_CONFIG_GET,
       MSG.PROXY_CONFIG_SET,
       MSG.PROXY_TEST,
@@ -389,7 +391,7 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
-  await t.test('proxy config get recognizes encrypted byte-array credentials', async () => {
+  await t.test('proxy config get recognizes stored byte-array credentials', async () => {
     const sandbox = loadHandlers({
       storage: {
         proxyConfigs: [{
@@ -413,7 +415,7 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
-  await t.test('proxy credential preserve keeps encrypted byte-array auth', async () => {
+  await t.test('proxy credential preserve keeps stored byte-array auth', async () => {
     const existing = [{
       id: 15,
       name: 'Existing Array',
@@ -441,7 +443,7 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.deepStrictEqual(plain(result.configs[0].authCipher), [4, 5, 6]);
   });
 
-  await t.test('proxy credential actions preserve replace and clear encrypted auth', async () => {
+  await t.test('proxy credential actions preserve replace and clear stored auth', async () => {
     const existing = [{
       id: 1,
       name: 'Existing',
@@ -504,7 +506,7 @@ test('Security Hardening - handlers.js', async (t) => {
     }
   });
 
-  await t.test('does not expose or preserve oversized encrypted proxy auth blobs', async () => {
+  await t.test('does not expose or preserve oversized stored proxy auth blobs', async () => {
     const oversized = {
       id: 14,
       name: 'Oversized',

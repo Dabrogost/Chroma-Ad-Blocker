@@ -188,6 +188,24 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderHealthPanelShell() {
+    return `
+      <div class="section-title section-title--spaced">Health</div>
+      <div class="protection-list health-panel" id="healthPanel">
+        <div class="health-header">
+          <div class="toggle-info">
+            <div class="name">Overall: <span id="healthOverallLabel" class="health-status health-status--disabled">Loading</span></div>
+            <div class="desc" id="healthVersionText">Checking protection layers...</div>
+          </div>
+          <button class="reset-btn compact-action-btn" id="refreshHealthBtn">Refresh Health</button>
+        </div>
+        <div class="health-grid" id="healthPanelBody">
+          <div class="health-empty">Loading health diagnostics...</div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderProxyShell({ settingsMode }) {
     return `
       <div class="section-title section-title--inline"${settingsMode ? ' id="proxySection"' : ''}>
@@ -254,6 +272,7 @@ const ChromaComponents = (() => {
     const content = `
       ${renderHeader()}
       ${renderStats({ showSettingsIcon: !settingsMode })}
+      ${settingsMode ? renderHealthPanelShell() : ''}
       ${renderProtectionControls({ showZapper: !settingsMode })}
       ${renderFilterListShell()}
       ${renderProxyShell({ settingsMode })}
@@ -269,6 +288,7 @@ const ChromaComponents = (() => {
     renderHeader,
     renderStats,
     renderProtectionControls,
+    renderHealthPanelShell,
     renderFilterListShell,
     renderProxyShell,
     renderLocalZapperShell,

@@ -27,6 +27,21 @@ const ChromaApp = (() => {
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxy';
+  const HEALTH_REFRESH_KEYS = [
+    'config',
+    'subscriptions',
+    'appliedNetworkRuleCount',
+    'localCosmeticRules',
+    'subscriptionCosmeticRules',
+    'subscriptionScriptletRules',
+    'proxyConfigs',
+    'whitelist',
+    'fprWhitelist',
+    'stats'
+  ];
+  const HEALTH_STATUS_CLASSES = new Set(['healthy', 'degraded', 'disabled', 'error']);
+  const HEALTH_ISSUE_CLASSES = new Set(['info', 'warning', 'error']);
+  let healthLoadSerial = 0;
 
   function isSettingsPage() {
     const path = globalThis.location?.pathname || '';
@@ -49,6 +64,150 @@ const ChromaApp = (() => {
       chrome.runtime.openOptionsPage();
     } else {
       window.open(chrome.runtime.getURL('ui/settings.html'));
+    }
+  }
+
+  function formatCount(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number.toLocaleString() : '0';
+  }
+
+  function formatStatusLabel(value) {
+    const label = String(value || 'unknown');
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+
+  function normalizeHealthStatus(value) {
+    const status = String(value || '').toLowerCase();
+    return HEALTH_STATUS_CLASSES.has(status) ? status : 'error';
+  }
+
+  function normalizeHealthIssueSeverity(value) {
+    const severity = String(value || '').toLowerCase();
+    return HEALTH_ISSUE_CLASSES.has(severity) ? severity : 'info';
+  }
+
+  function addHealthMetric(parent, label, value, state = '') {
+    const row = appendElement(parent, 'div', 'health-metric');
+    appendElement(row, 'span', 'health-metric__label', label);
+    appendElement(row, 'span', state ? `health-metric__value health-metric__value--${state}` : 'health-metric__value', value);
+    return row;
+  }
+
+  function addHealthSection(parent, title, metrics) {
+    const section = appendElement(parent, 'div', 'health-section');
+    appendElement(section, 'div', 'health-section__title', title);
+    for (const metric of metrics) {
+      addHealthMetric(section, metric[0], metric[1], metric[2] || '');
+    }
+    return section;
+  }
+
+  function renderHealthIssues(parent, issues) {
+    const section = appendElement(parent, 'div', 'health-section health-section--wide');
+    appendElement(section, 'div', 'health-section__title', 'Issues');
+    const list = appendElement(section, 'div', 'health-issues');
+    if (!Array.isArray(issues) || issues.length === 0) {
+      appendElement(list, 'div', 'health-issue health-issue--healthy', 'No issues detected.');
+      return;
+    }
+
+    for (const issue of issues) {
+      const severity = normalizeHealthIssueSeverity(issue.severity);
+      const item = appendElement(list, 'div', `health-issue health-issue--${severity}`);
+      appendElement(item, 'div', 'health-issue__message', issue.message || 'Diagnostic issue');
+      if (issue.action) appendElement(item, 'div', 'health-issue__action', issue.action);
+    }
+  }
+
+  async function loadHealthPanel() {
+    if (!isSettingsPage()) return;
+    const panel = $('healthPanel');
+    const body = $('healthPanelBody');
+    const overallLabel = $('healthOverallLabel');
+    const versionText = $('healthVersionText');
+    const refreshBtn = $('refreshHealthBtn');
+    if (!panel || !body) return;
+
+    const loadId = ++healthLoadSerial;
+    if (refreshBtn) {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Refreshing...';
+    }
+
+    const health = await notifyBackground({ type: MSG.HEALTH_GET });
+    if (loadId !== healthLoadSerial) return;
+    body.innerHTML = '';
+
+    if (!health) {
+      if (overallLabel) {
+        overallLabel.className = 'health-status health-status--error';
+        overallLabel.textContent = 'Unavailable';
+      }
+      if (versionText) versionText.textContent = 'Health endpoint did not respond.';
+      appendElement(body, 'div', 'health-empty', 'Could not load health diagnostics.');
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Refresh Health';
+      }
+      return;
+    }
+
+    const overall = normalizeHealthStatus(health.overall?.status);
+    if (overallLabel) {
+      overallLabel.className = `health-status health-status--${overall}`;
+      overallLabel.textContent = formatStatusLabel(overall);
+    }
+    if (versionText) {
+      const version = health.manifest?.version ? `v${health.manifest.version}` : 'Version unknown';
+      const chromeMin = health.manifest?.minimumChromeVersion ? `Chrome ${health.manifest.minimumChromeVersion}+` : 'Chrome version unknown';
+      versionText.textContent = `${version} \u00b7 ${chromeMin}`;
+    }
+
+    addHealthSection(body, 'Core', [
+      ['Network blocking', health.master?.networkBlocking && health.master?.enabled ? 'Active' : 'Disabled', health.master?.networkBlocking && health.master?.enabled ? 'ok' : 'disabled'],
+      ['Static rulesets', `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`, health.dnr?.staticRulesetsOk ? 'ok' : (health.master?.networkBlocking ? 'error' : 'disabled')],
+      ['Dynamic rules', `${formatCount(health.dnr?.appliedNetworkRuleCount)} active`, ''],
+      ['Whitelist rules', formatCount(health.dnr?.whitelistRuleCount), '']
+    ]);
+
+    addHealthSection(body, 'Subscriptions', [
+      ['Enabled lists', `${formatCount(health.subscriptions?.enabled)} / ${formatCount(health.subscriptions?.total)}`, health.subscriptions?.withErrors ? 'warning' : 'ok'],
+      ['Applied network rules', formatCount(health.subscriptions?.appliedNetwork), ''],
+      ['Cosmetic rules', formatCount(health.subscriptions?.cosmetic), ''],
+      ['Scriptlet rules', formatCount(health.subscriptions?.scriptlet), ''],
+      ['Errors', health.subscriptions?.withErrors ? formatCount(health.subscriptions.withErrors) : 'None', health.subscriptions?.withErrors ? 'warning' : 'ok']
+    ]);
+
+    addHealthSection(body, 'Scriptlets', [
+      ['UserScripts API', health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable', health.scriptlets?.apiAvailable ? 'ok' : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')],
+      ['Registered scripts', health.scriptlets?.registeredUserScriptCount === null ? 'Unknown' : formatCount(health.scriptlets?.registeredUserScriptCount), ''],
+      ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), '']
+    ]);
+
+    addHealthSection(body, 'Cosmetic & Local', [
+      ['Subscription cosmetic rules', formatCount(health.cosmetic?.subscriptionCosmeticRuleCount), ''],
+      ['Local zapper rules', `${formatCount(health.cosmetic?.enabledLocalZapperRuleCount)} / ${formatCount(health.cosmetic?.localZapperRuleCount)}`, '']
+    ]);
+
+    addHealthSection(body, 'Proxy', [
+      ['Configured proxies', formatCount(health.proxy?.configuredCount), ''],
+      ['Accepted proxies', formatCount(health.proxy?.acceptedCount), ''],
+      ['Routed domains', formatCount(health.proxy?.routedDomainCount), ''],
+      ['Global proxy', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'Enabled' : 'Misconfigured') : 'Disabled', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'ok' : 'warning') : 'disabled']
+    ]);
+
+    addHealthSection(body, 'Debug Logging', [
+      ['DNR match logging', health.requestLog?.available ? 'Available' : 'Unavailable', health.requestLog?.available ? 'ok' : 'disabled'],
+      ['Request log entries', `${formatCount(health.requestLog?.entryCount)} / ${formatCount(health.requestLog?.maxEntries)}`, ''],
+      ['Note', health.requestLog?.note || 'Blocking can still work when debug logging is unavailable.', '']
+    ]);
+
+    renderHealthIssues(body, health.overall?.issues || []);
+
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = 'Refresh Health';
     }
   }
 
@@ -147,11 +306,17 @@ const ChromaApp = (() => {
 
     const { stats = { networkBlocked: 0 } } = await chrome.storage.local.get('stats');
     if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
+    await loadHealthPanel();
+
+    $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.stats) {
         const newStats = changes.stats.newValue || { networkBlocked: 0 };
         if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = newStats.networkBlocked ?? 0;
+      }
+      if (area === 'local' && isSettingsPage()) {
+        if (HEALTH_REFRESH_KEYS.some(key => changes[key])) loadHealthPanel();
       }
     });
 
@@ -418,6 +583,7 @@ const ChromaApp = (() => {
       list.querySelectorAll('.sub-toggle').forEach(input => {
         input.addEventListener('change', async (e) => {
           await notifyBackground({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
+          await loadHealthPanel();
         });
       });
 
@@ -433,6 +599,7 @@ const ChromaApp = (() => {
             e.target.textContent = '\u21bb';
             e.target.disabled = false;
             loadSubscriptionUI();
+            loadHealthPanel();
           }, 1500); // 1500ms visual feedback delay before resetting refresh button state
         });
       });
@@ -444,6 +611,7 @@ const ChromaApp = (() => {
           if (!confirm('Remove this filter list?')) return;
           await notifyBackground({ type: MSG.SUBSCRIPTION_REMOVE, id });
           loadSubscriptionUI();
+          loadHealthPanel();
         });
       });
     }
@@ -513,6 +681,7 @@ const ChromaApp = (() => {
 
         closeForm();
         await loadSubscriptionUI();
+        await loadHealthPanel();
       };
 
       submitBtn.addEventListener('click', submitAdd);

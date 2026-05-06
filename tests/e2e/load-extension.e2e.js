@@ -28,6 +28,19 @@ test('loaded extension E2E smoke', async (t) => {
     assert.strictEqual(await evaluate(browser.cdp, settings.sessionId, '!!document.body && location.pathname.endsWith("/ui/settings.html")'), true);
   });
 
+  await t.test('settings health panel renders diagnostics', async () => {
+    const settings = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html');
+    const healthText = await waitFor(async () => {
+      const text = await evaluate(browser.cdp, settings.sessionId, 'document.getElementById("healthPanel")?.innerText || ""');
+      return text.includes('Static rulesets') && text.includes('UserScripts API') ? text : null;
+    }, 'settings health panel');
+
+    assert.match(healthText, /Overall:/);
+    assert.match(healthText, /v\d+\.\d+\.\d+/);
+    assert.match(healthText, /Static rulesets/i);
+    assert.match(healthText, /UserScripts API/i);
+  });
+
   await t.test('static rulesets are enabled and dynamic rules are installed', async () => {
     const enabledRulesets = await waitFor(async () => {
       const ids = await evaluate(browser.cdp, browser.workerSession, 'chrome.declarativeNetRequest.getEnabledRulesets().then(ids => ids.sort())');
