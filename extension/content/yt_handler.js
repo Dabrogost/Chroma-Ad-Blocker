@@ -78,8 +78,104 @@
     return stripped;
   }
 
+  const SHORTS_AD_RENDERER_FIELDS = [
+    'adsOverlay',
+    'shortsAdsRenderer',
+    'sequenceItemInPlayerAdLayoutRenderer',
+  ];
+
+  function hasOwn(value, key) {
+    return !!value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key);
+  }
+
+  function getResponseRenderer(item) {
+    const content = item?.richItemRenderer?.content;
+    return (
+      content?.reelVideoRenderer ||
+      content?.reelItemRenderer ||
+      content ||
+      item?.reelVideoRenderer ||
+      item?.reelItemRenderer ||
+      item
+    );
+  }
+
+  function hasShortsAdSignal(item) {
+    const renderer = getResponseRenderer(item);
+    if (!renderer || typeof renderer !== 'object') return false;
+
+    return !!(
+      hasOwn(renderer, 'adsOverlay') ||
+      hasOwn(renderer, 'shortsAdsRenderer') ||
+      hasOwn(renderer, 'sequenceItemInPlayerAdLayoutRenderer') ||
+      renderer?.fulfillmentContent?.fulfilledLayout?.sequenceItemInPlayerAdLayoutRenderer ||
+      renderer?.command?.reelWatchEndpoint?.adClientParams?.isAd === true ||
+      renderer?.reelWatchEndpoint?.adClientParams?.isAd === true
+    );
+  }
+
+  function stripShortsAdFields(value) {
+    if (!value || typeof value !== 'object') return false;
+    let stripped = false;
+
+    for (const field of SHORTS_AD_RENDERER_FIELDS) {
+      if (hasOwn(value, field)) {
+        delete value[field];
+        stripped = true;
+      }
+    }
+
+    const fulfilledLayout = value?.fulfillmentContent?.fulfilledLayout;
+    if (hasOwn(fulfilledLayout, 'sequenceItemInPlayerAdLayoutRenderer')) {
+      delete fulfilledLayout.sequenceItemInPlayerAdLayoutRenderer;
+      stripped = true;
+    }
+
+    return stripped;
+  }
+
+  function isResponseAdItem(item) {
+    return !!(
+      item?.promotedSparklesTextSearchRenderer ||
+      item?.searchPyvRenderer ||
+      item?.adSlotRenderer ||
+      item?.richItemRenderer?.content?.adSlotRenderer ||
+      hasShortsAdSignal(item)
+    );
+  }
+
+  function pruneResponseAdItems(value, seen = new WeakSet()) {
+    if (!value || typeof value !== 'object') return false;
+    if (seen.has(value)) return false;
+    seen.add(value);
+
+    let stripped = false;
+
+    if (Array.isArray(value)) {
+      for (let i = value.length - 1; i >= 0; i--) {
+        const item = value[i];
+        if (isResponseAdItem(item)) {
+          value.splice(i, 1);
+          stripped = true;
+        } else if (pruneResponseAdItems(item, seen)) {
+          stripped = true;
+        }
+      }
+      return stripped;
+    }
+
+    if (stripShortsAdFields(value)) stripped = true;
+
+    for (const key of Object.keys(value)) {
+      if (pruneResponseAdItems(value[key], seen)) stripped = true;
+    }
+
+    return stripped;
+  }
+
   function stripResponseAds(data) {
-    if (!data) return;
+    if (!data) return false;
+    let stripped = false;
     try {
       const contents =
         data?.contents?.twoColumnSearchResultsRenderer?.primaryContents
@@ -89,17 +185,15 @@
       if (Array.isArray(contents)) {
         for (let i = contents.length - 1; i >= 0; i--) {
           const item = contents[i];
-          if (
-            item?.promotedSparklesTextSearchRenderer ||
-            item?.searchPyvRenderer ||
-            item?.adSlotRenderer ||
-            item?.richItemRenderer?.content?.adSlotRenderer
-          ) {
+          if (isResponseAdItem(item)) {
             contents.splice(i, 1);
+            stripped = true;
           }
         }
       }
+      if (pruneResponseAdItems(data)) stripped = true;
     } catch (_) {}
+    return stripped;
   }
 
   // Hook ytInitialPlayerResponse — strips ad fields from the initial player payload
@@ -146,6 +240,7 @@
     '/youtubei/v1/next',
     '/youtubei/v1/browse',
     '/youtubei/v1/search',
+    '/youtubei/v1/reel',
   ];
 
   // Fetch wrapper — intercepts YouTube API responses and strips ad fields before returning.
@@ -161,7 +256,7 @@
         let modified = false;
         if (stripAdFields(json)) modified = true;
         if (json?.playerResponse && stripAdFields(json.playerResponse)) modified = true;
-        stripResponseAds(json);
+        if (stripResponseAds(json)) modified = true;
         if (modified) {
           return new Response(JSON.stringify(json), {
             status: response.status,
@@ -195,7 +290,11 @@
           if (rt && rt !== '' && rt !== 'text' && rt !== 'json') return;
           const text = rt === 'json' ? JSON.stringify(this.response) : this.responseText;
           const json = _nativeJSONParse(text);
-          if (stripAdFields(json)) {
+          let modified = false;
+          if (stripAdFields(json)) modified = true;
+          if (json?.playerResponse && stripAdFields(json.playerResponse)) modified = true;
+          if (stripResponseAds(json)) modified = true;
+          if (modified) {
             const stripped = JSON.stringify(json);
             Object.defineProperty(this, 'responseText', { value: stripped, writable: false });
             Object.defineProperty(this, 'response', {
@@ -220,6 +319,7 @@
         if (result.playerResponse && typeof result.playerResponse === 'object') {
           stripAdFields(result.playerResponse);
         }
+        stripResponseAds(result);
       }
     } catch (_) {}
     return result;

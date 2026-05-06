@@ -69,11 +69,11 @@ const youtubeJsCode = fs.readFileSync(scriptPath, 'utf8');
 // ─── AD FIELD STRIPPING ─────
 test('Ad field stripping', async (t) => {
   // Minimal sandbox — stripping functions run synchronously, no DOM needed.
-  const createStrippingSandbox = (configOverrides = {}) => {
+  const createStrippingSandbox = (configOverrides = {}, nativeFetch) => {
     const sandbox = {
       window: {
         location: { hostname: 'www.youtube.com' },
-        fetch: async () => ({ clone: () => ({ json: async () => ({}) }), status: 200, statusText: 'OK', headers: {} }),
+        fetch: nativeFetch || (async () => ({ clone: () => ({ json: async () => ({}) }), status: 200, statusText: 'OK', headers: {} })),
         addEventListener: () => {},
         removeEventListener: () => {},
         innerHeight: 1000, innerWidth: 1000,
@@ -236,6 +236,88 @@ test('Ad field stripping', async (t) => {
     const contents = data.contents.twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.richGridRenderer.contents;
     assert.strictEqual(contents.length, 2);
     assert.ok(contents.every(c => c.richItemRenderer.content.videoRenderer), 'Ad slot item should be removed');
+  });
+
+  const createShortsAdItem = () => ({
+    command: {
+      reelWatchEndpoint: {
+        videoId: 'ad-short',
+        adClientParams: { isAd: true },
+      },
+    },
+    adsOverlay: {
+      adSlotMetadata: {},
+      fulfillmentContent: {
+        fulfilledLayout: {
+          sequenceItemInPlayerAdLayoutRenderer: {
+            adLayoutMetadata: {},
+          },
+        },
+      },
+    },
+  });
+
+  const createCleanShortsItem = () => ({
+    command: {
+      reelWatchEndpoint: {
+        videoId: 'clean-short',
+      },
+    },
+  });
+
+  await t.test('stripResponseAds — removes sponsored Shorts overlay items from reel responses', (st) => {
+    const { stripResponseAds } = createStrippingSandbox();
+    const data = {
+      continuationContents: {
+        reelWatchSequenceContinuation: {
+          contents: [
+            createShortsAdItem(),
+            createCleanShortsItem(),
+          ]
+        }
+      }
+    };
+
+    assert.strictEqual(stripResponseAds(data), true);
+    const contents = data.continuationContents.reelWatchSequenceContinuation.contents;
+    assert.deepStrictEqual(contents, [createCleanShortsItem()]);
+  });
+
+  await t.test('stripResponseAds — strips standalone Shorts adsOverlay payloads', (st) => {
+    const { stripResponseAds } = createStrippingSandbox();
+    const data = createShortsAdItem();
+
+    assert.strictEqual(stripResponseAds(data), true);
+    assert.strictEqual('adsOverlay' in data, false);
+    assert.deepStrictEqual(data.command.reelWatchEndpoint, {
+      videoId: 'ad-short',
+      adClientParams: { isAd: true },
+    });
+  });
+
+  await t.test('fetch rewrites responses when only Shorts overlay items are stripped', async (st) => {
+    const payload = {
+      continuationContents: {
+        reelWatchSequenceContinuation: {
+          contents: [
+            createShortsAdItem(),
+            createCleanShortsItem(),
+          ]
+        }
+      }
+    };
+    const sandbox = createStrippingSandbox({}, async () => ({
+      clone: () => ({ json: async () => JSON.parse(JSON.stringify(payload)) }),
+      status: 200,
+      statusText: 'OK',
+      headers: {}
+    }));
+
+    const response = await sandbox.window.fetch('https://www.youtube.com/youtubei/v1/reel/reel_item_watch?prettyPrint=false');
+    const body = JSON.parse(response.body);
+    const contents = body.continuationContents.reelWatchSequenceContinuation.contents;
+
+    assert.deepStrictEqual(contents, [createCleanShortsItem()]);
   });
 
   // ── shouldAccelerate ──
