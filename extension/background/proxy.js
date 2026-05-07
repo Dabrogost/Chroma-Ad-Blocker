@@ -24,8 +24,18 @@ const PROXY_TEST_DOMAIN = 'icanhazip.com';
 const VALID_PAC_TYPES = new Set(['PROXY', 'HTTPS', 'SOCKS4', 'SOCKS5']);
 const PROXY_AUTH_STATS_FLUSH_MS = 10000;
 const PROXY_AUTH_STATS_BATCH_CAP = 25;
+const YOUTUBE_SMART_LINK_DOMAINS = [
+  'googlevideo.com',
+  'ytimg.com',
+  'ggpht.com',
+  'youtube-nocookie.com',
+  'youtu.be',
+  'youtubei.googleapis.com',
+  'youtube.googleapis.com'
+];
 const PROXY_DOMAIN_EXPANSION = {
-  'youtube.com':   ['googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com'],
+  'youtube.com':   YOUTUBE_SMART_LINK_DOMAINS,
+  'youtu.be':      ['youtube.com', ...YOUTUBE_SMART_LINK_DOMAINS.filter(domain => domain !== 'youtu.be')],
   'twitch.tv':     ['ttvnw.net', 'jtvnw.net', 'twitchcdn.net'],
   'netflix.com':   ['netflix.net', 'nflxvideo.net', 'nflxext.com', 'nflximg.com', 'nflximg.net', 'nflxso.net', 'nflxsearch.net'],
   'amazon.com':    ['amazonvideo.com', 'primevideo.com', 'aiv-cdn.net', 'pv-cdn.net', 'aiv-delivery.net', 'media-amazon.com', 'ssl-images-amazon.com'],

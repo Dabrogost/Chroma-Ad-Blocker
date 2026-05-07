@@ -182,6 +182,32 @@ test('Proxy PAC hardening', async (t) => {
     assert.doesNotMatch(pac, /bad\.\.example\.com|bad"quote\.example\.com/);
   });
 
+  await t.test('expands YouTube smart-link routing to playback and API hosts', async () => {
+    const harness = createProxySandbox();
+
+    await harness.syncProxyState([
+      baseProxy({ domains: [{ host: 'youtube.com', enabled: true }] })
+    ]);
+
+    const pac = pacData(harness);
+    const escapeDomain = domain => domain.replace(/\./g, '\\.');
+    for (const domain of [
+      'youtube.com',
+      'googlevideo.com',
+      'ytimg.com',
+      'ggpht.com',
+      'youtube-nocookie.com',
+      'youtu.be',
+      'youtubei.googleapis.com',
+      'youtube.googleapis.com'
+    ]) {
+      assert.match(pac, new RegExp(`host === "${escapeDomain(domain)}"`));
+      assert.match(pac, new RegExp(`dnsDomainIs\\(host, "\\.${escapeDomain(domain)}"\\)`));
+    }
+
+    assert.doesNotMatch(pac, /www\.googleapis\.com|googleusercontent\.com|gstatic\.com/);
+  });
+
   await t.test('skips invalid stored configs and releases proxy settings when none remain', async () => {
     const harness = createProxySandbox();
 
