@@ -10,6 +10,8 @@ const proxyJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'bac
   .replace(/^export\s+/gm, '')
   + '\nglobalThis.__proxyExports = { syncProxyState, runProxyTest, findAuthProxyConfig, getProxyString };\n';
 
+const PROXY_AUTH_STATS_DELAY_MS = 10000;
+
 function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readStartupStorage = false, startupProxyConfigs } = {}) {
   let authListener = null;
   let storageChangeListener = null;
@@ -18,6 +20,7 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
   const storageSetCalls = [];
   const storageRemoveCalls = [];
   const statsEvents = [];
+  const timeoutCallbacks = [];
   const storage = {
     proxyConfigs,
     config,
@@ -80,7 +83,11 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
     chrome,
     console,
     setInterval: () => {},
-    setTimeout: (fn) => {
+    setTimeout: (fn, delay) => {
+      if (delay === PROXY_AUTH_STATS_DELAY_MS) {
+        timeoutCallbacks.push(fn);
+        return timeoutCallbacks.length;
+      }
       fn();
       return 1;
     },
@@ -102,6 +109,10 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
     storageSetCalls,
     storageRemoveCalls,
     statsEvents,
+    runPendingTimers: () => {
+      const callbacks = timeoutCallbacks.splice(0);
+      callbacks.forEach(fn => fn());
+    },
     get authListener() {
       return authListener;
     },
@@ -276,6 +287,56 @@ test('Proxy auth matching hardening', async (t) => {
       harness.authListener(details, resolve);
     });
   }
+
+  await t.test('batches proxy auth challenge stats instead of recording every challenge', async () => {
+    const harness = createProxySandbox({
+      proxyConfigs: [
+        baseProxy({ id: 1, host: 'proxy.example.com', authIv: 'iv1', authCipher: 'cipher1' })
+      ]
+    });
+
+    for (let i = 0; i < 24; i++) {
+      const result = await invokeAuth(harness, {
+        isProxy: true,
+        requestId: `auth-batch-${i}`,
+        challenger: { host: 'proxy.example.com', port: 8080 }
+      });
+      assert.deepStrictEqual(plain(result), {
+        authCredentials: {
+          username: 'user:iv1',
+          password: 'pass:cipher1'
+        }
+      });
+    }
+
+    assert.deepStrictEqual(harness.statsEvents, []);
+
+    harness.runPendingTimers();
+
+    assert.deepStrictEqual(plain(harness.statsEvents), [
+      { layer: 'proxy', type: 'auth_challenge', count: 24 }
+    ]);
+  });
+
+  await t.test('flushes proxy auth challenge stats when the batch cap is reached', async () => {
+    const harness = createProxySandbox({
+      proxyConfigs: [
+        baseProxy({ id: 1, host: 'proxy.example.com', authIv: 'iv1', authCipher: 'cipher1' })
+      ]
+    });
+
+    for (let i = 0; i < 25; i++) {
+      await invokeAuth(harness, {
+        isProxy: true,
+        requestId: `auth-cap-${i}`,
+        challenger: { host: 'proxy.example.com', port: 8080 }
+      });
+    }
+
+    assert.deepStrictEqual(plain(harness.statsEvents), [
+      { layer: 'proxy', type: 'auth_challenge', count: 25 }
+    ]);
+  });
 
   await t.test('prefers exact host and port credentials', async () => {
     const harness = createProxySandbox({

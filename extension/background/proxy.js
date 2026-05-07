@@ -18,8 +18,12 @@ let _proxyTestLock = Promise.resolve();
 // Serializes PAC writes so back-to-back storage events can't race and let an
 // older PAC win at chrome.proxy.settings.set().
 let _syncQueue = Promise.resolve();
+let _pendingProxyAuthChallenges = 0;
+let _proxyAuthStatsTimer = null;
 const PROXY_TEST_DOMAIN = 'icanhazip.com';
 const VALID_PAC_TYPES = new Set(['PROXY', 'HTTPS', 'SOCKS4', 'SOCKS5']);
+const PROXY_AUTH_STATS_FLUSH_MS = 10000;
+const PROXY_AUTH_STATS_BATCH_CAP = 25;
 const PROXY_DOMAIN_EXPANSION = {
   'youtube.com':   ['googlevideo.com', 'ytimg.com', 'ggpht.com', 'youtube-nocookie.com'],
   'twitch.tv':     ['ttvnw.net', 'jtvnw.net', 'twitchcdn.net'],
@@ -91,6 +95,32 @@ function isSafeProxyConfig(pc) {
 
 function hasStoredAuth(pc) {
   return !!(pc && pc.authIv && pc.authCipher);
+}
+
+function flushProxyAuthStats() {
+  if (_proxyAuthStatsTimer) {
+    clearTimeout(_proxyAuthStatsTimer);
+    _proxyAuthStatsTimer = null;
+  }
+
+  const count = _pendingProxyAuthChallenges;
+  _pendingProxyAuthChallenges = 0;
+  if (count > 0) {
+    recordStatsEvent({ layer: 'proxy', type: 'auth_challenge', count });
+  }
+}
+
+function recordProxyAuthChallenge() {
+  _pendingProxyAuthChallenges++;
+
+  if (_pendingProxyAuthChallenges >= PROXY_AUTH_STATS_BATCH_CAP) {
+    flushProxyAuthStats();
+    return;
+  }
+
+  if (!_proxyAuthStatsTimer) {
+    _proxyAuthStatsTimer = setTimeout(flushProxyAuthStats, PROXY_AUTH_STATS_FLUSH_MS);
+  }
 }
 
 function getEnabledRouteDomains(pc) {
@@ -312,7 +342,7 @@ chrome.webRequest.onAuthRequired.addListener(
       return;
     }
 
-    recordStatsEvent({ layer: 'proxy', type: 'auth_challenge' });
+    recordProxyAuthChallenge();
 
     const requestId = details.requestId;
     if (_authAttempted.has(requestId)) {
