@@ -312,7 +312,7 @@ function scheduleFlush() {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
-    flushStatsQueue().catch(() => {});
+    flushStatsQueue({ drain: false }).catch(() => {});
   }, FLUSH_DELAY_MS);
 }
 
@@ -330,7 +330,11 @@ export function recordStatsEvents(events) {
   for (const event of events) recordStatsEvent(event);
 }
 
-export async function flushStatsQueue() {
+export async function flushStatsQueue(options = {}) {
+  // Scheduled flushes process one batch and yield; user-triggered reads drain
+  // fully so the dashboard/export sees everything recorded so far.
+  const drain = options?.drain !== false;
+
   if (flushTimer) {
     clearTimeout(flushTimer);
     flushTimer = null;
@@ -351,7 +355,8 @@ export async function flushStatsQueue() {
   await flushChain;
 
   if (statsQueue.length > 0) {
-    return flushStatsQueue();
+    if (drain) return flushStatsQueue({ drain: true });
+    scheduleFlush();
   }
 }
 

@@ -104,6 +104,12 @@ test('Ad field stripping', async (t) => {
       requestAnimationFrame: () => {},
       MutationObserver: class { observe() {} disconnect() {} },
       CSSStyleSheet: class { replaceSync() {} },
+      CustomEvent: class {
+        constructor(type, init = {}) {
+          this.type = type;
+          this.detail = init.detail;
+        }
+      },
       Response: class {
         constructor(body, init) { this.body = body; this._init = init; }
         async json() { return JSON.parse(this.body); }
@@ -318,6 +324,46 @@ test('Ad field stripping', async (t) => {
     const contents = body.continuationContents.reelWatchSequenceContinuation.contents;
 
     assert.deepStrictEqual(contents, [createCleanShortsItem()]);
+  });
+
+  await t.test('fetch stats are emitted only when a YouTube payload is modified', async (st) => {
+    const cleanPayload = { videoDetails: { title: 'Clean Video' } };
+    const cleanSandbox = createStrippingSandbox({}, async () => ({
+      clone: () => ({ json: async () => JSON.parse(JSON.stringify(cleanPayload)) }),
+      status: 200,
+      statusText: 'OK',
+      headers: {}
+    }));
+    const cleanEvents = [];
+    cleanSandbox.document.addEventListener('__CHROMA_STATS_EVENT__', event => cleanEvents.push(event.detail));
+
+    await cleanSandbox.window.fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
+
+    assert.deepStrictEqual(cleanEvents, []);
+
+    const adPayload = { adPlacements: [{}], videoDetails: { title: 'Ad Payload' } };
+    const modifiedSandbox = createStrippingSandbox({}, async () => ({
+      clone: () => ({ json: async () => JSON.parse(JSON.stringify(adPayload)) }),
+      status: 200,
+      statusText: 'OK',
+      headers: {}
+    }));
+    const modifiedEvents = [];
+    modifiedSandbox.document.addEventListener('__CHROMA_STATS_EVENT__', event => modifiedEvents.push(event.detail));
+
+    await modifiedSandbox.window.fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
+
+    assert.strictEqual(modifiedEvents.length, 1);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(modifiedEvents[0])), {
+      layer: 'youtube',
+      type: 'payload',
+      source: 'fetch',
+      payloadsInspected: 1,
+      payloadsModified: 1,
+      fieldsPruned: 1,
+      adObjectsRemoved: 0,
+      cleans: 1
+    });
   });
 
   // ── shouldAccelerate ──

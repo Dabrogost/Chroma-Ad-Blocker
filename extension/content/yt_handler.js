@@ -78,7 +78,10 @@
     if (stats.fieldsPruned > 0 || stats.adObjectsRemoved > 0) {
       stats.payloadsModified = 1;
     }
-    if (stats.payloadsModified === 0 && stats.source === 'json_parse') return;
+    // Keep YouTube playback hot paths quiet: unmodified player/next/browse
+    // payload inspections can be frequent, especially while streaming through
+    // an authenticated proxy, and they do not represent useful protection work.
+    if (stats.payloadsModified === 0) return;
     emitStatsEvent({
       layer: 'youtube',
       type: 'payload',
