@@ -97,6 +97,14 @@
     );
   }
 
+  function shouldRunDomCleanup() {
+    return CONFIG.enabled && CONFIG.cosmetic;
+  }
+
+  function shouldRunObserver() {
+    return CONFIG.enabled && (CONFIG.cosmetic || CONFIG.suppressWarnings);
+  }
+
   // ─── COSMETIC FILTERING ─────
   function injectAllCSS() {
     const styles = [
@@ -312,7 +320,9 @@
 
           if (nodesToProcess.length > 0) {
             suppressAdblockWarnings(nodesToProcess);
-            removeLeftoverAdContainers(nodesToProcess);
+            if (shouldRunDomCleanup()) {
+              removeLeftoverAdContainers(nodesToProcess);
+            }
           }
           pendingFrame = false;
         });
@@ -326,6 +336,8 @@
   }
 
   function removeLeftoverAdContainers(nodes) {
+    if (!shouldRunDomCleanup()) return;
+
     const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes || document];
 
     for (const node of nodesToProcess) {
@@ -367,7 +379,9 @@
     [500, 1500].forEach(delay => { // 500ms catches initial DOM swap; 1500ms catches lazy-rendered ad slots
       setTimeout(() => {
         suppressAdblockWarnings();
-        removeLeftoverAdContainers();
+        if (shouldRunDomCleanup()) {
+          removeLeftoverAdContainers();
+        }
       }, delay);
     });
   }
@@ -385,13 +399,13 @@
     if (msg.type === 'CONFIG_UPDATE') {
       Object.assign(CONFIG, msg.config);
       
-      if (!CONFIG.enabled) {
+      if (shouldRunObserver()) {
+        startObserver();
+      } else {
         if (observer) {
           observer.disconnect();
           observer = null;
         }
-      } else {
-        startObserver();
       }
 
       injectAllCSS();
@@ -459,15 +473,29 @@
 
       injectAllCSS();
 
-      if (CONFIG.enabled) {
+      if (shouldRunObserver()) {
         startObserver();
+      }
+
+      if (CONFIG.enabled && CONFIG.suppressWarnings) {
         suppressAdblockWarnings();
+      }
+
+      if (shouldRunDomCleanup()) {
+        removeLeftoverAdContainers();
       }
     } catch (err) {
       if (DEBUG) console.warn('[Chroma Ad-Blocker] Init fetch failed, using defaults.', err);
       injectAllCSS();
-      startObserver();
-      suppressAdblockWarnings();
+      if (shouldRunObserver()) {
+        startObserver();
+      }
+      if (CONFIG.enabled && CONFIG.suppressWarnings) {
+        suppressAdblockWarnings();
+      }
+      if (shouldRunDomCleanup()) {
+        removeLeftoverAdContainers();
+      }
     }
   }
 

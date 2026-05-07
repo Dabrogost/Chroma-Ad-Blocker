@@ -224,4 +224,37 @@ test('Content script generic functionality', async (t) => {
     sandbox.removeLeftoverAdContainers();
     assert.strictEqual(adChild.style.display, 'none');
   });
+
+  await t.test('removeLeftoverAdContainers respects disabled cosmetic filtering', async (st) => {
+    const adNode = createMockElement();
+    adNode.nodeType = 1;
+    adNode.id = 'ad-slot-test';
+    adNode.querySelectorAll = () => [];
+    const sandbox = createSandbox();
+
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.cosmetic = false;
+    sandbox.CONFIG.suppressWarnings = false;
+
+    sandbox.removeLeftoverAdContainers(adNode);
+
+    assert.notStrictEqual(adNode.removed, true);
+    assert.notStrictEqual(adNode.style.display, 'none');
+  });
+
+  await t.test('removeLeftoverAdContainers runs when cosmetic filtering is enabled', async (st) => {
+    const adNode = createMockElement();
+    adNode.nodeType = 1;
+    adNode.id = 'ad-slot-test';
+    adNode.querySelectorAll = () => [];
+    const sandbox = createSandbox();
+
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.cosmetic = true;
+
+    sandbox.removeLeftoverAdContainers(adNode);
+
+    assert.strictEqual(adNode.removed, true);
+    assert.strictEqual(adNode.style.display, 'none');
+  });
 });
