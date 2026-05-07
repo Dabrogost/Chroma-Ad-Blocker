@@ -188,7 +188,7 @@ Your proxy credentials (username and password) are stored locally in an obfuscat
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
 
 ### Global Proxy Fallback (VPN Mode)
-In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. When enabled for a specific proxy server via the toggle switch on its card, all browser traffic that does not match a domain-specific rule will be automatically routed through that fallback server. This effectively turns the extension into a browser-level VPN while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Albania) simultaneously.
+In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. When enabled for a specific proxy server via the toggle switch on its card, all browser traffic that does not match a domain-specific rule will be automatically routed through that fallback server. This effectively turns the extension into a browser-level VPN while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Belize) simultaneously.
 
 ### Dynamic Routing Status
 The Chroma popup provides real-time feedback on your routing state. The status line on each proxy card will dynamically update to show exactly what it is doing:
@@ -197,14 +197,16 @@ The Chroma popup provides real-time feedback on your routing state. The status l
 - **CONNECTED**: The server is ready but has no current routing assignments.
 
 ### Example: Setting up NordVPN
-Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN HTTPS proxy server (e.g., Albania #80):
+Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN HTTPS proxy server (e.g., Belize #1):
 
 1. **Protocol:** Select `HTTPS` from the dropdown.
-2. **Host:** Enter `al80.nordvpn.com`.
+2. **Host:** Enter `bz1.nordvpn.com`.
 3. **Port:** Enter `89` *(commonly used by NordVPN HTTPS/HTTP SSL proxy endpoints)*.
 4. **Username & Password:** You **cannot** use your standard NordAccount email/password. You must use your auto-generated **Service Credentials**, which can be found in your NordAccount dashboard under *Services > NordVPN > Manual Setup*.
 5. **Domains:** Add the domains you want to route (e.g., `youtube.com`) to the active list.
 6. Click **Accept Settings**.
+
+Proxy-region performance can vary by provider, route, and streaming service. If YouTube buffers above 1080p or struggles in fullscreen, try another nearby proxy region before assuming the extension is at fault.
 
 ### Smart-Link Auto-Expansion
 To prevent "infinite spin" and geo-blocking issues caused by IP mismatches between a site's UI and its video delivery network, Chroma includes a **Smart-Link** system. When you add a major streaming service to your proxy list, Chroma automatically identifies and proxies its associated media delivery networks (CDNs).
