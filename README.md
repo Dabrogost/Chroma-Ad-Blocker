@@ -210,7 +210,7 @@ Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browse
 To prevent "infinite spin" and geo-blocking issues caused by IP mismatches between a site's UI and its video delivery network, Chroma includes a **Smart-Link** system. When you add a major streaming service to your proxy list, Chroma automatically identifies and proxies its associated media delivery networks (CDNs).
 
 For example, adding `youtube.com` automatically proxies `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com`, ensuring that the video stream itself originates from the same proxy IP as your main session. Supported services include:
-- **YouTube** (`googlevideo.com`, `ytimg.com`, `ggpht.com`, `youtube-nocookie.com`)
+- **YouTube** (`googlevideo.com`, `ytimg.com`, `ggpht.com`, `youtube-nocookie.com`, `youtu.be`, `youtubei.googleapis.com`, `youtube.googleapis.com`)
 - **Netflix** (`netflix.net`, `nflxvideo.net`, `nflxext.com`, `nflximg.com`, `nflximg.net`, `nflxso.net`, `nflxsearch.net`)
 - **Amazon Prime Video** (`amazonvideo.com`, `primevideo.com`, `aiv-cdn.net`, `pv-cdn.net`, `aiv-delivery.net`, `media-amazon.com`, `ssl-images-amazon.com`, + all global TLDs like `.de`, `.co.jp`)
 - **Twitch** (`ttvnw.net`, `jtvnw.net`, `twitchcdn.net`)

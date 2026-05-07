@@ -7,7 +7,7 @@
 
 const ChromaProxyUI = (() => {
   const { $, escapeHTML, isSettingsPage, openProxySettings } = globalThis.ChromaApp;
-  const SMART_LINK_HOSTS = ['youtube.com', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'];
+  const SMART_LINK_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'];
 
   function routeSummary(activeDomainCount, isGlobal) {
     return isGlobal ? 'global fallback' : `${activeDomainCount} routed`;
