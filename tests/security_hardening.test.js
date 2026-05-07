@@ -23,6 +23,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace(/^export\s+/gm, "");
 
@@ -39,7 +40,11 @@ const MSG = {
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
+  STATS_GET: 'STATS_GET',
+  STATS_EVENT_BATCH: 'STATS_EVENT_BATCH',
   STATS_RESET: 'STATS_RESET',
+  STATS_EXPORT: 'STATS_EXPORT',
+  STATS_SETTINGS_SET: 'STATS_SETTINGS_SET',
   LOG_GET: 'LOG_GET',
   WHITELIST_GET: 'WHITELIST_GET',
   WHITELIST_ADD: 'WHITELIST_ADD',
@@ -52,6 +57,7 @@ const MSG = {
   SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
   SUBSCRIPTION_ADD: 'SUBSCRIPTION_ADD',
   SUBSCRIPTION_REMOVE: 'SUBSCRIPTION_REMOVE',
+  HEALTH_GET: 'HEALTH_GET',
   UPDATE_CHECK: 'UPDATE_CHECK',
   PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
   PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
@@ -221,8 +227,13 @@ test('Security Hardening - handlers.js', async (t) => {
     for (const type of [
       MSG.CONFIG_GET,
       MSG.CONFIG_SET,
+      MSG.STATS_GET,
+      MSG.STATS_EVENT_BATCH,
       MSG.STATS_RESET,
+      MSG.STATS_EXPORT,
+      MSG.STATS_SETTINGS_SET,
       MSG.LOG_GET,
+      MSG.HEALTH_GET,
       MSG.PROXY_CONFIG_GET,
       MSG.PROXY_CONFIG_SET,
       MSG.PROXY_TEST,
@@ -389,7 +400,7 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
-  await t.test('proxy config get recognizes encrypted byte-array credentials', async () => {
+  await t.test('proxy config get recognizes stored byte-array credentials', async () => {
     const sandbox = loadHandlers({
       storage: {
         proxyConfigs: [{
@@ -413,7 +424,7 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
-  await t.test('proxy credential preserve keeps encrypted byte-array auth', async () => {
+  await t.test('proxy credential preserve keeps stored byte-array auth', async () => {
     const existing = [{
       id: 15,
       name: 'Existing Array',
@@ -441,7 +452,7 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.deepStrictEqual(plain(result.configs[0].authCipher), [4, 5, 6]);
   });
 
-  await t.test('proxy credential actions preserve replace and clear encrypted auth', async () => {
+  await t.test('proxy credential actions preserve replace and clear stored auth', async () => {
     const existing = [{
       id: 1,
       name: 'Existing',
@@ -504,7 +515,7 @@ test('Security Hardening - handlers.js', async (t) => {
     }
   });
 
-  await t.test('does not expose or preserve oversized encrypted proxy auth blobs', async () => {
+  await t.test('does not expose or preserve oversized stored proxy auth blobs', async () => {
     const oversized = {
       id: 14,
       name: 'Oversized',

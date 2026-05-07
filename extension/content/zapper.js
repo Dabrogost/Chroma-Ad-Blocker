@@ -328,6 +328,21 @@
     }).catch(() => null);
   }
 
+  function sendStats(action) {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'STATS_EVENT_BATCH',
+        events: [{
+          layer: 'zapper',
+          type: 'hit',
+          action,
+          domain: window.location.hostname,
+          ts: Date.now()
+        }]
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function cleanup() {
     active = false;
     current = null;
@@ -355,6 +370,7 @@
 
     if (action === 'hideOnce') {
       current.style.setProperty('display', 'none', 'important');
+      sendStats('hideOnce');
       sendFinish('hideOnce').finally(cleanup);
       return;
     }
@@ -384,6 +400,7 @@
       }).then((res) => {
         if (res?.ok) {
           target.style.setProperty('display', 'none', 'important');
+          sendStats('save');
           cleanup();
           return;
         }

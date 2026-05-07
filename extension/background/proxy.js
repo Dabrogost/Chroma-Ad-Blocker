@@ -9,6 +9,7 @@
 'use strict';
 
 import { decryptAuth } from '../core/crypto.js';
+import { recordStatsEvent } from './stats.js';
 
 const DEBUG = false;
 
@@ -209,6 +210,7 @@ export function runProxyTest(proxyId) {
         : proxyConfigs.find(p => p.id === proxyId && isSafeProxyConfig(p));
 
       if (!pc) {
+        recordStatsEvent({ layer: 'proxy', type: 'test_failure', error: 'Proxy not configured' });
         return { ok: false, error: 'Proxy not configured' };
       }
 
@@ -228,12 +230,16 @@ export function runProxyTest(proxyId) {
         clearTimeout(timeoutId);
         if (res.ok) {
           const ip = (await res.text()).trim();
+          recordStatsEvent({ layer: 'proxy', type: 'test_pass', proxyId: pc.id });
           return { ok: true, proxyId: pc.id, ip };
         }
+        recordStatsEvent({ layer: 'proxy', type: 'test_failure', proxyId: pc.id, error: `HTTP ${res.status}` });
         return { ok: false, error: `HTTP ${res.status}` };
       } catch (fetchErr) {
         clearTimeout(timeoutId);
-        return { ok: false, error: fetchErr.name === 'AbortError' ? 'Timeout' : fetchErr.message };
+        const error = fetchErr.name === 'AbortError' ? 'Timeout' : fetchErr.message;
+        recordStatsEvent({ layer: 'proxy', type: 'test_failure', proxyId: pc.id, error });
+        return { ok: false, error };
       } finally {
         _currentlyTestingId = null;
         await syncProxyState(proxyConfigs);
@@ -305,6 +311,8 @@ chrome.webRequest.onAuthRequired.addListener(
       callback({});
       return;
     }
+
+    recordStatsEvent({ layer: 'proxy', type: 'auth_challenge' });
 
     const requestId = details.requestId;
     if (_authAttempted.has(requestId)) {

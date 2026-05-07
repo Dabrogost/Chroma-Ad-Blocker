@@ -21,6 +21,7 @@ const backgroundJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension',
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, 'var MSG = {};')
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, 'var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };')
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, 'var registerAll = () => {};')
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, '')
   .replace(/^export\s+/gm, '')
   + '\nglobalThis.__backgroundExports = { updateDNRState, syncDynamicRules, syncWhitelistRules };\n';

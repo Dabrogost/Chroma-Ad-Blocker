@@ -29,10 +29,74 @@
   let LOCAL_ZAPPER_SELECTORS = [];
   let WARNING_SELECTOR_COMBINED = '';
   let IS_WHITELISTED = false;
+  let statsQueue = [];
+  let statsTimer = null;
+  const STATS_FLUSH_MS = 750;
+  const STATS_BATCH_CAP = 50;
+  const countedElementsByKey = new Map();
   
   // Track our adopted stylesheets to allow toggling without clobbering other extensions
   const chromaSheets = new Map();
   const chromaSheetContent = new Map();
+
+  function queueStatsEvent(event) {
+    if (!event || typeof event !== 'object') return;
+    statsQueue.push({
+      ...event,
+      ts: Date.now(),
+      domain: window.location.hostname
+    });
+
+    if (statsQueue.length >= STATS_BATCH_CAP) {
+      flushStatsQueue();
+      return;
+    }
+
+    if (!statsTimer) statsTimer = setTimeout(flushStatsQueue, STATS_FLUSH_MS);
+  }
+
+  function flushStatsQueue() {
+    if (statsTimer) {
+      clearTimeout(statsTimer);
+      statsTimer = null;
+    }
+
+    const events = statsQueue.splice(0, STATS_BATCH_CAP);
+    if (events.length === 0) return;
+
+    try {
+      chrome.runtime.sendMessage({ type: 'STATS_EVENT_BATCH', events }).catch(() => {});
+    } catch (_) {}
+  }
+
+  function getSeenElements(key) {
+    if (!countedElementsByKey.has(key)) countedElementsByKey.set(key, new WeakSet());
+    return countedElementsByKey.get(key);
+  }
+
+  function countNewSelectorMatches(selectors, key) {
+    if (!Array.isArray(selectors) || selectors.length === 0) return 0;
+    const seen = getSeenElements(key);
+    let count = 0;
+    for (const selector of selectors) {
+      try {
+        document.querySelectorAll(selector).forEach(el => {
+          if (!el || seen.has(el)) return;
+          seen.add(el);
+          count++;
+        });
+      } catch (_) {}
+    }
+    return count;
+  }
+
+  function recordSelectorStats(styleDef) {
+    if (!styleDef.stats || !styleDef.isEnabled()) return;
+    const count = countNewSelectorMatches(styleDef.stats.selectors, styleDef.id);
+    if (count > 0) {
+      queueStatsEvent({ ...styleDef.stats.event, count });
+    }
+  }
 
   function getValidSelectors(selectors) {
     if (!Array.isArray(selectors)) return [];
@@ -97,6 +161,14 @@
     );
   }
 
+  function shouldRunDomCleanup() {
+    return CONFIG.enabled && CONFIG.cosmetic;
+  }
+
+  function shouldRunObserver() {
+    return CONFIG.enabled && (CONFIG.cosmetic || CONFIG.suppressWarnings);
+  }
+
   // ─── COSMETIC FILTERING ─────
   function injectAllCSS() {
     const styles = [
@@ -111,12 +183,20 @@
             z-index: 9999999 !important; /* High layer for player controls */
           }
         `,
-        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic,
+        stats: {
+          selectors: HIDE_SELECTORS,
+          event: { layer: 'cosmetic', type: 'hide' }
+        }
       },
       {
         id: 'chroma-local-zapper',
         content: buildLocalZapperCSS(LOCAL_ZAPPER_SELECTORS),
-        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && LOCAL_ZAPPER_SELECTORS.length > 0
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && LOCAL_ZAPPER_SELECTORS.length > 0,
+        stats: {
+          selectors: LOCAL_ZAPPER_SELECTORS,
+          event: { layer: 'zapper', type: 'hit' }
+        }
       },
       {
         id: 'chroma-shorts',
@@ -131,7 +211,19 @@
             display: none !important;
           }
         `,
-        isEnabled: () => CONFIG.enabled && CONFIG.hideShorts
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && CONFIG.hideShorts,
+        stats: {
+          selectors: [
+            'ytd-rich-section-renderer:has(ytd-rich-shelf-renderer[is-shorts])',
+            'ytd-rich-shelf-renderer[is-shorts]',
+            'ytd-reel-shelf-renderer',
+            'ytd-guide-entry-renderer:has([title^="Shorts"])',
+            'ytd-mini-guide-entry-renderer[aria-label="Shorts"]',
+            'ytd-bottom-pivot-link-renderer:has([title="Shorts"])',
+            'yt-chip-cloud-chip-renderer:has([title="Shorts"])'
+          ],
+          event: { layer: 'cosmetic', type: 'hide', subtype: 'youtube_shorts' }
+        }
       },
       {
         id: 'chroma-merch',
@@ -143,7 +235,16 @@
             display: none !important;
           }
         `,
-        isEnabled: () => CONFIG.enabled && CONFIG.hideMerch
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && CONFIG.hideMerch,
+        stats: {
+          selectors: [
+            'ytd-merch-shelf-renderer',
+            'ytd-companion-slot-renderer',
+            'ytd-shopping-panel-renderer',
+            'ytd-horizontal-card-list-renderer:has(ytd-shopping-carousel-item-renderer)'
+          ],
+          event: { layer: 'cosmetic', type: 'hide', subtype: 'youtube_merch' }
+        }
       },
       {
         id: 'chroma-enforcement',
@@ -159,7 +260,20 @@
             display: none !important;
           }
         `,
-        isEnabled: () => CONFIG.enabled && CONFIG.suppressWarnings && isYouTube
+        isEnabled: () => CONFIG.enabled && CONFIG.suppressWarnings && isYouTube,
+        stats: {
+          selectors: [
+            'ytd-enforcement-dialog-view-model',
+            'tp-yt-paper-dialog:has(ytd-enforcement-dialog-view-model)',
+            'ytd-popup-container:has(ytd-enforcement-dialog-view-model)',
+            'ytd-mealbar-promo-renderer',
+            'ytd-statement-banner-renderer',
+            'yt-notification-action-renderer',
+            'tp-yt-paper-toast',
+            'ytd-popup-container tp-yt-paper-toast'
+          ],
+          event: { layer: 'warning', type: 'suppression' }
+        }
       },
       {
         id: 'chroma-offers',
@@ -172,7 +286,17 @@
             display: none !important;
           }
         `,
-        isEnabled: () => CONFIG.enabled && CONFIG.hideOffers
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && CONFIG.hideOffers,
+        stats: {
+          selectors: [
+            'ytd-tvfilm-offer-module-renderer',
+            'ytd-movie-offer-module-renderer',
+            'ytd-offer-module-renderer',
+            'ytd-compact-movie-renderer',
+            'ytd-compact-tvfilm-renderer'
+          ],
+          event: { layer: 'cosmetic', type: 'hide', subtype: 'youtube_offers' }
+        }
       },
       {
         id: 'chroma-twitch-cosmetic',
@@ -205,7 +329,20 @@
             display: none !important;
           }
         `,
-        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && isTwitch
+        isEnabled: () => CONFIG.enabled && CONFIG.cosmetic && isTwitch,
+        stats: {
+          selectors: [
+            '.ads-manager',
+            '.ad-slot',
+            '[class*="ad-banner"]',
+            '.tw-interstitial',
+            '.ad-overlay',
+            '[data-target="ad-slot"]',
+            '[data-test-selector="ad-banner-default-text"]',
+            '[data-a-target="video-ad-label"]'
+          ],
+          event: { layer: 'cosmetic', type: 'hide', subtype: 'twitch' }
+        }
       }
     ];
 
@@ -237,8 +374,11 @@
 
       if (isEnabled && !currentSheets.includes(sheet)) {
         document.adoptedStyleSheets = [...currentSheets, sheet];
+        recordSelectorStats(styleDef);
       } else if (!isEnabled && currentSheets.includes(sheet)) {
         document.adoptedStyleSheets = currentSheets.filter(s => s !== sheet);
+      } else if (isEnabled) {
+        recordSelectorStats(styleDef);
       }
     });
   }
@@ -249,13 +389,15 @@
 
     if (!CONFIG.enabled || !CONFIG.suppressWarnings || !WARNING_SELECTOR_COMBINED) return;
 
-    let removedAny = false;
+    let removedCount = 0;
 
     if (!nodes) {
       const els = document.querySelectorAll(WARNING_SELECTOR_COMBINED);
       if (els.length > 0) {
-        removedAny = true;
-        els.forEach(el => el.remove());
+        els.forEach(el => {
+          el.remove();
+          removedCount++;
+        });
       }
     } else {
       const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes];
@@ -264,21 +406,27 @@
 
         if (typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
           node.remove();
-          removedAny = true;
+          removedCount++;
           continue;
         }
 
         if (node.firstElementChild && typeof node.querySelectorAll === 'function') {
           const els = node.querySelectorAll(WARNING_SELECTOR_COMBINED);
           if (els.length > 0) {
-            removedAny = true;
-            els.forEach(el => el.remove());
+            els.forEach(el => {
+              el.remove();
+              removedCount++;
+            });
           }
         }
       }
     }
 
-    if (removedAny && isYouTube) {
+    if (removedCount > 0) {
+      queueStatsEvent({ layer: 'warning', type: 'suppression', count: removedCount });
+    }
+
+    if (removedCount > 0 && isYouTube) {
       const video = document.querySelector('video');
       if (video && video.paused) {
         video.play().catch(() => {});
@@ -312,7 +460,9 @@
 
           if (nodesToProcess.length > 0) {
             suppressAdblockWarnings(nodesToProcess);
-            removeLeftoverAdContainers(nodesToProcess);
+            if (shouldRunDomCleanup()) {
+              removeLeftoverAdContainers(nodesToProcess);
+            }
           }
           pendingFrame = false;
         });
@@ -326,7 +476,10 @@
   }
 
   function removeLeftoverAdContainers(nodes) {
+    if (!shouldRunDomCleanup()) return;
+
     const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes || document];
+    let removedCount = 0;
 
     for (const node of nodesToProcess) {
       if (!node) continue;
@@ -350,6 +503,7 @@
           if (DEBUG) console.log('[Chroma Ad-Blocker] Removing suspicious container:', el.id);
           el.style.display = 'none';
           el.remove();
+          removedCount++;
         }
       };
 
@@ -360,6 +514,15 @@
         node.querySelectorAll('[id*="ad-container"], [id*="ad_container"], [id*="ad-slot"]').forEach(processAdContainer);
       }
     }
+
+    if (removedCount > 0) {
+      queueStatsEvent({
+        layer: 'cosmetic',
+        type: 'hide',
+        subtype: 'leftover_ad_container',
+        count: removedCount
+      });
+    }
   }
 
   // ─── NAVIGATION HANDLING (SPA) ─────
@@ -367,7 +530,9 @@
     [500, 1500].forEach(delay => { // 500ms catches initial DOM swap; 1500ms catches lazy-rendered ad slots
       setTimeout(() => {
         suppressAdblockWarnings();
-        removeLeftoverAdContainers();
+        if (shouldRunDomCleanup()) {
+          removeLeftoverAdContainers();
+        }
       }, delay);
     });
   }
@@ -385,13 +550,13 @@
     if (msg.type === 'CONFIG_UPDATE') {
       Object.assign(CONFIG, msg.config);
       
-      if (!CONFIG.enabled) {
+      if (shouldRunObserver()) {
+        startObserver();
+      } else {
         if (observer) {
           observer.disconnect();
           observer = null;
         }
-      } else {
-        startObserver();
       }
 
       injectAllCSS();
@@ -408,6 +573,18 @@
   }
 
   // ─── INIT ─────
+  document.addEventListener('__CHROMA_SCRIPTLET_STATS__', (event) => {
+    const detail = event?.detail;
+    if (!detail || typeof detail !== 'object') return;
+    queueStatsEvent({
+      layer: 'scriptlet',
+      type: detail.type === 'error' ? 'error' : 'hit',
+      scriptlet: detail.scriptlet,
+      ruleSource: detail.source,
+      error: detail.error
+    });
+  }, true);
+
   async function init() {
     try {
       const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist', 'subscriptionCosmeticRules', 'localCosmeticRules']);
@@ -459,15 +636,29 @@
 
       injectAllCSS();
 
-      if (CONFIG.enabled) {
+      if (shouldRunObserver()) {
         startObserver();
+      }
+
+      if (CONFIG.enabled && CONFIG.suppressWarnings) {
         suppressAdblockWarnings();
+      }
+
+      if (shouldRunDomCleanup()) {
+        removeLeftoverAdContainers();
       }
     } catch (err) {
       if (DEBUG) console.warn('[Chroma Ad-Blocker] Init fetch failed, using defaults.', err);
       injectAllCSS();
-      startObserver();
-      suppressAdblockWarnings();
+      if (shouldRunObserver()) {
+        startObserver();
+      }
+      if (CONFIG.enabled && CONFIG.suppressWarnings) {
+        suppressAdblockWarnings();
+      }
+      if (shouldRunDomCleanup()) {
+        removeLeftoverAdContainers();
+      }
     }
   }
 
@@ -491,5 +682,8 @@
     globalThis.getMatchingLocalZapperSelectors = getMatchingLocalZapperSelectors;
     /** @param {Object[]} val @returns {void} */
     globalThis.setLocalZapperRules = (val) => { LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(val); };
+    globalThis.queueStatsEvent = queueStatsEvent;
+    globalThis.flushStatsQueue = flushStatsQueue;
+    globalThis.getPendingStatsQueue = () => statsQueue.slice();
   }
 })();

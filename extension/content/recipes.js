@@ -219,20 +219,6 @@ ${HIDE_SELECTORS.join(',\n')} {
       return PAYLOAD_MARKERS.some(m => s.includes(m));
     } catch (_) { return false; }
   }
-  function stripInjectorAttrs(el) {
-    if (!el || el.tagName !== 'SCRIPT') return;
-    let stripped = false;
-    if (looksLikeInjectorPayload(el.getAttribute('onerror'))) {
-      el.removeAttribute('onerror');
-      stripped = true;
-    }
-    if (looksLikeInjectorPayload(el.getAttribute('onload'))) {
-      el.removeAttribute('onload');
-      stripped = true;
-    }
-    if (stripped) log('stripped injector onerror/onload', el.id || '(no id)');
-  }
-
   // ─── NATIVE INTEGRITY CHECK ─────
   // Verify that setAttribute/getAttribute are still native before capturing.
   // If a page script has already monkey-patched these prototypes, skip
@@ -319,7 +305,6 @@ ${HIDE_SELECTORS.join(',\n')} {
     };
     // Why: anti-adblock fallback calls reload(); F5 still works (browser-level).
     // Use defineProperty on Location.prototype so page scripts can't restore native.
-    const _origReload = Location.prototype.reload;
     try {
       Object.defineProperty(Location.prototype, 'reload', {
         value: function () { log('blocked location.reload() from page script'); },

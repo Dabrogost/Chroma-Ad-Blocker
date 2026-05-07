@@ -23,6 +23,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = globalThis._mockCreateDefaultStatsV2 || (() => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] })); var recordStatsEvent = globalThis._mockRecordStatsEvent || (() => {});")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace(/^export\s+/gm, "");
 
@@ -252,6 +253,39 @@ test('syncDynamicRules successful syncing', async (t) => {
     // Add rules should match the default rules
     const defaultRules = sandbox.getDefaultDynamicRules();
     assert.deepStrictEqual(updateDynamicRulesArgs.addRules, defaultRules, 'Should add default rules');
+  });
+
+  await t.test('classifies DNR matches without treating all matches as blocks', async () => {
+    sandbox.mockStorageRules = [
+      { id: 1001, action: { type: 'allow' } },
+      { id: 1002, action: { type: 'block' } }
+    ];
+    await sandbox.syncDynamicRules();
+
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.classifyDnrMatch({
+      rule: { ruleId: 1, rulesetId: 'oisd_rules_1' }
+    }))), {
+      type: 'block',
+      ruleSource: 'static_ruleset',
+      ruleId: 1,
+      rulesetId: 'oisd_rules_1'
+    });
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.classifyDnrMatch({
+      rule: { ruleId: 30014, rulesetId: 'custom_static_rules' }
+    }))), {
+      type: 'allow',
+      ruleSource: 'static_ruleset',
+      ruleId: 30014,
+      rulesetId: 'custom_static_rules'
+    });
+    assert.strictEqual(sandbox.classifyDnrMatch({
+      rule: { ruleId: 30013, rulesetId: 'custom_static_rules' }
+    }).type, 'block');
+    assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 1001 } }).type, 'allow');
+    assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 1002 } }).type, 'block');
+    assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 100000 } }).type, 'block');
+    assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 9000000 } }).type, 'allow');
+    assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 42 } }).type, 'match');
   });
 });
 

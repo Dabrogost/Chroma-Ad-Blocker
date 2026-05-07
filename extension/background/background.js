@@ -18,6 +18,7 @@ import { initScriptletEngine } from '../scriptlets/engine.js';
 import { MSG } from '../core/messageTypes.js';
 import * as router from '../core/messageRouter.js';
 import { registerAll } from './handlers.js';
+import { createDefaultStatsV2, recordStatsEvent } from './stats.js';
 import './proxy.js';
 
 const DEBUG = false;
@@ -83,7 +84,6 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
     }
   };
 }
-let _pendingBlocked = 0;
 let _flushTimer = null;
 
 // ─── INSTALL / STARTUP ─────
@@ -105,7 +105,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         globalProxyId: null,
         fingerprintRandomization: false,
       },
-      stats: { networkBlocked: 0 },
+      statsV2: createDefaultStatsV2(),
       requestLog: [],
       HIDE_SELECTORS: [
         '.ytd-display-ad-renderer', 'ytd-display-ad-renderer', '#masthead-ad',
@@ -184,6 +184,55 @@ const STATIC_RULESETS = chrome.runtime.getManifest()
 // Range 1000 - 99999 reserved for local/default dynamic rules (Anti-Detection/Acceleration)
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END   = 99999;
+const SUBSCRIPTION_RULE_ID_START = 100000;
+const SUBSCRIPTION_RULE_ID_END = 8999999;
+const WHITELIST_RULE_ID_START = 9000000;
+const dynamicRuleClassifications = new Map();
+const STATIC_RULE_ACTION_OVERRIDES = new Map([
+  ['custom_static_rules:28', 'allow'],
+  ['custom_static_rules:30014', 'allow'],
+  ['custom_static_rules:30015', 'allow'],
+  ['custom_static_rules:30027', 'allow']
+]);
+
+function getStaticRuleActionType(ruleId, rulesetId) {
+  const actionType = STATIC_RULE_ACTION_OVERRIDES.get(`${rulesetId}:${ruleId}`);
+  if (actionType === 'allow' || actionType === 'allowAllRequests') return 'allow';
+  if (actionType === 'block' || actionType === 'redirect' || actionType === 'upgradeScheme') return 'block';
+  return 'block';
+}
+
+export function classifyDnrMatch(info) {
+  const ruleId = Number(info?.rule?.ruleId);
+  const rulesetId = info?.rule?.rulesetId || info?.rule?.ruleSetId || null;
+
+  if (!Number.isSafeInteger(ruleId)) {
+    return { type: 'match', ruleSource: 'unknown', ruleId: null, rulesetId };
+  }
+
+  if (rulesetId && STATIC_RULESETS.includes(rulesetId)) {
+    return { type: getStaticRuleActionType(ruleId, rulesetId), ruleSource: 'static_ruleset', ruleId, rulesetId };
+  }
+
+  if (ruleId >= WHITELIST_RULE_ID_START) {
+    return { type: 'allow', ruleSource: 'whitelist', ruleId, rulesetId };
+  }
+
+  if (ruleId >= DEFAULT_RULE_ID_START && ruleId <= DEFAULT_RULE_ID_END) {
+    const cached = dynamicRuleClassifications.get(ruleId);
+    const actionType = cached?.actionType;
+    if (actionType === 'block' || actionType === 'allow') {
+      return { type: actionType, ruleSource: 'default_dynamic', ruleId, rulesetId };
+    }
+    return { type: 'match', ruleSource: 'default_dynamic', ruleId, rulesetId };
+  }
+
+  if (ruleId >= SUBSCRIPTION_RULE_ID_START && ruleId <= SUBSCRIPTION_RULE_ID_END) {
+    return { type: 'block', ruleSource: 'subscription_dynamic', ruleId, rulesetId };
+  }
+
+  return { type: 'match', ruleSource: 'unknown', ruleId, rulesetId };
+}
 
 export async function updateDNRState(isEnabled) {
   try {
@@ -234,6 +283,14 @@ export async function syncDynamicRules() {
       addRules: rules,
     });
 
+    for (const id of removeIds) dynamicRuleClassifications.delete(id);
+    for (const rule of rules) {
+      dynamicRuleClassifications.set(rule.id, {
+        actionType: rule.action?.type || 'unknown',
+        ruleSource: 'default_dynamic'
+      });
+    }
+
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
   } catch (err) {
     if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
@@ -268,6 +325,14 @@ export async function syncWhitelistRules() {
       removeRuleIds: removeIds,
       addRules: addRules,
     });
+
+    for (const id of removeIds) dynamicRuleClassifications.delete(id);
+    for (const rule of addRules) {
+      dynamicRuleClassifications.set(rule.id, {
+        actionType: 'allow',
+        ruleSource: 'whitelist'
+      });
+    }
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${whitelist.length} whitelist domains to DNR.`);
   } catch (err) {
@@ -310,9 +375,8 @@ export function validateConfig(inputConfig) {
  */
 export async function resetRequestLog() {
   _logBuffer = [];
-  _pendingBlocked = 0;
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
-  await chrome.storage.local.set({ stats: { networkBlocked: 0 }, requestLog: [] });
+  await chrome.storage.local.set({ requestLog: [] });
 }
 
 export async function getMergedLog() {
@@ -323,19 +387,14 @@ export async function getMergedLog() {
 async function flushLog() {
   _flushTimer = null;
   const batch = _logBuffer.splice(0);
-  const blocked = _pendingBlocked;
-  _pendingBlocked = 0;
 
-  if (batch.length === 0 && blocked === 0) return;
+  if (batch.length === 0) return;
 
   try {
-    const { requestLog = [], stats = {} } = await chrome.storage.local.get(['requestLog', 'stats']);
+    const { requestLog = [] } = await chrome.storage.local.get('requestLog');
     const updates = {};
     if (batch.length > 0) {
       updates.requestLog = [...batch, ...requestLog].slice(0, LOG_MAX_ENTRIES);
-    }
-    if (blocked > 0) {
-      updates.stats = { ...stats, networkBlocked: (stats.networkBlocked || 0) + blocked };
     }
     await chrome.storage.local.set(updates);
   } catch (err) {
@@ -345,13 +404,27 @@ async function flushLog() {
 
 if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
+    const classification = classifyDnrMatch(info);
     _logBuffer.push({
       ts:  Date.now(),
       url: info.request.url,
       rt:  info.request.type,
-      rid: info.rule.ruleId
+      rid: info.rule.ruleId,
+      action: classification.type,
+      source: classification.ruleSource,
+      rulesetId: classification.rulesetId
     });
-    _pendingBlocked++;
+
+    recordStatsEvent({
+      layer: 'network',
+      type: classification.type,
+      url: info.request.url,
+      resourceType: info.request.type,
+      ruleId: classification.ruleId,
+      rulesetId: classification.rulesetId,
+      ruleSource: classification.ruleSource,
+      ts: Date.now()
+    });
 
     if (!_flushTimer) {
       _flushTimer = setTimeout(flushLog, 500); // 500ms batch window to coalesce rapid rule-match events

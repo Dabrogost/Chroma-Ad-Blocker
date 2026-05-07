@@ -6,15 +6,30 @@
   <img src="assets/popup.gif" alt="Chroma Ad-Blocker Popup Preview" width="360">
 </div>
 
+## Index
+
+- [Key Features](#key-features)
+- [Architecture Overview](#architecture-overview)
+- [System Layers](#system-layers)
+- [Privacy & Transparency](#privacy--transparency)
+- [Media Proxy Router](#media-proxy-router-split-tunneling)
+- [YouTube Ad Stripping](#youtube-ad-stripping-the-stripper)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Statistics & Event Tracker](#statistics--event-tracker)
+- [Filter List Subscriptions](#filter-list-subscriptions)
+- [Why Not the Chrome Web Store?](#why-not-the-chrome-web-store)
+
 ## Key Features
 
-- **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, providing a seamless, high-performance viewing experience without the need for acceleration.
-- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Uses local AES-256-GCM credential obfuscation and real-time connectivity verification.
+- **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, including sponsored Shorts overlay payloads, providing a seamless, high-performance viewing experience without the need for acceleration.
+- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Proxy credentials are stored locally in an obfuscated form and used only for proxy authentication. Includes real-time connectivity verification.
 - **Source-Generated DNR Network Blocking**: Uses a generated OISD Big static Declarative Net Request (DNR) ruleset, a protected custom static layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from settings without editing filter lists.
+- **Local Event Tracker**: The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
 - **Main-World Safety Exclusions**: Bypasses Chroma's MAIN-world interception layer on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network and cosmetic blocking remain user-controllable through per-domain whitelisting.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
@@ -167,7 +182,7 @@ Chroma includes a built-in split-tunnel proxy router that allows you to route tr
 Chroma supports `HTTP`, `HTTPS`, `SOCKS4`, and `SOCKS5` proxies. Choose the protocol from the proxy setup dropdown, then enter the proxy host without a protocol prefix.
 
 ### Security
-Your proxy credentials (username and password) are locally obfuscated using AES-256-GCM via the native Web Crypto API before being stored to disk. They are decrypted dynamically in memory only when the proxy server challenges the browser for authentication. This protects against casual disk-level inspection, but it is not a substitute for operating-system or browser-profile security.
+Your proxy credentials (username and password) are stored locally in an obfuscated form using a bundled extension key. They are decoded in memory only when the proxy server challenges the browser for authentication. This can reduce casual readability in extension storage, but it is not strong encryption and is not a substitute for operating-system or browser-profile security.
 
 ### Connection Verification
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
@@ -217,6 +232,7 @@ Instead of reacting to ads after they appear, the Stripper operates at the data 
 - **Seamless Viewing Experience**: Because the ads are "stripped" before they ever load, there is no "Ad starting in 5 seconds" countdown, no black screens, and no need for the acceleration engine to kick in.
 - **Payload Interception**: It utilizes deep hooks into `window.fetch`, `XMLHttpRequest`, and `JSON.parse` to ensure that even batched or worker-side requests are cleaned of ad data.
 - **Feed & Search Optimization**: Beyond the video player, it strips promoted "Sparkles" ads, suggested products, and sponsored results from your home feed and search results.
+- **Sponsored Shorts Blocking**: Sponsored Shorts can arrive as reel payloads with `adsOverlay`, `shortsAdsRenderer`, `sequenceItemInPlayerAdLayoutRenderer`, or `reelWatchEndpoint.adClientParams.isAd`. The Stripper prunes those payloads before the Shorts player renders the sponsored overlay.
 
 > [!TIP]
 > While "Ad Acceleration" is still available as a fallback, the **Stripper** is the recommended method for a seamless, "native" YouTube experience. The stripper can still have a slight delay while the YouTube player processes cleaned data, and behavior can change when YouTube changes its delivery pipeline. Proxy-side ad-free payloads can reduce delay in supported setups because the payload starts without ad data.
@@ -243,7 +259,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | Permission | Reason |
 |---|---|
 | `declarativeNetRequest` | Enables and manages the static and dynamic DNR rulesets that perform network-level ad and tracker blocking at the browser engine level. |
-| `declarativeNetRequestFeedback` | Allows the service worker to read which rules fired, used to collect per-session blocking statistics displayed in the popup. |
+| `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired in supported install contexts. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
 | `tabs` | Required to read the active tab's URL for whitelist matching in the popup and to reload the tab when the whitelist is toggled. |
@@ -299,6 +315,48 @@ Chroma implements several advanced security measures to ensure extension integri
 | `suppressWarnings` | Removes unsolicited overlay dialogs that restrict content access. | `true` |
 | `whitelist` | Toggles blocking for the current domain. | `false` |
 
+## Health Panel
+
+The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, proxy routing, whitelists, and request-log/debug availability.
+
+The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents. DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts; when that logging is unavailable, blocking can still work normally.
+
+---
+
+## Statistics & Event Tracker
+
+The settings page includes **Protection Intelligence**, a local analytics dashboard backed by the versioned `statsV2` storage record. It upgrades the old single counter into a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.
+
+The popup headline shows **Protection Events**, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than "ads blocked": DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or debug-only matches, so Chroma classifies events before counting them.
+
+### Event Tracker
+
+The **Events** section in settings shows recent local activity from the protection stack. It can include:
+- Network block, allow, and unknown-match classifications.
+- Cosmetic cleanup and warning-suppression events.
+- Scriptlet hits and sanitized scriptlet errors.
+- Local zapper actions.
+- Payload cleanup or inspection details, including modified payload counts, fields pruned, and ad objects removed.
+- Proxy test and proxy authentication activity.
+
+Payload cleanup remains visible in the Event Tracker for transparency, but it is folded into the broader **Ad Cleanups** stat instead of being promoted as a platform-specific headline badge.
+
+### Privacy Modes
+
+Statistics are stored only in `chrome.storage.local`.
+
+- **Basic**: totals only.
+- **Aggregated**: totals plus domains, rule sources, resource types, timelines, and recent event summaries.
+- **Debug**: may include recent full request URLs where they are available.
+
+Aggregated mode is the default. Chroma stores domains by default, not full URLs. Full request URLs are only kept when Debug mode is enabled, and the bounded debug request log remains separate from `statsV2`.
+
+### Retention, Reset, and Export
+
+The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all stats, reset site stats only, reset the debug request log, or export a local JSON snapshot. Resetting stats does not erase configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.
+
+The **Time Saved (est.)** card is deliberately conservative. It uses a tiny sub-second estimate per protection event and floors the displayed value, so ordinary page-load activity does not inflate into unrealistic minutes.
+
 ---
 
 ## Third-Party Credits
@@ -318,6 +376,8 @@ Chroma subscribes to the following lists to ensure real-time protection:
 - **Hagezi Pro Mini** — High-performance DNS and ad-blocking rules.
 - **EasyList** — The primary filter for cosmetic ad-blocking and element hiding.
 - **Fanboy Annoyance** — Blocks social widgets, popups, and other non-ad annoyances through cosmetic rules and supported scriptlets.
+
+The **Chroma Hotfix** list is intentionally quiet when it has no active rules. It may be enabled internally, but the Filter Lists UI and Health panel hide it from user-facing subscription totals until a maintainer-published hotfix actually contains rules. This keeps normal installs from showing a confusing extra enabled list when there is nothing for users to manage.
 
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.

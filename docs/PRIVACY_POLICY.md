@@ -20,7 +20,7 @@ The Extension uses your browser's local storage (`chrome.storage.local`) to save
 - **User Settings**: Your preferred toggles for network blocking, YouTube stripping, ad acceleration, cosmetic filtering, fingerprint randomization, proxy routing, and related options.
 - **Whitelists**: Domains you choose to exempt from Chroma protection or fingerprint randomization.
 - **Filter List Data**: Subscription metadata and cached parsed rules from enabled filter lists.
-- **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are locally obfuscated/encrypted with a bundled extension key before storage and used only for proxy authentication.
+- **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are stored locally in an obfuscated form with a bundled extension key and used only for proxy authentication. This is not strong encryption; protect your browser profile and operating-system account accordingly.
 - **Local Statistics and Request Log**: Local blocked-request counts and a bounded request log used for the popup display. The log can include blocked request URLs, request types, timestamps, and matched rule IDs. This data is stored locally and can be reset from the extension UI.
 
 ### No Tracking and Cookies
