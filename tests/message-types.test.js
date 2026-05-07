@@ -53,3 +53,11 @@ test('messageTypes.js and messaging.js define the same MSG keys', () => {
     'window.MSG and exported MSG should define the same keys'
   );
 });
+
+test('stats message types are routed as sensitive background messages', () => {
+  const handlers = readProjectFile('extension/background/handlers.js');
+  for (const type of ['STATS_GET', 'STATS_EVENT_BATCH', 'STATS_RESET', 'STATS_EXPORT', 'STATS_SETTINGS_SET']) {
+    assert.match(handlers, new RegExp(`markSensitive\\(MSG\\.${type}\\)`), `${type} should be marked sensitive`);
+    assert.match(handlers, new RegExp(`registerHandler\\(MSG\\.${type}`), `${type} should have a handler`);
+  }
+});

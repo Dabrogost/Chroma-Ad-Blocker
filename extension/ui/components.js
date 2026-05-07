@@ -49,8 +49,14 @@ const ChromaComponents = (() => {
     return `
       <div class="stats-container">
         <div class="stat-card" id="cardNetwork">
-          <div class="stat-value" id="statNetworkBlocked">0</div>
-          <div class="stat-label">Ads Blocked</div>
+          <div class="stat-value" id="statProtectionEvents">0</div>
+          <div class="stat-label">Protection Events</div>
+          <div class="stat-breakdown" id="statHeroBreakdown">
+            <span>Network <strong id="statBreakdownNetwork">0</strong></span>
+            <span>Cleanup <strong id="statBreakdownCleanup">0</strong></span>
+            <span>Scriptlets <strong id="statBreakdownScriptlets">0</strong></span>
+            <span>Proxy <strong id="statBreakdownProxy">0</strong></span>
+          </div>
           ${showSettingsIcon ? settingsIcon : ''}
         </div>
       </div>
@@ -206,6 +212,70 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderStatisticsShell() {
+    return `
+      <div class="section-title section-title--spaced">Protection Intelligence</div>
+      <div class="protection-list stats-panel" id="statisticsPanel">
+        <div class="stats-panel-header">
+          <div class="toggle-info">
+            <div class="name">Local Analytics</div>
+            <div class="desc">All statistics are stored locally. Full request URLs are only kept when Debug Mode is enabled.</div>
+          </div>
+        </div>
+
+        <div class="stats-card-grid" id="statisticsTopCards"></div>
+
+        <div class="stats-subsection">
+          <div class="stats-subsection-title">Overview</div>
+          <div class="stats-range-grid" id="statsRangeSummary"></div>
+        </div>
+
+        <div class="stats-subsection">
+          <div class="stats-subsection-title">Sites</div>
+          <div class="stats-list" id="statsSitesList"></div>
+        </div>
+
+        <div class="stats-subsection">
+          <div class="stats-subsection-title">Rules</div>
+          <div class="stats-list" id="statsRulesList"></div>
+        </div>
+
+        <div class="stats-subsection">
+          <div class="stats-subsection-title">Timeline</div>
+          <div class="stats-timeline" id="statsTimelineList"></div>
+        </div>
+
+        <div class="stats-subsection">
+          <div class="stats-subsection-title">Events</div>
+          <div class="stats-list" id="statsEventsList"></div>
+        </div>
+
+        <div class="stats-subsection stats-privacy">
+          <div class="stats-subsection-title">Privacy</div>
+          <div class="stats-controls-grid">
+            <select id="statsModeSelect" class="chroma-input chroma-input--compact">
+              <option value="basic">Basic: totals only</option>
+              <option value="aggregated">Aggregated: domains and rule sources</option>
+              <option value="debug">Debug: include recent full URLs</option>
+            </select>
+            <select id="statsRetentionSelect" class="chroma-input chroma-input--compact">
+              <option value="30">30 days</option>
+              <option value="90">90 days</option>
+              <option value="180">180 days</option>
+              <option value="365">365 days</option>
+            </select>
+          </div>
+          <div class="stats-actions">
+            <button class="reset-btn compact-action-btn" id="resetAllStats">Reset all stats</button>
+            <button class="reset-btn compact-action-btn" id="resetSiteStats">Reset site stats</button>
+            <button class="reset-btn compact-action-btn" id="resetRequestLogOnly">Reset debug request log</button>
+            <button class="reset-btn compact-action-btn" id="exportStatsJson">Export JSON</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderProxyShell({ settingsMode }) {
     return `
       <div class="section-title section-title--inline"${settingsMode ? ' id="proxySection"' : ''}>
@@ -273,6 +343,7 @@ const ChromaComponents = (() => {
       ${renderHeader()}
       ${renderStats({ showSettingsIcon: !settingsMode })}
       ${settingsMode ? renderHealthPanelShell() : ''}
+      ${settingsMode ? renderStatisticsShell() : ''}
       ${renderProtectionControls({ showZapper: !settingsMode })}
       ${renderFilterListShell()}
       ${renderProxyShell({ settingsMode })}
@@ -287,6 +358,7 @@ const ChromaComponents = (() => {
   return {
     renderHeader,
     renderStats,
+    renderStatisticsShell,
     renderProtectionControls,
     renderHealthPanelShell,
     renderFilterListShell,

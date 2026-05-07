@@ -71,7 +71,7 @@ test('popup.js functionality', async (t) => {
 
     const messages = [];
     const storageState = {
-      stats: { networkBlocked: 5 },
+      statsV2: null,
       dynamicRules: []
     };
 
@@ -92,6 +92,39 @@ test('popup.js functionality', async (t) => {
             return { ok: true };
           }
           if (msg.type === 'STATS_RESET') {
+            return { ok: true };
+          }
+          if (msg.type === 'STATS_GET') {
+            return {
+              settings: { mode: 'aggregated', retentionDays: 90, storeFullUrls: false },
+              totals: {
+                protectionEvents: 100242,
+                networkBlocks: 5,
+                cosmeticHides: 2,
+                scriptletHits: 1,
+                youtubePayloadCleans: 1,
+                warningSuppressions: 0,
+                zapperHits: 0,
+                proxyTests: 2,
+                proxyAuthChallenges: 1
+              },
+              ranges: {
+                today: { protectionEvents: 1 },
+                last7Days: { protectionEvents: 3 },
+                last30Days: { protectionEvents: 7 },
+                allTime: { protectionEvents: 100242 }
+              },
+              bySite: {},
+              byRule: {},
+              byDay: {},
+              recentEvents: [],
+              timeSavedSeconds: 25
+            };
+          }
+          if (msg.type === 'STATS_EXPORT') {
+            return { exportedAt: Date.now(), stats: { totals: { protectionEvents: 9 } } };
+          }
+          if (msg.type === 'STATS_SETTINGS_SET') {
             return { ok: true };
           }
           if (msg.type === 'PROXY_CONFIG_GET') {
@@ -172,7 +205,11 @@ test('popup.js functionality', async (t) => {
         CONFIG_GET: 'CONFIG_GET',
         CONFIG_SET: 'CONFIG_SET',
         CONFIG_UPDATE: 'CONFIG_UPDATE',
+        STATS_GET: 'STATS_GET',
+        STATS_EVENT_BATCH: 'STATS_EVENT_BATCH',
         STATS_RESET: 'STATS_RESET',
+        STATS_EXPORT: 'STATS_EXPORT',
+        STATS_SETTINGS_SET: 'STATS_SETTINGS_SET',
         PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
         PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
         PROXY_TEST: 'PROXY_TEST',
@@ -206,7 +243,11 @@ test('popup.js functionality', async (t) => {
     getElement('toggleMerch');
     getElement('toggleOffers');
     getElement('toggleWarnings');
-    getElement('statNetworkBlocked');
+    getElement('statProtectionEvents');
+    getElement('statBreakdownNetwork');
+    getElement('statBreakdownCleanup');
+    getElement('statBreakdownScriptlets');
+    getElement('statBreakdownProxy');
     getElement('cardNetwork');
     getElement('settingsIcon');
     getElement('resetStats');
@@ -232,7 +273,7 @@ test('popup.js functionality', async (t) => {
     return { sandbox, elements, messages, chromeMock };
   }
 
-  await t.test('initializes with correct config and stats', async () => {
+  await t.test('initializes with correct config and protection stats', async () => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
@@ -243,9 +284,13 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
     assert.strictEqual(elements['toggleWarnings'].checked, false);
 
-    assert.strictEqual(elements['statNetworkBlocked'].textContent, 5);
+    assert.strictEqual(elements['statProtectionEvents'].textContent, '100.2k');
+    assert.strictEqual(elements['statBreakdownNetwork'].textContent, '5');
+    assert.strictEqual(elements['statBreakdownCleanup'].textContent, '3');
+    assert.strictEqual(elements['statBreakdownProxy'].textContent, '3');
 
     assert.ok(messages.some(m => m.type === 'CONFIG_GET'));
+    assert.ok(messages.some(m => m.type === 'STATS_GET'));
   });
 
   await t.test('toggle event listeners trigger SET_CONFIG', async () => {
@@ -262,7 +307,7 @@ test('popup.js functionality', async (t) => {
     assert.ok(messages.some(m => m.type === 'CONFIG_SET' && m.config.acceleration === true));
   });
 
-  await t.test('reset stats button triggers RESET_STATS and updates UI', async () => {
+  await t.test('reset stats button triggers scoped stats reset and reloads UI', async () => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
@@ -272,9 +317,8 @@ test('popup.js functionality', async (t) => {
 
     await elements['resetStats'].dispatchEvent('click');
 
-    assert.ok(messages.some(m => m.type === 'STATS_RESET'));
-
-    assert.strictEqual(elements['statNetworkBlocked'].textContent, '0');
+    assert.ok(messages.some(m => m.type === 'STATS_RESET' && m.scope === 'all'));
+    assert.ok(messages.some(m => m.type === 'STATS_GET'));
   });
 
   await t.test('handles missing config/stats defaults gracefully', async () => {
@@ -296,7 +340,7 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['toggleCosmetic'].checked, true);
     assert.strictEqual(elements['toggleWarnings'].checked, true);
 
-    assert.strictEqual(elements['statNetworkBlocked'].textContent, 0);
+    assert.strictEqual(elements['statProtectionEvents'].textContent, '0');
   });
 
   await t.test('notifyBackground wrapper function - passes message correctly', async () => {
@@ -365,7 +409,7 @@ test('popup.js functionality', async (t) => {
     ), false);
   });
 
-  await t.test('ads blocked card opens settings', async () => {
+  await t.test('protection events card opens settings', async () => {
     const { sandbox, elements, chromeMock } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
@@ -380,6 +424,9 @@ test('popup.js functionality', async (t) => {
 
 test('UI hardening copy', () => {
   assert.match(componentsJsCode, /changes anti-detection network behavior/);
+  assert.match(componentsJsCode, /Protection Events/);
+  assert.match(componentsJsCode, /Protection Intelligence/);
+  assert.doesNotMatch(componentsJsCode, /Ads Blocked/);
   assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
   assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);

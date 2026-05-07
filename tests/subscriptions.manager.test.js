@@ -168,7 +168,10 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(plain(storage.sub_scriptlet_rules['sub-a'].map(r => r.scriptlet)), ['set-constant']);
     assert.deepStrictEqual(manager.appliedRules[0].map(r => r.condition.urlFilter), ['||fresh.example^']);
     assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), [{ domains: ['example.com'], selector: '.ad', isException: false }]);
-    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => r.scriptlet)), ['set-constant']);
+    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => ({
+      scriptlet: r.scriptlet,
+      sourceId: r.sourceId
+    }))), [{ scriptlet: 'set-constant', sourceId: 'sub-a' }]);
     assert.deepStrictEqual(plain(storage.subscriptions[0].ruleCount), { network: 2, cosmetic: 1, scriptlet: 1 });
     assert.strictEqual(storage.subscriptions[0].lastError, null);
     assert.ok(storage.subscriptions[0].lastUpdated > 0);
@@ -268,7 +271,10 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(plain(await manager.setSubscriptionEnabled('sub-a', false)), { ok: true });
     assert.deepStrictEqual(manager.appliedRules[0].map(r => r.condition.urlFilter), ['||b.example^']);
     assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), [{ domains: null, selector: '.dup', isException: false }]);
-    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => r.scriptlet)), ['json-prune']);
+    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => ({
+      scriptlet: r.scriptlet,
+      sourceId: r.sourceId
+    }))), [{ scriptlet: 'json-prune', sourceId: 'sub-b' }]);
     assert.strictEqual(manager.clearedRules.length, 0);
 
     assert.deepStrictEqual(plain(await manager.setSubscriptionEnabled('sub-b', false)), { ok: true });
@@ -304,7 +310,10 @@ test('Subscription lifecycle manager', async (t) => {
     assert.strictEqual('sub-a' in storage.sub_scriptlet_rules, false);
     assert.deepStrictEqual(manager.appliedRules[0].map(r => r.condition.urlFilter), ['||b.example^']);
     assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), [{ domains: null, selector: '.b', isException: false }]);
-    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => r.scriptlet)), ['json-prune']);
+    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => ({
+      scriptlet: r.scriptlet,
+      sourceId: r.sourceId
+    }))), [{ scriptlet: 'json-prune', sourceId: 'sub-b' }]);
   });
 
   await t.test('initSubscriptions and ensureAlarm preserve restart-safe subscription alarm', async () => {

@@ -46,10 +46,14 @@ const contentJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'c
 // ─── CONTENT SCRIPT GENERIC FUNCTIONALITY ─────
 test('Content script generic functionality', async (t) => {
   const createSandbox = (setupDoc) => {
+    const sentMessages = [];
     const sandbox = {
       chrome: {
         runtime: {
-          sendMessage: () => Promise.resolve(),
+          sendMessage: (msg) => {
+            sentMessages.push(msg);
+            return Promise.resolve({ ok: true });
+          },
           onMessage: { addListener: () => {} }
         },
         storage: {
@@ -122,6 +126,7 @@ test('Content script generic functionality', async (t) => {
       WARNING_SELECTOR_COMBINED: 'ytd-enforcement-message-view-model',
       notifyBackground: () => Promise.resolve()
     };
+    sandbox.__sentMessages = sentMessages;
     sandbox.globalThis = sandbox;
 
     if (setupDoc) setupDoc(sandbox.document);
@@ -256,5 +261,81 @@ test('Content script generic functionality', async (t) => {
 
     assert.strictEqual(adNode.removed, true);
     assert.strictEqual(adNode.style.display, 'none');
+  });
+
+  await t.test('content stats events batch cosmetic, warning, and zapper events', async (st) => {
+    const adNode = createMockElement();
+    adNode.nodeType = 1;
+    adNode.id = 'ad-slot-test';
+    adNode.querySelectorAll = () => [];
+    const warning = createMockElement();
+    warning.remove = () => { warning.removed = true; };
+    warning.matches = () => true;
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelectorAll = (sel) => {
+        if (sel === 'ytd-enforcement-message-view-model') return [warning];
+        return [];
+      };
+    });
+
+    sandbox.setWarningSelector('ytd-enforcement-message-view-model');
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.cosmetic = true;
+    sandbox.CONFIG.suppressWarnings = true;
+
+    sandbox.suppressAdblockWarnings();
+    sandbox.removeLeftoverAdContainers(adNode);
+    sandbox.queueStatsEvent({ layer: 'zapper', type: 'hit', count: 1, domain: 'spoofed.example', ts: 1 });
+    sandbox.flushStatsQueue();
+
+    const events = sandbox.__sentMessages
+      .filter(msg => msg.type === 'STATS_EVENT_BATCH')
+      .flatMap(msg => msg.events);
+    assert.ok(events.length > 0, 'expected stats batch events');
+    assert.ok(events.some(event => event.layer === 'warning' && event.type === 'suppression'));
+    assert.ok(events.some(event => event.layer === 'cosmetic' && event.subtype === 'leftover_ad_container'));
+    assert.ok(events.some(event => event.layer === 'zapper'));
+    assert.ok(events.every(event => event.domain === 'www.youtube.com'));
+    assert.ok(events.every(event => event.ts !== 1));
+  });
+
+  await t.test('disabled cosmetic mode does not record cleanup events', async (st) => {
+    const adNode = createMockElement();
+    adNode.nodeType = 1;
+    adNode.id = 'ad-slot-test';
+    adNode.querySelectorAll = () => [];
+    const sandbox = createSandbox();
+
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.cosmetic = false;
+    sandbox.removeLeftoverAdContainers(adNode);
+    sandbox.flushStatsQueue();
+
+    const batch = sandbox.__sentMessages.find(msg => msg.type === 'STATS_EVENT_BATCH');
+    assert.strictEqual(batch, undefined);
+  });
+
+  await t.test('disabled cosmetic mode does not hide or count optional cosmetic sections', async (st) => {
+    const shortsShelf = createMockElement();
+    const sandbox = createSandbox((doc) => {
+      doc.querySelectorAll = (sel) => {
+        if (sel === 'ytd-reel-shelf-renderer') return [shortsShelf];
+        return [];
+      };
+    });
+
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.cosmetic = false;
+    sandbox.CONFIG.hideShorts = true;
+    sandbox.CONFIG.hideMerch = false;
+    sandbox.CONFIG.hideOffers = false;
+    sandbox.CONFIG.suppressWarnings = false;
+    sandbox.injectAllCSS();
+    sandbox.flushStatsQueue();
+
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+    const batch = sandbox.__sentMessages.find(msg => msg.type === 'STATS_EVENT_BATCH');
+    assert.strictEqual(batch, undefined);
   });
 });

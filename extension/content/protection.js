@@ -23,6 +23,40 @@
     acceleration: true,
     stripping: true,
   };
+  let statsQueue = [];
+  let statsTimer = null;
+  const STATS_FLUSH_MS = 750;
+  const STATS_BATCH_CAP = 50;
+
+  function queueStatsEvent(event) {
+    if (!event || typeof event !== 'object') return;
+    statsQueue.push({
+      ...event,
+      ts: Date.now(),
+      domain: window.location.hostname
+    });
+    if (statsQueue.length >= STATS_BATCH_CAP) {
+      flushStatsQueue();
+      return;
+    }
+    if (!statsTimer) statsTimer = setTimeout(flushStatsQueue, STATS_FLUSH_MS);
+  }
+
+  function flushStatsQueue() {
+    if (statsTimer) {
+      clearTimeout(statsTimer);
+      statsTimer = null;
+    }
+    const events = statsQueue.splice(0, STATS_BATCH_CAP);
+    if (events.length === 0) return;
+    notifyBackground({ type: MSG.STATS_EVENT_BATCH, events });
+  }
+
+  document.addEventListener('__CHROMA_STATS_EVENT__', (event) => {
+    const detail = event?.detail;
+    if (!detail || typeof detail !== 'object') return;
+    queueStatsEvent(detail);
+  }, true);
 
   // ─── SECURE HANDSHAKE ─────
   /**

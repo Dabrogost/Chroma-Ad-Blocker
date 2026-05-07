@@ -27,6 +27,13 @@ import {
 } from './background.js';
 import { runProxyTest } from './proxy.js';
 import { getHealthStatus } from './health.js';
+import {
+  exportStats,
+  getStatsSnapshot,
+  recordStatsEvents,
+  resetStats,
+  setStatsSettings
+} from './stats.js';
 
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i;
 const SUBSCRIPTION_ID_RE = /^[a-z0-9_-]{1,80}$/i;
@@ -726,9 +733,47 @@ async function handleSubscriptionRemove(msg) {
 
 // ─── STATS / LOG ─────
 
-async function handleStatsReset() {
-  await resetRequestLog();
-  return { ok: true };
+function getSenderDomain(sender) {
+  const url = sender?.tab?.url || sender?.url || '';
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.hostname : null;
+  } catch {
+    return null;
+  }
+}
+
+async function handleStatsGet(msg) {
+  return getStatsSnapshot(msg?.options || {});
+}
+
+async function handleStatsEventBatch(msg, sender) {
+  const events = Array.isArray(msg?.events)
+    ? msg.events.filter(event => event && typeof event === 'object').slice(0, 100)
+    : [];
+  const senderDomain = getSenderDomain(sender);
+  recordStatsEvents(events.map(event => ({
+    ...event,
+    domain: senderDomain || event.domain
+  })));
+  return { ok: true, accepted: events.length };
+}
+
+async function handleStatsReset(msg) {
+  const scope = msg?.scope || 'all';
+  if (scope === 'debugLog' || scope === 'requestLog') {
+    await resetRequestLog();
+    return { ok: true };
+  }
+  return resetStats(scope);
+}
+
+async function handleStatsExport() {
+  return exportStats();
+}
+
+async function handleStatsSettingsSet(msg) {
+  return setStatsSettings(msg?.settings || {});
 }
 
 async function handleLogGet() {
@@ -751,7 +796,11 @@ export function registerAll(router) {
   // Sensitive types are rejected when sent from outside the extension origin.
   router.markSensitive(MSG.CONFIG_GET);
   router.markSensitive(MSG.CONFIG_SET);
+  router.markSensitive(MSG.STATS_GET);
+  router.markSensitive(MSG.STATS_EVENT_BATCH);
   router.markSensitive(MSG.STATS_RESET);
+  router.markSensitive(MSG.STATS_EXPORT);
+  router.markSensitive(MSG.STATS_SETTINGS_SET);
   router.markSensitive(MSG.LOG_GET);
   router.markSensitive(MSG.HEALTH_GET);
   router.markSensitive(MSG.WHITELIST_ADD);
@@ -772,6 +821,8 @@ export function registerAll(router) {
 
   router.registerHandler(MSG.CONFIG_GET,           handleConfigGet);
   router.registerHandler(MSG.CONFIG_SET,           handleConfigSet);
+  router.registerHandler(MSG.STATS_GET,            handleStatsGet);
+  router.registerHandler(MSG.STATS_EVENT_BATCH,    handleStatsEventBatch);
   router.registerHandler(MSG.WHITELIST_GET,        handleWhitelistGet);
   router.registerHandler(MSG.WHITELIST_ADD,        handleWhitelistAdd);
   router.registerHandler(MSG.WHITELIST_REMOVE,     handleWhitelistRemove);
@@ -792,6 +843,8 @@ export function registerAll(router) {
   router.registerHandler(MSG.SUBSCRIPTION_ADD,     handleSubscriptionAdd);
   router.registerHandler(MSG.SUBSCRIPTION_REMOVE,  handleSubscriptionRemove);
   router.registerHandler(MSG.STATS_RESET,          handleStatsReset);
+  router.registerHandler(MSG.STATS_EXPORT,         handleStatsExport);
+  router.registerHandler(MSG.STATS_SETTINGS_SET,   handleStatsSettingsSet);
   router.registerHandler(MSG.LOG_GET,              handleLogGet);
   router.registerHandler(MSG.HEALTH_GET,           handleHealthGet);
   router.registerHandler(MSG.UPDATE_CHECK,         handleUpdateCheck);

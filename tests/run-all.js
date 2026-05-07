@@ -15,6 +15,7 @@ const TIERS = {
     'proxy.test.js',
     'scriptlets.test.js',
     'settings.test.js',
+    'stats.test.js',
     'subscriptions.manager.test.js',
     'yt_handler.test.js',
     'zapper.test.js'

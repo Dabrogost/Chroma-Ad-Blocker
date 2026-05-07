@@ -145,7 +145,9 @@ async function rebuildCosmeticRules(subscriptions) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.enabled && perSubRules[sub.id]) {
-      for (const rule of perSubRules[sub.id]) allRules.push(rule);
+      for (const rule of perSubRules[sub.id]) {
+        allRules.push(rule);
+      }
     }
   }
 
@@ -165,7 +167,9 @@ async function rebuildScriptletRules(subscriptions) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.enabled && perSubRules[sub.id]) {
-      for (const rule of perSubRules[sub.id]) allRules.push(rule);
+      for (const rule of perSubRules[sub.id]) {
+        allRules.push({ ...rule, sourceId: sub.id });
+      }
     }
   }
 

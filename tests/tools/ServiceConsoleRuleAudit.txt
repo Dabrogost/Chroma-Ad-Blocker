@@ -2,7 +2,7 @@
 (async () => {
   const {
     config,
-    stats,
+    statsV2,
     subscriptions = [],
     appliedNetworkRuleCount = 0,
     appliedNetworkRulesPerSub = {},
@@ -60,7 +60,8 @@
   console.table({
     enabled: config?.enabled,
     networkBlocking: config?.networkBlocking,
-    statsNetworkBlocked: stats?.networkBlocked || 0
+    protectionEvents: statsV2?.totals?.protectionEvents || 0,
+    networkBlocks: statsV2?.totals?.networkBlocks || 0
   });
 
   console.groupEnd();

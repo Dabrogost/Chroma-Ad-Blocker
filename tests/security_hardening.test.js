@@ -23,6 +23,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace(/^export\s+/gm, "");
 
@@ -39,7 +40,11 @@ const MSG = {
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
+  STATS_GET: 'STATS_GET',
+  STATS_EVENT_BATCH: 'STATS_EVENT_BATCH',
   STATS_RESET: 'STATS_RESET',
+  STATS_EXPORT: 'STATS_EXPORT',
+  STATS_SETTINGS_SET: 'STATS_SETTINGS_SET',
   LOG_GET: 'LOG_GET',
   WHITELIST_GET: 'WHITELIST_GET',
   WHITELIST_ADD: 'WHITELIST_ADD',
@@ -222,7 +227,11 @@ test('Security Hardening - handlers.js', async (t) => {
     for (const type of [
       MSG.CONFIG_GET,
       MSG.CONFIG_SET,
+      MSG.STATS_GET,
+      MSG.STATS_EVENT_BATCH,
       MSG.STATS_RESET,
+      MSG.STATS_EXPORT,
+      MSG.STATS_SETTINGS_SET,
       MSG.LOG_GET,
       MSG.HEALTH_GET,
       MSG.PROXY_CONFIG_GET,

@@ -9,6 +9,7 @@
 'use strict';
 
 import { SCRIPTLET_MAP } from './lib.js';
+import { recordStatsEvent } from '../background/stats.js';
 
 const DEBUG = false;
 
@@ -126,7 +127,19 @@ async function _syncUserScriptsImpl() {
       }
 
       const argsStr = JSON.stringify(rule.args || []);
-      const code = `(${fn.toString()})(${argsStr});`;
+      const statsDetail = JSON.stringify({
+        scriptlet: rule.scriptlet,
+        source: rule.sourceId || 'subscription'
+      });
+      const code = `
+        try {
+          (${fn.toString()})(${argsStr});
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit', ...${statsDetail} } }));
+        } catch (err) {
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error', error: err && (err.message || err.name || String(err)), ...${statsDetail} } }));
+          throw err;
+        }
+      `;
 
       const script = {
         id: `scriptlet_${++scriptCounter}`,
@@ -257,6 +270,9 @@ async function _syncFprImpl() {
       } else {
         await chrome.scripting.registerContentScripts([script]);
         if (DEBUG) console.log('[Chroma FPR] Registered.');
+      }
+      if (typeof recordStatsEvent === 'function') {
+        recordStatsEvent({ layer: 'fingerprint', type: 'activation' });
       }
     } catch (e) {
       if (DEBUG) console.error('[Chroma FPR] Register/update failed:', e);

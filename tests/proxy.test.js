@@ -6,6 +6,7 @@ const vm = require('vm');
 
 const proxyJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'proxy.js'), 'utf8')
   .replace("import { decryptAuth } from '../core/crypto.js';", 'var decryptAuth = globalThis._mockDecryptAuth;')
+  .replace("import { recordStatsEvent } from './stats.js';", 'var recordStatsEvent = globalThis._mockRecordStatsEvent || (() => {});')
   .replace(/^export\s+/gm, '')
   + '\nglobalThis.__proxyExports = { syncProxyState, runProxyTest, findAuthProxyConfig, getProxyString };\n';
 
@@ -16,6 +17,7 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
   const proxyClearCalls = [];
   const storageSetCalls = [];
   const storageRemoveCalls = [];
+  const statsEvents = [];
   const storage = {
     proxyConfigs,
     config,
@@ -85,7 +87,8 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
     clearTimeout: () => {},
     AbortController,
     fetch: async () => ({ ok: true, text: async () => '203.0.113.7\n' }),
-    _mockDecryptAuth: async (iv, cipher) => ({ username: `user:${iv}`, password: `pass:${cipher}` })
+    _mockDecryptAuth: async (iv, cipher) => ({ username: `user:${iv}`, password: `pass:${cipher}` }),
+    _mockRecordStatsEvent: event => { statsEvents.push(event); }
   };
 
   sandbox.globalThis = sandbox;
@@ -98,6 +101,7 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
     proxyClearCalls,
     storageSetCalls,
     storageRemoveCalls,
+    statsEvents,
     get authListener() {
       return authListener;
     },

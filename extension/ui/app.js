@@ -37,7 +37,7 @@ const ChromaApp = (() => {
     'proxyConfigs',
     'whitelist',
     'fprWhitelist',
-    'stats'
+    'statsV2'
   ];
   const HEALTH_STATUS_CLASSES = new Set(['healthy', 'degraded', 'disabled', 'error']);
   const HEALTH_ISSUE_CLASSES = new Set(['info', 'warning', 'error']);
@@ -72,6 +72,45 @@ const ChromaApp = (() => {
     return Number.isFinite(number) ? number.toLocaleString() : '0';
   }
 
+  function trimCompactDecimal(value) {
+    return value.toFixed(1).replace(/\.0$/, '');
+  }
+
+  function formatCompactCount(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return '0';
+    const absolute = Math.abs(number);
+    if (absolute < 1000) return Math.round(number).toLocaleString();
+
+    const units = [
+      { value: 1e12, suffix: 't' },
+      { value: 1e9, suffix: 'b' },
+      { value: 1e6, suffix: 'm' },
+      { value: 1e3, suffix: 'k' }
+    ];
+
+    for (let i = 0; i < units.length; i++) {
+      const unit = units[i];
+      if (absolute < unit.value) continue;
+
+      const scaled = number / unit.value;
+      if (Math.abs(Number(scaled.toFixed(1))) >= 1000 && i > 0) {
+        const larger = units[i - 1];
+        return `${trimCompactDecimal(number / larger.value)}${larger.suffix}`;
+      }
+      return `${trimCompactDecimal(scaled)}${unit.suffix}`;
+    }
+
+    return formatCount(number);
+  }
+
+  function formatDuration(seconds) {
+    const total = Math.max(0, Number(seconds) || 0);
+    if (total < 60) return `${Math.round(total)}s`;
+    if (total < 3600) return `${Math.round(total / 60)}m`;
+    return `${(total / 3600).toFixed(total < 36000 ? 1 : 0)}h`;
+  }
+
   function formatStatusLabel(value) {
     const label = String(value || 'unknown');
     return label.charAt(0).toUpperCase() + label.slice(1);
@@ -101,6 +140,209 @@ const ChromaApp = (() => {
       addHealthMetric(section, metric[0], metric[1], metric[2] || '');
     }
     return section;
+  }
+
+  function getStatsTotals(stats) {
+    return stats?.totals || {};
+  }
+
+  function getCleanupTotal(totals) {
+    return (Number(totals?.cosmeticHides) || 0) + (Number(totals?.youtubePayloadCleans) || 0);
+  }
+
+  function getProxyActivityTotal(totals) {
+    return (Number(totals?.proxyTests) || 0) + (Number(totals?.proxyAuthChallenges) || 0);
+  }
+
+  function setText(id, value) {
+    const el = $(id);
+    if (el) el.textContent = value;
+  }
+
+  function renderStatsHero(stats) {
+    const totals = getStatsTotals(stats);
+    setText('statProtectionEvents', formatCompactCount(totals.protectionEvents));
+    setText('statBreakdownNetwork', formatCompactCount(totals.networkBlocks));
+    setText('statBreakdownCleanup', formatCompactCount(getCleanupTotal(totals)));
+    setText('statBreakdownScriptlets', formatCompactCount(totals.scriptletHits));
+    setText('statBreakdownProxy', formatCompactCount(getProxyActivityTotal(totals)));
+  }
+
+  function addStatsMiniCard(parent, label, value) {
+    const card = appendElement(parent, 'div', 'stats-mini-card');
+    appendElement(card, 'div', 'stats-mini-card__label', label);
+    appendElement(card, 'div', 'stats-mini-card__value', value);
+    return card;
+  }
+
+  function addStatsRow(parent, title, meta, value) {
+    const row = appendElement(parent, 'div', 'stats-row');
+    const main = appendElement(row, 'div');
+    appendElement(main, 'div', 'stats-row__title', title);
+    if (meta) appendElement(main, 'div', 'stats-row__meta', meta);
+    appendElement(row, 'div', 'stats-row__value', value);
+    return row;
+  }
+
+  function renderEmptyStatsList(parent, text) {
+    appendElement(parent, 'div', 'stats-empty', text);
+  }
+
+  function getStatsBucketTotal(bucket) {
+    return (
+      (Number(bucket?.protectionEvents) || 0) +
+      (Number(bucket?.networkAllows) || 0) +
+      (Number(bucket?.unknownDnrMatches) || 0) +
+      (Number(bucket?.scriptletErrors) || 0)
+    );
+  }
+
+  function getRuleDisplayTitle(rule) {
+    if (rule?.scriptlet) return rule.scriptlet;
+    if (!rule?.ruleId) return rule?.key || 'Rule';
+    const blocks = Number(rule.networkBlocks) || 0;
+    const allows = Number(rule.networkAllows) || 0;
+    if (allows > 0 && blocks === 0) return `Allow Rule ${rule.ruleId}`;
+    if (allows > 0 && blocks > 0) return `Mixed Rule ${rule.ruleId}`;
+    return `Rule ${rule.ruleId}`;
+  }
+
+  function getRuleDisplayMeta(rule) {
+    const meta = [rule?.ruleSource, rule?.rulesetId].filter(Boolean);
+    const blocks = Number(rule?.networkBlocks) || 0;
+    const allows = Number(rule?.networkAllows) || 0;
+    const unknown = Number(rule?.unknownDnrMatches) || 0;
+    if (blocks > 0) meta.push(`Blocks ${formatCompactCount(blocks)}`);
+    if (allows > 0) meta.push(`Allows ${formatCompactCount(allows)}`);
+    if (unknown > 0) meta.push(`Matches ${formatCompactCount(unknown)}`);
+    return meta.join(' - ');
+  }
+
+  function getEventTitle(event) {
+    if (event?.layer === 'youtube' && event?.type === 'payload') {
+      const modified = (Number(event.payloadsModified) || 0) + (Number(event.fieldsPruned) || 0) + (Number(event.adObjectsRemoved) || 0);
+      return modified > 0 ? 'Payload cleanup' : 'Payload inspection';
+    }
+    const layer = event?.layer || 'event';
+    const type = event?.type || 'match';
+    return `${layer} - ${type}`;
+  }
+
+  function getEventMeta(event) {
+    const metaParts = [event.domain, event.resourceType, event.ruleSource, event.scriptlet].filter(Boolean);
+    if (event.layer === 'youtube' && event.type === 'payload') {
+      if (event.source) metaParts.push(event.source);
+      if (Number(event.payloadsModified)) metaParts.push(`Modified ${formatCount(event.payloadsModified)}`);
+      if (Number(event.fieldsPruned)) metaParts.push(`Fields ${formatCount(event.fieldsPruned)}`);
+      if (Number(event.adObjectsRemoved)) metaParts.push(`Ad objects ${formatCount(event.adObjectsRemoved)}`);
+    }
+    if (event.url) metaParts.push(event.url);
+    return metaParts.join(' - ');
+  }
+
+  function getEventValue(event) {
+    if (event?.layer === 'youtube' && event?.type === 'payload') {
+      return event.payloadsModified || event.payloadsInspected || event.count || 1;
+    }
+    return event?.count || 1;
+  }
+
+  function renderStatsPanel(stats) {
+    if (!isSettingsPage()) return;
+    const totals = getStatsTotals(stats);
+    const topCards = $('statisticsTopCards');
+    const rangeSummary = $('statsRangeSummary');
+    const sitesList = $('statsSitesList');
+    const rulesList = $('statsRulesList');
+    const timelineList = $('statsTimelineList');
+    const eventsList = $('statsEventsList');
+    const modeSelect = $('statsModeSelect');
+    const retentionSelect = $('statsRetentionSelect');
+    if (!topCards) return;
+
+    topCards.innerHTML = '';
+    addStatsMiniCard(topCards, 'Total Protection Events', formatCompactCount(totals.protectionEvents));
+    addStatsMiniCard(topCards, 'Network Blocks', formatCompactCount(totals.networkBlocks));
+    addStatsMiniCard(topCards, 'Ad Cleanups', formatCompactCount(getCleanupTotal(totals)));
+    addStatsMiniCard(topCards, 'Scriptlet Hits', formatCompactCount(totals.scriptletHits));
+    addStatsMiniCard(topCards, 'Warnings Suppressed', formatCompactCount(totals.warningSuppressions));
+    addStatsMiniCard(topCards, 'Local Zapper Hits', formatCompactCount(totals.zapperHits));
+    addStatsMiniCard(topCards, 'Proxy Activity', formatCompactCount(getProxyActivityTotal(totals)));
+    addStatsMiniCard(topCards, 'Time Saved (est.)', formatDuration(stats?.timeSavedSeconds));
+
+    if (rangeSummary) {
+      rangeSummary.innerHTML = '';
+      addStatsMiniCard(rangeSummary, 'Today', formatCompactCount(stats?.ranges?.today?.protectionEvents));
+      addStatsMiniCard(rangeSummary, '7 Days', formatCompactCount(stats?.ranges?.last7Days?.protectionEvents));
+      addStatsMiniCard(rangeSummary, '30 Days', formatCompactCount(stats?.ranges?.last30Days?.protectionEvents));
+      addStatsMiniCard(rangeSummary, 'All Time', formatCompactCount(stats?.ranges?.allTime?.protectionEvents));
+    }
+
+    if (sitesList) {
+      sitesList.innerHTML = '';
+      const sites = Object.values(stats?.bySite || {})
+        .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
+        .slice(0, 10);
+      if (sites.length === 0) renderEmptyStatsList(sitesList, 'No site stats yet.');
+      for (const site of sites) {
+        const last = site.lastSeen ? new Date(site.lastSeen).toLocaleString() : 'Never';
+        const meta = `Network ${formatCompactCount(site.networkBlocks)} - Allows ${formatCompactCount(site.networkAllows)} - Cleanup ${formatCompactCount(getCleanupTotal(site))} - Last seen ${last}`;
+        addStatsRow(sitesList, site.domain || 'unknown', meta, formatCompactCount(getStatsBucketTotal(site)));
+      }
+    }
+
+    if (rulesList) {
+      rulesList.innerHTML = '';
+      const rules = Object.values(stats?.byRule || {})
+        .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
+        .slice(0, 10);
+      if (rules.length === 0) renderEmptyStatsList(rulesList, 'No rule stats yet.');
+      for (const rule of rules) {
+        const title = getRuleDisplayTitle(rule);
+        const meta = getRuleDisplayMeta(rule);
+        const value = formatCompactCount(getStatsBucketTotal(rule));
+        addStatsRow(rulesList, title, meta, value);
+      }
+    }
+
+    if (timelineList) {
+      timelineList.innerHTML = '';
+      const days = Object.values(stats?.byDay || {})
+        .sort((a, b) => String(a.day).localeCompare(String(b.day)))
+        .slice(-14);
+      const max = Math.max(1, ...days.map(day => Number(day.protectionEvents) || 0));
+      if (days.length === 0) renderEmptyStatsList(timelineList, 'No timeline data yet.');
+      for (const day of days) {
+        const row = addStatsRow(timelineList, day.day, '', formatCompactCount(day.protectionEvents));
+        const bar = appendElement(row.firstChild, 'div', 'stats-bar');
+        const fill = appendElement(bar, 'div', 'stats-bar__fill');
+        fill.style.setProperty('--bar-width', `${Math.max(2, ((day.protectionEvents || 0) / max) * 100)}%`);
+      }
+    }
+
+    if (eventsList) {
+      eventsList.innerHTML = '';
+      const events = Array.isArray(stats?.recentEvents) ? stats.recentEvents.slice(0, 12) : [];
+      if (events.length === 0) renderEmptyStatsList(eventsList, 'No recent events yet.');
+      for (const event of events) {
+        addStatsRow(eventsList, getEventTitle(event), getEventMeta(event), formatCompactCount(getEventValue(event)));
+      }
+    }
+
+    if (modeSelect) modeSelect.value = stats?.settings?.mode || 'aggregated';
+    if (retentionSelect) retentionSelect.value = String(stats?.settings?.retentionDays || 90);
+  }
+
+  async function loadStatsUI() {
+    let stats = null;
+    try {
+      stats = await notifyBackground({ type: MSG.STATS_GET }) || null;
+    } catch (_) {
+      stats = null;
+    }
+    renderStatsHero(stats);
+    renderStatsPanel(stats);
+    return stats;
   }
 
   function renderHealthIssues(parent, issues) {
@@ -304,20 +546,61 @@ const ChromaApp = (() => {
       });
     });
 
-    const { stats = { networkBlocked: 0 } } = await chrome.storage.local.get('stats');
-    if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = stats.networkBlocked ?? 0;
+    await loadStatsUI();
     await loadHealthPanel();
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
 
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.stats) {
-        const newStats = changes.stats.newValue || { networkBlocked: 0 };
-        if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = newStats.networkBlocked ?? 0;
+      if (area === 'local' && changes.statsV2) {
+        loadStatsUI();
       }
       if (area === 'local' && isSettingsPage()) {
         if (HEALTH_REFRESH_KEYS.some(key => changes[key])) loadHealthPanel();
       }
+    });
+
+    async function saveStatsSettingsFromControls() {
+      const mode = $('statsModeSelect')?.value || 'aggregated';
+      const retentionDays = Number($('statsRetentionSelect')?.value || 90);
+      await notifyBackground({
+        type: MSG.STATS_SETTINGS_SET,
+        settings: {
+          mode,
+          retentionDays,
+          storeFullUrls: mode === 'debug'
+        }
+      });
+      await loadStatsUI();
+    }
+
+    $('statsModeSelect')?.addEventListener('change', saveStatsSettingsFromControls);
+    $('statsRetentionSelect')?.addEventListener('change', saveStatsSettingsFromControls);
+    $('resetAllStats')?.addEventListener('click', async () => {
+      if (!confirm('Reset all local statistics?')) return;
+      await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
+      await loadStatsUI();
+    });
+    $('resetSiteStats')?.addEventListener('click', async () => {
+      await notifyBackground({ type: MSG.STATS_RESET, scope: 'sites' });
+      await loadStatsUI();
+    });
+    $('resetRequestLogOnly')?.addEventListener('click', async () => {
+      await notifyBackground({ type: MSG.STATS_RESET, scope: 'debugLog' });
+    });
+    $('exportStatsJson')?.addEventListener('click', async () => {
+      const exported = await notifyBackground({ type: MSG.STATS_EXPORT });
+      if (!exported) return;
+      const text = JSON.stringify(exported, null, 2);
+      try {
+        const blob = new Blob([text], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `chroma-stats-${new Date().toISOString().slice(0, 10)}.json`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (_) {}
     });
 
     for (const [elId, key] of TOGGLES) {
@@ -469,9 +752,9 @@ const ChromaApp = (() => {
       });
     });
 
-    $('resetStats').addEventListener('click', async () => {
-      await notifyBackground({ type: MSG.STATS_RESET });
-      if ($('statNetworkBlocked')) $('statNetworkBlocked').textContent = '0';
+    $('resetStats')?.addEventListener('click', async () => {
+      await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
+      await loadStatsUI();
     });
 
     const settingsIcon = $('settingsIcon');

@@ -41,7 +41,7 @@ function loadHealthSandbox(options = {}) {
     proxyConfigs: [],
     whitelist: [],
     fprWhitelist: [],
-    stats: { networkBlocked: 0 },
+    statsV2: { version: 1, totals: { protectionEvents: 0 } },
     requestLog: [],
     appliedNetworkRuleCount: 0,
     ...(options.storage || {})

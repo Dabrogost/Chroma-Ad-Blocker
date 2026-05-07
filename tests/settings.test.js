@@ -63,4 +63,27 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(appJs, /location\?\.hash !== '#proxy'/);
     assert.match(appJs, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
   });
+
+  await t.test('settings statistics panel is local-only and uses stats messages', () => {
+    assert.match(componentsJs, /Protection Intelligence/);
+    assert.match(componentsJs, /All statistics are stored locally/);
+    assert.match(componentsJs, /statBreakdownProxy/);
+    assert.doesNotMatch(componentsJs, /statBreakdownYoutube/);
+    assert.match(componentsJs, /id="statisticsPanel"/);
+    assert.match(componentsJs, /id="resetAllStats"/);
+    assert.match(componentsJs, /id="resetSiteStats"/);
+    assert.match(componentsJs, /id="resetRequestLogOnly"/);
+    assert.match(componentsJs, /id="exportStatsJson"/);
+    assert.match(appJs, /type: MSG\.STATS_GET/);
+    assert.match(appJs, /type: MSG\.STATS_RESET, scope: 'sites'/);
+    assert.match(appJs, /type: MSG\.STATS_RESET, scope: 'debugLog'/);
+    assert.match(appJs, /type: MSG\.STATS_EXPORT/);
+    assert.match(appJs, /type: MSG\.STATS_SETTINGS_SET/);
+    assert.match(appJs, /Ad Cleanups/);
+    assert.match(appJs, /Proxy Activity/);
+    assert.match(appJs, /Time Saved \(est\.\)/);
+    assert.match(appJs, /Allow Rule/);
+    assert.match(appJs, /Allows \$\{formatCompactCount\(allows\)\}/);
+    assert.doesNotMatch(appJs, /YouTube Payload Cleans/);
+  });
 });

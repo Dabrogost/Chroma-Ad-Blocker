@@ -266,7 +266,7 @@ export async function getHealthStatus() {
     'proxyConfigs',
     'whitelist',
     'fprWhitelist',
-    'stats',
+    'statsV2',
     'requestLog',
     'appliedNetworkRuleCount'
   ]);
@@ -326,7 +326,8 @@ export async function getHealthStatus() {
       whitelistRuleCount,
       appliedNetworkRuleCount: defaultDynamicRuleCount + subscriptionDynamicRuleCount + whitelistRuleCount,
       debugLoggingAvailable: requestLogAvailable,
-      statsNetworkBlocked: Number(storage.stats?.networkBlocked) || 0
+      statsProtectionEvents: Number(storage.statsV2?.totals?.protectionEvents) || 0,
+      statsNetworkBlocks: Number(storage.statsV2?.totals?.networkBlocks) || 0
     },
     subscriptions: {
       total: subscriptions.length,

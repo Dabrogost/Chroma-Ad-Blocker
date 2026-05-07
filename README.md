@@ -16,6 +16,7 @@
 - [YouTube Ad Stripping](#youtube-ad-stripping-the-stripper)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+- [Statistics & Event Tracker](#statistics--event-tracker)
 - [Filter List Subscriptions](#filter-list-subscriptions)
 - [Why Not the Chrome Web Store?](#why-not-the-chrome-web-store)
 
@@ -28,6 +29,7 @@
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from settings without editing filter lists.
+- **Local Event Tracker**: The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
 - **Main-World Safety Exclusions**: Bypasses Chroma's MAIN-world interception layer on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network and cosmetic blocking remain user-controllable through per-domain whitelisting.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
@@ -257,7 +259,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | Permission | Reason |
 |---|---|
 | `declarativeNetRequest` | Enables and manages the static and dynamic DNR rulesets that perform network-level ad and tracker blocking at the browser engine level. |
-| `declarativeNetRequestFeedback` | Allows the service worker to read which rules fired, used to collect per-session blocking statistics displayed in the popup. |
+| `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired in supported install contexts. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
 | `tabs` | Required to read the active tab's URL for whitelist matching in the popup and to reload the tab when the whitelist is toggled. |
@@ -318,6 +320,42 @@ Chroma implements several advanced security measures to ensure extension integri
 The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, proxy routing, whitelists, and request-log/debug availability.
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents. DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts; when that logging is unavailable, blocking can still work normally.
+
+---
+
+## Statistics & Event Tracker
+
+The settings page includes **Protection Intelligence**, a local analytics dashboard backed by the versioned `statsV2` storage record. It upgrades the old single counter into a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.
+
+The popup headline shows **Protection Events**, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than "ads blocked": DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or debug-only matches, so Chroma classifies events before counting them.
+
+### Event Tracker
+
+The **Events** section in settings shows recent local activity from the protection stack. It can include:
+- Network block, allow, and unknown-match classifications.
+- Cosmetic cleanup and warning-suppression events.
+- Scriptlet hits and sanitized scriptlet errors.
+- Local zapper actions.
+- Payload cleanup or inspection details, including modified payload counts, fields pruned, and ad objects removed.
+- Proxy test and proxy authentication activity.
+
+Payload cleanup remains visible in the Event Tracker for transparency, but it is folded into the broader **Ad Cleanups** stat instead of being promoted as a platform-specific headline badge.
+
+### Privacy Modes
+
+Statistics are stored only in `chrome.storage.local`.
+
+- **Basic**: totals only.
+- **Aggregated**: totals plus domains, rule sources, resource types, timelines, and recent event summaries.
+- **Debug**: may include recent full request URLs where they are available.
+
+Aggregated mode is the default. Chroma stores domains by default, not full URLs. Full request URLs are only kept when Debug mode is enabled, and the bounded debug request log remains separate from `statsV2`.
+
+### Retention, Reset, and Export
+
+The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all stats, reset site stats only, reset the debug request log, or export a local JSON snapshot. Resetting stats does not erase configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.
+
+The **Time Saved (est.)** card is deliberately conservative. It uses a tiny sub-second estimate per protection event and floors the displayed value, so ordinary page-load activity does not inflate into unrealistic minutes.
 
 ---
 
