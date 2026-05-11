@@ -541,11 +541,7 @@ const ChromaProxyUI = (() => {
 
       acceptBtn.addEventListener('click', async () => {
         showProxyError('');
-        let host = hostInput.value.trim();
-        if (host.includes('.com') && !host.includes('://')) {
-          host = 'https://' + host;
-          hostInput.value = host;
-        }
+        const host = hostInput.value.trim().replace(/^[a-z][a-z0-9+\-.]*:\/\//i, '').replace(/\/.*$/, '');
         pc.name = nameInput.value.trim();
         pc.type = typeSelect.value;
         pc.host = host;
