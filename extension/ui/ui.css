@@ -307,6 +307,21 @@ header {
 .toggle-info .name { font-size: 16px; font-weight: 600; color: var(--text); }
 .toggle-info .desc { font-size: 13px; color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.proxy-webrtc-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px;
+}
+
+.proxy-webrtc-select {
+  width: 180px;
+  max-width: 100%;
+  flex: 0 0 180px;
+}
+
 /* Switches */
 .switch { position: relative; width: 34px; height: 18px; flex-shrink: 0; }
 .switch input { opacity: 0; width: 0; height: 0; }

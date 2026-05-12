@@ -27,6 +27,7 @@ import {
 } from './background.js';
 import { runProxyTest } from './proxy.js';
 import { getHealthStatus } from './health.js';
+import { syncWebRtcLeakProtection } from './webrtc.js';
 import {
   exportStats,
   getStatsSnapshot,
@@ -467,10 +468,11 @@ async function handleConfigGet() {
 }
 
 async function handleConfigSet(msg) {
-  const { config: currentConfig } = await chrome.storage.local.get('config');
+  const { config: currentConfig, proxyConfigs = [] } = await chrome.storage.local.get(['config', 'proxyConfigs']);
   const validated = validateConfig(msg.config);
   const newConfig = { ...currentConfig, ...validated };
   await chrome.storage.local.set({ config: newConfig });
+  await syncWebRtcLeakProtection(newConfig, proxyConfigs);
 
   const wasDNRActive = currentConfig.enabled !== false && currentConfig.networkBlocking !== false;
   const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;

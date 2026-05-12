@@ -5,6 +5,8 @@ const {
   FORBIDDEN_RELEASE_PATH_PATTERNS,
   verifyReleaseEntries
 } = require('../scripts/package-extension');
+const fs = require('fs');
+const path = require('path');
 
 const validReleaseEntries = [
   'manifest.json',
@@ -62,4 +64,12 @@ test('package verification rejects duplicate release entries', () => {
     errors.some(error => error.includes('duplicate release entry: background/background.js')),
     'expected duplicate normalized ZIP entry to be rejected'
   );
+});
+
+test('manifest and README document privacy permission', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
+  const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+
+  assert.ok(manifest.permissions.includes('privacy'));
+  assert.match(readme, /\|\s*`privacy`\s*\|[^|]*WebRTC leak protection/i);
 });

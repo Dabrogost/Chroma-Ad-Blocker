@@ -456,7 +456,8 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /Enter both username and password, or leave both blank to keep saved credentials\./);
   assert.match(proxyUiJsCode, /Clear credentials/);
   assert.match(proxyUiJsCode, /SOCKS username\/password auth is not supported by Chrome here/);
-  assert.match(proxyUiJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\. Enable it\?/);
+  assert.match(proxyUiJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\./);
+  assert.match(proxyUiJsCode, /WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy/);
   assert.match(componentsJsCode, /id="proxySection"/);
   assert.match(settingsJsCode, /scrollToProxyHash/);
   assert.match(appJsCode, /location\?\.hash !== '#proxy'/);

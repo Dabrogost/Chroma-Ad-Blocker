@@ -5,6 +5,10 @@ const path = require('path');
 const vm = require('vm');
 
 const healthJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'health.js'), 'utf8')
+  .replace(/import\s*\{[\s\S]*?getWebRtcLeakProtectionStatus,[\s\S]*?syncWebRtcLeakProtection[\s\S]*?\}\s*from\s*'\.\/webrtc\.js';/, `
+    var getWebRtcLeakProtectionStatus = globalThis._mockGetWebRtcLeakProtectionStatus;
+    var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection;
+  `)
   .replace(/^export\s+/gm, '');
 
 const manifest = {
@@ -46,6 +50,16 @@ function loadHealthSandbox(options = {}) {
     appliedNetworkRuleCount: 0,
     ...(options.storage || {})
   };
+  const webrtcStatus = options.webrtcStatus || {
+    available: true,
+    value: 'default',
+    levelOfControl: 'controllable_by_this_extension',
+    controllable: true,
+    protected: false,
+    partial: false,
+    error: null
+  };
+  const syncResults = [];
   const enabledRulesets = options.enabledRulesets || ['static_a', 'static_b'];
   const dynamicRules = options.dynamicRules || [];
   const dnr = options.noDnr
@@ -90,6 +104,12 @@ function loadHealthSandbox(options = {}) {
     Set,
     console
   };
+  sandbox._mockGetWebRtcLeakProtectionStatus = async () => webrtcStatus;
+  sandbox._mockSyncWebRtcLeakProtection = async (config, proxyConfigs) => {
+    syncResults.push({ config, proxyConfigs });
+    return options.webrtcSyncResult || { ok: true };
+  };
+  sandbox._webrtcSyncResults = syncResults;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(healthJsCode, sandbox);
@@ -270,6 +290,170 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(serialized.includes('pass-secret'), false);
     assert.strictEqual(serialized.includes('iv-secret'), false);
     assert.strictEqual(serialized.includes('cipher-secret'), false);
+  });
+
+  await t.test('global proxy configured with WebRTC strict has no WebRTC warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7,
+          webRtcLeakProtection: 'auto'
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'disable_non_proxied_udp',
+        levelOfControl: 'controlled_by_this_extension',
+        controllable: true,
+        protected: true,
+        partial: false,
+        error: null
+      },
+      userScripts: { register: async () => {}, getScripts: async () => [] }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.webrtc.protected, true);
+    assert.strictEqual(health.overall.issues.some(issue => issue.area === 'webrtc'), false);
+    assert.strictEqual(sandbox._webrtcSyncResults.length, 1);
+  });
+
+  await t.test('global proxy configured with WebRTC off/default creates warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7,
+          webRtcLeakProtection: 'off'
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'default',
+        levelOfControl: 'controllable_by_this_extension',
+        controllable: true,
+        protected: false,
+        partial: false,
+        error: null
+      },
+      userScripts: { register: async () => {}, getScripts: async () => [] }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.ok(health.overall.issues.some(issue => issue.area === 'webrtc' && issue.severity === 'warning'));
+  });
+
+  await t.test('privacy API unavailable with global proxy enabled creates warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: false,
+        value: null,
+        levelOfControl: null,
+        controllable: false,
+        protected: false,
+        partial: false,
+        error: 'Chrome privacy WebRTC setting unavailable'
+      },
+      userScripts: { register: async () => {}, getScripts: async () => [] }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.ok(health.overall.issues.some(issue => issue.area === 'webrtc' && /could not inspect/i.test(issue.message)));
+  });
+
+  await t.test('controlled_by_other_extensions with global proxy enabled creates warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'default',
+        levelOfControl: 'controlled_by_other_extensions',
+        controllable: false,
+        protected: false,
+        partial: false,
+        error: 'WebRTC privacy setting is controlled elsewhere'
+      },
+      userScripts: { register: async () => {}, getScripts: async () => [] }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.ok(health.overall.issues.some(issue => issue.area === 'webrtc' && /controlled/i.test(issue.message)));
+  });
+
+  await t.test('global proxy disabled with WebRTC off has no WebRTC warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: false,
+          globalProxyId: null,
+          webRtcLeakProtection: 'off'
+        }
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'default',
+        levelOfControl: 'controllable_by_this_extension',
+        controllable: true,
+        protected: false,
+        partial: false,
+        error: null
+      },
+      userScripts: { register: async () => {}, getScripts: async () => [] }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.issues.some(issue => issue.area === 'webrtc'), false);
   });
 
   await t.test('dynamic rules are counted by documented ID ranges', async () => {

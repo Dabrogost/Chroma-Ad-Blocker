@@ -42,6 +42,50 @@ const ChromaProxyUI = (() => {
     `;
   }
 
+  function globalProxyConfirmMessage() {
+    return [
+      'Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches.',
+      '',
+      'Recommended: Chroma will also use WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy.',
+      '',
+      'Enable global proxy mode?'
+    ].join('\n');
+  }
+
+  async function renderWebRtcControl(container) {
+    const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+    const row = document.createElement('div');
+    row.className = 'protection-list proxy-webrtc-control';
+
+    const info = appendElement(row, 'div', 'toggle-info');
+    appendElement(info, 'div', 'name', 'WebRTC Leak Protection');
+    appendElement(info, 'div', 'desc', 'Controls Chrome WebRTC IP handling for browser-level proxy fallback');
+
+    const select = appendElement(row, 'select', 'chroma-input chroma-input--compact proxy-webrtc-select');
+    for (const [value, label] of [
+      ['off', 'Off'],
+      ['auto', 'Auto recommended'],
+      ['balanced', 'Balanced'],
+      ['strict', 'Strict']
+    ]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    select.value = ['off', 'auto', 'balanced', 'strict'].includes(config.webRtcLeakProtection)
+      ? config.webRtcLeakProtection
+      : 'auto';
+    select.addEventListener('change', async () => {
+      await notifyBackground({
+        type: MSG.CONFIG_SET,
+        config: { webRtcLeakProtection: select.value }
+      });
+    });
+
+    container.appendChild(row);
+  }
+
   function renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal }) {
     return `
       <div class="proxy-card-body">
@@ -198,7 +242,7 @@ const ChromaProxyUI = (() => {
       globalToggle.checked = isGlobal;
       globalToggle.addEventListener('change', async (e) => {
         const isChecked = e.target.checked;
-        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
+        if (isChecked && typeof confirm === 'function' && !confirm(globalProxyConfirmMessage())) {
           e.target.checked = false;
           return;
         }
@@ -292,7 +336,7 @@ const ChromaProxyUI = (() => {
     return { saveAllConfigs };
   }
 
-  function renderSettingsEditor(container, addBtn, proxyConfigs) {
+  async function renderSettingsEditor(container, addBtn, proxyConfigs) {
     const { saveAllConfigs } = createProxyStore(proxyConfigs);
 
     const renderProxyCard = (pc, index) => {
@@ -504,7 +548,7 @@ const ChromaProxyUI = (() => {
 
       globalToggle?.addEventListener('change', async (e) => {
         const isChecked = e.target.checked;
-        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
+        if (isChecked && typeof confirm === 'function' && !confirm(globalProxyConfirmMessage())) {
           e.target.checked = false;
           return;
         }
@@ -585,7 +629,7 @@ const ChromaProxyUI = (() => {
         if (idx > -1) proxyConfigs.splice(idx, 1);
         await saveAllConfigs();
         if (proxyConfigs.length === 0) {
-          renderAll();
+          await renderAll();
         } else {
           card.remove();
         }
@@ -614,10 +658,11 @@ const ChromaProxyUI = (() => {
       return card;
     };
 
-    const renderAll = () => {
+    const renderAll = async () => {
       container.innerHTML = '';
+      await renderWebRtcControl(container);
       if (proxyConfigs.length === 0) {
-        container.innerHTML = '<div class="protection-list proxy-empty">No proxy servers configured. Click + to add one.</div>';
+        appendElement(container, 'div', 'protection-list proxy-empty', 'No proxy servers configured. Click + to add one.');
       } else {
         proxyConfigs.forEach((pc, i) => {
           container.appendChild(renderProxyCard(pc, i));
@@ -642,7 +687,7 @@ const ChromaProxyUI = (() => {
       container.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
     };
 
-    renderAll();
+    await renderAll();
   }
 
   async function loadProxyRouterUI() {
@@ -666,7 +711,7 @@ const ChromaProxyUI = (() => {
       return;
     }
 
-    renderSettingsEditor(container, addBtn, proxyConfigs);
+    await renderSettingsEditor(container, addBtn, proxyConfigs);
   }
 
   return { loadProxyRouterUI };

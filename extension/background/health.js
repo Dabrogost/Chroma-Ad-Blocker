@@ -7,6 +7,11 @@
 
 'use strict';
 
+import {
+  getWebRtcLeakProtectionStatus,
+  syncWebRtcLeakProtection
+} from './webrtc.js';
+
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END = 99999;
 const SUBSCRIPTION_RULE_ID_START = 100000;
@@ -76,6 +81,24 @@ function isConfiguredProxy(pc) {
     port >= 1 &&
     port <= 65535
   );
+}
+
+function summarizeWebRtcStatus(status, config) {
+  const mode = typeof config?.webRtcLeakProtection === 'string'
+    ? config.webRtcLeakProtection
+    : 'auto';
+
+  return {
+    available: status?.available === true,
+    mode,
+    value: status?.value ?? null,
+    levelOfControl: status?.levelOfControl ?? null,
+    controllable: status?.controllable === true,
+    protected: status?.protected === true,
+    partial: status?.partial === true,
+    recommended: config?.globalProxyEnabled === true,
+    error: status?.error || null
+  };
 }
 
 function countEnabledProxyDomains(proxyConfigs) {
@@ -193,7 +216,10 @@ function computeOverall({
   storedScriptletRuleCount,
   scriptlets,
   subscriptionErrors,
-  debugLoggingAvailable
+  debugLoggingAvailable,
+  webrtc,
+  globalProxyEnabled,
+  globalProxyConfigured
 }) {
   const issues = [];
 
@@ -243,13 +269,36 @@ function computeOverall({
     issues.push(makeIssue('warning', 'subscriptions', `${subscriptionErrors.length} subscription list(s) have refresh errors.`, 'Refresh the affected lists or disable broken lists.'));
   }
 
+  if (globalProxyEnabled && !webrtc?.available) {
+    issues.push(makeIssue('warning', 'webrtc', 'WebRTC leak protection could not inspect Chrome privacy settings.', 'Check browser support for Chrome privacy settings.'));
+  } else if (globalProxyEnabled && webrtc?.levelOfControl && !webrtc.controllable) {
+    issues.push(makeIssue(
+      'warning',
+      'webrtc',
+      'WebRTC leak protection is controlled by another extension or browser policy.',
+      'Disable the conflicting extension or browser policy if you want Chroma to control WebRTC leak protection.'
+    ));
+  } else if (globalProxyEnabled && globalProxyConfigured && !webrtc?.protected) {
+    issues.push(makeIssue(
+      'warning',
+      'webrtc',
+      'Global proxy is enabled, but WebRTC leak protection is not fully active.',
+      'Set WebRTC Leak Protection to Auto or Strict.'
+    ));
+  }
+
   if (!masterEnabled || !networkBlocking) {
     return { status: 'disabled', issues };
   }
   if (!dnrAvailable || dnrError || !staticRulesetsOk) {
     return { status: 'error', issues };
   }
-  if ((!scriptlets.apiAvailable && storedScriptletRuleCount > 0) || subscriptionErrors.length > 0 || scriptlets.registrationStatus === 'error') {
+  if (
+    (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) ||
+    subscriptionErrors.length > 0 ||
+    scriptlets.registrationStatus === 'error' ||
+    issues.some(issue => issue.severity === 'warning')
+  ) {
     return { status: 'degraded', issues };
   }
   return { status: 'healthy', issues };
@@ -300,6 +349,11 @@ export async function getHealthStatus() {
   const scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
+  await syncWebRtcLeakProtection(config, proxyConfigs);
+  const webrtc = summarizeWebRtcStatus(
+    await getWebRtcLeakProtectionStatus(config, proxyConfigs),
+    config
+  );
 
   const health = {
     generatedAt: Date.now(),
@@ -363,6 +417,7 @@ export async function getHealthStatus() {
       globalProxyEnabled: config.globalProxyEnabled === true,
       globalProxyConfigured
     },
+    webrtc,
     whitelist: {
       domainCount: asArray(storage.whitelist).length,
       fprDomainCount: asArray(storage.fprWhitelist).length
@@ -389,7 +444,10 @@ export async function getHealthStatus() {
     storedScriptletRuleCount: health.scriptlets.storedRuleCount,
     scriptlets: health.scriptlets,
     subscriptionErrors,
-    debugLoggingAvailable: requestLogAvailable
+    debugLoggingAvailable: requestLogAvailable,
+    webrtc,
+    globalProxyEnabled: health.proxy.globalProxyEnabled,
+    globalProxyConfigured
   });
 
   return health;

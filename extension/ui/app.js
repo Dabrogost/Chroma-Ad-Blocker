@@ -142,6 +142,26 @@ const ChromaApp = (() => {
     return section;
   }
 
+  function getWebRtcHealthMetric(health) {
+    const webrtc = health.webrtc || {};
+    const globalProxyActive = health.proxy?.globalProxyEnabled && health.proxy?.globalProxyConfigured;
+    const mode = String(webrtc.mode || 'auto');
+    const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
+    if (!webrtc.available) {
+      return ['WebRTC leak protection', `${modeLabel} (Unavailable)`, globalProxyActive ? 'warning' : 'disabled'];
+    }
+    if (webrtc.levelOfControl && !webrtc.controllable) {
+      return ['WebRTC leak protection', `${modeLabel} (Controlled elsewhere)`, webrtc.recommended ? 'warning' : 'disabled'];
+    }
+    if (webrtc.protected) {
+      return ['WebRTC leak protection', mode === 'strict' ? 'Strict' : `${modeLabel} (Strict)`, 'ok'];
+    }
+    if (webrtc.partial) {
+      return ['WebRTC leak protection', mode === 'balanced' ? 'Balanced' : `${modeLabel} (Partial)`, globalProxyActive ? 'warning' : 'ok'];
+    }
+    return ['WebRTC leak protection', mode === 'off' ? 'Off' : `${modeLabel} (Off)`, globalProxyActive ? 'warning' : 'disabled'];
+  }
+
   function getStatsTotals(stats) {
     return stats?.totals || {};
   }
@@ -436,7 +456,8 @@ const ChromaApp = (() => {
       ['Configured proxies', formatCount(health.proxy?.configuredCount), ''],
       ['Accepted proxies', formatCount(health.proxy?.acceptedCount), ''],
       ['Routed domains', formatCount(health.proxy?.routedDomainCount), ''],
-      ['Global proxy', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'Enabled' : 'Misconfigured') : 'Disabled', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'ok' : 'warning') : 'disabled']
+      ['Global proxy', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'Enabled' : 'Misconfigured') : 'Disabled', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'ok' : 'warning') : 'disabled'],
+      getWebRtcHealthMetric(health)
     ]);
 
     addHealthSection(body, 'Debug Logging', [

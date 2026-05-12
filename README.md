@@ -188,7 +188,9 @@ Your proxy credentials (username and password) are stored locally in an obfuscat
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
 
 ### Global Proxy Fallback (VPN Mode)
-In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. When enabled for a specific proxy server via the toggle switch on its card, all browser traffic that does not match a domain-specific rule will be automatically routed through that fallback server. This effectively turns the extension into a browser-level VPN while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Belize) simultaneously.
+In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. When enabled for a specific proxy server via the toggle switch on its card, all browser traffic that does not match a domain-specific rule will be automatically routed through that fallback server. This is browser-level proxy routing, not a system VPN, while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Belize) simultaneously.
+
+WebRTC Leak Protection helps prevent WebRTC/STUN traffic from bypassing proxy routing. In Auto mode, Chroma applies strict WebRTC protection when Global Proxy Fallback is enabled and configured, and releases the browser setting when it no longer applies. Strict mode can affect browser calls or video chat quality because it disables non-proxied UDP.
 
 ### Dynamic Routing Status
 The Chroma popup provides real-time feedback on your routing state. The status line on each proxy card will dynamically update to show exactly what it is doing:
@@ -269,6 +271,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
 | `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
 | `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
+| `privacy` | Allows Chroma to apply optional WebRTC leak protection by setting Chrome's WebRTC IP handling policy. Used only when WebRTC Leak Protection is enabled or Auto mode applies with Global Proxy Fallback. |
 | `webRequest` | Used to intercept authentication challenges from proxy servers. |
 | `webRequestAuthProvider` | Required to provide credentials to proxy servers via the `onAuthRequired` listener. |
 
