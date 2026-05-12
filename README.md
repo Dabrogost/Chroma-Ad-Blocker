@@ -188,7 +188,12 @@ Your proxy credentials (username and password) are stored locally in an obfuscat
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
 
 ### Global Proxy Fallback (VPN Mode)
-In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. When enabled for a specific proxy server via the toggle switch on its card, all browser traffic that does not match a domain-specific rule will be automatically routed through that fallback server. This is browser-level proxy routing, not a system VPN, while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Belize) simultaneously.
+In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. Click the **GLOBAL** button on a proxy card to select that proxy as the fallback for browser traffic that does not match a domain-specific rule. This is browser-level proxy routing, not a system VPN, while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Belize) simultaneously.
+
+The main switch on each proxy card is a per-proxy enabled/disabled control:
+- **Switch ON**: The proxy can route its enabled domain rules, and can act as the selected global fallback if its **GLOBAL** button is active.
+- **Switch OFF**: The proxy routes nothing while disabled. Its domain rows are kept, and if it was selected as **GLOBAL**, that global selection is preserved but inactive until the switch is turned back on.
+- **GLOBAL button**: Selects or clears the global fallback independently from the main switch. The active **GLOBAL** button is highlighted. The selected global card hides its domain add/list controls while it is global; non-global proxy cards keep their domain controls visible.
 
 WebRTC Leak Protection helps prevent WebRTC/STUN traffic from bypassing proxy routing. In Auto mode, Chroma applies strict WebRTC protection when Global Proxy Fallback is enabled and configured, and releases the browser setting when it no longer applies. Strict mode can affect browser calls or video chat quality because it disables non-proxied UDP.
 
@@ -197,6 +202,7 @@ The Chroma popup provides real-time feedback on your routing state. The status l
 - **GLOBAL VPN ACTIVE**: The server is handling all browser traffic.
 - **ROUTING [X] DOMAINS**: The server is only handling the specific domains you have listed.
 - **CONNECTED**: The server is ready but has no current routing assignments.
+- **DISABLED**: The proxy is saved but paused. Its domain rows and global selection, if any, are preserved.
 
 ### Example: Setting up NordVPN
 Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN HTTPS proxy server (e.g., Belize #1):
