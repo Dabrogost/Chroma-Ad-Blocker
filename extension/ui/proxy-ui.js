@@ -65,7 +65,7 @@ const ChromaProxyUI = (() => {
     const select = appendElement(row, 'select', 'chroma-input chroma-input--compact proxy-webrtc-select');
     for (const [value, label] of [
       ['off', 'Off'],
-      ['auto', 'Auto recommended'],
+      ['auto', 'Auto (Recommended)'],
       ['balanced', 'Balanced'],
       ['strict', 'Strict']
     ]) {

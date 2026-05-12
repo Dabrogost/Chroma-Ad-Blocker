@@ -13,7 +13,7 @@
 - [System Layers](#system-layers)
 - [Privacy & Transparency](#privacy--transparency)
 - [Media Proxy Router](#media-proxy-router-split-tunneling)
-- [YouTube Ad Stripping](#youtube-ad-stripping-the-stripper)
+- [YouTube Ad Stripping](#youtube-ad-stripping)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Statistics & Event Tracker](#statistics--event-tracker)
@@ -195,7 +195,9 @@ The main switch on each proxy card is a per-proxy enabled/disabled control:
 - **Switch OFF**: The proxy routes nothing while disabled. Its domain rows are kept, and if it was selected as **GLOBAL**, that global selection is preserved but inactive until the switch is turned back on.
 - **GLOBAL button**: Selects or clears the global fallback independently from the main switch. The active **GLOBAL** button is highlighted. The selected global card hides its domain add/list controls while it is global; non-global proxy cards keep their domain controls visible.
 
-WebRTC Leak Protection helps prevent WebRTC/STUN traffic from bypassing proxy routing. In Auto mode, Chroma applies strict WebRTC protection when Global Proxy Fallback is enabled and configured, and releases the browser setting when it no longer applies. Strict mode can affect browser calls or video chat quality because it disables non-proxied UDP.
+WebRTC Leak Protection helps prevent WebRTC/STUN traffic from bypassing proxy routing. WebRTC can discover network candidates through paths that are separate from normal browser page requests, so a page may be able to see a WebRTC public IP even while regular traffic is routed through Chroma's proxy fallback. Chroma controls Chrome's native WebRTC IP handling policy to reduce that bypass risk.
+
+In **Auto** mode, Chroma applies strict WebRTC protection when Global Proxy Fallback is enabled and configured, and releases the browser setting when it no longer applies. **Balanced** limits WebRTC to the default public interface only. **Strict** disables non-proxied UDP, which offers the strongest protection but may affect browser calls or video chat quality.
 
 ### Dynamic Routing Status
 The Chroma popup provides real-time feedback on your routing state. The status line on each proxy card will dynamically update to show exactly what it is doing:
@@ -231,7 +233,7 @@ For example, adding `youtube.com` automatically proxies `googlevideo.com`, `ytim
 
 ---
 
-## YouTube Ad Stripping (The "Stripper")
+## YouTube Ad Stripping
 
 Chroma features a high-performance **YouTube Ad Stripper** that provides a superior alternative to traditional ad blocking and acceleration. 
 
