@@ -79,6 +79,7 @@ function hasValidGlobalProxy(config, proxyConfigs) {
     return (
       pc?.id === config.globalProxyId &&
       pc.accepted === true &&
+      pc.enabled !== false &&
       typeof pc.host === 'string' &&
       pc.host.trim().length > 0 &&
       Number.isInteger(port) &&

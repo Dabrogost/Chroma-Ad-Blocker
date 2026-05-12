@@ -160,6 +160,14 @@ test('WebRTC policy resolution', async (t) => {
     );
   });
 
+  await t.test('auto with selected proxy disabled clears', () => {
+    const harness = createWebRtcSandbox();
+    assert.strictEqual(
+      harness.resolveWebRtcPolicy({ webRtcLeakProtection: 'auto', globalProxyEnabled: true, globalProxyId: 7 }, [validProxy({ enabled: false })]).action,
+      'clear'
+    );
+  });
+
   await t.test('auto with accepted configured selected proxy sets strict', () => {
     const harness = createWebRtcSandbox();
     assert.deepStrictEqual(plain(harness.resolveWebRtcPolicy(

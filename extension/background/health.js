@@ -83,6 +83,10 @@ function isConfiguredProxy(pc) {
   );
 }
 
+function isActiveProxy(pc) {
+  return pc?.accepted === true && pc.enabled !== false;
+}
+
 function summarizeWebRtcStatus(status, config) {
   const mode = typeof config?.webRtcLeakProtection === 'string'
     ? config.webRtcLeakProtection
@@ -104,7 +108,7 @@ function summarizeWebRtcStatus(status, config) {
 function countEnabledProxyDomains(proxyConfigs) {
   let count = 0;
   for (const pc of asArray(proxyConfigs)) {
-    if (!isConfiguredProxy(pc) || pc.accepted !== true) continue;
+    if (!isConfiguredProxy(pc) || !isActiveProxy(pc)) continue;
     count += asArray(pc.domains).filter(domain => domain?.enabled !== false).length;
   }
   return count;
@@ -344,8 +348,9 @@ export async function getHealthStatus() {
   const proxyConfigs = asArray(storage.proxyConfigs);
   const configuredProxies = proxyConfigs.filter(isConfiguredProxy);
   const acceptedProxies = configuredProxies.filter(pc => pc.accepted === true);
+  const activeProxies = configuredProxies.filter(isActiveProxy);
   const globalProxyId = config.globalProxyId;
-  const globalProxyConfigured = globalProxyId != null && acceptedProxies.some(pc => pc.id === globalProxyId);
+  const globalProxyConfigured = globalProxyId != null && activeProxies.some(pc => pc.id === globalProxyId);
   const scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;

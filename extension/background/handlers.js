@@ -292,6 +292,7 @@ function validateProxyConfig(pc, index) {
     port: effectivePort || '',
     type: hostParts.type || 'PROXY',
     accepted,
+    enabled: pc.enabled !== false,
     domains
   };
 
@@ -690,6 +691,7 @@ async function handleProxyConfigGet() {
     port: pc.port,
     type: pc.type,
     accepted: pc.accepted,
+    enabled: pc.enabled !== false,
     domains: Array.isArray(pc.domains) ? pc.domains : [],
     hasCredentials: hasEncryptedProxyAuth(pc)
   }));

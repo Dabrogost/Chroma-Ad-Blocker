@@ -292,6 +292,40 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(serialized.includes('cipher-secret'), false);
   });
 
+  await t.test('disabled proxy domains and global selection are not reported as active routing', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7
+        },
+        proxyConfigs: [{
+          id: 7,
+          name: 'Paused',
+          host: 'proxy.example.com',
+          port: 8080,
+          type: 'PROXY',
+          accepted: true,
+          enabled: false,
+          domains: [{ host: 'media.example.com', enabled: true }]
+        }]
+      },
+      userScripts: { register: async () => {}, getScripts: async () => [] }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.deepStrictEqual(plain(health.proxy), {
+      configuredCount: 1,
+      acceptedCount: 1,
+      routedDomainCount: 0,
+      globalProxyEnabled: true,
+      globalProxyConfigured: false
+    });
+  });
+
   await t.test('global proxy configured with WebRTC strict has no WebRTC warning', async () => {
     const sandbox = loadHealthSandbox({
       storage: {

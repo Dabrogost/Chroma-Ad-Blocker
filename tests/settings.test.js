@@ -2,11 +2,19 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
+const { JSDOM } = require('jsdom');
 
 const componentsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const uiCss = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
+
+async function settleDomAsyncWork(turns = 20) {
+  for (let i = 0; i < turns; i++) {
+    await Promise.resolve();
+  }
+}
 
 test('settings page proxy and zapper management safety', async (t) => {
   await t.test('proxy credential UI never hydrates password fields from stored config', () => {
@@ -44,9 +52,164 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(uiCss, /\.inline-danger-btn\.compact-action-btn\s*\{[\s\S]*background: rgba\(108, 92, 231, 0\.12\)/);
   });
 
+  await t.test('proxy router cards separate enabled toggle from GLOBAL selection', async () => {
+    const dom = new JSDOM('<!doctype html><div id="proxyRouterContainer"></div><button id="addProxyServerBtn"></button>', {
+      url: 'chrome-extension://test/ui/settings.html#proxy',
+      runScripts: 'outside-only'
+    });
+    let proxyConfigs = [
+      {
+        id: 1,
+        name: 'VPN',
+        host: 'vpn.example.com',
+        port: 8080,
+        type: 'PROXY',
+        accepted: true,
+        enabled: true,
+        domains: [],
+        hasCredentials: false
+      },
+      {
+        id: 2,
+        name: 'BZ1',
+        host: 'bz1.example.com',
+        port: 8080,
+        type: 'PROXY',
+        accepted: true,
+        enabled: true,
+        domains: [
+          { host: 'youtube.com', enabled: true },
+          { host: 'twitch.tv', enabled: true }
+        ],
+        hasCredentials: false
+      }
+    ];
+    const config = { globalProxyEnabled: true, globalProxyId: 1 };
+    const messages = [];
+    const sandbox = {
+      window: dom.window,
+      document: dom.window.document,
+      console,
+      confirm: () => true,
+      setTimeout,
+      clearTimeout,
+      MSG: {
+        CONFIG_GET: 'CONFIG_GET',
+        CONFIG_SET: 'CONFIG_SET',
+        PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
+        PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
+        PROXY_TEST: 'PROXY_TEST'
+      },
+      ChromaApp: {
+        $: id => dom.window.document.getElementById(id),
+        escapeHTML: value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[ch])),
+        isSettingsPage: () => true,
+        openProxySettings: () => {}
+      },
+      chrome: {
+        storage: {
+          local: {
+            get: async key => {
+              if (key === 'config') return { config };
+              return {};
+            }
+          }
+        }
+      },
+      notifyBackground: async msg => {
+        messages.push(msg);
+        if (msg.type === 'PROXY_CONFIG_GET') return proxyConfigs;
+        if (msg.type === 'PROXY_TEST') return { ok: true, ip: msg.proxyId === 1 ? '198.51.100.1' : '198.51.100.2' };
+        if (msg.type === 'PROXY_CONFIG_SET') {
+          proxyConfigs = msg.proxyConfigs;
+          return { ok: true };
+        }
+        if (msg.type === 'CONFIG_SET') {
+          Object.assign(config, msg.config);
+          return { ok: true };
+        }
+        return {};
+      }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(proxyUiJs, sandbox);
+
+    await sandbox.ChromaProxyUI.loadProxyRouterUI();
+    await settleDomAsyncWork();
+
+    const cards = [...dom.window.document.querySelectorAll('.proxy-card')];
+    assert.strictEqual(cards.length, 2);
+    assert.strictEqual(cards[1].querySelector('.proxy-enabled-toggle').checked, true);
+    assert.match(cards[1].querySelector('.proxy-status-text').textContent, /ROUTING 2 DOMAINS/);
+    assert.strictEqual(cards[0].querySelector('.proxy-global-btn').classList.contains('is-active'), true);
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
+    assert.strictEqual(cards[0].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
+
+    cards[1].querySelector('.proxy-global-btn').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.globalProxyEnabled, true);
+    assert.strictEqual(config.globalProxyId, 2);
+    assert.strictEqual(proxyConfigs.find(pc => pc.id === 2).enabled, true);
+    assert.strictEqual(cards[0].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), true);
+    assert.strictEqual(cards[0].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
+    assert.ok(messages.some(msg =>
+      msg.type === 'PROXY_CONFIG_SET' &&
+      msg.proxyConfigs.some(pc => pc.id === 2 && pc.enabled === true)
+    ));
+
+    const bz1EnabledToggle = cards[1].querySelector('.proxy-enabled-toggle');
+    bz1EnabledToggle.checked = false;
+    bz1EnabledToggle.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.globalProxyEnabled, true);
+    assert.strictEqual(config.globalProxyId, 2);
+    assert.strictEqual(proxyConfigs.find(pc => pc.id === 2).enabled, false);
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), true);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
+    assert.match(cards[1].querySelector('.proxy-status-text').textContent, /DISABLED/);
+
+    bz1EnabledToggle.checked = true;
+    bz1EnabledToggle.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.globalProxyEnabled, true);
+    assert.strictEqual(config.globalProxyId, 2);
+    assert.strictEqual(proxyConfigs.find(pc => pc.id === 2).enabled, true);
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), true);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
+
+    cards[1].querySelector('.proxy-global-btn').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.globalProxyEnabled, false);
+    assert.strictEqual(config.globalProxyId, null);
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
+  });
+
   await t.test('proxy domain names override generic toggle heading size', () => {
     assert.match(uiCss, /\.toggle-info \.name \{ font-size: 16px/);
     assert.match(uiCss, /\.toggle-info \.proxy-domain-name\s*\{[\s\S]*font-size: 13px/);
+  });
+
+  await t.test('active proxy global button has a distinct highlighted style', () => {
+    assert.match(proxyUiJs, /proxy-global-btn compact-action-btn" title="Use as Global Fallback">GLOBAL/);
+    assert.match(proxyUiJs, /proxy-enabled-toggle/);
+    assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{/);
+    assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{[\s\S]*box-shadow:/);
+    assert.doesNotMatch(proxyUiJs, /proxy-global-toggle/);
   });
 
   await t.test('zapper rules render selector text safely and expose disable/delete actions', () => {

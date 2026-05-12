@@ -246,6 +246,68 @@ test('Proxy PAC hardening', async (t) => {
     assert.strictEqual(invalid.proxySetCalls.length, 0);
   });
 
+  await t.test('disabled proxy with enabled domains does not generate domain PAC rules', async () => {
+    const harness = createProxySandbox({ config: { globalProxyEnabled: true, globalProxyId: 2 } });
+
+    await harness.syncProxyState([
+      baseProxy({ id: 1, host: 'media.example.com', enabled: false, domains: [{ host: 'youtube.com', enabled: true }] }),
+      baseProxy({ id: 2, host: 'global.example.com', domains: [] })
+    ]);
+
+    const pac = pacData(harness);
+    assert.doesNotMatch(pac, /youtube\.com|googlevideo\.com/);
+    assert.match(pac, /return "PROXY global\.example\.com:8080"/);
+  });
+
+  await t.test('enabled proxy with enabled domains still generates domain PAC rules', async () => {
+    const harness = createProxySandbox();
+
+    await harness.syncProxyState([
+      baseProxy({ enabled: true, domains: [{ host: 'youtube.com', enabled: true }] })
+    ]);
+
+    const pac = pacData(harness);
+    assert.match(pac, /host === "youtube\.com"/);
+    assert.match(pac, /host === "googlevideo\.com"/);
+  });
+
+  await t.test('domain-specific routes stay before and override global fallback', async () => {
+    const harness = createProxySandbox({ config: { globalProxyEnabled: true, globalProxyId: 1 } });
+
+    await harness.syncProxyState([
+      baseProxy({ id: 1, host: 'vpn.example.com', domains: [] }),
+      baseProxy({ id: 2, host: 'bz1.example.com', domains: [{ host: 'youtube.com', enabled: true }] })
+    ]);
+
+    const pac = pacData(harness);
+    const domainRuleIndex = pac.indexOf('return "PROXY bz1.example.com:8080"');
+    const globalFallbackIndex = pac.lastIndexOf('return "PROXY vpn.example.com:8080"');
+    assert.ok(domainRuleIndex > -1, 'expected BZ1 domain rule');
+    assert.ok(globalFallbackIndex > -1, 'expected VPN global fallback');
+    assert.ok(domainRuleIndex < globalFallbackIndex, 'domain-specific rule must be evaluated before global fallback');
+  });
+
+  await t.test('disabled selected-global proxy is ignored without clearing stored global state', async () => {
+    const harness = createProxySandbox({ config: { globalProxyEnabled: true, globalProxyId: 7 } });
+
+    await harness.syncProxyState([
+      baseProxy({ id: 7, host: 'disabled-global.example.com', enabled: false, domains: [] })
+    ]);
+
+    assert.deepStrictEqual(plain(harness.storage.config), {
+      globalProxyEnabled: true,
+      globalProxyId: 7
+    });
+    assert.strictEqual(harness.proxySetCalls.length, 0);
+    assert.strictEqual(harness.proxyClearCalls.length, 1);
+
+    await harness.syncProxyState([
+      baseProxy({ id: 7, host: 'disabled-global.example.com', enabled: true, domains: [] })
+    ]);
+
+    assert.match(pacData(harness), /return "PROXY disabled-global\.example\.com:8080"/);
+  });
+
   await t.test('clears global proxy enabled state when the selected proxy is deleted', async () => {
     const harness = createProxySandbox({
       config: { globalProxyEnabled: true, globalProxyId: 7 }

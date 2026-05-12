@@ -103,6 +103,10 @@ function isSafeProxyConfig(pc) {
   );
 }
 
+function isProxyEnabled(pc) {
+  return pc?.enabled !== false;
+}
+
 function hasStoredAuth(pc) {
   return !!(pc && pc.authIv && pc.authCipher);
 }
@@ -168,11 +172,11 @@ async function _syncProxyStateImpl(proxyConfigs) {
   const { config } = await chrome.storage.local.get('config');
   const globalEnabled = config?.globalProxyEnabled === true;
   const globalId = config?.globalProxyId;
-  const validGlobalProxy = globalEnabled && globalId != null
+  const selectedGlobalProxy = globalEnabled && globalId != null
     ? proxyConfigs.find(pc => pc.id === globalId && isSafeProxyConfig(pc))
     : null;
 
-  if (globalEnabled && globalId != null && !validGlobalProxy) {
+  if (globalEnabled && globalId != null && !selectedGlobalProxy) {
     await chrome.storage.local.set({
       config: {
         ...config,
@@ -194,7 +198,8 @@ async function _syncProxyStateImpl(proxyConfigs) {
 
     const proxyStr = getProxyString(pc);
     const isTest = (id === _currentlyTestingId);
-    const activeDomains = expandDomains(getEnabledRouteDomains(pc));
+    const routeEnabled = isProxyEnabled(pc);
+    const activeDomains = routeEnabled ? expandDomains(getEnabledRouteDomains(pc)) : [];
 
     // 1. Add Domain-Specific Rules
     if (activeDomains.length > 0 || isTest) {
@@ -208,7 +213,7 @@ async function _syncProxyStateImpl(proxyConfigs) {
     }
 
     // 2. Identify the Global Fallback
-    if (validGlobalProxy && id === globalId) {
+    if (routeEnabled && selectedGlobalProxy && id === globalId) {
       fallbackStr = proxyStr;
     }
   }

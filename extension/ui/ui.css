@@ -1099,7 +1099,7 @@ select.chroma-input {
 }
 
 .proxy-actions,
-.proxy-global-control {
+.proxy-enabled-control {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1110,8 +1110,28 @@ select.chroma-input {
   gap: 8px;
 }
 
-.proxy-global-control {
+.proxy-enabled-control {
   height: 100%;
+}
+
+.proxy-global-btn.is-active {
+  color: #fff;
+  border-color: rgba(0, 255, 204, 0.75);
+  background:
+    linear-gradient(90deg, rgba(255, 0, 85, 0.2), rgba(153, 0, 255, 0.2), rgba(0, 136, 255, 0.22), rgba(0, 255, 204, 0.18)),
+    rgba(0, 255, 204, 0.08);
+  box-shadow:
+    0 0 14px rgba(0, 255, 204, 0.35),
+    0 0 22px rgba(153, 0, 255, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+
+.proxy-global-btn.is-active:hover {
+  border-color: var(--c-cyan);
+  box-shadow:
+    0 0 18px rgba(0, 255, 204, 0.5),
+    0 0 28px rgba(0, 136, 255, 0.25),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
 }
 
 .proxy-empty {
