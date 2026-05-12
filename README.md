@@ -181,13 +181,17 @@ Chroma includes a built-in split-tunnel proxy router that allows you to route tr
 ### Supported Protocols
 Chroma supports `HTTP`, `HTTPS`, `SOCKS4`, and `SOCKS5` proxies. Choose the protocol from the proxy setup dropdown, then enter the proxy host without a protocol prefix.
 
+SOCKS4/SOCKS5 proxies are supported only when they do not require username/password authentication. Chrome extensions can provide credentials for HTTP/HTTPS proxy authentication challenges, but Chrome does not expose SOCKS username/password authentication to extensions through the proxy/PAC flow. For authenticated SOCKS providers, use provider-side IP allowlisting if available, or choose an HTTP/HTTPS proxy endpoint instead.
+
+This limitation is specific to browser-level proxy routing in Chromium. It does not mean authenticated SOCKS5 is impossible everywhere: apps that implement their own SOCKS connection can accept SOCKS credentials directly. For example, [NordVPN documents SOCKS5 setup in qBittorrent](https://support.nordvpn.com/hc/en-us/articles/20195967385745-NordVPN-proxy-setup-for-qBittorrent) with a SOCKS5 host, port `1080`, and service username/password. That works because qBittorrent owns the SOCKS connection; Chroma only controls Chrome's PAC/proxy route.
+
 ### Security
 Your proxy credentials (username and password) are stored locally in an obfuscated form using a bundled extension key. They are decoded in memory only when the proxy server challenges the browser for authentication. This can reduce casual readability in extension storage, but it is not strong encryption and is not a substitute for operating-system or browser-profile security.
 
 ### Connection Verification
 The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
 
-### Global Proxy Fallback (VPN Mode)
+### Global Proxy Fallback
 In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. Click the **GLOBAL** button on a proxy card to select that proxy as the fallback for browser traffic that does not match a domain-specific rule. This is browser-level proxy routing, not a system VPN, while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Belize) simultaneously.
 
 The main switch on each proxy card is a per-proxy enabled/disabled control:
@@ -201,7 +205,7 @@ In **Auto** mode, Chroma applies strict WebRTC protection when Global Proxy Fall
 
 ### Dynamic Routing Status
 The Chroma popup provides real-time feedback on your routing state. The status line on each proxy card will dynamically update to show exactly what it is doing:
-- **GLOBAL VPN ACTIVE**: The server is handling all browser traffic.
+- **GLOBAL PROXY ACTIVE**: The server is handling all browser traffic.
 - **ROUTING [X] DOMAINS**: The server is only handling the specific domains you have listed.
 - **CONNECTED**: The server is ready but has no current routing assignments.
 - **DISABLED**: The proxy is saved but paused. Its domain rows and global selection, if any, are preserved.
@@ -210,11 +214,13 @@ The Chroma popup provides real-time feedback on your routing state. The status l
 Many commercial VPN providers (like NordVPN, ExpressVPN, and PIA) operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN HTTPS proxy server (e.g., Belize #1):
 
 1. **Protocol:** Select `HTTPS` from the dropdown.
-2. **Host:** Enter `bz1.nordvpn.com`.
+2. **Host:** Enter `bz1.proxy.nordvpn.com`.
 3. **Port:** Enter `89` *(commonly used by NordVPN HTTPS/HTTP SSL proxy endpoints)*.
 4. **Username & Password:** You **cannot** use your standard NordAccount email/password. You must use your auto-generated **Service Credentials**, which can be found in your NordAccount dashboard under *Services > NordVPN > Manual Setup*.
 5. **Domains:** Add the domains you want to route (e.g., `youtube.com`) to the active list.
 6. Click **Accept Settings**.
+
+As of May 11, 2026, this NordVPN-specific example may require converting Nord's displayed server address from `bz1.nordvpn.com` to the browser-compatible proxy host form `bz1.proxy.nordvpn.com`. Other proxy providers may use different hostnames, ports, protocols, and credential requirements, so follow your provider's current proxy setup instructions.
 
 Proxy-region performance can vary by provider, route, and streaming service. If YouTube buffers above 1080p or struggles in fullscreen, try another nearby proxy region before assuming the extension is at fault.
 

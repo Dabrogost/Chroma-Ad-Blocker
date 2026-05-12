@@ -208,7 +208,7 @@ const ChromaProxyUI = (() => {
       if (meta) meta.textContent = `${type} - ${credentials} - routing paused`;
       setStatusDotState(dot, 'muted');
     } else if (isGlobal) {
-      txt.textContent = `GLOBAL VPN ACTIVE${ipSuffix}`;
+      txt.textContent = `GLOBAL PROXY ACTIVE${ipSuffix}`;
       if (meta) meta.textContent = `${type} - ${credentials} - global fallback`;
     } else if (activeDomainCount > 0) {
       txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
@@ -542,7 +542,7 @@ const ChromaProxyUI = (() => {
         const ipSuffix = currentIp ? ` (${currentIp})` : '';
 
         if (isGlobal) {
-          txt.textContent = `GLOBAL VPN ACTIVE${ipSuffix}`;
+          txt.textContent = `GLOBAL PROXY ACTIVE${ipSuffix}`;
           setStatusDotState(dot, 'online');
         } else if (activeDomainCount > 0) {
           txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
