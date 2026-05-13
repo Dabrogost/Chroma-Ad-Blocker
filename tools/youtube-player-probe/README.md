@@ -72,6 +72,43 @@ For smaller reports that keep ad paths and timings but omit full path/type maps:
 npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --no-path-types
 ```
 
+Run a probe-only stripper simulation without loading the extension:
+
+```powershell
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --probe-strip-mode delete --output reports\probe-strip-delete.json --no-path-types
+```
+
+Available simulation modes:
+
+- `delete`: delete Chroma's regular player ad fields.
+- `empty`: replace regular player ad fields with empty arrays or objects.
+- `keep-heartbeat`: delete regular player ad fields except `adBreakHeartbeatParams`.
+- `empty-keep-heartbeat`: empty regular player ad fields except `adBreakHeartbeatParams`.
+
+Do not combine `--probe-strip-mode` with `--extension`; the simulator is for testing stripping strategies before changing the extension.
+
+Run a probe-only visible-ad accelerator without stripping:
+
+```powershell
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --probe-accelerate-ads --output reports\probe-accelerate.json --no-path-types
+```
+
+This mutes and speeds visible ad playback in the page so YouTube's own ad state machine can complete. It is useful for comparing against the stripped-player dead zone.
+
+Experiment with a content re-resolve during the stripped-player dead zone:
+
+```powershell
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --extension --try-content-reresolve --output reports\reresolve.json --no-path-types
+```
+
+This waits for the narrow state where Chroma has removed visible ad state but the player is stuck in `buffering-mode unstarted-mode` with a media URL present and `readyState === 0`. The default method is `cue-play`, which calls YouTube's player API to cue the current video ID and then play it. Other probe-only methods:
+
+```powershell
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --extension --try-content-reresolve --reresolve-method load
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --extension --try-content-reresolve --reresolve-method play-video
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --extension --try-content-reresolve --reresolve-method video-play
+```
+
 Run through a proxy:
 
 ```powershell
@@ -83,6 +120,20 @@ Use a persistent profile:
 ```powershell
 npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --profile ".profiles\local-youtube"
 ```
+
+Load the unpacked Chroma extension while probing:
+
+```powershell
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --extension
+```
+
+Extension mode uses Chrome for Testing or Chromium, forces a headed browser so you can watch the player, and creates a persistent `.profiles\chroma-extension` profile by default. To use a different profile:
+
+```powershell
+npm.cmd run probe -- --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --headed --extension --profile ".profiles\chroma-extension-debug"
+```
+
+Official branded Google Chrome may refuse automated unpacked extension loading. That is expected; use Chrome for Testing or Chromium for this mode.
 
 ## Diff Reports
 

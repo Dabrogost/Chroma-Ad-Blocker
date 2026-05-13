@@ -6,12 +6,285 @@ const { pathToFileURL } = require('node:url');
 const { KNOWN_STRIPPER_FIELDS, walkJson } = require('./sanitize');
 
 const YOUTUBE_ENDPOINTS = Object.freeze([
-  { name: 'player', marker: '/youtubei/v1/player' },
-  { name: 'next', marker: '/youtubei/v1/next' },
-  { name: 'browse', marker: '/youtubei/v1/browse' },
-  { name: 'search', marker: '/youtubei/v1/search' },
-  { name: 'reel', marker: '/youtubei/v1/reel' }
+  { name: 'player', kind: 'json', marker: '/youtubei/v1/player' },
+  { name: 'next', kind: 'json', marker: '/youtubei/v1/next' },
+  { name: 'browse', kind: 'json', marker: '/youtubei/v1/browse' },
+  { name: 'search', kind: 'json', marker: '/youtubei/v1/search' },
+  { name: 'reel', kind: 'json', marker: '/youtubei/v1/reel' }
 ]);
+
+const PROBE_STRIP_MODES = Object.freeze([
+  'off',
+  'delete',
+  'empty',
+  'keep-heartbeat',
+  'empty-keep-heartbeat'
+]);
+
+const PROBE_STRIPPER_SCRIPT = String.raw`
+(() => {
+  const mode = __PROBE_STRIP_MODE__;
+  if (!mode || mode === 'off') return;
+
+  const AD_ARRAY_FIELDS = new Set(['adPlacements', 'adSlots', 'playerAds']);
+  const AD_OBJECT_FIELDS = new Set(['adBreakParams', 'adBreakHeartbeatParams', 'adInferredBlockingStatus']);
+  const YT_API_PATHS = [
+    '/youtubei/v1/player',
+    '/youtubei/v1/next',
+    '/youtubei/v1/browse',
+    '/youtubei/v1/search',
+    '/youtubei/v1/reel'
+  ];
+  const stats = {
+    mode,
+    payloadsInspected: 0,
+    payloadsModified: 0,
+    fieldsDeleted: 0,
+    fieldsEmptied: 0,
+    sources: {}
+  };
+
+  function sourceStats(source) {
+    stats.sources[source] ||= {
+      payloadsInspected: 0,
+      payloadsModified: 0,
+      fieldsDeleted: 0,
+      fieldsEmptied: 0
+    };
+    return stats.sources[source];
+  }
+
+  function record(source, changed, deleted, emptied) {
+    const bucket = sourceStats(source);
+    stats.payloadsInspected++;
+    bucket.payloadsInspected++;
+    if (!changed) return;
+    stats.payloadsModified++;
+    bucket.payloadsModified++;
+    stats.fieldsDeleted += deleted;
+    stats.fieldsEmptied += emptied;
+    bucket.fieldsDeleted += deleted;
+    bucket.fieldsEmptied += emptied;
+  }
+
+  function cloneEmptyValue(field, existing) {
+    if (AD_ARRAY_FIELDS.has(field)) return [];
+    if (AD_OBJECT_FIELDS.has(field)) return {};
+    return Array.isArray(existing) ? [] : {};
+  }
+
+  function shouldKeepField(field) {
+    return (mode === 'keep-heartbeat' || mode === 'empty-keep-heartbeat') &&
+      field === 'adBreakHeartbeatParams';
+  }
+
+  function shouldEmptyFields() {
+    return mode === 'empty' || mode === 'empty-keep-heartbeat';
+  }
+
+  function stripAdFields(obj) {
+    if (!obj || typeof obj !== 'object') return { changed: false, deleted: 0, emptied: 0 };
+    let changed = false;
+    let deleted = 0;
+    let emptied = 0;
+    for (const field of [...AD_ARRAY_FIELDS, ...AD_OBJECT_FIELDS]) {
+      if (!(field in obj) || shouldKeepField(field)) continue;
+      if (shouldEmptyFields()) {
+        obj[field] = cloneEmptyValue(field, obj[field]);
+        emptied++;
+      } else {
+        delete obj[field];
+        deleted++;
+      }
+      changed = true;
+    }
+    return { changed, deleted, emptied };
+  }
+
+  function cleanPayload(data, source) {
+    let changed = false;
+    let deleted = 0;
+    let emptied = 0;
+    if (data && typeof data === 'object') {
+      const direct = stripAdFields(data);
+      changed ||= direct.changed;
+      deleted += direct.deleted;
+      emptied += direct.emptied;
+      if (data.playerResponse && typeof data.playerResponse === 'object') {
+        const nested = stripAdFields(data.playerResponse);
+        changed ||= nested.changed;
+        deleted += nested.deleted;
+        emptied += nested.emptied;
+      }
+    }
+    record(source, changed, deleted, emptied);
+    return changed;
+  }
+
+  function isYouTubeApiUrl(url) {
+    return YT_API_PATHS.some((path) => String(url || '').includes(path));
+  }
+
+  window.__YT_PROBE_STRIPPER__ = stats;
+
+  let initialPlayerResponse;
+  try {
+    Object.defineProperty(window, 'ytInitialPlayerResponse', {
+      configurable: true,
+      get() { return initialPlayerResponse; },
+      set(value) {
+        cleanPayload(value, 'initial_player_response');
+        initialPlayerResponse = value;
+      }
+    });
+  } catch (_) {}
+
+  let initialData;
+  try {
+    Object.defineProperty(window, 'ytInitialData', {
+      configurable: true,
+      get() { return initialData; },
+      set(value) {
+        cleanPayload(value, 'initial_data');
+        initialData = value;
+      }
+    });
+  } catch (_) {}
+
+  const nativeFetch = window.fetch;
+  if (typeof nativeFetch === 'function') {
+    window.fetch = async function(...args) {
+      const response = await nativeFetch.apply(this, args);
+      const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+      if (!isYouTubeApiUrl(url)) return response;
+      try {
+        const clone = response.clone();
+        const json = await clone.json();
+        const changed = cleanPayload(json, 'fetch');
+        if (!changed) return response;
+        return new Response(JSON.stringify(json), {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers
+        });
+      } catch (_) {
+        return response;
+      }
+    };
+  }
+
+  const nativeParse = JSON.parse;
+  JSON.parse = function(text, reviver) {
+    const result = nativeParse.call(this, text, reviver);
+    try { cleanPayload(result, 'json_parse'); } catch (_) {}
+    return result;
+  };
+
+  const nativeOpen = XMLHttpRequest.prototype.open;
+  const nativeSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    this.__ytProbeStripperUrl = String(url || '');
+    return nativeOpen.apply(this, [method, url, ...rest]);
+  };
+  XMLHttpRequest.prototype.send = function(...args) {
+    const url = this.__ytProbeStripperUrl || '';
+    if (isYouTubeApiUrl(url)) {
+      this.addEventListener('readystatechange', function() {
+        if (this.readyState !== 4) return;
+        try {
+          const responseType = this.responseType;
+          if (responseType && responseType !== '' && responseType !== 'text' && responseType !== 'json') return;
+          const text = responseType === 'json' ? JSON.stringify(this.response) : this.responseText;
+          const json = nativeParse(text);
+          const changed = cleanPayload(json, 'xhr');
+          if (!changed) return;
+          const stripped = JSON.stringify(json);
+          Object.defineProperty(this, 'responseText', { value: stripped, writable: false });
+          Object.defineProperty(this, 'response', {
+            value: responseType === 'json' ? json : stripped,
+            writable: false
+          });
+        } catch (_) {}
+      });
+    }
+    return nativeSend.apply(this, args);
+  };
+})();
+`;
+
+const PROBE_ACCELERATE_ADS_SCRIPT = String.raw`
+(() => {
+  const speed = __PROBE_ACCELERATE_SPEED__;
+  const stats = {
+    speed,
+    activations: 0,
+    skipClicks: 0,
+    lastActivationMs: null,
+    lastAdSignals: []
+  };
+  const adSelectors = [
+    '.html5-video-player.ad-showing',
+    '.html5-video-player.ad-interrupting',
+    '.ad-showing',
+    '.ad-interrupting',
+    '.ytp-ad-module'
+  ];
+
+  function isVisible(el) {
+    try {
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function visibleAdSignals() {
+    return adSelectors.filter((selector) => {
+      try {
+        return [...document.querySelectorAll(selector)].some(isVisible);
+      } catch (_) {
+        return false;
+      }
+    });
+  }
+
+  function tick() {
+    const signals = visibleAdSignals();
+    const video = document.querySelector('video');
+    if (!video || signals.length === 0) return;
+    video.muted = true;
+    video.playbackRate = speed;
+    if (video.paused && typeof video.play === 'function') {
+      video.play().catch(() => {});
+    }
+    stats.activations++;
+    stats.lastActivationMs = Math.round(performance.now());
+    stats.lastAdSignals = signals;
+
+    const skipButton = [
+      '.ytp-skip-ad-button',
+      '.ytp-ad-skip-button',
+      '.ytp-ad-skip-button-modern',
+      '.ytp-ad-skip-button-container button'
+    ].map((selector) => {
+      try { return [...document.querySelectorAll(selector)].find(isVisible); }
+      catch (_) { return null; }
+    }).find(Boolean);
+    if (skipButton) {
+      try {
+        skipButton.click();
+        stats.skipClicks++;
+      } catch (_) {}
+    }
+  }
+
+  window.__YT_PROBE_ACCELERATOR__ = stats;
+  setInterval(tick, 100);
+})();
+`;
 
 const DOM_PROBE_SCRIPT = String.raw`
 (() => {
@@ -48,6 +321,7 @@ const DOM_PROBE_SCRIPT = String.raw`
   const selectors = [...adSelectors, ...loadingSelectors, ...errorSelectors];
   let lastSignal = '';
   let lastPlayerClass = '';
+  let lastVideoState = '';
 
   function now() {
     return Math.round(performance.now() - start);
@@ -91,6 +365,93 @@ const DOM_PROBE_SCRIPT = String.raw`
     return player ? String(player.className || '') : '';
   }
 
+  function rounded(value, places = 3) {
+    return Number.isFinite(value) ? Number(value.toFixed(places)) : null;
+  }
+
+  function mediaUrlSummary(rawUrl) {
+    if (!rawUrl) return { present: false };
+    try {
+      const url = new URL(rawUrl);
+      return {
+        present: true,
+        origin: url.origin,
+        path: url.pathname,
+        queryKeys: [...url.searchParams.keys()].sort()
+      };
+    } catch (_) {
+      return { present: true, parseError: true };
+    }
+  }
+
+  function rangeSummary(ranges, currentTime) {
+    try {
+      const items = [];
+      for (let i = 0; i < ranges.length; i++) {
+        const start = rounded(ranges.start(i));
+        const end = rounded(ranges.end(i));
+        items.push({ start, end });
+      }
+      const active = items.find((item) => {
+        return Number.isFinite(item.start) && Number.isFinite(item.end) &&
+          currentTime >= item.start && currentTime <= item.end;
+      });
+      return {
+        count: items.length,
+        activeAhead: active ? rounded(active.end - currentTime) : null,
+        first: items[0] || null,
+        last: items[items.length - 1] || null
+      };
+    } catch (_) {
+      return { count: 0, activeAhead: null, first: null, last: null };
+    }
+  }
+
+  function videoSnapshot(video) {
+    const currentTime = rounded(video.currentTime);
+    return {
+      currentSrc: mediaUrlSummary(video.currentSrc || video.src || ''),
+      networkState: video.networkState,
+      readyState: video.readyState,
+      currentTime,
+      duration: rounded(video.duration),
+      paused: video.paused,
+      ended: video.ended,
+      muted: video.muted,
+      playbackRate: video.playbackRate,
+      buffered: rangeSummary(video.buffered, video.currentTime),
+      seekable: rangeSummary(video.seekable, video.currentTime),
+      decodedFrames: Number.isFinite(video.webkitDecodedFrameCount) ? video.webkitDecodedFrameCount : null,
+      droppedFrames: Number.isFinite(video.webkitDroppedFrameCount) ? video.webkitDroppedFrameCount : null,
+      visibleAdSignals: visibleSignals(adSelectors),
+      visibleLoadingSignals: visibleSignals(loadingSelectors),
+      playerClasses: playerClasses()
+    };
+  }
+
+  function sampleVideoState() {
+    const video = document.querySelector('video');
+    if (!video) return;
+    const snapshot = videoSnapshot(video);
+    const key = JSON.stringify({
+      currentSrc: snapshot.currentSrc.present,
+      currentSrcOrigin: snapshot.currentSrc.origin,
+      networkState: snapshot.networkState,
+      readyState: snapshot.readyState,
+      currentTime: snapshot.currentTime,
+      paused: snapshot.paused,
+      ended: snapshot.ended,
+      bufferedAhead: snapshot.buffered.activeAhead,
+      visibleAdSignals: snapshot.visibleAdSignals,
+      visibleLoadingSignals: snapshot.visibleLoadingSignals,
+      playerClasses: snapshot.playerClasses
+    });
+    if (key !== lastVideoState) {
+      lastVideoState = key;
+      push('video-state', snapshot);
+    }
+  }
+
   function sampleSignals() {
     const snapshot = {
       present: presentSignals(),
@@ -119,7 +480,10 @@ const DOM_PROBE_SCRIPT = String.raw`
         push('video-' + eventName, {
           currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : null,
           duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null,
+          currentSrc: mediaUrlSummary(video.currentSrc || video.src || ''),
+          networkState: video.networkState,
           readyState: video.readyState,
+          buffered: rangeSummary(video.buffered, video.currentTime),
           playbackRate: video.playbackRate,
           muted: video.muted,
           paused: video.paused,
@@ -133,6 +497,8 @@ const DOM_PROBE_SCRIPT = String.raw`
     push('video-attached', {
       className: video.className || '',
       readyState: video.readyState,
+      currentSrc: mediaUrlSummary(video.currentSrc || video.src || ''),
+      networkState: video.networkState,
       paused: video.paused,
       currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : null,
       duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null
@@ -141,7 +507,10 @@ const DOM_PROBE_SCRIPT = String.raw`
       push('video-playing-snapshot', {
         currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : null,
         duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null,
+        currentSrc: mediaUrlSummary(video.currentSrc || video.src || ''),
+        networkState: video.networkState,
         readyState: video.readyState,
+        buffered: rangeSummary(video.buffered, video.currentTime),
         playbackRate: video.playbackRate,
         muted: video.muted,
         paused: video.paused,
@@ -160,6 +529,7 @@ const DOM_PROBE_SCRIPT = String.raw`
   function install() {
     scanVideos();
     sampleSignals();
+    sampleVideoState();
     try {
       const observer = new MutationObserver(() => {
         scanVideos();
@@ -169,6 +539,7 @@ const DOM_PROBE_SCRIPT = String.raw`
     } catch (_) {}
     setInterval(scanVideos, 500);
     setInterval(sampleSignals, 250);
+    setInterval(sampleVideoState, 100);
   }
 
   window.__YT_PLAYER_PROBE__ = {
@@ -186,7 +557,27 @@ const DOM_PROBE_SCRIPT = String.raw`
 `;
 
 function endpointForUrl(url) {
+  const mediaEndpoint = mediaEndpointForUrl(url);
+  if (mediaEndpoint) return mediaEndpoint;
   return YOUTUBE_ENDPOINTS.find((endpoint) => url.includes(endpoint.marker)) || null;
+}
+
+function mediaEndpointForUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    const pathValue = url.pathname.toLowerCase();
+    if (
+      (host.endsWith('.googlevideo.com') || host === 'googlevideo.com') &&
+      (pathValue.includes('/videoplayback') || pathValue.includes('/initplayback'))
+    ) {
+      return { name: 'media', kind: 'media' };
+    }
+    if (host.endsWith('youtube.com') && pathValue.includes('/api/manifest')) {
+      return { name: 'media-manifest', kind: 'media' };
+    }
+  } catch (_) {}
+  return null;
 }
 
 function makeReportName(prefix = 'youtube-probe') {
@@ -227,6 +618,15 @@ function summarizeDomEvents(events) {
   const visibleLoadingEvents = events.filter((event) => event.type === 'dom-signals' && (event.detail.visibleLoading || []).length > 0);
   const visibleErrorEvents = events.filter((event) => event.type === 'dom-signals' && (event.detail.visibleErrors || []).length > 0);
   const waitingEvents = events.filter((event) => event.type === 'video-waiting');
+  const videoStateEvents = events.filter((event) => event.type === 'video-state');
+  const firstCurrentSrc = videoStateEvents.find((event) => event.detail?.currentSrc?.present);
+  const firstReadyState = videoStateEvents.find((event) => (event.detail?.readyState || 0) > 0);
+  const firstPlayableState = videoStateEvents.find((event) => (event.detail?.readyState || 0) >= 3);
+  const firstBufferedAhead = videoStateEvents.find((event) => {
+    return Number.isFinite(event.detail?.buffered?.activeAhead) && event.detail.buffered.activeAhead > 0;
+  });
+  const firstProgress = firstProgressEvent(videoStateEvents);
+  const lastVideoState = videoStateEvents.length ? videoStateEvents[videoStateEvents.length - 1].detail : null;
   const allSignals = new Set();
   const visibleAdSignals = new Set();
   const visibleLoadingSignals = new Set();
@@ -251,7 +651,13 @@ function summarizeDomEvents(events) {
     navigationToFirstContentPlayingMs: firstContentPlaying ? firstContentPlaying.t : null,
     navigationToFirstAdPlayingMs: firstAdPlaying ? firstAdPlaying.t : null,
     navigationToFirstWaitingMs: firstWaiting ? firstWaiting.t : null,
+    navigationToFirstCurrentSrcMs: firstCurrentSrc ? firstCurrentSrc.t : null,
+    navigationToFirstReadyStateMs: firstReadyState ? firstReadyState.t : null,
+    navigationToFirstPlayableStateMs: firstPlayableState ? firstPlayableState.t : null,
+    navigationToFirstBufferedAheadMs: firstBufferedAhead ? firstBufferedAhead.t : null,
+    navigationToFirstVideoProgressMs: firstProgress ? firstProgress.t : null,
     waitingEvents: waitingEvents.length,
+    videoStateEvents: videoStateEvents.length,
     adSignalEvents: adSignalEvents.length,
     visibleAdSignalEvents: visibleAdSignalEvents.length,
     visibleLoadingEvents: visibleLoadingEvents.length,
@@ -260,22 +666,41 @@ function summarizeDomEvents(events) {
     visibleLoadingSignals: [...visibleLoadingSignals].sort(),
     visibleErrorSignals: [...visibleErrorSignals].sort(),
     playerClassStates: [...playerClassStates].sort(),
+    finalVideoState: lastVideoState,
     domSignals: [...allSignals].sort()
   };
 }
 
+function firstProgressEvent(videoStateEvents) {
+  let previous = null;
+  for (const event of videoStateEvents) {
+    const current = event.detail?.currentTime;
+    if (Number.isFinite(previous) && Number.isFinite(current) && current > previous + 0.05) {
+      return event;
+    }
+    if (Number.isFinite(current)) previous = current;
+  }
+  return null;
+}
+
 async function createBrowserContext(playwright, options) {
+  const extensionArgs = options.extensionDir ? [
+    `--disable-extensions-except=${options.extensionDir}`,
+    `--load-extension=${options.extensionDir}`
+  ] : [];
   const launchOptions = {
     headless: options.headless,
     executablePath: options.executablePath || undefined,
-    proxy: options.proxy ? { server: options.proxy } : undefined
+    proxy: options.proxy ? { server: options.proxy } : undefined,
+    args: extensionArgs
   };
 
-  if (options.profileDir) {
-    fs.mkdirSync(options.profileDir, { recursive: true });
+  if (options.profileDir || options.extensionDir) {
+    const profileDir = options.profileDir || path.resolve(options.cwd, '.profiles', 'chroma-extension');
+    fs.mkdirSync(profileDir, { recursive: true });
     return {
       browser: null,
-      context: await playwright.chromium.launchPersistentContext(options.profileDir, launchOptions)
+      context: await playwright.chromium.launchPersistentContext(profileDir, launchOptions)
     };
   }
 
@@ -288,6 +713,18 @@ async function createBrowserContext(playwright, options) {
 
 async function probePage(context, targetUrl, options) {
   const page = await context.newPage();
+  if (options.probeStripMode && options.probeStripMode !== 'off') {
+    await page.addInitScript(PROBE_STRIPPER_SCRIPT.replace(
+      '__PROBE_STRIP_MODE__',
+      JSON.stringify(options.probeStripMode)
+    ));
+  }
+  if (options.probeAccelerateAds) {
+    await page.addInitScript(PROBE_ACCELERATE_ADS_SCRIPT.replace(
+      '__PROBE_ACCELERATE_SPEED__',
+      JSON.stringify(options.probeAccelerateSpeed)
+    ));
+  }
   await page.addInitScript(DOM_PROBE_SCRIPT);
 
   let capturePhase = options.preplayReload ? 'warmup' : 'collection';
@@ -303,6 +740,28 @@ async function probePage(context, targetUrl, options) {
     }
   });
 
+  page.on('requestfailed', (request) => {
+    if (!phaseRequests.has(request)) return;
+    const endpoint = endpointForUrl(request.url());
+    if (!endpoint) return;
+    const requestStartedAt = requestStartTimes.get(request) || navigationStart;
+    const failedAt = Date.now();
+    phaseNetwork.push({
+      endpoint: endpoint.name,
+      kind: endpoint.kind,
+      url: safeUrlSummary(request.url()),
+      method: request.method(),
+      resourceType: request.resourceType(),
+      failed: true,
+      failureText: request.failure()?.errorText || null,
+      requestToFailureMs: failedAt - requestStartedAt,
+      navigationToFailureMs: failedAt - navigationStart,
+      adLikePaths: [],
+      knownStripperPathsPresent: [],
+      truncated: false
+    });
+  });
+
   page.on('response', async (response) => {
     const request = response.request();
     if (!phaseRequests.has(request)) return;
@@ -314,7 +773,10 @@ async function probePage(context, targetUrl, options) {
     const receivedAt = Date.now();
     const summary = {
       endpoint: endpoint.name,
+      kind: endpoint.kind,
       url: safeUrlSummary(url),
+      method: request.method(),
+      resourceType: request.resourceType(),
       status: response.status(),
       requestToResponseMs: receivedAt - requestStartedAt,
       navigationToResponseMs: receivedAt - navigationStart,
@@ -325,6 +787,12 @@ async function probePage(context, targetUrl, options) {
       parseError: null
     };
 
+    if (endpoint.kind === 'media') {
+      summary.media = summarizeMediaResponse(response);
+      phaseNetwork.push(summary);
+      return;
+    }
+
     try {
       const json = await response.json();
       const sanitized = walkJson(json, {
@@ -333,6 +801,9 @@ async function probePage(context, targetUrl, options) {
         includePathTypes: options.includePathTypes
       });
       Object.assign(summary, sanitized);
+      if (endpoint.name === 'player') {
+        summary.payloadHints = summarizePayloadHints('ytInitialPlayerResponse', json);
+      }
     } catch (err) {
       summary.parseError = err && err.message ? err.message : String(err);
     }
@@ -385,6 +856,10 @@ async function probePage(context, targetUrl, options) {
     ? await triggerPlayback(page, options)
     : { attempted: false, ok: false, method: null, error: null };
 
+  const contentReresolveAttempt = options.tryContentReresolve
+    ? await attemptContentReresolve(page, options)
+    : null;
+
   await page.waitForTimeout(options.settleMs);
 
   const collectionSnapshot = await capturePageSnapshot(page, {
@@ -404,8 +879,11 @@ async function probePage(context, targetUrl, options) {
     warmupSnapshot,
     timing: collectionSnapshot.timing,
     playbackAttempt,
+    contentReresolveAttempt,
     network: collectionSnapshot.network,
     initialPayloads: collectionSnapshot.initialPayloads,
+    probeStripperStats: collectionSnapshot.probeStripperStats,
+    probeAcceleratorStats: collectionSnapshot.probeAcceleratorStats,
     domEvents: collectionSnapshot.domEvents,
     snapshots: [
       ...(warmupSnapshot ? [warmupSnapshot] : []),
@@ -424,6 +902,8 @@ async function capturePageSnapshot(page, { phase, network, options }) {
   }).catch(() => []);
 
   const initialPayloads = await collectInitialPayloads(page, options);
+  const probeStripperStats = await collectProbeStripperStats(page);
+  const probeAcceleratorStats = await collectProbeAcceleratorStats(page);
   const timing = summarizeDomEvents(domEvents);
 
   return {
@@ -431,8 +911,24 @@ async function capturePageSnapshot(page, { phase, network, options }) {
     timing,
     network,
     initialPayloads,
+    probeStripperStats,
+    probeAcceleratorStats,
     domEvents
   };
+}
+
+async function collectProbeStripperStats(page) {
+  return page.evaluate(() => {
+    if (!window.__YT_PROBE_STRIPPER__) return null;
+    return JSON.parse(JSON.stringify(window.__YT_PROBE_STRIPPER__));
+  }).catch(() => null);
+}
+
+async function collectProbeAcceleratorStats(page) {
+  return page.evaluate(() => {
+    if (!window.__YT_PROBE_ACCELERATOR__) return null;
+    return JSON.parse(JSON.stringify(window.__YT_PROBE_ACCELERATOR__));
+  }).catch(() => null);
 }
 
 async function triggerPlayback(page, options) {
@@ -504,6 +1000,243 @@ async function triggerPlayback(page, options) {
   return result;
 }
 
+async function attemptContentReresolve(page, options) {
+  const result = {
+    enabled: true,
+    attempted: false,
+    method: options.contentReresolveMethod,
+    reason: null,
+    before: null,
+    after: null,
+    actionResult: null,
+    error: null
+  };
+
+  const startedAt = Date.now();
+  const timeoutMs = options.contentReresolveTimeoutMs;
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    const state = await readReresolveState(page);
+    if (!state) {
+      result.reason = 'no-video-state';
+      await page.waitForTimeout(250);
+      continue;
+    }
+
+    if (isReresolveDeadZone(state, options)) {
+      result.attempted = true;
+      result.before = state;
+      await markProbeEvent(page, 'content-reresolve-before', {
+        method: result.method,
+        state
+      });
+
+      try {
+        result.actionResult = await runContentReresolveAction(page, result.method);
+      } catch (err) {
+        result.error = err && err.message ? err.message : String(err);
+      }
+
+      await page.waitForTimeout(1500);
+      result.after = await readReresolveState(page);
+      result.reason = result.error ? 'action-error' : 'attempted';
+      await markProbeEvent(page, 'content-reresolve-after', {
+        method: result.method,
+        actionResult: result.actionResult,
+        error: result.error,
+        before: result.before,
+        after: result.after
+      });
+      return result;
+    }
+
+    result.reason = state.elapsedMs < options.contentReresolveAfterMs
+      ? 'waiting-for-reresolve-window'
+      : 'dead-zone-condition-not-met';
+    await page.waitForTimeout(250);
+  }
+
+  return result;
+}
+
+function isReresolveDeadZone(state, options) {
+  if (state.elapsedMs < options.contentReresolveAfterMs) return false;
+  if (!state.videoPresent || !state.currentSrc?.present) return false;
+  if (state.readyState !== 0) return false;
+  if (Number.isFinite(state.currentTime) && state.currentTime > 0.05) return false;
+  if ((state.visibleAdSignals || []).length > 0) return false;
+  const classes = state.playerClasses || '';
+  return classes.includes('buffering-mode') && classes.includes('unstarted-mode');
+}
+
+async function readReresolveState(page) {
+  return page.evaluate(() => {
+    const video = document.querySelector('video');
+    const player = document.querySelector('#movie_player, .html5-video-player');
+    const adSelectors = [
+      '.html5-video-player.ad-showing',
+      '.html5-video-player.ad-interrupting',
+      '.ad-showing',
+      '.ad-interrupting',
+      '.ytp-ad-module'
+    ];
+    const loadingSelectors = [
+      '.ytp-spinner',
+      '.ytp-spinner-container',
+      '.ytp-loading-spinner',
+      '.html5-video-player.ytp-waiting'
+    ];
+
+    function isVisible(el) {
+      try {
+        const style = getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function visibleSignals(selectors) {
+      return selectors.filter((selector) => {
+        try {
+          return [...document.querySelectorAll(selector)].some(isVisible);
+        } catch (_) {
+          return false;
+        }
+      });
+    }
+
+    function mediaUrlSummary(rawUrl) {
+      if (!rawUrl) return { present: false };
+      try {
+        const url = new URL(rawUrl);
+        return {
+          present: true,
+          origin: url.origin,
+          path: url.pathname,
+          queryKeys: [...url.searchParams.keys()].sort()
+        };
+      } catch (_) {
+        return { present: true, parseError: true };
+      }
+    }
+
+    function videoIdFromPage() {
+      try {
+        const fromPlayer = player && typeof player.getVideoData === 'function'
+          ? player.getVideoData()?.video_id
+          : null;
+        if (fromPlayer) return fromPlayer;
+      } catch (_) {}
+      try {
+        const url = new URL(location.href);
+        const fromQuery = url.searchParams.get('v');
+        if (fromQuery) return fromQuery;
+        if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/').filter(Boolean)[1] || null;
+      } catch (_) {}
+      return null;
+    }
+
+    return {
+      elapsedMs: Math.round(performance.now()),
+      videoPresent: !!video,
+      playerPresent: !!player,
+      videoId: videoIdFromPage(),
+      currentSrc: mediaUrlSummary(video?.currentSrc || video?.src || ''),
+      networkState: video ? video.networkState : null,
+      readyState: video ? video.readyState : null,
+      currentTime: video && Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : null,
+      duration: video && Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null,
+      paused: video ? video.paused : null,
+      ended: video ? video.ended : null,
+      visibleAdSignals: visibleSignals(adSelectors),
+      visibleLoadingSignals: visibleSignals(loadingSelectors),
+      playerClasses: player ? String(player.className || '') : '',
+      api: {
+        cueVideoById: !!player && typeof player.cueVideoById === 'function',
+        loadVideoById: !!player && typeof player.loadVideoById === 'function',
+        playVideo: !!player && typeof player.playVideo === 'function',
+        getVideoData: !!player && typeof player.getVideoData === 'function'
+      }
+    };
+  }).catch(() => null);
+}
+
+async function runContentReresolveAction(page, method) {
+  return page.evaluate(async (methodName) => {
+    const video = document.querySelector('video');
+    const player = document.querySelector('#movie_player, .html5-video-player');
+    const videoId = (() => {
+      try {
+        const fromPlayer = player && typeof player.getVideoData === 'function'
+          ? player.getVideoData()?.video_id
+          : null;
+        if (fromPlayer) return fromPlayer;
+      } catch (_) {}
+      try {
+        const url = new URL(location.href);
+        const fromQuery = url.searchParams.get('v');
+        if (fromQuery) return fromQuery;
+        if (url.pathname.startsWith('/shorts/')) return url.pathname.split('/').filter(Boolean)[1] || null;
+      } catch (_) {}
+      return null;
+    })();
+    const startSeconds = video && Number.isFinite(video.currentTime)
+      ? Math.max(0, Math.floor(video.currentTime))
+      : 0;
+    const result = {
+      method: methodName,
+      videoId,
+      startSeconds,
+      used: null,
+      ok: false,
+      error: null
+    };
+
+    try {
+      if (methodName === 'video-play') {
+        if (!video || typeof video.play !== 'function') throw new Error('video.play unavailable');
+        await video.play();
+        result.used = 'video.play';
+        result.ok = true;
+        return result;
+      }
+
+      if (!player) throw new Error('movie_player unavailable');
+
+      if (methodName === 'play-video') {
+        if (typeof player.playVideo !== 'function') throw new Error('playVideo unavailable');
+        player.playVideo();
+        result.used = 'player.playVideo';
+        result.ok = true;
+        return result;
+      }
+
+      if (!videoId) throw new Error('video id unavailable');
+
+      if (methodName === 'load') {
+        if (typeof player.loadVideoById !== 'function') throw new Error('loadVideoById unavailable');
+        player.loadVideoById(videoId, startSeconds);
+        result.used = 'player.loadVideoById';
+        result.ok = true;
+        return result;
+      }
+
+      if (typeof player.cueVideoById !== 'function') throw new Error('cueVideoById unavailable');
+      player.cueVideoById(videoId, startSeconds);
+      if (typeof player.playVideo === 'function') player.playVideo();
+      result.used = 'player.cueVideoById+playVideo';
+      result.ok = true;
+      return result;
+    } catch (err) {
+      result.error = err && err.message ? err.message : String(err);
+      return result;
+    }
+  }, method);
+}
+
 async function clickIfVisible(page, selector) {
   const locator = page.locator(selector).first();
   const count = await locator.count();
@@ -526,11 +1259,56 @@ async function readVideoState(page) {
     const video = document.querySelector('video');
     if (!video) return null;
     const player = document.querySelector('.html5-video-player, #movie_player');
+    function rounded(value) {
+      return Number.isFinite(value) ? Number(value.toFixed(3)) : null;
+    }
+    function mediaUrlSummary(rawUrl) {
+      if (!rawUrl) return { present: false };
+      try {
+        const url = new URL(rawUrl);
+        return {
+          present: true,
+          origin: url.origin,
+          path: url.pathname,
+          queryKeys: [...url.searchParams.keys()].sort()
+        };
+      } catch (_) {
+        return { present: true, parseError: true };
+      }
+    }
+    function rangeSummary(ranges, currentTime) {
+      try {
+        const items = [];
+        for (let i = 0; i < ranges.length; i++) {
+          items.push({
+            start: rounded(ranges.start(i)),
+            end: rounded(ranges.end(i))
+          });
+        }
+        const active = items.find((item) => {
+          return Number.isFinite(item.start) && Number.isFinite(item.end) &&
+            currentTime >= item.start && currentTime <= item.end;
+        });
+        return {
+          count: items.length,
+          activeAhead: active ? rounded(active.end - currentTime) : null,
+          first: items[0] || null,
+          last: items[items.length - 1] || null
+        };
+      } catch (_) {
+        return { count: 0, activeAhead: null, first: null, last: null };
+      }
+    }
     return {
       paused: video.paused,
+      ended: video.ended,
+      currentSrc: mediaUrlSummary(video.currentSrc || video.src || ''),
+      networkState: video.networkState,
       readyState: video.readyState,
-      currentTime: Number.isFinite(video.currentTime) ? Number(video.currentTime.toFixed(3)) : null,
-      duration: Number.isFinite(video.duration) ? Number(video.duration.toFixed(3)) : null,
+      currentTime: rounded(video.currentTime),
+      duration: rounded(video.duration),
+      buffered: rangeSummary(video.buffered, video.currentTime),
+      seekable: rangeSummary(video.seekable, video.currentTime),
       muted: video.muted,
       playbackRate: video.playbackRate,
       playerClasses: player ? String(player.className || '') : ''
@@ -564,8 +1342,35 @@ async function collectInitialPayloads(page, options) {
       maxPaths: options.maxPaths,
       includePathTypes: options.includePathTypes
     });
+    sanitized.payloadHints = summarizePayloadHints(name, value);
     return [name, sanitized];
   }));
+}
+
+function summarizePayloadHints(name, value) {
+  if (name !== 'ytInitialPlayerResponse' || !value || typeof value !== 'object') {
+    return null;
+  }
+  const streamingData = value.streamingData || {};
+  const playabilityStatus = value.playabilityStatus || {};
+  const hints = {
+    hasStreamingData: !!value.streamingData,
+    formats: Array.isArray(streamingData.formats) ? streamingData.formats.length : 0,
+    adaptiveFormats: Array.isArray(streamingData.adaptiveFormats) ? streamingData.adaptiveFormats.length : 0,
+    hasDashManifestUrl: typeof streamingData.dashManifestUrl === 'string',
+    hasHlsManifestUrl: typeof streamingData.hlsManifestUrl === 'string',
+    playabilityStatus: typeof playabilityStatus.status === 'string' ? playabilityStatus.status : null,
+    playabilityReason: typeof playabilityStatus.reason === 'string' ? playabilityStatus.reason : null,
+    hasVideoDetails: !!value.videoDetails,
+    isLiveContent: value.videoDetails?.isLiveContent === true,
+    hasAdPlacements: Array.isArray(value.adPlacements) && value.adPlacements.length > 0,
+    hasAdSlots: Array.isArray(value.adSlots) && value.adSlots.length > 0,
+    hasPlayerAds: Array.isArray(value.playerAds) && value.playerAds.length > 0,
+    hasAdBreakHeartbeatParams: !!value.adBreakHeartbeatParams
+  };
+  hints.hasPlayableStreams = hints.formats > 0 || hints.adaptiveFormats > 0 ||
+    hints.hasDashManifestUrl || hints.hasHlsManifestUrl;
+  return hints;
 }
 
 function buildPageSummary(page) {
@@ -574,6 +1379,9 @@ function buildPageSummary(page) {
   const knownStripperPathsPresent = new Set();
   const knownFieldsPresent = new Map(KNOWN_STRIPPER_FIELDS.map((field) => [field, new Set()]));
   const sourceCounts = [];
+  const mediaEntries = (page.network || []).filter((entry) => entry.kind === 'media');
+  const mediaResponses = mediaEntries.filter((entry) => !entry.failed && Number.isFinite(entry.navigationToResponseMs));
+  const mediaFailures = mediaEntries.filter((entry) => entry.failed && Number.isFinite(entry.navigationToFailureMs));
 
   for (const source of getSanitizedSources(page)) {
     sourceCounts.push({
@@ -602,7 +1410,30 @@ function buildPageSummary(page) {
     firstPlayingMs: page.timing.navigationToFirstPlayingMs,
     firstContentPlayingMs: page.timing.navigationToFirstContentPlayingMs,
     firstAdPlayingMs: page.timing.navigationToFirstAdPlayingMs,
+    firstCurrentSrcMs: page.timing.navigationToFirstCurrentSrcMs,
+    firstReadyStateMs: page.timing.navigationToFirstReadyStateMs,
+    firstPlayableStateMs: page.timing.navigationToFirstPlayableStateMs,
+    firstBufferedAheadMs: page.timing.navigationToFirstBufferedAheadMs,
+    firstVideoProgressMs: page.timing.navigationToFirstVideoProgressMs,
+    firstMediaRequestMs: firstFinite(mediaEntries.map((entry) => {
+      if (Number.isFinite(entry.navigationToResponseMs) && Number.isFinite(entry.requestToResponseMs)) {
+        return entry.navigationToResponseMs - entry.requestToResponseMs;
+      }
+      if (Number.isFinite(entry.navigationToFailureMs) && Number.isFinite(entry.requestToFailureMs)) {
+        return entry.navigationToFailureMs - entry.requestToFailureMs;
+      }
+      return null;
+    })),
+    firstMediaResponseMs: firstFinite(mediaResponses.map((entry) => entry.navigationToResponseMs)),
+    firstMediaFailureMs: firstFinite(mediaFailures.map((entry) => entry.navigationToFailureMs)),
+    mediaRequestCount: mediaEntries.length,
+    mediaResponseCount: mediaResponses.length,
+    mediaFailureCount: mediaFailures.length,
+    mediaStatusCounts: countBy(mediaResponses, (entry) => String(entry.status)),
+    mediaContentTypes: [...new Set(mediaResponses.map((entry) => entry.media?.contentType).filter(Boolean))].sort(),
+    finalVideoState: page.timing.finalVideoState,
     waitingEvents: page.timing.waitingEvents,
+    videoStateEvents: page.timing.videoStateEvents,
     visibleLoadingEvents: page.timing.visibleLoadingEvents,
     visibleAdSignalEvents: page.timing.visibleAdSignalEvents,
     visibleAdSignals: page.timing.visibleAdSignals,
@@ -650,6 +1481,21 @@ function isHighValueAdPath(pathValue) {
     /(adBreak|adSlot|adPlacement|playerAds|inPlayerAdLayoutRenderer|playerBytesAdLayoutRenderer|clientForecastingAdRenderer|adBreakServiceRenderer|daiConfig|showInstream|skipAdViewModel|adDurationRemaining|adBadge|serializedAdServingDataEntry)/i.test(pathValue);
 }
 
+function firstFinite(values) {
+  const nums = values.filter((value) => Number.isFinite(value));
+  if (!nums.length) return null;
+  return Math.min(...nums);
+}
+
+function countBy(items, keyFn) {
+  const counts = {};
+  for (const item of items) {
+    const key = keyFn(item);
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
 function safeUrlSummary(rawUrl) {
   try {
     const url = new URL(rawUrl);
@@ -663,7 +1509,25 @@ function safeUrlSummary(rawUrl) {
   }
 }
 
+function summarizeMediaResponse(response) {
+  const headers = response.headers();
+  return {
+    contentType: headers['content-type'] || null,
+    contentLength: safeIntegerHeader(headers['content-length']),
+    contentRange: headers['content-range'] || null,
+    acceptRanges: headers['accept-ranges'] || null
+  };
+}
+
+function safeIntegerHeader(value) {
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 async function runProbe(options) {
+  options.probeStripMode ||= 'off';
+  options.probeAccelerateSpeed ||= 16;
   const urls = loadUrls(options);
   if (urls.length === 0) {
     throw new Error('Provide --url or --urls <file>.');
@@ -674,11 +1538,23 @@ async function runProbe(options) {
   if (!executablePath) {
     throw new Error('Set CHROME_FOR_TESTING_PATH, CHROME_PATH, or pass --browser <path>. This tool uses playwright-core and does not download browser builds.');
   }
+  if (!PROBE_STRIP_MODES.includes(options.probeStripMode)) {
+    throw new Error(`Unknown --probe-strip-mode: ${options.probeStripMode}. Use one of: ${PROBE_STRIP_MODES.join(', ')}.`);
+  }
+  if (options.extensionDir) {
+    validateExtensionDir(options.extensionDir);
+  }
+  if (options.extensionDir && options.probeStripMode !== 'off') {
+    throw new Error('--probe-strip-mode is a probe-only simulator. Run it without --extension to avoid stacking it on Chroma.');
+  }
+  const headless = options.extensionDir ? false : options.headless;
   const { browser, context } = await createBrowserContext(playwright, {
-    headless: options.headless,
+    cwd: options.cwd,
+    headless,
     executablePath,
     proxy: options.proxy,
-    profileDir: options.profileDir
+    profileDir: options.profileDir,
+    extensionDir: options.extensionDir
   });
 
   const report = {
@@ -689,9 +1565,18 @@ async function runProbe(options) {
       browser: executablePath ? path.basename(executablePath) : 'playwright-default-chromium',
       executablePath: executablePath ? '[redacted]' : null,
       proxy: options.proxy ? redactProxy(options.proxy) : false,
-      headless: options.headless,
+      headless,
+      extensionLoaded: options.extensionDir ? path.basename(options.extensionDir) : false,
+      extensionProfile: options.extensionDir ? (options.profileDir ? 'custom' : 'default') : false,
       clickPlay: options.clickPlay,
       preplayReload: options.preplayReload,
+      probeStripMode: options.probeStripMode,
+      probeAccelerateAds: options.probeAccelerateAds,
+      probeAccelerateSpeed: options.probeAccelerateSpeed,
+      tryContentReresolve: options.tryContentReresolve,
+      contentReresolveMethod: options.contentReresolveMethod,
+      contentReresolveAfterMs: options.contentReresolveAfterMs,
+      contentReresolveTimeoutMs: options.contentReresolveTimeoutMs,
       preReloadSettleMs: options.preReloadSettleMs,
       includePathTypes: options.includePathTypes,
       settleMs: options.settleMs,
@@ -765,6 +1650,16 @@ function requirePlaywright() {
     return require('playwright-core');
   } catch (err) {
     throw new Error('Missing dependency: run npm.cmd install inside tools\\youtube-player-probe first.');
+  }
+}
+
+function validateExtensionDir(extensionDir) {
+  if (!fs.existsSync(extensionDir)) {
+    throw new Error(`Extension directory not found: ${extensionDir}`);
+  }
+  const manifestPath = path.join(extensionDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Extension manifest not found: ${manifestPath}`);
   }
 }
 

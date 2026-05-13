@@ -16,9 +16,11 @@ function collectPageSummary(report) {
   const visibleLoadingSignals = new Set();
   const endpointCounts = new Map();
   const timings = [];
+  const mediaSummaries = [];
 
   for (const page of report.pages || []) {
     if (page.timing) timings.push(page.timing);
+    if (page.summary) mediaSummaries.push(page.summary);
     for (const signal of page.timing?.domSignals || []) domSignals.add(signal);
     for (const signal of page.timing?.visibleAdSignals || []) visibleAdSignals.add(signal);
     for (const signal of page.timing?.visibleLoadingSignals || []) visibleLoadingSignals.add(signal);
@@ -43,7 +45,8 @@ function collectPageSummary(report) {
     visibleAdSignals,
     visibleLoadingSignals,
     endpointCounts,
-    timings
+    timings,
+    mediaSummaries
   };
 }
 
@@ -110,6 +113,16 @@ function runDiff(basePath, nextPath) {
   const nextFirstPlaying = average(next.timings.map((timing) => timing.navigationToFirstPlayingMs));
   const baseFirstContentPlaying = average(base.timings.map((timing) => timing.navigationToFirstContentPlayingMs));
   const nextFirstContentPlaying = average(next.timings.map((timing) => timing.navigationToFirstContentPlayingMs));
+  const baseFirstCurrentSrc = average(base.timings.map((timing) => timing.navigationToFirstCurrentSrcMs));
+  const nextFirstCurrentSrc = average(next.timings.map((timing) => timing.navigationToFirstCurrentSrcMs));
+  const baseFirstPlayableState = average(base.timings.map((timing) => timing.navigationToFirstPlayableStateMs));
+  const nextFirstPlayableState = average(next.timings.map((timing) => timing.navigationToFirstPlayableStateMs));
+  const baseFirstProgress = average(base.timings.map((timing) => timing.navigationToFirstVideoProgressMs));
+  const nextFirstProgress = average(next.timings.map((timing) => timing.navigationToFirstVideoProgressMs));
+  const baseFirstMediaRequest = average(base.mediaSummaries.map((summary) => summary.firstMediaRequestMs));
+  const nextFirstMediaRequest = average(next.mediaSummaries.map((summary) => summary.firstMediaRequestMs));
+  const baseFirstMediaResponse = average(base.mediaSummaries.map((summary) => summary.firstMediaResponseMs));
+  const nextFirstMediaResponse = average(next.mediaSummaries.map((summary) => summary.firstMediaResponseMs));
   const baseVisibleLoading = average(base.timings.map((timing) => timing.visibleLoadingEvents));
   const nextVisibleLoading = average(next.timings.map((timing) => timing.visibleLoadingEvents));
 
@@ -144,6 +157,11 @@ function runDiff(basePath, nextPath) {
     'Timing:',
     `navigationToFirstPlayingMs average: ${baseFirstPlaying ?? 'n/a'} -> ${nextFirstPlaying ?? 'n/a'}`,
     `navigationToFirstContentPlayingMs average: ${baseFirstContentPlaying ?? 'n/a'} -> ${nextFirstContentPlaying ?? 'n/a'}`,
+    `navigationToFirstCurrentSrcMs average: ${baseFirstCurrentSrc ?? 'n/a'} -> ${nextFirstCurrentSrc ?? 'n/a'}`,
+    `firstMediaRequestMs average: ${baseFirstMediaRequest ?? 'n/a'} -> ${nextFirstMediaRequest ?? 'n/a'}`,
+    `firstMediaResponseMs average: ${baseFirstMediaResponse ?? 'n/a'} -> ${nextFirstMediaResponse ?? 'n/a'}`,
+    `navigationToFirstPlayableStateMs average: ${baseFirstPlayableState ?? 'n/a'} -> ${nextFirstPlayableState ?? 'n/a'}`,
+    `navigationToFirstVideoProgressMs average: ${baseFirstProgress ?? 'n/a'} -> ${nextFirstProgress ?? 'n/a'}`,
     `visibleLoadingEvents average: ${baseVisibleLoading ?? 'n/a'} -> ${nextVisibleLoading ?? 'n/a'}`
   ];
 
