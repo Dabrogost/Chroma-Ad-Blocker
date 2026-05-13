@@ -8,11 +8,19 @@ const proxyJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'bac
   .replace("import { decryptAuth } from '../core/crypto.js';", 'var decryptAuth = globalThis._mockDecryptAuth;')
   .replace("import { recordStatsEvent } from './stats.js';", 'var recordStatsEvent = globalThis._mockRecordStatsEvent || (() => {});')
   .replace(/^export\s+/gm, '')
-  + '\nglobalThis.__proxyExports = { syncProxyState, runProxyTest, findAuthProxyConfig, getProxyString, buildPacDomainConditions, CHROME_SERVICE_BYPASS_DOMAINS };\n';
+  + '\nglobalThis.__proxyExports = { syncProxyState, runProxyTest, findAuthProxyConfig, getProxyString, buildPacDomainConditions, fetchProxyIp, isLikelyIp, PROXY_TEST_DOMAINS, CHROME_SERVICE_BYPASS_DOMAINS };\n';
 
 const PROXY_AUTH_STATS_DELAY_MS = 10000;
 
-function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readStartupStorage = false, startupProxyConfigs } = {}) {
+function createProxySandbox({
+  proxyConfigs = [],
+  config = {},
+  proxyConfig,
+  readStartupStorage = false,
+  startupProxyConfigs,
+  fetchImpl,
+  random = () => 0
+} = {}) {
   let authListener = null;
   let storageChangeListener = null;
   const proxySetCalls = [];
@@ -20,12 +28,15 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
   const storageSetCalls = [];
   const storageRemoveCalls = [];
   const statsEvents = [];
+  const fetchCalls = [];
   const timeoutCallbacks = [];
   const storage = {
     proxyConfigs,
     config,
     proxyConfig
   };
+  const mockMath = Object.create(Math);
+  mockMath.random = random;
 
   const chrome = {
     storage: {
@@ -92,8 +103,14 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
       return 1;
     },
     clearTimeout: () => {},
+    Math: mockMath,
+    Date,
     AbortController,
-    fetch: async () => ({ ok: true, text: async () => '203.0.113.7\n' }),
+    fetch: async (url, options) => {
+      fetchCalls.push({ url, options });
+      if (fetchImpl) return fetchImpl(url, options, fetchCalls);
+      return { ok: true, text: async () => '203.0.113.7\n' };
+    },
     _mockDecryptAuth: async (iv, cipher) => ({ username: `user:${iv}`, password: `pass:${cipher}` }),
     _mockRecordStatsEvent: event => { statsEvents.push(event); }
   };
@@ -109,6 +126,7 @@ function createProxySandbox({ proxyConfigs = [], config = {}, proxyConfig, readS
     storageSetCalls,
     storageRemoveCalls,
     statsEvents,
+    fetchCalls,
     runPendingTimers: () => {
       const callbacks = timeoutCallbacks.splice(0);
       callbacks.forEach(fn => fn());
@@ -490,9 +508,187 @@ test('Proxy test runner hardening', async (t) => {
     const result = await harness.runProxyTest(2);
     const pac = harness.proxySetCalls[0]?.value?.pacScript?.data || '';
 
-    assert.deepStrictEqual(plain(result), { ok: true, proxyId: 2, ip: '203.0.113.7' });
-    assert.match(pac, /host === "icanhazip\.com"/);
+    assert.deepStrictEqual(plain(result), {
+      ok: true,
+      proxyId: 2,
+      ip: '203.0.113.7',
+      providerId: 'aws-checkip'
+    });
     assert.match(pac, /return "PROXY second\.example\.com:8080"/);
+
+    for (const domain of harness.PROXY_TEST_DOMAINS) {
+      const escaped = domain.replace(/\./g, '\\.');
+      assert.match(pac, new RegExp(`host === "${escaped}"`));
+      assert.match(pac, new RegExp(`dnsDomainIs\\(host, "\\.${escaped}"\\)`));
+    }
+  });
+
+  await t.test('succeeds when the first verification endpoint fails and the second succeeds', async () => {
+    let callCount = 0;
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1 })],
+      fetchImpl: async () => {
+        callCount++;
+        if (callCount === 1) {
+          return { ok: false, status: 503, text: async () => '' };
+        }
+        return { ok: true, text: async () => '{"ip":"2001:db8::7"}' };
+      }
+    });
+
+    const result = await harness.runProxyTest(1);
+
+    assert.deepStrictEqual(plain(result), {
+      ok: true,
+      proxyId: 1,
+      ip: '2001:db8::7',
+      providerId: 'ipify'
+    });
+    assert.strictEqual(harness.fetchCalls.length, 2);
+    assert.deepStrictEqual(harness.fetchCalls.map(call => call.url), [
+      'https://checkip.amazonaws.com/',
+      'https://api64.ipify.org?format=json'
+    ]);
+  });
+
+  await t.test('stops calling verification providers after the first success', async () => {
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1 })]
+    });
+
+    const result = await harness.runProxyTest(1);
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(harness.fetchCalls.length, 1);
+  });
+
+  await t.test('returns a fresh cached success without issuing another fetch', async () => {
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1 })]
+    });
+
+    const first = await harness.runProxyTest(1);
+    const fetchCountAfterFirst = harness.fetchCalls.length;
+    const proxySetCountAfterFirst = harness.proxySetCalls.length;
+    const second = await harness.runProxyTest(1);
+
+    assert.deepStrictEqual(plain(second), plain(first));
+    assert.strictEqual(harness.fetchCalls.length, fetchCountAfterFirst);
+    assert.strictEqual(harness.proxySetCalls.length, proxySetCountAfterFirst);
+  });
+
+  await t.test('does not reuse cached success after proxy connection details change', async () => {
+    let callCount = 0;
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1, type: 'HTTPS' })],
+      fetchImpl: async () => {
+        callCount++;
+        return { ok: true, text: async () => `198.51.100.${callCount}\n` };
+      }
+    });
+
+    const first = await harness.runProxyTest(1);
+    harness.storage.proxyConfigs = [baseProxy({ id: 1, type: 'PROXY' })];
+    const second = await harness.runProxyTest(1);
+
+    assert.deepStrictEqual(plain(first), {
+      ok: true,
+      proxyId: 1,
+      ip: '198.51.100.1',
+      providerId: 'aws-checkip'
+    });
+    assert.deepStrictEqual(plain(second), {
+      ok: true,
+      proxyId: 1,
+      ip: '198.51.100.2',
+      providerId: 'aws-checkip'
+    });
+    assert.strictEqual(harness.fetchCalls.length, 2);
+  });
+
+  await t.test('does not cache verification failures', async () => {
+    let callCount = 0;
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1 })],
+      fetchImpl: async () => {
+        callCount++;
+        if (callCount <= 2) {
+          return { ok: false, status: 503, text: async () => '' };
+        }
+        return { ok: true, text: async () => '198.51.100.44\n' };
+      }
+    });
+
+    const first = await harness.runProxyTest(1);
+    const second = await harness.runProxyTest(1);
+
+    assert.deepStrictEqual(plain(first), { ok: false, error: 'ipify: HTTP 503' });
+    assert.deepStrictEqual(plain(second), {
+      ok: true,
+      proxyId: 1,
+      ip: '198.51.100.44',
+      providerId: 'aws-checkip'
+    });
+    assert.strictEqual(harness.fetchCalls.length, 3);
+  });
+
+  await t.test('rejects invalid IP responses from verification providers', async () => {
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1 })],
+      fetchImpl: async (url) => {
+        if (url.includes('ipify')) {
+          return { ok: true, text: async () => '{"ip":"not an ip"}' };
+        }
+        return { ok: true, text: async () => 'not an ip\n' };
+      }
+    });
+
+    const result = await harness.runProxyTest(1);
+
+    assert.deepStrictEqual(plain(result), { ok: false, error: 'ipify: invalid IP response' });
+    assert.strictEqual(harness.fetchCalls.length, 2);
+  });
+
+  await t.test('resets test routing and syncs PAC again after endpoint failures', async () => {
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1 })],
+      fetchImpl: async () => ({ ok: false, status: 502, text: async () => '' })
+    });
+
+    const result = await harness.runProxyTest(1);
+    const testPac = harness.proxySetCalls[0]?.value?.pacScript?.data || '';
+    const cleanupPac = harness.proxySetCalls[1]?.value?.pacScript?.data || '';
+
+    assert.deepStrictEqual(plain(result), { ok: false, error: 'ipify: HTTP 502' });
+    assert.match(testPac, /cloudflare\.com|checkip\.amazonaws\.com|api64\.ipify\.org|icanhazip\.com/);
+    assert.doesNotMatch(cleanupPac, /cloudflare\.com|checkip\.amazonaws\.com|api64\.ipify\.org|icanhazip\.com/);
+    assert.match(cleanupPac, /example\.com/);
+  });
+
+  await t.test('releases the proxy test lock and cleans up routing after timeout', async () => {
+    let callCount = 0;
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    const harness = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1 })],
+      fetchImpl: async () => {
+        callCount++;
+        if (callCount === 1) throw abortError;
+        return { ok: true, text: async () => '198.51.100.55\n' };
+      }
+    });
+
+    const first = await harness.runProxyTest(1);
+    const second = await harness.runProxyTest(1);
+
+    assert.deepStrictEqual(plain(first), { ok: false, error: 'Timeout' });
+    assert.deepStrictEqual(plain(second), {
+      ok: true,
+      proxyId: 1,
+      ip: '198.51.100.55',
+      providerId: 'aws-checkip'
+    });
+    assert.ok(harness.proxySetCalls.length >= 4, 'expected test and cleanup syncs for both runs');
   });
 });
 
