@@ -16,6 +16,147 @@ async function settleDomAsyncWork(turns = 20) {
   }
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function createSettingsHarness({
+  url = 'chrome-extension://test/ui/settings.html',
+  responses = {},
+  pending = {}
+} = {}) {
+  const dom = new JSDOM('<!doctype html><body><div id="appShell"></div></body>', {
+    url,
+    runScripts: 'outside-only'
+  });
+  const messages = [];
+  const storageState = {};
+  const defaultStats = {
+    settings: { mode: 'aggregated', retentionDays: 90 },
+    totals: { protectionEvents: 42, networkBlocks: 7, cosmeticHides: 2, youtubePayloadCleans: 1, scriptletHits: 3 },
+    ranges: {
+      today: { protectionEvents: 1 },
+      last7Days: { protectionEvents: 7 },
+      last30Days: { protectionEvents: 30 },
+      allTime: { protectionEvents: 42 }
+    },
+    bySite: { example: { domain: 'example.com', protectionEvents: 4, lastSeen: Date.now() } },
+    byRule: { r1: { ruleId: 1, networkBlocks: 4, ruleSource: 'test' } },
+    byDay: { today: { day: '2026-05-12', protectionEvents: 4 } },
+    recentEvents: [{ layer: 'network', type: 'block', domain: 'example.com', count: 2 }],
+    timeSavedSeconds: 12
+  };
+  const defaultHealth = {
+    overall: { status: 'healthy', issues: [] },
+    manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+    master: { enabled: true, networkBlocking: true },
+    dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true, appliedNetworkRuleCount: 12, whitelistRuleCount: 0 },
+    subscriptions: { enabled: 1, total: 1, appliedNetwork: 12, cosmetic: 4, scriptlet: 2, withErrors: 0 },
+    scriptlets: { apiAvailable: true, registeredUserScriptCount: 2, storedRuleCount: 2 },
+    cosmetic: { subscriptionCosmeticRuleCount: 4, enabledLocalZapperRuleCount: 0, localZapperRuleCount: 0 },
+    proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, globalProxyEnabled: false, globalProxyConfigured: false },
+    webrtc: { available: true, mode: 'auto', protected: true },
+    requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+  };
+
+  const sandbox = {
+    window: dom.window,
+    document: dom.window.document,
+    location: dom.window.location,
+    console,
+    confirm: () => true,
+    setTimeout,
+    clearTimeout,
+    Blob: dom.window.Blob,
+    URL: dom.window.URL,
+    MSG: {
+      CONFIG_GET: 'CONFIG_GET',
+      CONFIG_SET: 'CONFIG_SET',
+      UPDATE_CHECK: 'UPDATE_CHECK',
+      STATS_GET: 'STATS_GET',
+      STATS_RESET: 'STATS_RESET',
+      STATS_EXPORT: 'STATS_EXPORT',
+      STATS_SETTINGS_SET: 'STATS_SETTINGS_SET',
+      HEALTH_GET: 'HEALTH_GET',
+      PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
+      PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
+      PROXY_TEST: 'PROXY_TEST',
+      SUBSCRIPTION_GET: 'SUBSCRIPTION_GET',
+      SUBSCRIPTION_SET: 'SUBSCRIPTION_SET',
+      SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
+      SUBSCRIPTION_REMOVE: 'SUBSCRIPTION_REMOVE',
+      SUBSCRIPTION_ADD: 'SUBSCRIPTION_ADD',
+      ZAPPER_RULES_GET: 'ZAPPER_RULES_GET',
+      ZAPPER_RULE_SET: 'ZAPPER_RULE_SET',
+      ZAPPER_RULE_REMOVE: 'ZAPPER_RULE_REMOVE',
+      ZAPPER_START: 'ZAPPER_START',
+      WHITELIST_GET: 'WHITELIST_GET',
+      WHITELIST_ADD: 'WHITELIST_ADD',
+      WHITELIST_REMOVE: 'WHITELIST_REMOVE',
+      FPR_WHITELIST_GET: 'FPR_WHITELIST_GET',
+      FPR_WHITELIST_ADD: 'FPR_WHITELIST_ADD',
+      FPR_WHITELIST_REMOVE: 'FPR_WHITELIST_REMOVE',
+      LOG_GET: 'LOG_GET'
+    },
+    chrome: {
+      runtime: {
+        getManifest: () => ({ version: '1.0.1' }),
+        getURL: path => `chrome-extension://test/${path}`,
+        openOptionsPage: () => {}
+      },
+      storage: {
+        local: {
+          get: async keys => {
+            if (typeof keys === 'string') return { [keys]: storageState[keys] };
+            if (Array.isArray(keys)) {
+              const result = {};
+              keys.forEach(key => { result[key] = storageState[key]; });
+              return result;
+            }
+            return storageState;
+          },
+          set: async value => Object.assign(storageState, value)
+        },
+        onChanged: { addListener: () => {} }
+      },
+      tabs: {
+        query: async () => [{ id: 7, url: 'https://www.example.com/watch' }],
+        create: async () => {},
+        reload: () => {}
+      }
+    },
+    notifyBackground: msg => {
+      messages.push(msg);
+      if (pending[msg.type]) return pending[msg.type].promise;
+      if (Object.prototype.hasOwnProperty.call(responses, msg.type)) {
+        const value = responses[msg.type];
+        return value instanceof Error ? Promise.reject(value) : Promise.resolve(value);
+      }
+      if (msg.type === 'CONFIG_GET') return Promise.resolve({ enabled: true, acceleration: false, cosmetic: true });
+      if (msg.type === 'UPDATE_CHECK') return Promise.resolve({ updateAvailable: false });
+      if (msg.type === 'STATS_GET') return Promise.resolve(defaultStats);
+      if (msg.type === 'HEALTH_GET') return Promise.resolve(defaultHealth);
+      if (msg.type === 'SUBSCRIPTION_GET') return Promise.resolve([]);
+      if (msg.type === 'PROXY_CONFIG_GET') return Promise.resolve([]);
+      if (msg.type === 'ZAPPER_RULES_GET') return Promise.resolve({ rules: [] });
+      if (msg.type === 'WHITELIST_GET') return Promise.resolve({ whitelist: [] });
+      if (msg.type === 'FPR_WHITELIST_GET') return Promise.resolve({ fprWhitelist: [] });
+      if (msg.type === 'LOG_GET') return Promise.resolve([]);
+      return Promise.resolve({ ok: true });
+    }
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext([componentsJs, appJs, proxyUiJs].join('\n'), sandbox);
+  return { dom, sandbox, messages, pending };
+}
+
 test('settings page proxy and zapper management safety', async (t) => {
   await t.test('proxy credential UI never hydrates password fields from stored config', () => {
     assert.match(proxyUiJs, /<input type="password" class="chroma-input proxy-pass" value=""/);
@@ -304,5 +445,160 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(appJs, /Allow Rule/);
     assert.match(appJs, /Allows \$\{formatCompactCount\(allows\)\}/);
     assert.doesNotMatch(appJs, /YouTube Payload Cleans/);
+  });
+
+  await t.test('settings shell renders section skeletons synchronously', () => {
+    const dom = new JSDOM('<!doctype html><body><div id="appShell"></div></body>', {
+      url: 'chrome-extension://test/ui/settings.html',
+      runScripts: 'outside-only'
+    });
+    const sandbox = { document: dom.window.document, globalThis: null };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(componentsJs, sandbox);
+
+    sandbox.ChromaComponents.renderPageShell({ settingsMode: true });
+
+    assert.ok(dom.window.document.querySelector('#healthPanelBody .skeleton-card'));
+    assert.ok(dom.window.document.querySelector('#statisticsTopCards .skeleton-card'));
+    assert.ok(dom.window.document.querySelector('#statsSitesList .skeleton-row'));
+    assert.ok(dom.window.document.querySelector('#subscriptionList .skeleton-row'));
+    assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
+    assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
+    assert.strictEqual(dom.window.document.querySelector('#statsModeSelect').disabled, true);
+  });
+
+  await t.test('popup shell does not render settings-only skeleton sections', () => {
+    const dom = new JSDOM('<!doctype html><body><div id="appShell"></div></body>', {
+      url: 'chrome-extension://test/ui/popup.html',
+      runScripts: 'outside-only'
+    });
+    const sandbox = { document: dom.window.document, globalThis: null };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(componentsJs, sandbox);
+
+    sandbox.ChromaComponents.renderPageShell({ settingsMode: false });
+
+    assert.strictEqual(dom.window.document.querySelector('#healthPanelBody'), null);
+    assert.strictEqual(dom.window.document.querySelector('#statisticsTopCards'), null);
+    assert.strictEqual(dom.window.document.querySelector('#localZapperRules'), null);
+    assert.strictEqual(dom.window.document.querySelector('#subscriptionList .skeleton-row'), null);
+    assert.strictEqual(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'), null);
+  });
+
+  await t.test('health skeleton is replaced on success and on unavailable response', async () => {
+    const success = createSettingsHarness();
+    await success.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
+    assert.match(success.dom.window.document.querySelector('#healthOverallLabel').textContent, /Healthy/);
+    assert.ok(success.dom.window.document.querySelector('#healthPanelBody .health-section'));
+
+    const failure = createSettingsHarness({ responses: { HEALTH_GET: null } });
+    await failure.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(failure.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
+    assert.match(failure.dom.window.document.querySelector('#healthOverallLabel').textContent, /Unavailable/);
+    assert.match(failure.dom.window.document.querySelector('#healthPanelBody').textContent, /Could not load health diagnostics/);
+  });
+
+  await t.test('stats skeleton is replaced on success and on unavailable response', async () => {
+    const success = createSettingsHarness();
+    await success.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(success.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
+    assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /Total Protection Events/);
+    assert.strictEqual(success.dom.window.document.querySelector('#statsModeSelect').disabled, false);
+
+    const failure = createSettingsHarness({ responses: { STATS_GET: null } });
+    await failure.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(failure.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
+    assert.match(failure.dom.window.document.querySelector('#statsSitesList').textContent, /No stats available/);
+    assert.strictEqual(failure.dom.window.document.querySelector('#statsModeSelect').disabled, true);
+  });
+
+  await t.test('config-backed toggles stay pending until CONFIG_GET resolves', async () => {
+    const pendingConfig = deferred();
+    const harness = createSettingsHarness({ pending: { CONFIG_GET: pendingConfig } });
+
+    const initPromise = harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork(2);
+
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, true);
+    assert.ok(harness.dom.window.document.querySelector('#toggleNetwork').classList.contains('control-pending'));
+
+    pendingConfig.resolve({ enabled: true, networkBlocking: false, acceleration: true, accelerationSpeed: 12 });
+    await initPromise;
+
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, false);
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').checked, false);
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleAcceleration').checked, true);
+    assert.ok(harness.dom.window.document.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
+  });
+
+  await t.test('settings config null keeps controls disabled and shows an error', async () => {
+    const harness = createSettingsHarness({ responses: { CONFIG_GET: null } });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').disabled, true);
+    assert.match(harness.dom.window.document.querySelector('.hydration-error').textContent, /Settings are unavailable/);
+    assert.strictEqual(harness.messages.some(message => message.type === 'STATS_GET'), false);
+  });
+
+  await t.test('initSharedUI does not await slow settings section hydration', async () => {
+    const slow = {
+      STATS_GET: deferred(),
+      HEALTH_GET: deferred(),
+      SUBSCRIPTION_GET: deferred(),
+      PROXY_CONFIG_GET: deferred(),
+      ZAPPER_RULES_GET: deferred()
+    };
+    const harness = createSettingsHarness({ pending: slow });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+
+    assert.ok(harness.messages.some(message => message.type === 'STATS_GET'));
+    assert.ok(harness.messages.some(message => message.type === 'HEALTH_GET'));
+    assert.ok(harness.messages.some(message => message.type === 'SUBSCRIPTION_GET'));
+    assert.ok(harness.messages.some(message => message.type === 'PROXY_CONFIG_GET'));
+    assert.ok(harness.messages.some(message => message.type === 'ZAPPER_RULES_GET'));
+    assert.ok(harness.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'));
+
+    slow.STATS_GET.resolve(null);
+    slow.HEALTH_GET.resolve(null);
+    slow.SUBSCRIPTION_GET.resolve([]);
+    slow.PROXY_CONFIG_GET.resolve([]);
+    slow.ZAPPER_RULES_GET.resolve({ rules: [] });
+  });
+
+  await t.test('settings proxy hash scrolls after synchronous shell render', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxy' });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    let scrolled = false;
+    section.scrollIntoView = options => {
+      scrolled = options?.block === 'start';
+    };
+
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(scrolled, true);
+  });
+
+  await t.test('skeleton CSS includes reduced-motion handling', () => {
+    assert.match(uiCss, /\.skeleton-line/);
+    assert.match(uiCss, /@keyframes skeleton-shimmer/);
+    assert.match(uiCss, /prefers-reduced-motion: reduce/);
+    assert.match(uiCss, /\.hydration-fade-in/);
   });
 });

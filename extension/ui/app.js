@@ -41,6 +41,17 @@ const ChromaApp = (() => {
   ];
   const HEALTH_STATUS_CLASSES = new Set(['healthy', 'degraded', 'disabled', 'error']);
   const HEALTH_ISSUE_CLASSES = new Set(['info', 'warning', 'error']);
+  const CONFIG_TOGGLES = [
+    ['toggleNetwork',      'networkBlocking',          true],
+    ['toggleStripping',    'stripping',                true],
+    ['toggleAcceleration', 'acceleration',             false],
+    ['toggleCosmetic',     'cosmetic',                 true],
+    ['toggleShorts',       'hideShorts',               false],
+    ['toggleMerch',        'hideMerch',                true],
+    ['toggleOffers',       'hideOffers',               true],
+    ['toggleWarnings',     'suppressWarnings',         true],
+    ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
+  ];
   let healthLoadSerial = 0;
 
   function isSettingsPage() {
@@ -179,6 +190,69 @@ const ChromaApp = (() => {
     if (el) el.textContent = value;
   }
 
+  function setSectionLoading(id) {
+    const el = $(id);
+    if (!el) return;
+    el.classList.add('is-loading');
+    el.classList.remove('is-hydrated', 'hydration-fade-in');
+  }
+
+  function setSectionReady(id) {
+    const el = $(id);
+    if (!el) return;
+    el.classList.remove('is-loading');
+    el.classList.add('is-hydrated', 'hydration-fade-in');
+  }
+
+  function setSectionError(id, message) {
+    const el = $(id);
+    if (!el) return;
+    el.innerHTML = '';
+    appendElement(el, 'div', 'hydration-error', message);
+    setSectionReady(id);
+  }
+
+  function setStatsControlsPending(pending) {
+    ['statsModeSelect', 'statsRetentionSelect'].forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.disabled = pending;
+      el.classList.toggle('control-pending', pending);
+    });
+  }
+
+  function setControlsPending(pending) {
+    const ids = ['toggleEnabled', 'toggleWhitelist', 'toggleFprWhitelist', ...CONFIG_TOGGLES.map(([id]) => id)];
+    ids.forEach(id => {
+      const el = $(id);
+      if (!el) return;
+      el.disabled = pending;
+      el.classList.toggle('control-pending', pending);
+      el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending);
+    });
+    document.querySelectorAll('.speed-btn').forEach(btn => {
+      btn.disabled = pending;
+      btn.classList.toggle('control-pending', pending);
+    });
+  }
+
+  function setControlPending(id, pending) {
+    const el = $(id);
+    if (!el) return;
+    el.disabled = pending;
+    el.classList.toggle('control-pending', pending);
+    el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending);
+  }
+
+  async function safeHydrateSection(name, fn) {
+    try {
+      return await fn();
+    } catch (error) {
+      console.error(`Chroma ${name} hydration failed:`, error);
+      return null;
+    }
+  }
+
   function renderStatsHero(stats) {
     const totals = getStatsTotals(stats);
     setText('statProtectionEvents', formatCompactCount(totals.protectionEvents));
@@ -267,7 +341,25 @@ const ChromaApp = (() => {
     return event?.count || 1;
   }
 
-  function renderStatsPanel(stats) {
+  function getEmptyStats() {
+    return {
+      settings: { mode: 'aggregated', retentionDays: 90 },
+      totals: {},
+      ranges: {
+        today: {},
+        last7Days: {},
+        last30Days: {},
+        allTime: {}
+      },
+      bySite: {},
+      byRule: {},
+      byDay: {},
+      recentEvents: [],
+      timeSavedSeconds: 0
+    };
+  }
+
+  function renderStatsPanel(stats, { unavailable = false } = {}) {
     if (!isSettingsPage()) return;
     const totals = getStatsTotals(stats);
     const topCards = $('statisticsTopCards');
@@ -279,6 +371,7 @@ const ChromaApp = (() => {
     const modeSelect = $('statsModeSelect');
     const retentionSelect = $('statsRetentionSelect');
     if (!topCards) return;
+    const emptyText = unavailable ? 'No stats available.' : null;
 
     topCards.innerHTML = '';
     addStatsMiniCard(topCards, 'Total Protection Events', formatCompactCount(totals.protectionEvents));
@@ -303,7 +396,7 @@ const ChromaApp = (() => {
       const sites = Object.values(stats?.bySite || {})
         .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
         .slice(0, 10);
-      if (sites.length === 0) renderEmptyStatsList(sitesList, 'No site stats yet.');
+      if (sites.length === 0) renderEmptyStatsList(sitesList, emptyText || 'No site stats yet.');
       for (const site of sites) {
         const last = site.lastSeen ? new Date(site.lastSeen).toLocaleString() : 'Never';
         const meta = `Network ${formatCompactCount(site.networkBlocks)} - Allows ${formatCompactCount(site.networkAllows)} - Cleanup ${formatCompactCount(getCleanupTotal(site))} - Last seen ${last}`;
@@ -316,7 +409,7 @@ const ChromaApp = (() => {
       const rules = Object.values(stats?.byRule || {})
         .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
         .slice(0, 10);
-      if (rules.length === 0) renderEmptyStatsList(rulesList, 'No rule stats yet.');
+      if (rules.length === 0) renderEmptyStatsList(rulesList, emptyText || 'No rule stats yet.');
       for (const rule of rules) {
         const title = getRuleDisplayTitle(rule);
         const meta = getRuleDisplayMeta(rule);
@@ -331,7 +424,7 @@ const ChromaApp = (() => {
         .sort((a, b) => String(a.day).localeCompare(String(b.day)))
         .slice(-14);
       const max = Math.max(1, ...days.map(day => Number(day.protectionEvents) || 0));
-      if (days.length === 0) renderEmptyStatsList(timelineList, 'No timeline data yet.');
+      if (days.length === 0) renderEmptyStatsList(timelineList, emptyText || 'No timeline data yet.');
       for (const day of days) {
         const row = addStatsRow(timelineList, day.day, '', formatCompactCount(day.protectionEvents));
         const bar = appendElement(row.firstChild, 'div', 'stats-bar');
@@ -343,7 +436,7 @@ const ChromaApp = (() => {
     if (eventsList) {
       eventsList.innerHTML = '';
       const events = Array.isArray(stats?.recentEvents) ? stats.recentEvents.slice(0, 12) : [];
-      if (events.length === 0) renderEmptyStatsList(eventsList, 'No recent events yet.');
+      if (events.length === 0) renderEmptyStatsList(eventsList, emptyText || 'No recent events yet.');
       for (const event of events) {
         addStatsRow(eventsList, getEventTitle(event), getEventMeta(event), formatCompactCount(getEventValue(event)));
       }
@@ -351,17 +444,38 @@ const ChromaApp = (() => {
 
     if (modeSelect) modeSelect.value = stats?.settings?.mode || 'aggregated';
     if (retentionSelect) retentionSelect.value = String(stats?.settings?.retentionDays || 90);
+    [
+      'statisticsTopCards',
+      'statsRangeSummary',
+      'statsSitesList',
+      'statsRulesList',
+      'statsTimelineList',
+      'statsEventsList'
+    ].forEach(setSectionReady);
   }
 
   async function loadStatsUI() {
     let stats = null;
+    let available = false;
+    [
+      'statisticsTopCards',
+      'statsRangeSummary',
+      'statsSitesList',
+      'statsRulesList',
+      'statsTimelineList',
+      'statsEventsList'
+    ].forEach(setSectionLoading);
+    setStatsControlsPending(true);
     try {
       stats = await notifyBackground({ type: MSG.STATS_GET }) || null;
-    } catch (_) {
+      available = !!stats;
+    } catch (error) {
+      console.error('Chroma stats failed to load:', error);
       stats = null;
     }
     renderStatsHero(stats);
-    renderStatsPanel(stats);
+    renderStatsPanel(available ? stats : getEmptyStats(), { unavailable: !available });
+    setStatsControlsPending(!available);
     return stats;
   }
 
@@ -392,12 +506,18 @@ const ChromaApp = (() => {
     if (!panel || !body) return;
 
     const loadId = ++healthLoadSerial;
+    setSectionLoading('healthPanelBody');
     if (refreshBtn) {
       refreshBtn.disabled = true;
       refreshBtn.textContent = 'Refreshing...';
     }
 
-    const health = await notifyBackground({ type: MSG.HEALTH_GET });
+    let health = null;
+    try {
+      health = await notifyBackground({ type: MSG.HEALTH_GET });
+    } catch (error) {
+      console.error('Chroma health failed to load:', error);
+    }
     if (loadId !== healthLoadSerial) return;
     body.innerHTML = '';
 
@@ -408,6 +528,7 @@ const ChromaApp = (() => {
       }
       if (versionText) versionText.textContent = 'Health endpoint did not respond.';
       appendElement(body, 'div', 'health-empty', 'Could not load health diagnostics.');
+      setSectionReady('healthPanelBody');
       if (refreshBtn) {
         refreshBtn.disabled = false;
         refreshBtn.textContent = 'Refresh Health';
@@ -467,6 +588,7 @@ const ChromaApp = (() => {
     ]);
 
     renderHealthIssues(body, health.overall?.issues || []);
+    setSectionReady('healthPanelBody');
 
     if (refreshBtn) {
       refreshBtn.disabled = false;
@@ -475,18 +597,16 @@ const ChromaApp = (() => {
   }
 
   async function initSharedUI() {
-    globalThis.ChromaComponents?.renderPageShell({ settingsMode: isSettingsPage() });
+    const settingsMode = isSettingsPage();
+    globalThis.ChromaComponents?.renderPageShell({ settingsMode });
 
     const manifest = chrome.runtime.getManifest();
     if ($('versionText')) {
       $('versionText').textContent = `v${manifest.version} \u00b7 MV3`;
     }
 
-    // Update check - runs async, inserts banner if update available
     notifyBackground({ type: MSG.UPDATE_CHECK }).then(result => {
       if (!result || !result.updateAvailable) return;
-      const latestVersion = result.latestVersion;
-
       const banner = document.createElement('div');
       banner.id = 'updateBanner';
       banner.className = 'update-banner';
@@ -495,7 +615,7 @@ const ChromaApp = (() => {
       updateLink.href = RELEASES_PAGE;
       updateLink.target = '_blank';
       updateLink.className = 'update-banner__link';
-      updateLink.textContent = `\u2191 v${latestVersion} available`;
+      updateLink.textContent = `\u2191 v${result.latestVersion} available`;
 
       const githubSpan = document.createElement('span');
       githubSpan.className = 'update-banner__source';
@@ -510,30 +630,12 @@ const ChromaApp = (() => {
       banner.appendChild(updateLink);
       banner.appendChild(githubSpan);
       banner.appendChild(dismissBtn);
-
-      // Insert before the Protection Layers section title
-      const sectionTitle = document.querySelector('.section-title');
-      if (sectionTitle) sectionTitle.before(banner);
-
-      document.getElementById('dismissUpdate')?.addEventListener('click', () => {
-        banner.remove();
-      });
-    });
-
-    const TOGGLES = [
-      ['toggleNetwork',      'networkBlocking',          true],
-      ['toggleStripping',    'stripping',                true],
-      ['toggleAcceleration', 'acceleration',             false],
-      ['toggleCosmetic',     'cosmetic',                 true],
-      ['toggleShorts',       'hideShorts',               false],
-      ['toggleMerch',        'hideMerch',                true],
-      ['toggleOffers',       'hideOffers',               true],
-      ['toggleWarnings',     'suppressWarnings',         true],
-      ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
-    ];
+      document.querySelector('.section-title')?.before(banner);
+      dismissBtn.addEventListener('click', () => banner.remove());
+    }).catch(error => console.error('Chroma update check failed:', error));
 
     const syncUI = (cfg, masterOn) => {
-      for (const [elId, key, def] of TOGGLES) {
+      for (const [elId, key, def] of CONFIG_TOGGLES) {
         if ($(elId)) $(elId).checked = masterOn ? (cfg[key] ?? def) : false;
       }
     };
@@ -546,115 +648,91 @@ const ChromaApp = (() => {
       });
     }
 
-    const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+    function updateStatusDot(active) {
+      const dot = $('statusDot');
+      if (!dot) return;
+      if (active) {
+        dot.classList.remove('off');
+        dot.title = 'Active';
+      } else {
+        dot.classList.add('off');
+        dot.title = 'Disabled';
+      }
+    }
+
+    function showConfigLoadError(message) {
+      const controls = $('toggleNetwork')?.closest?.('.protection-list');
+      if (!controls || controls.querySelector('.hydration-error')) return;
+      const error = document.createElement('div');
+      error.className = 'hydration-error hydration-error--inline';
+      error.textContent = message;
+      controls.prepend(error);
+    }
+
+    setControlsPending(true);
+    setStatsControlsPending(true);
+
+    let config = {};
+    try {
+      const configResponse = await notifyBackground({ type: MSG.CONFIG_GET });
+      if (!configResponse && settingsMode) {
+        showConfigLoadError('Settings are unavailable until the extension background responds.');
+        return;
+      }
+      config = configResponse || {};
+    } catch (error) {
+      console.error('Chroma config failed to load:', error);
+      showConfigLoadError('Settings are unavailable until the extension background responds.');
+      return;
+    }
+
     const isEnabled = config.enabled !== false;
-    
     if ($('toggleEnabled')) {
       $('toggleEnabled').checked = isEnabled;
       updateStatusDot(isEnabled);
     }
-    
     syncUI(config, isEnabled);
-
-    const currentSpeed = config.accelerationSpeed ?? 8;
-    syncSpeedUI(currentSpeed, isEnabled && (config.acceleration !== false));
+    syncSpeedUI(config.accelerationSpeed ?? 8, isEnabled && (config.acceleration !== false));
+    setControlsPending(false);
+    setControlPending('toggleWhitelist', true);
+    setControlPending('toggleFprWhitelist', true);
 
     document.querySelectorAll('.speed-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const speed = parseInt(btn.dataset.speed);
-        syncSpeedUI(speed, $('toggleAcceleration').checked);
+        syncSpeedUI(speed, $('toggleAcceleration')?.checked);
         await notifyBackground({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
       });
     });
 
-    await loadStatsUI();
-    await loadHealthPanel();
+    for (const [elId, key] of CONFIG_TOGGLES) {
+      $(elId)?.addEventListener('change', async (e) => {
+        const isChecked = e.target.checked;
+        await notifyBackground({ type: MSG.CONFIG_SET, config: { [key]: isChecked } });
 
-    $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
-
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.statsV2) {
-        loadStatsUI();
-      }
-      if (area === 'local' && isSettingsPage()) {
-        if (HEALTH_REFRESH_KEYS.some(key => changes[key])) loadHealthPanel();
-      }
-    });
-
-    async function saveStatsSettingsFromControls() {
-      const mode = $('statsModeSelect')?.value || 'aggregated';
-      const retentionDays = Number($('statsRetentionSelect')?.value || 90);
-      await notifyBackground({
-        type: MSG.STATS_SETTINGS_SET,
-        settings: {
-          mode,
-          retentionDays,
-          storeFullUrls: mode === 'debug'
+        if (isChecked && !$('toggleEnabled')?.checked) {
+          $('toggleEnabled').checked = true;
+          updateStatusDot(true);
+          await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: true } });
+        } else if (!isChecked) {
+          const anyOn = CONFIG_TOGGLES.some(([id]) => $(id)?.checked);
+          if (!anyOn && $('toggleEnabled')) {
+            $('toggleEnabled').checked = false;
+            updateStatusDot(false);
+            await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: false } });
+          }
         }
       });
-      await loadStatsUI();
     }
 
-    $('statsModeSelect')?.addEventListener('change', saveStatsSettingsFromControls);
-    $('statsRetentionSelect')?.addEventListener('change', saveStatsSettingsFromControls);
-    $('resetAllStats')?.addEventListener('click', async () => {
-      if (!confirm('Reset all local statistics?')) return;
-      await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
-      await loadStatsUI();
-    });
-    $('resetSiteStats')?.addEventListener('click', async () => {
-      await notifyBackground({ type: MSG.STATS_RESET, scope: 'sites' });
-      await loadStatsUI();
-    });
-    $('resetRequestLogOnly')?.addEventListener('click', async () => {
-      await notifyBackground({ type: MSG.STATS_RESET, scope: 'debugLog' });
-    });
-    $('exportStatsJson')?.addEventListener('click', async () => {
-      const exported = await notifyBackground({ type: MSG.STATS_EXPORT });
-      if (!exported) return;
-      const text = JSON.stringify(exported, null, 2);
-      try {
-        const blob = new Blob([text], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `chroma-stats-${new Date().toISOString().slice(0, 10)}.json`;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      } catch (_) {}
-    });
-
-    for (const [elId, key] of TOGGLES) {
-      if ($(elId)) {
-        $(elId).addEventListener('change', async (e) => {
-          const isChecked = e.target.checked;
-          await notifyBackground({ type: MSG.CONFIG_SET, config: { [key]: isChecked } });
-          
-          if (isChecked && !$('toggleEnabled').checked) {
-            $('toggleEnabled').checked = true;
-            updateStatusDot(true);
-            await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: true } });
-          } else if (!isChecked) {
-            const anyOn = TOGGLES.some(([id]) => $(id).checked);
-            if (!anyOn) {
-              $('toggleEnabled').checked = false;
-              updateStatusDot(false);
-              await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: false } });
-            }
-          }
-        });
-      }
-    }
-
-    $('toggleAcceleration').addEventListener('change', (e) => {
+    $('toggleAcceleration')?.addEventListener('change', (e) => {
       const currentActiveSpeed = parseInt(document.querySelector('.speed-btn.active')?.dataset.speed ?? 8);
       syncSpeedUI(currentActiveSpeed, e.target.checked);
     });
 
-    $('toggleEnabled').addEventListener('change', async (e) => {
+    $('toggleEnabled')?.addEventListener('change', async (e) => {
       const active = e.target.checked;
       updateStatusDot(active);
-      
       await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: active } });
 
       if (!active) {
@@ -665,233 +743,288 @@ const ChromaApp = (() => {
       }
     });
 
-    function updateStatusDot(active) {
-      if (active) {
-        $('statusDot').classList.remove('off');
-        $('statusDot').title = 'Active';
-      } else {
-        $('statusDot').classList.add('off');
-        $('statusDot').title = 'Disabled';
+    $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.statsV2) {
+        safeHydrateSection('stats', loadStatsUI);
       }
-    }
-
-    // WHITELIST LOGIC
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    let currentDomain = '';
-    if (activeTab && activeTab.url) {
-      try {
-        const url = new URL(activeTab.url);
-        if (url.protocol.startsWith('http')) {
-          currentDomain = url.hostname;
-        }
-      } catch (e) {}
-    }
-    if (currentDomain) {
-      const parts = currentDomain.split('.');
-      const baseDomain = parts.length > 2 ? parts.slice(-2).join('.') : currentDomain;
-      
-      const { whitelist = [] } = await notifyBackground({ type: MSG.WHITELIST_GET }) || { whitelist: [] };
-      const isWhitelisted = whitelist.includes(baseDomain);
-
-      $('toggleWhitelist').checked = isWhitelisted;
-
-      $('toggleWhitelist').addEventListener('change', async (e) => {
-        const isChecked = e.target.checked;
-
-        if (isChecked) {
-          await notifyBackground({ type: MSG.WHITELIST_ADD, domain: baseDomain });
-        } else {
-          await notifyBackground({ type: MSG.WHITELIST_REMOVE, domain: baseDomain });
-        }
-
-        chrome.tabs.reload(activeTab.id);
-      });
-
-      // FPR PER-SITE WHITELIST
-      // Row only shown when global FPR toggle is on (and master is on). Lets
-      // the user disable just FPR on the current domain - independent of the
-      // main whitelist that disables ad-blocking too.
-      const rowFpr = $('rowFprWhitelist');
-      const fprToggle = $('toggleFingerprintRandomization');
-      const fprSiteToggle = $('toggleFprWhitelist');
-
-      const updateFprRowVisibility = () => {
-        const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled').checked);
-        if (rowFpr) rowFpr.classList.toggle('is-visible', visible);
-      };
-      updateFprRowVisibility();
-      if (fprToggle) fprToggle.addEventListener('change', updateFprRowVisibility);
-      $('toggleEnabled').addEventListener('change', updateFprRowVisibility);
-
-      const { fprWhitelist = [] } = await notifyBackground({ type: MSG.FPR_WHITELIST_GET }) || { fprWhitelist: [] };
-      if (fprSiteToggle) fprSiteToggle.checked = fprWhitelist.includes(baseDomain);
-
-      if (fprSiteToggle) {
-        fprSiteToggle.addEventListener('change', async (e) => {
-          const isChecked = e.target.checked;
-          if (isChecked) {
-            await notifyBackground({ type: MSG.FPR_WHITELIST_ADD, domain: baseDomain });
-          } else {
-            await notifyBackground({ type: MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
-          }
-          chrome.tabs.reload(activeTab.id);
-        });
+      if (area === 'local' && settingsMode && HEALTH_REFRESH_KEYS.some(key => changes[key])) {
+        safeHydrateSection('health panel', loadHealthPanel);
       }
+    });
+
+    wireStatsControls();
+    wireSharedLinks();
+    wireAddSubscriptionForm();
+    wireRequestLog();
+
+    safeHydrateSection('site controls', hydrateSiteControls);
+    safeHydrateSection('stats', loadStatsUI);
+    safeHydrateSection('subscriptions', loadSubscriptionUI);
+    if (settingsMode) {
+      safeHydrateSection('health panel', loadHealthPanel);
+      safeHydrateSection('proxy router', loadProxyRouterSection);
+      safeHydrateSection('local zapper rules', loadLocalZapperRulesUI);
     } else {
-      $('toggleWhitelist').parentElement.parentElement.classList.add('disabled');
-      const rowFpr = $('rowFprWhitelist');
-      if (rowFpr) rowFpr.classList.remove('is-visible');
+      safeHydrateSection('proxy router', loadProxyRouterSection);
     }
 
-    // EXTERNAL LINKS
-    const zapBtn = $('zapElementBtn');
-    const zapStatus = $('zapperStatus');
-    if (zapBtn) {
-      if (!activeTab?.id || !currentDomain) {
-        zapBtn.disabled = true;
-        if (zapStatus) zapStatus.textContent = 'Unavailable on this page';
-      } else {
-        zapBtn.addEventListener('click', async () => {
-          zapBtn.disabled = true;
-          if (zapStatus) zapStatus.textContent = 'Starting...';
-          const result = await notifyBackground({ type: MSG.ZAPPER_START, tabId: activeTab.id });
-          if (result?.ok) {
-            if (zapStatus) zapStatus.textContent = 'Click an element on the page';
-            setTimeout(() => window.close?.(), 250);
-          } else {
-            if (zapStatus) zapStatus.textContent = result?.error || 'Could not start zapper';
-            zapBtn.disabled = false;
+    function wireStatsControls() {
+      async function saveStatsSettingsFromControls() {
+        const mode = $('statsModeSelect')?.value || 'aggregated';
+        const retentionDays = Number($('statsRetentionSelect')?.value || 90);
+        await notifyBackground({
+          type: MSG.STATS_SETTINGS_SET,
+          settings: {
+            mode,
+            retentionDays,
+            storeFullUrls: mode === 'debug'
           }
         });
+        await loadStatsUI();
+      }
+
+      $('statsModeSelect')?.addEventListener('change', saveStatsSettingsFromControls);
+      $('statsRetentionSelect')?.addEventListener('change', saveStatsSettingsFromControls);
+      $('resetAllStats')?.addEventListener('click', async () => {
+        if (!confirm('Reset all local statistics?')) return;
+        await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
+        await loadStatsUI();
+      });
+      $('resetSiteStats')?.addEventListener('click', async () => {
+        await notifyBackground({ type: MSG.STATS_RESET, scope: 'sites' });
+        await loadStatsUI();
+      });
+      $('resetRequestLogOnly')?.addEventListener('click', async () => {
+        await notifyBackground({ type: MSG.STATS_RESET, scope: 'debugLog' });
+      });
+      $('exportStatsJson')?.addEventListener('click', async () => {
+        const exported = await notifyBackground({ type: MSG.STATS_EXPORT });
+        if (!exported) return;
+        const text = JSON.stringify(exported, null, 2);
+        try {
+          const blob = new Blob([text], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `chroma-stats-${new Date().toISOString().slice(0, 10)}.json`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (_) {}
+      });
+
+      $('resetStats')?.addEventListener('click', async () => {
+        await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
+        await loadStatsUI();
+      });
+    }
+
+    function wireSharedLinks() {
+      document.querySelectorAll('a[target="_blank"]').forEach(link => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          chrome.tabs.create({ url: link.href });
+        });
+      });
+
+      const settingsIcon = $('settingsIcon');
+      if (settingsIcon) {
+        settingsIcon.addEventListener('click', (event) => {
+          event.stopPropagation();
+          openSettingsPage();
+        });
+      }
+
+      const cardNetwork = $('cardNetwork');
+      if (cardNetwork && settingsIcon) {
+        cardNetwork.classList.add('stat-card--clickable');
+        cardNetwork.title = 'Open Settings';
+        cardNetwork.addEventListener('click', openSettingsPage);
       }
     }
 
-    document.querySelectorAll('a[target="_blank"]').forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        chrome.tabs.create({ url: link.href });
-      });
-    });
+    async function hydrateSiteControls() {
+      let activeTab = null;
+      try {
+        [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      } catch (error) {
+        console.error('Chroma active tab lookup failed:', error);
+      }
 
-    $('resetStats')?.addEventListener('click', async () => {
-      await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
-      await loadStatsUI();
-    });
+      let currentDomain = '';
+      if (activeTab?.url) {
+        try {
+          const url = new URL(activeTab.url);
+          if (url.protocol.startsWith('http')) currentDomain = url.hostname;
+        } catch (_) {}
+      }
 
-    const settingsIcon = $('settingsIcon');
-    if (settingsIcon) {
-      settingsIcon.addEventListener('click', (event) => {
-        event.stopPropagation();
-        openSettingsPage();
-      });
-    }
-
-    const cardNetwork = $('cardNetwork');
-    if (cardNetwork && settingsIcon) {
-      cardNetwork.classList.add('stat-card--clickable');
-      cardNetwork.title = 'Open Settings';
-      cardNetwork.addEventListener('click', openSettingsPage);
-    }
-
-    // SUBSCRIPTION UI
-    async function loadSubscriptionUI() {
-      const list = document.getElementById('subscriptionList');
-      if (!list) return;
-
-      let subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
-
-      // Filter out chroma-hotfix if it has 0 rules (as it is rarely used)
-      subscriptions = subscriptions.filter(s => {
-        if (s.id !== 'chroma-hotfix') return true;
-        const totalRules = (s.ruleCount?.network || 0) + (s.ruleCount?.cosmetic || 0) + (s.ruleCount?.scriptlet || 0);
-        return totalRules > 0;
-      });
-
-      // Sort: chroma-hotfix always at the bottom
-      subscriptions.sort((a, b) => {
-        if (a.id === 'chroma-hotfix') return 1;
-        if (b.id === 'chroma-hotfix') return -1;
-        return 0;
-      });
-
-      const { appliedNetworkRuleCount = 0, appliedNetworkRulesPerSub = {} } =
-        await chrome.storage.local.get(['appliedNetworkRuleCount', 'appliedNetworkRulesPerSub']);
-      const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
-
-      if (subscriptions.length === 0) {
-        list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No subscriptions configured.</span></div>';
+      if (!currentDomain) {
+        $('toggleWhitelist')?.closest?.('.toggle-row')?.classList.add('disabled');
+        const whitelist = $('toggleWhitelist');
+        if (whitelist) {
+          whitelist.disabled = true;
+          whitelist.classList.remove('control-pending');
+        }
+        const rowFpr = $('rowFprWhitelist');
+        if (rowFpr) rowFpr.classList.remove('is-visible');
+        const zapBtn = $('zapElementBtn');
+        if (zapBtn) zapBtn.disabled = true;
+        if ($('zapperStatus')) $('zapperStatus').textContent = 'Unavailable on this page';
         return;
       }
 
-      const summaryBar = document.createElement('div');
-      summaryBar.className = 'subscription-summary';
-      const totalCosmetic = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.cosmetic || 0), 0);
-      const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
-      summaryBar.textContent = `${totalParsed.toLocaleString()} parsed \u00b7 ${appliedNetworkRuleCount.toLocaleString()} applied \u00b7 ${totalCosmetic.toLocaleString()} cosmetic \u00b7 ${totalScriptlet.toLocaleString()} scriptlets`;
-
-      list.innerHTML = '';
-      list.appendChild(summaryBar);
-
-      for (const sub of subscriptions) {
-        const row = document.createElement('div');
-        row.className = 'toggle-row';
-
-        const lastUpdatedText = sub.lastUpdated
-          ? new Date(sub.lastUpdated).toLocaleDateString()
-          : 'Never';
-
-        let countText = '';
-        if (sub.ruleCount) {
-          const parts = [];
-          if (!sub.cosmeticOnly && sub.ruleCount.network > 0) {
-            const applied = sub.enabled ? (appliedNetworkRulesPerSub[sub.id] || 0) : 0;
-            parts.push(`${applied.toLocaleString()} / ${sub.ruleCount.network.toLocaleString()} network`);
-          }
-          if (sub.ruleCount.cosmetic > 0) parts.push(`${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`);
-          if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
-          countText = parts.join(' \u00b7 ');
-        }
-
-        const info = appendElement(row, 'div', 'toggle-info');
-        appendElement(info, 'div', 'name', sub.name);
-        appendElement(info, 'div', 'desc', `Updated: ${lastUpdatedText}`);
-        if (countText) appendElement(info, 'div', 'desc', countText);
-        if (sub.lastError) {
-          const error = appendElement(info, 'div', 'subscription-error', `Error: ${sub.lastError}`);
-          error.title = sub.lastError;
-        }
-
-        const actions = appendElement(row, 'div', 'subscription-actions');
-        if (sub.isCustom) {
-          const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn', '\u00d7');
-          deleteBtn.dataset.id = sub.id;
-          deleteBtn.title = 'Remove List';
-          appendElement(actions, 'span', 'inline-separator');
-        }
-
-        const refreshBtn = appendElement(actions, 'button', 'sub-refresh-btn reset-btn compact-action-btn', '\u21bb');
-        refreshBtn.dataset.id = sub.id;
-        refreshBtn.title = 'Force refresh';
-
-        const toggleLabel = appendElement(actions, 'label', 'switch');
-        const toggleInput = appendElement(toggleLabel, 'input', 'sub-toggle');
-        toggleInput.type = 'checkbox';
-        toggleInput.dataset.id = sub.id;
-        toggleInput.checked = !!sub.enabled;
-        appendElement(toggleLabel, 'span', 'slider');
-
-        list.appendChild(row);
+      const parts = currentDomain.split('.');
+      const baseDomain = parts.length > 2 ? parts.slice(-2).join('.') : currentDomain;
+      const { whitelist = [] } = await notifyBackground({ type: MSG.WHITELIST_GET }) || { whitelist: [] };
+      if ($('toggleWhitelist')) {
+        $('toggleWhitelist').checked = whitelist.includes(baseDomain);
+        setControlPending('toggleWhitelist', false);
+        $('toggleWhitelist').addEventListener('change', async (e) => {
+          const isChecked = e.target.checked;
+          await notifyBackground({ type: isChecked ? MSG.WHITELIST_ADD : MSG.WHITELIST_REMOVE, domain: baseDomain });
+          chrome.tabs.reload(activeTab.id);
+        });
       }
 
-      // Toggle handler
+      const rowFpr = $('rowFprWhitelist');
+      const fprToggle = $('toggleFingerprintRandomization');
+      const fprSiteToggle = $('toggleFprWhitelist');
+      const updateFprRowVisibility = () => {
+        const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled')?.checked);
+        if (rowFpr) rowFpr.classList.toggle('is-visible', visible);
+      };
+      updateFprRowVisibility();
+      fprToggle?.addEventListener('change', updateFprRowVisibility);
+      $('toggleEnabled')?.addEventListener('change', updateFprRowVisibility);
+
+      const { fprWhitelist = [] } = await notifyBackground({ type: MSG.FPR_WHITELIST_GET }) || { fprWhitelist: [] };
+      if (fprSiteToggle) {
+        fprSiteToggle.checked = fprWhitelist.includes(baseDomain);
+        setControlPending('toggleFprWhitelist', false);
+        fprSiteToggle.addEventListener('change', async (e) => {
+          await notifyBackground({ type: e.target.checked ? MSG.FPR_WHITELIST_ADD : MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
+          chrome.tabs.reload(activeTab.id);
+        });
+      }
+
+      const zapBtn = $('zapElementBtn');
+      const zapStatus = $('zapperStatus');
+      if (!zapBtn) return;
+      if (!activeTab?.id) {
+        zapBtn.disabled = true;
+        if (zapStatus) zapStatus.textContent = 'Unavailable on this page';
+        return;
+      }
+      zapBtn.addEventListener('click', async () => {
+        zapBtn.disabled = true;
+        if (zapStatus) zapStatus.textContent = 'Starting...';
+        const result = await notifyBackground({ type: MSG.ZAPPER_START, tabId: activeTab.id });
+        if (result?.ok) {
+          if (zapStatus) zapStatus.textContent = 'Click an element on the page';
+          setTimeout(() => window.close?.(), 250);
+        } else {
+          if (zapStatus) zapStatus.textContent = result?.error || 'Could not start zapper';
+          zapBtn.disabled = false;
+        }
+      });
+    }
+
+    async function loadSubscriptionUI() {
+      const list = $('subscriptionList');
+      if (!list) return;
+      setSectionLoading('subscriptionList');
+
+      let subscriptions = [];
+      try {
+        subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+        subscriptions = subscriptions.filter(s => {
+          if (s.id !== 'chroma-hotfix') return true;
+          const totalRules = (s.ruleCount?.network || 0) + (s.ruleCount?.cosmetic || 0) + (s.ruleCount?.scriptlet || 0);
+          return totalRules > 0;
+        });
+        subscriptions.sort((a, b) => {
+          if (a.id === 'chroma-hotfix') return 1;
+          if (b.id === 'chroma-hotfix') return -1;
+          return 0;
+        });
+
+        const { appliedNetworkRuleCount = 0, appliedNetworkRulesPerSub = {} } =
+          await chrome.storage.local.get(['appliedNetworkRuleCount', 'appliedNetworkRulesPerSub']);
+        const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
+
+        if (subscriptions.length === 0) {
+          list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No subscriptions configured.</span></div>';
+          setSectionReady('subscriptionList');
+          return;
+        }
+
+        const summaryBar = document.createElement('div');
+        summaryBar.className = 'subscription-summary';
+        const totalCosmetic = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.cosmetic || 0), 0);
+        const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
+        summaryBar.textContent = `${totalParsed.toLocaleString()} parsed \u00b7 ${appliedNetworkRuleCount.toLocaleString()} applied \u00b7 ${totalCosmetic.toLocaleString()} cosmetic \u00b7 ${totalScriptlet.toLocaleString()} scriptlets`;
+
+        list.innerHTML = '';
+        list.appendChild(summaryBar);
+
+        for (const sub of subscriptions) {
+          const row = document.createElement('div');
+          row.className = 'toggle-row';
+          const lastUpdatedText = sub.lastUpdated ? new Date(sub.lastUpdated).toLocaleDateString() : 'Never';
+          const info = appendElement(row, 'div', 'toggle-info');
+          appendElement(info, 'div', 'name', sub.name);
+          appendElement(info, 'div', 'desc', `Updated: ${lastUpdatedText}`);
+
+          if (sub.ruleCount) {
+            const parts = [];
+            if (!sub.cosmeticOnly && sub.ruleCount.network > 0) {
+              const applied = sub.enabled ? (appliedNetworkRulesPerSub[sub.id] || 0) : 0;
+              parts.push(`${applied.toLocaleString()} / ${sub.ruleCount.network.toLocaleString()} network`);
+            }
+            if (sub.ruleCount.cosmetic > 0) parts.push(`${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`);
+            if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
+            if (parts.length) appendElement(info, 'div', 'desc', parts.join(' \u00b7 '));
+          }
+
+          if (sub.lastError) {
+            const error = appendElement(info, 'div', 'subscription-error', `Error: ${sub.lastError}`);
+            error.title = sub.lastError;
+          }
+
+          const actions = appendElement(row, 'div', 'subscription-actions');
+          if (sub.isCustom) {
+            const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn', '\u00d7');
+            deleteBtn.dataset.id = sub.id;
+            deleteBtn.title = 'Remove List';
+            appendElement(actions, 'span', 'inline-separator');
+          }
+
+          const refreshBtn = appendElement(actions, 'button', 'sub-refresh-btn reset-btn compact-action-btn', '\u21bb');
+          refreshBtn.dataset.id = sub.id;
+          refreshBtn.title = 'Force refresh';
+
+          const toggleLabel = appendElement(actions, 'label', 'switch');
+          const toggleInput = appendElement(toggleLabel, 'input', 'sub-toggle');
+          toggleInput.type = 'checkbox';
+          toggleInput.dataset.id = sub.id;
+          toggleInput.checked = !!sub.enabled;
+          appendElement(toggleLabel, 'span', 'slider');
+          list.appendChild(row);
+        }
+      } catch (error) {
+        console.error('Chroma subscriptions failed to load:', error);
+        setSectionError('subscriptionList', 'Subscriptions unavailable.');
+        return;
+      }
+
+      setSectionReady('subscriptionList');
       list.querySelectorAll('.sub-toggle').forEach(input => {
         input.addEventListener('change', async (e) => {
           await notifyBackground({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
           await loadHealthPanel();
         });
       });
-
-      // Refresh button handler
       list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = e.target.dataset.id;
@@ -904,80 +1037,88 @@ const ChromaApp = (() => {
             e.target.disabled = false;
             loadSubscriptionUI();
             loadHealthPanel();
-          }, 1500); // 1500ms visual feedback delay before resetting refresh button state
+          }, 1500);
         });
       });
-
-      // Delete button handler (custom lists only)
       list.querySelectorAll('.sub-delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-          const id = e.target.dataset.id;
           if (!confirm('Remove this filter list?')) return;
-          await notifyBackground({ type: MSG.SUBSCRIPTION_REMOVE, id });
+          await notifyBackground({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id });
           loadSubscriptionUI();
           loadHealthPanel();
         });
       });
     }
 
-    await loadSubscriptionUI();
-
-    // ADD-SUBSCRIPTION FORM
-    (() => {
-      const addBtn    = $('addSubscriptionBtn');
-      const form      = $('addSubscriptionForm');
+    function wireAddSubscriptionForm() {
+      const addBtn = $('addSubscriptionBtn');
+      const form = $('addSubscriptionForm');
       const nameInput = $('newSubName');
-      const urlInput  = $('newSubUrl');
-      const errEl     = $('newSubError');
+      const urlInput = $('newSubUrl');
+      const errEl = $('newSubError');
       const submitBtn = $('newSubAddBtn');
       const cancelBtn = $('newSubCancelBtn');
       if (!addBtn || !form) return;
 
-      const showError = (m) => { errEl.textContent = m; errEl.style.display = 'block'; };
+      const showError = (message) => {
+        if (!errEl) return;
+        errEl.textContent = message;
+        errEl.style.display = 'block';
+      };
       const closeForm = () => {
         form.style.display = 'none';
-        nameInput.value = '';
-        urlInput.value = '';
-        errEl.style.display = 'none';
-        errEl.textContent = '';
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Add';
+        if (nameInput) nameInput.value = '';
+        if (urlInput) urlInput.value = '';
+        if (errEl) {
+          errEl.style.display = 'none';
+          errEl.textContent = '';
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Add';
+        }
       };
 
       addBtn.addEventListener('click', () => {
         if (form.style.display === 'none' || form.style.display === '') {
           form.style.display = 'block';
-          urlInput.focus();
+          urlInput?.focus?.();
         } else {
           closeForm();
         }
       });
-      cancelBtn.addEventListener('click', closeForm);
+      cancelBtn?.addEventListener('click', closeForm);
 
       const submitAdd = async () => {
-        errEl.style.display = 'none';
-        const url = urlInput.value.trim();
+        if (errEl) errEl.style.display = 'none';
+        const url = urlInput?.value.trim() || '';
         if (!url) return showError('URL required.');
         let parsed;
         try { parsed = new URL(url); } catch { return showError('Invalid URL.'); }
         if (parsed.protocol !== 'https:') return showError('Only https:// URLs are allowed.');
 
-        const name = nameInput.value.trim() || parsed.hostname;
+        const name = nameInput?.value.trim() || parsed.hostname;
         const id = 'custom_' + Date.now();
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Adding\u2026';
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Adding\u2026';
+        }
 
         const addRes = await notifyBackground({ type: MSG.SUBSCRIPTION_ADD, subscription: { id, name, url } });
         if (!addRes || !addRes.ok) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Add';
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Add';
+          }
           return showError(addRes?.error || 'Add failed.');
         }
 
         const refRes = await notifyBackground({ type: MSG.SUBSCRIPTION_REFRESH, id });
         if (!refRes || !refRes.ok) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = 'Add';
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Add';
+          }
           showError('Added, but fetch failed: ' + (refRes?.error || 'unknown'));
           await loadSubscriptionUI();
           return;
@@ -988,28 +1129,37 @@ const ChromaApp = (() => {
         await loadHealthPanel();
       };
 
-      submitBtn.addEventListener('click', submitAdd);
-      urlInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
-      nameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
-    })();
-
-    // PROXY ROUTER UI
-    if (globalThis.ChromaProxyUI?.loadProxyRouterUI) {
-      await globalThis.ChromaProxyUI.loadProxyRouterUI();
+      submitBtn?.addEventListener('click', submitAdd);
+      urlInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
+      nameInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
     }
 
-    // REQUEST LOG UI
+    async function loadProxyRouterSection() {
+      if (globalThis.ChromaProxyUI?.loadProxyRouterUI) {
+        await globalThis.ChromaProxyUI.loadProxyRouterUI();
+      }
+    }
+
     async function loadLocalZapperRulesUI() {
-      if (!isSettingsPage()) return;
+      if (!settingsMode) return;
       const list = $('localZapperRules');
       if (!list) return;
+      setSectionLoading('localZapperRules');
 
-      const res = await notifyBackground({ type: MSG.ZAPPER_RULES_GET }) || { rules: [] };
-      const rules = Array.isArray(res.rules) ? res.rules : [];
+      let rules = [];
+      try {
+        const res = await notifyBackground({ type: MSG.ZAPPER_RULES_GET }) || { rules: [] };
+        rules = Array.isArray(res.rules) ? res.rules : [];
+      } catch (error) {
+        console.error('Chroma local zapper rules failed to load:', error);
+        setSectionError('localZapperRules', 'Local zapper rules unavailable.');
+        return;
+      }
+
       list.innerHTML = '';
-
       if (rules.length === 0) {
         list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No local zapper rules saved.</span></div>';
+        setSectionReady('localZapperRules');
         return;
       }
 
@@ -1029,7 +1179,6 @@ const ChromaApp = (() => {
         for (const rule of domainRules) {
           const row = document.createElement('div');
           row.className = 'toggle-row';
-
           const info = appendElement(row, 'div', 'toggle-info');
           const selector = appendElement(info, 'div', 'zapper-rule-selector', rule.selector);
           selector.title = rule.selector;
@@ -1051,6 +1200,7 @@ const ChromaApp = (() => {
         }
       }
 
+      setSectionReady('localZapperRules');
       list.querySelectorAll('.zapper-rule-toggle').forEach(input => {
         input.addEventListener('change', async (event) => {
           await notifyBackground({
@@ -1060,7 +1210,6 @@ const ChromaApp = (() => {
           });
         });
       });
-
       list.querySelectorAll('.zapper-rule-delete').forEach(button => {
         button.addEventListener('click', async (event) => {
           await notifyBackground({ type: MSG.ZAPPER_RULE_REMOVE, id: event.target.dataset.id });
@@ -1069,51 +1218,46 @@ const ChromaApp = (() => {
       });
     }
 
-    await loadLocalZapperRulesUI();
-
-    const RT_BADGE = {
-      script:         { label: 'JS',  className: 'script' },
-      xmlhttprequest: { label: 'XHR', className: 'xhr' },
-      image:          { label: 'IMG', className: 'image' },
-      sub_frame:      { label: 'FRM', className: 'frame' },
-      main_frame:     { label: 'DOC', className: 'document' },
-      stylesheet:     { label: 'CSS', className: 'css' },
-      media:          { label: 'MED', className: 'media' },
-      websocket:      { label: 'WS',  className: 'websocket' },
-      ping:           { label: 'PNG', className: 'muted' },
-      other:          { label: 'OTH', className: 'muted' },
-      object:         { label: 'OBJ', className: 'muted' },
-    };
-
-    function formatLogUrl(url) {
-      try {
-        const u = new URL(url);
-        const userPath = u.pathname.length > 22 ? u.pathname.slice(0, 20) + '\u2026' : u.pathname;
-        return u.hostname + userPath;
-      } catch {
-        return url.slice(0, 40);
-      }
-    }
-
-    function formatTimeAgo(ts) {
-      const s = Math.floor((Date.now() - ts) / 1000);
-      if (s < 60)   return `${s}s`;
-      if (s < 3600) return `${Math.floor(s / 60)}m`;
-      return `${Math.floor(s / 3600)}h`;
-    }
-
-    async function loadRequestLog() {
+    function wireRequestLog() {
       const toggleRow = $('logToggleRow');
       const toggleBtn = $('logToggleBtn');
-      const entries   = $('logEntries');
+      const entries = $('logEntries');
       if (!toggleRow || !entries) return;
 
-      let isOpen = false;
+      const RT_BADGE = {
+        script: { label: 'JS', className: 'script' },
+        xmlhttprequest: { label: 'XHR', className: 'xhr' },
+        image: { label: 'IMG', className: 'image' },
+        sub_frame: { label: 'FRM', className: 'frame' },
+        main_frame: { label: 'DOC', className: 'document' },
+        stylesheet: { label: 'CSS', className: 'css' },
+        media: { label: 'MED', className: 'media' },
+        websocket: { label: 'WS', className: 'websocket' },
+        ping: { label: 'PNG', className: 'muted' },
+        other: { label: 'OTH', className: 'muted' },
+        object: { label: 'OBJ', className: 'muted' },
+      };
 
+      const formatLogUrl = (url) => {
+        try {
+          const parsed = new URL(url);
+          const userPath = parsed.pathname.length > 22 ? parsed.pathname.slice(0, 20) + '\u2026' : parsed.pathname;
+          return parsed.hostname + userPath;
+        } catch {
+          return String(url || '').slice(0, 40);
+        }
+      };
+      const formatTimeAgo = (ts) => {
+        const seconds = Math.floor((Date.now() - ts) / 1000);
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        return `${Math.floor(seconds / 3600)}h`;
+      };
+
+      let isOpen = false;
       async function renderLog() {
         const log = await notifyBackground({ type: MSG.LOG_GET }) || [];
         entries.innerHTML = '';
-
         if (log.length === 0) {
           entries.innerHTML = '<div class="log-empty">No entries yet.</div>';
           return;
@@ -1133,21 +1277,24 @@ const ChromaApp = (() => {
 
       toggleRow.addEventListener('click', async () => {
         isOpen = !isOpen;
-        toggleBtn.classList.toggle('open', isOpen);
+        toggleBtn?.classList.toggle('open', isOpen);
         entries.classList.toggle('visible', isOpen);
         if (isOpen) await renderLog();
       });
     }
-
-    await loadRequestLog();
   }
 
   function scrollToProxyHash() {
     if (globalThis.location?.hash !== '#proxy') return;
-    setTimeout(() => {
+    const scroll = () => {
       const section = $('proxySection') || $('proxyRouterContainer');
       section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(scroll);
+    } else {
+      Promise.resolve().then(scroll);
+    }
   }
 
   return {

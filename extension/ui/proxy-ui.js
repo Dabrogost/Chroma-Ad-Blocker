@@ -840,7 +840,15 @@ const ChromaProxyUI = (() => {
 
     const settingsMode = isSettingsPage();
     if (settingsMode && !addBtn) return;
-    let proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+    let proxyConfigs = [];
+    try {
+      proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+    } catch (error) {
+      console.error('Chroma proxy config failed to load:', error);
+      container.innerHTML = '';
+      appendElement(container, 'div', settingsMode ? 'protection-list proxy-empty hydration-error' : 'protection-list proxy-empty', 'Proxy router unavailable.');
+      return;
+    }
     proxyConfigs.forEach(pc => {
       pc.credentialAction = 'preserve';
       delete pc.username;
@@ -854,7 +862,13 @@ const ChromaProxyUI = (() => {
       return;
     }
 
-    await renderSettingsEditor(container, addBtn, proxyConfigs);
+    try {
+      await renderSettingsEditor(container, addBtn, proxyConfigs);
+    } catch (error) {
+      console.error('Chroma proxy editor failed to render:', error);
+      container.innerHTML = '';
+      appendElement(container, 'div', 'protection-list proxy-empty hydration-error', 'Proxy router unavailable.');
+    }
   }
 
   return { loadProxyRouterUI };
