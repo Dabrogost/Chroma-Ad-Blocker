@@ -117,16 +117,26 @@ async function attach(cdp, targetId) {
 }
 
 async function evaluate(cdp, sessionId, expression, awaitPromise = true) {
-  const result = await cdp.send('Runtime.evaluate', {
-    expression,
-    awaitPromise,
-    returnByValue: true
-  }, sessionId);
-  if (result.exceptionDetails) {
-    const details = result.exceptionDetails;
-    throw new Error(details.exception?.description || details.exception?.value || details.text || 'Runtime.evaluate failed');
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const result = await cdp.send('Runtime.evaluate', {
+        expression,
+        awaitPromise,
+        returnByValue: true
+      }, sessionId);
+      if (result.exceptionDetails) {
+        const details = result.exceptionDetails;
+        throw new Error(details.exception?.description || details.exception?.value || details.text || 'Runtime.evaluate failed');
+      }
+      return result.result.value;
+    } catch (err) {
+      lastError = err;
+      if (!/Promise was collected/i.test(err?.message || '')) throw err;
+      await sleep(100 * (attempt + 1));
+    }
   }
-  return result.result.value;
+  throw lastError;
 }
 
 async function loadExtensionViaCdp(cdp, extensionPath) {
