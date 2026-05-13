@@ -36,9 +36,9 @@ test('settings page proxy and zapper management safety', async (t) => {
   });
 
   await t.test('adding another proxy preserves unsaved proxy card drafts', () => {
-    const addHandler = proxyUiJs.match(/addBtn\.onclick = async \(\) => \{[\s\S]*?container\.lastElementChild\?\.scrollIntoView/);
+    const addHandler = proxyUiJs.match(/addBtn\.onclick = async \(\) => \{[\s\S]*?scrollIntoView/);
     assert.ok(addHandler, 'expected settings add-proxy handler');
-    assert.match(addHandler[0], /container\.appendChild\(renderProxyCard\(newPc, proxyConfigs\.length - 1\)\)/);
+    assert.match(addHandler[0], /container\.insertBefore\(renderProxyCard\(newPc, proxyConfigs\.length - 1\), container\.querySelector\('\.proxy-chrome-service-bypass-control'\)\)/);
     assert.doesNotMatch(addHandler[0], /renderAll\(\)/);
   });
 
@@ -124,6 +124,7 @@ test('settings page proxy and zapper management safety', async (t) => {
       },
       notifyBackground: async msg => {
         messages.push(msg);
+        if (msg.type === 'CONFIG_GET') return config;
         if (msg.type === 'PROXY_CONFIG_GET') return proxyConfigs;
         if (msg.type === 'PROXY_TEST') return { ok: true, ip: msg.proxyId === 1 ? '198.51.100.1' : '198.51.100.2' };
         if (msg.type === 'PROXY_CONFIG_SET') {
@@ -144,8 +145,42 @@ test('settings page proxy and zapper management safety', async (t) => {
     await sandbox.ChromaProxyUI.loadProxyRouterUI();
     await settleDomAsyncWork();
 
+    const chromeBypassToggle = dom.window.document.querySelector('.proxy-chrome-service-bypass-toggle');
+    const chromeBypassWarning = dom.window.document.querySelector('.proxy-chrome-service-bypass-warning');
+    assert.ok(chromeBypassToggle, 'expected Chrome service bypass toggle');
+    assert.strictEqual(chromeBypassToggle.checked, true);
+    assert.match(
+      dom.window.document.querySelector('.proxy-chrome-service-bypass-control .desc').textContent,
+      /Chrome AI \/ Gemini Nano/
+    );
+    assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), true);
+
+    chromeBypassToggle.checked = false;
+    chromeBypassToggle.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.chromeServiceProxyBypass, false);
+    assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), false);
+    assert.ok(messages.some(msg =>
+      msg.type === 'CONFIG_SET' &&
+      msg.config.chromeServiceProxyBypass === false
+    ));
+
+    chromeBypassToggle.checked = true;
+    chromeBypassToggle.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.chromeServiceProxyBypass, true);
+    assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), true);
+
     const cards = [...dom.window.document.querySelectorAll('.proxy-card')];
     assert.strictEqual(cards.length, 2);
+    const proxyChildren = [...dom.window.document.querySelectorAll('#proxyRouterContainer > *')];
+    assert.ok(
+      proxyChildren.indexOf(cards[1]) <
+        proxyChildren.indexOf(dom.window.document.querySelector('.proxy-chrome-service-bypass-control')),
+      'proxy cards should render before global compatibility controls'
+    );
     assert.strictEqual(cards[1].querySelector('.proxy-enabled-toggle').checked, true);
     assert.match(cards[1].querySelector('.proxy-status-text').textContent, /ROUTING 2 DOMAINS/);
     assert.strictEqual(cards[0].querySelector('.proxy-global-btn').classList.contains('is-active'), true);
@@ -197,6 +232,20 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(config.globalProxyId, null);
     assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
     assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
+
+    chromeBypassToggle.checked = false;
+    chromeBypassToggle.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.chromeServiceProxyBypass, false);
+    assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), true);
+
+    cards[1].querySelector('.proxy-global-btn').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(config.globalProxyEnabled, true);
+    assert.strictEqual(config.globalProxyId, 2);
+    assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), false);
   });
 
   await t.test('proxy domain names override generic toggle heading size', () => {
@@ -210,6 +259,13 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{/);
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{[\s\S]*box-shadow:/);
     assert.doesNotMatch(proxyUiJs, /proxy-global-toggle/);
+  });
+
+  await t.test('Chrome service bypass control is visible and wraps its description', () => {
+    assert.match(proxyUiJs, /Bypass Chrome Browser Services/);
+    assert.match(proxyUiJs, /chromeServiceProxyBypass: toggle\.checked/);
+    assert.match(proxyUiJs, /config\.chromeServiceProxyBypass !== false/);
+    assert.match(uiCss, /\.proxy-chrome-service-bypass-control \.desc\s*\{[\s\S]*white-space: normal/);
   });
 
   await t.test('zapper rules render selector text safely and expose disable/delete actions', () => {

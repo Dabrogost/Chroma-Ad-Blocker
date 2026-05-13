@@ -24,6 +24,38 @@ const PROXY_TEST_DOMAIN = 'icanhazip.com';
 const VALID_PAC_TYPES = new Set(['PROXY', 'HTTPS', 'SOCKS4', 'SOCKS5']);
 const PROXY_AUTH_STATS_FLUSH_MS = 10000;
 const PROXY_AUTH_STATS_BATCH_CAP = 25;
+const CHROME_SERVICE_BYPASS_DOMAINS = [
+  'optimizationguide-pa.googleapis.com',
+  'optimizationguide.googleapis.com',
+  'gemini.google.com',
+  'bard.google.com',
+  'generativelanguage.googleapis.com',
+  'accounts.google.com',
+  'oauthaccountmanager.googleapis.com',
+  'update.googleapis.com',
+  'tools.google.com',
+  'clients1.google.com',
+  'clients2.google.com',
+  'clients3.google.com',
+  'clients4.google.com',
+  'clients5.google.com',
+  'clients6.google.com',
+  'dl.google.com',
+  'dl-ssl.google.com',
+  'edgedl.me.gvt1.com',
+  'redirector.gvt1.com',
+  'redirector.gvt2.com',
+  'gvt1.com',
+  'gvt2.com',
+  'gvt3.com',
+  'storage.googleapis.com',
+  'commondatastorage.googleapis.com',
+  'www.googleapis.com',
+  'aratea-pa.googleapis.com',
+  'scone-pa.clients6.google.com',
+  'gstatic.com',
+  'googleusercontent.com'
+];
 const YOUTUBE_SMART_LINK_DOMAINS = [
   'googlevideo.com',
   'ytimg.com',
@@ -67,6 +99,12 @@ function expandDomains(domains) {
     }
   }
   return Array.from(expanded);
+}
+
+function buildPacDomainConditions(domains) {
+  return domains
+    .map(d => `host === ${JSON.stringify(d)} || dnsDomainIs(host, ${JSON.stringify('.' + d)})`)
+    .join(' || ');
 }
 
 function getProxyString(pc) {
@@ -172,6 +210,7 @@ async function _syncProxyStateImpl(proxyConfigs) {
   const { config } = await chrome.storage.local.get('config');
   const globalEnabled = config?.globalProxyEnabled === true;
   const globalId = config?.globalProxyId;
+  const chromeServiceBypassEnabled = config?.chromeServiceProxyBypass !== false;
   const selectedGlobalProxy = globalEnabled && globalId != null
     ? proxyConfigs.find(pc => pc.id === globalId && isSafeProxyConfig(pc))
     : null;
@@ -188,8 +227,13 @@ async function _syncProxyStateImpl(proxyConfigs) {
   }
 
   let scriptData = "function FindProxyForURL(url, host) { \n";
+  scriptData += "  host = String(host || '').toLowerCase().replace(/\\.$/, '');\n";
   let hasSpecificRules = false;
   let fallbackStr = "'DIRECT'";
+
+  if (chromeServiceBypassEnabled) {
+    scriptData += `  if (${buildPacDomainConditions(CHROME_SERVICE_BYPASS_DOMAINS)}) return 'DIRECT';\n`;
+  }
 
   for (const pc of proxyConfigs) {
     if (!isSafeProxyConfig(pc)) continue;
@@ -205,7 +249,8 @@ async function _syncProxyStateImpl(proxyConfigs) {
     if (activeDomains.length > 0 || isTest) {
       // JSON.stringify safely escapes any quotes/backslashes in user-supplied domains,
       // preventing a malformed config from breaking the entire PAC script.
-      const conditions = activeDomains.map(d => `host === ${JSON.stringify(d)} || dnsDomainIs(host, ${JSON.stringify('.' + d)})`);
+      const conditions = [];
+      if (activeDomains.length > 0) conditions.push(buildPacDomainConditions(activeDomains));
       if (isTest) conditions.push(`host === ${JSON.stringify(PROXY_TEST_DOMAIN)}`);
 
       scriptData += `  if (${conditions.join(' || ')}) return ${proxyStr};\n`;
@@ -327,7 +372,11 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     if (changes.config) {
       const oldC = changes.config.oldValue;
       const newC = changes.config.newValue;
-      if (oldC?.globalProxyEnabled !== newC?.globalProxyEnabled || oldC?.globalProxyId !== newC?.globalProxyId) {
+      if (
+        oldC?.globalProxyEnabled !== newC?.globalProxyEnabled ||
+        oldC?.globalProxyId !== newC?.globalProxyId ||
+        oldC?.chromeServiceProxyBypass !== newC?.chromeServiceProxyBypass
+      ) {
         const { proxyConfigs } = await chrome.storage.local.get('proxyConfigs');
         syncProxyState(proxyConfigs);
       }

@@ -104,6 +104,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         enabled: true,
         globalProxyEnabled: false,
         globalProxyId: null,
+        chromeServiceProxyBypass: true,
         webRtcLeakProtection: 'auto',
         fingerprintRandomization: false,
       },
@@ -346,7 +347,7 @@ export async function syncWhitelistRules() {
 
 // ─── CONFIGURATION VALIDATION ─────
 export function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'webRtcLeakProtection', 'fingerprintRandomization'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization'];
   const webRtcModes = new Set(['off', 'auto', 'balanced', 'strict']);
   const validatedConfig = {};
 

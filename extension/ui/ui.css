@@ -316,6 +316,29 @@ header {
   padding: 14px;
 }
 
+.proxy-chrome-service-bypass-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px;
+}
+
+.proxy-chrome-service-bypass-control .desc {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.45;
+}
+
+.proxy-chrome-service-bypass-warning {
+  margin-top: 6px;
+  color: var(--c-red);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .proxy-webrtc-select {
   width: 180px;
   max-width: 100%;

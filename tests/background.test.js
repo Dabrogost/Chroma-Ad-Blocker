@@ -153,6 +153,19 @@ test('getDefaultDynamicRules', async (t) => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ webRtcLeakProtection: 'default' }))), {});
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ webRtcLeakProtection: true }))), {});
   });
+
+  await t.test('config validation accepts Chrome service proxy bypass booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: true }))),
+      { chromeServiceProxyBypass: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: false }))),
+      { chromeServiceProxyBypass: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: 'false' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: null }))), {});
+  });
 });
 
 // ─── SYNCDYNAMICRULES SUCCESSFUL SYNCING ─────

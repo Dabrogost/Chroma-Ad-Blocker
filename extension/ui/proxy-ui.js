@@ -43,6 +43,13 @@ const ChromaProxyUI = (() => {
     `;
   }
 
+  function updateChromeServiceBypassWarning(globalProxyEnabled) {
+    const warning = document.querySelector('.proxy-chrome-service-bypass-warning');
+    const toggle = document.querySelector('.proxy-chrome-service-bypass-toggle');
+    if (!warning || !toggle) return;
+    setHidden(warning, toggle.checked || globalProxyEnabled !== true);
+  }
+
   function globalProxyConfirmMessage() {
     return [
       'Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches.',
@@ -85,6 +92,51 @@ const ChromaProxyUI = (() => {
     });
 
     container.appendChild(row);
+  }
+
+  async function renderChromeServiceBypassControl(container) {
+    const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+    const row = document.createElement('div');
+    row.className = 'protection-list proxy-chrome-service-bypass-control';
+
+    const info = appendElement(row, 'div', 'toggle-info');
+    appendElement(info, 'div', 'name', 'Bypass Chrome Browser Services');
+    appendElement(
+      info,
+      'div',
+      'desc',
+      'Recommended. Lets Chrome-owned services connect directly while Global Proxy is enabled, helping updates, sign-in, Gemini, and model downloads work. Turning this off is more secure/strict, but may break Chrome AI / Gemini Nano.'
+    );
+    const warning = appendElement(
+      info,
+      'div',
+      'proxy-chrome-service-bypass-warning',
+      'Most Chrome browser services, including built-in AI/model downloads, may stop working while this is disabled and Global Proxy is active.'
+    );
+
+    const toggleLabel = appendElement(row, 'label', 'switch switch-sm');
+    toggleLabel.title = 'Bypass Chrome Browser Services';
+    const toggle = appendElement(toggleLabel, 'input', 'proxy-chrome-service-bypass-toggle');
+    toggle.type = 'checkbox';
+    toggle.checked = config.chromeServiceProxyBypass !== false;
+    appendElement(toggleLabel, 'span', 'slider');
+
+    container.appendChild(row);
+    updateChromeServiceBypassWarning(config.globalProxyEnabled);
+
+    toggle.addEventListener('change', async () => {
+      const wasChecked = !toggle.checked;
+      const result = await notifyBackground({
+        type: MSG.CONFIG_SET,
+        config: { chromeServiceProxyBypass: toggle.checked }
+      });
+      if (!result || result.ok === false) {
+        toggle.checked = wasChecked;
+        return;
+      }
+      config.chromeServiceProxyBypass = toggle.checked;
+      updateChromeServiceBypassWarning(config.globalProxyEnabled);
+    });
   }
 
   function renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal, isEnabled }) {
@@ -620,6 +672,7 @@ const ChromaProxyUI = (() => {
           }
           globalBtn.classList.remove('is-active');
           setGlobalDomainVisibility(false);
+          updateChromeServiceBypassWarning(false);
           updateStatusLine();
           return;
         }
@@ -654,6 +707,7 @@ const ChromaProxyUI = (() => {
           setHidden(otherCard?.querySelector('.proxy-domain-tools'), btn === globalBtn);
           setHidden(otherCard?.querySelector('.proxy-domain-list'), btn === globalBtn);
         });
+        updateChromeServiceBypassWarning(true);
         updateStatusLine();
       });
 
@@ -747,7 +801,6 @@ const ChromaProxyUI = (() => {
 
     const renderAll = async () => {
       container.innerHTML = '';
-      await renderWebRtcControl(container);
       if (proxyConfigs.length === 0) {
         appendElement(container, 'div', 'protection-list proxy-empty', 'No proxy servers configured. Click + to add one.');
       } else {
@@ -755,6 +808,8 @@ const ChromaProxyUI = (() => {
           container.appendChild(renderProxyCard(pc, i));
         });
       }
+      await renderChromeServiceBypassControl(container);
+      await renderWebRtcControl(container);
     };
 
     addBtn.onclick = async () => {
@@ -771,8 +826,8 @@ const ChromaProxyUI = (() => {
       };
       proxyConfigs.push(newPc);
       container.querySelector('.proxy-empty')?.remove();
-      container.appendChild(renderProxyCard(newPc, proxyConfigs.length - 1));
-      container.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
+      container.insertBefore(renderProxyCard(newPc, proxyConfigs.length - 1), container.querySelector('.proxy-chrome-service-bypass-control'));
+      container.querySelector(`[data-index="${proxyConfigs.length - 1}"]`)?.scrollIntoView({ behavior: 'smooth' });
     };
 
     await renderAll();
