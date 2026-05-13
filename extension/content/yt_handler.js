@@ -925,8 +925,18 @@
 
   let pollingInterval = null;
 
+  function stopPolling() {
+    if (!pollingInterval) return;
+    safeClearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+
   function startPolling() {
-    if (pollingInterval) safeClearInterval(pollingInterval);
+    if (!(CONFIG.enabled && shouldAccelerate())) {
+      stopPolling();
+      return;
+    }
+    stopPolling();
     pollingInterval = safeSetInterval(handleAdAcceleration, CONFIG.checkIntervalMs);
   }
 
@@ -953,10 +963,7 @@
       if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
       
       if (!CONFIG.enabled) {
-        if (pollingInterval) {
-          safeClearInterval(pollingInterval);
-          pollingInterval = null;
-        }
+        stopPolling();
         
         if (targetAdVideo) {
           if (targetAdVideo.playbackRate === CONFIG.accelerationSpeed) {
@@ -986,8 +993,7 @@
         startPolling();
         initSkipButtonListener();
       } else if (pollingInterval) {
-        safeClearInterval(pollingInterval);
-        pollingInterval = null;
+        stopPolling();
         if (adOverlayHost) adOverlayHost.classList.remove('active');
         deactivateSessionSheet();
       }
@@ -1046,7 +1052,8 @@
 
   function init() {
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
-    if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
+    const hasInitialConfig = !!(window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config);
+    if (hasInitialConfig) {
       // SECURITY: Handshake Configuration Validation
       applyConfig(window.__CHROMA_INTERNAL__.config);
     }
@@ -1056,7 +1063,7 @@
       injectChromaCSS();
       startPolling();
       initSkipButtonListener();
-    } else {
+    } else if (!hasInitialConfig && !_extInitFired) {
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = API.setInterval(() => {

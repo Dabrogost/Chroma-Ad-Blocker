@@ -418,7 +418,7 @@ test('Ad field stripping', async (t) => {
 
 // ─── YOUTUBE AD ACCELERATION ─────
 test('YouTube ad acceleration', async (t) => {
-  const createSandbox = (setupDoc) => {
+  const createSandbox = (setupDoc, configOverrides = {}, setupSandbox = null) => {
     const sandbox = {
       chrome: {
         runtime: {
@@ -527,8 +527,10 @@ test('YouTube ad acceleration', async (t) => {
         removeDocEventListener: (e, f, o) => sandbox.document.removeEventListener(e, f),
         MutationObserver: sandbox.window.MutationObserver
       },
-      config: { enabled: true, acceleration: true, accelerationSpeed: 8 }
+      config: { enabled: true, acceleration: true, accelerationSpeed: 8, ...configOverrides }
     };
+
+    if (setupSandbox) setupSandbox(sandbox);
 
     vm.createContext(sandbox);
     vm.runInContext(youtubeJsCode, sandbox);
@@ -637,6 +639,32 @@ test('YouTube ad acceleration', async (t) => {
     
     assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, false, 'Session should be deactivated when main content is ready');
     assert.strictEqual(mockVideo.muted, false, 'Video should be unmuted');
+  });
+
+  await t.test('YouTube navigation does not start polling when acceleration is off', async () => {
+    const sandbox = createSandbox(null, { acceleration: false });
+    let intervalsStarted = 0;
+    sandbox.setInterval = () => {
+      intervalsStarted++;
+      return intervalsStarted;
+    };
+
+    sandbox.document.dispatchEvent({ type: 'yt-navigate-finish' });
+    sandbox.document.dispatchEvent({ type: 'yt-page-data-updated' });
+
+    assert.strictEqual(intervalsStarted, 0, 'Navigation should not start the accelerator timer while acceleration is disabled');
+  });
+
+  await t.test('initial load does not start handshake polling when acceleration is already known off', async () => {
+    let intervalsStarted = 0;
+    createSandbox(null, { acceleration: false }, (sandbox) => {
+      sandbox.setInterval = () => {
+        intervalsStarted++;
+        return intervalsStarted;
+      };
+    });
+
+    assert.strictEqual(intervalsStarted, 0, 'Known disabled acceleration should not start any accelerator initialization interval');
   });
 
   await t.test('Event-Driven Initialization Flow', async (st) => {
