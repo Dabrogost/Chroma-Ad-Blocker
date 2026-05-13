@@ -9,7 +9,8 @@ const ChromaProxyUI = (() => {
   const { $, escapeHTML, isSettingsPage, openProxySettings } = globalThis.ChromaApp;
   const SMART_LINK_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'];
 
-  function routeSummary(activeDomainCount, isGlobal) {
+  function routeSummary(activeDomainCount, isGlobal, isEnabled = true) {
+    if (!isEnabled) return 'routing paused';
     return isGlobal ? 'global fallback' : `${activeDomainCount} routed`;
   }
 
@@ -42,20 +43,117 @@ const ChromaProxyUI = (() => {
     `;
   }
 
-  function renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal }) {
+  function updateChromeServiceBypassWarning(globalProxyEnabled) {
+    const warning = document.querySelector('.proxy-chrome-service-bypass-warning');
+    const toggle = document.querySelector('.proxy-chrome-service-bypass-toggle');
+    if (!warning || !toggle) return;
+    setHidden(warning, toggle.checked || globalProxyEnabled !== true);
+  }
+
+  function globalProxyConfirmMessage() {
+    return [
+      'Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches.',
+      '',
+      'Recommended: Chroma will also use WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy.',
+      '',
+      'Enable global proxy mode?'
+    ].join('\n');
+  }
+
+  async function renderWebRtcControl(container) {
+    const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+    const row = document.createElement('div');
+    row.className = 'protection-list proxy-webrtc-control';
+
+    const info = appendElement(row, 'div', 'toggle-info');
+    appendElement(info, 'div', 'name', 'WebRTC Leak Protection');
+    appendElement(info, 'div', 'desc', 'Controls Chrome WebRTC IP handling for browser-level proxy fallback');
+
+    const select = appendElement(row, 'select', 'chroma-input chroma-input--compact proxy-webrtc-select');
+    for (const [value, label] of [
+      ['off', 'Off'],
+      ['auto', 'Auto (Recommended)'],
+      ['balanced', 'Balanced'],
+      ['strict', 'Strict']
+    ]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    select.value = ['off', 'auto', 'balanced', 'strict'].includes(config.webRtcLeakProtection)
+      ? config.webRtcLeakProtection
+      : 'auto';
+    select.addEventListener('change', async () => {
+      await notifyBackground({
+        type: MSG.CONFIG_SET,
+        config: { webRtcLeakProtection: select.value }
+      });
+    });
+
+    container.appendChild(row);
+  }
+
+  async function renderChromeServiceBypassControl(container) {
+    const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+    const row = document.createElement('div');
+    row.className = 'protection-list proxy-chrome-service-bypass-control';
+
+    const info = appendElement(row, 'div', 'toggle-info');
+    appendElement(info, 'div', 'name', 'Bypass Chrome Browser Services');
+    appendElement(
+      info,
+      'div',
+      'desc',
+      'Recommended. Lets Chrome-owned services connect directly while Global Proxy is enabled, helping updates, sign-in, Gemini, and model downloads work. Turning this off is more secure/strict, but may break Chrome AI / Gemini Nano.'
+    );
+    const warning = appendElement(
+      info,
+      'div',
+      'proxy-chrome-service-bypass-warning',
+      'Most Chrome browser services, including built-in AI/model downloads, may stop working while this is disabled and Global Proxy is active.'
+    );
+
+    const toggleLabel = appendElement(row, 'label', 'switch switch-sm');
+    toggleLabel.title = 'Bypass Chrome Browser Services';
+    const toggle = appendElement(toggleLabel, 'input', 'proxy-chrome-service-bypass-toggle');
+    toggle.type = 'checkbox';
+    toggle.checked = config.chromeServiceProxyBypass !== false;
+    appendElement(toggleLabel, 'span', 'slider');
+
+    container.appendChild(row);
+    updateChromeServiceBypassWarning(config.globalProxyEnabled);
+
+    toggle.addEventListener('change', async () => {
+      const wasChecked = !toggle.checked;
+      const result = await notifyBackground({
+        type: MSG.CONFIG_SET,
+        config: { chromeServiceProxyBypass: toggle.checked }
+      });
+      if (!result || result.ok === false) {
+        toggle.checked = wasChecked;
+        return;
+      }
+      config.chromeServiceProxyBypass = toggle.checked;
+      updateChromeServiceBypassWarning(config.globalProxyEnabled);
+    });
+  }
+
+  function renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal, isEnabled }) {
     return `
       <div class="proxy-card-body">
         <div class="proxy-main">
           <div class="proxy-title">${escapeHTML(pc.name || 'Server ' + (index + 1))}</div>
           <div class="proxy-endpoint">${accepted ? `${escapeHTML(pc.host)}:${escapeHTML(pc.port)}` : 'Not configured'}</div>
-          <div class="proxy-meta-text">${escapeHTML(pc.type || 'PROXY')} &middot; ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} &middot; ${routeSummary(activeDomainCount, isGlobal)}</div>
+          <div class="proxy-meta-text">${escapeHTML(pc.type || 'PROXY')} &middot; ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} &middot; ${routeSummary(activeDomainCount, isGlobal, isEnabled)}</div>
           ${renderStatusLineHtml(accepted ? 'Checking...' : 'Open settings to configure')}
         </div>
         <div class="proxy-actions">
           ${accepted ? `
             <button class="reset-btn proxy-refresh-btn compact-action-btn" title="Refresh Connection">&#x21bb;</button>
-            <label class="switch switch-sm" title="Use as Global Fallback">
-              <input type="checkbox" class="proxy-global-toggle" />
+            <button class="reset-btn proxy-global-btn compact-action-btn" title="Use as Global Fallback">GLOBAL</button>
+            <label class="switch switch-sm" title="Enable Proxy Routing">
+              <input type="checkbox" class="proxy-enabled-toggle" />
               <span class="slider"></span>
             </label>
           ` : ''}
@@ -98,13 +196,13 @@ const ChromaProxyUI = (() => {
           ${renderStatusLineHtml('Checking...', `
             <button class="reset-btn proxy-edit-btn compact-action-btn" title="Edit Server">Edit</button>
             <button class="reset-btn proxy-refresh-btn compact-action-btn" title="Refresh Connection">&#x21bb;</button>
-            <span class="inline-separator inline-separator--short"></span>
+            <button class="reset-btn proxy-global-btn compact-action-btn" title="Use as Global Fallback">GLOBAL</button>
             <button class="reset-btn proxy-clear-settings-btn inline-danger-btn compact-action-btn" title="Clear Settings">Clear</button>
           `)}
         </div>
-        <div class="proxy-global-control">
-          <label class="switch switch-sm" title="Use as Global Fallback">
-            <input type="checkbox" class="proxy-global-toggle" />
+        <div class="proxy-enabled-control">
+          <label class="switch switch-sm" title="Enable Proxy Routing">
+            <input type="checkbox" class="proxy-enabled-toggle" />
             <span class="slider"></span>
           </label>
         </div>
@@ -151,14 +249,18 @@ const ChromaProxyUI = (() => {
     return row;
   }
 
-  function setOnlineStatus({ txt, dot, meta, pc, activeDomainCount, isGlobal, ip = '' }) {
+  function setOnlineStatus({ txt, dot, meta, pc, activeDomainCount, isGlobal, isEnabled = true, ip = '' }) {
     if (!txt || !dot) return;
     const ipSuffix = ip ? ` (${ip})` : '';
     const type = pc.type || 'PROXY';
     const credentials = pc.hasCredentials ? 'credentials saved' : 'no credentials';
 
-    if (isGlobal) {
-      txt.textContent = `GLOBAL VPN ACTIVE${ipSuffix}`;
+    if (!isEnabled) {
+      txt.textContent = 'DISABLED';
+      if (meta) meta.textContent = `${type} - ${credentials} - routing paused`;
+      setStatusDotState(dot, 'muted');
+    } else if (isGlobal) {
+      txt.textContent = `GLOBAL PROXY ACTIVE${ipSuffix}`;
       if (meta) meta.textContent = `${type} - ${credentials} - global fallback`;
     } else if (activeDomainCount > 0) {
       txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
@@ -170,19 +272,21 @@ const ChromaProxyUI = (() => {
     setStatusDotState(dot, 'online');
   }
 
-  function renderPopupProxyCard(pc, index, proxyConfigState) {
+  function renderPopupProxyCard(pc, index, proxyConfigState, { saveAllConfigs }) {
     const accepted = !!(pc.accepted && pc.host && pc.port);
+    const isEnabled = pc.enabled !== false;
     const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
     const isGlobal = !!(accepted && proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
     const card = document.createElement('div');
     card.className = 'protection-list proxy-card';
-    card.innerHTML = renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal });
+    card.innerHTML = renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal, isEnabled });
 
     const txt = card.querySelector('.proxy-status-text');
     const dot = card.querySelector('.proxy-status-dot');
     const meta = card.querySelector('.proxy-meta-text');
     const refreshBtn = card.querySelector('.proxy-refresh-btn');
-    const globalToggle = card.querySelector('.proxy-global-toggle');
+    const globalBtn = card.querySelector('.proxy-global-btn');
+    const enabledToggle = card.querySelector('.proxy-enabled-toggle');
 
     const getStatusContext = (ip = '') => ({
       txt,
@@ -190,34 +294,66 @@ const ChromaProxyUI = (() => {
       meta,
       pc,
       activeDomainCount,
-      isGlobal: !!globalToggle?.checked,
+      isGlobal: globalBtn?.classList.contains('is-active') === true,
+      isEnabled: enabledToggle?.checked !== false,
       ip
     });
 
-    if (globalToggle) {
-      globalToggle.checked = isGlobal;
-      globalToggle.addEventListener('change', async (e) => {
-        const isChecked = e.target.checked;
-        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
-          e.target.checked = false;
+    if (globalBtn) {
+      globalBtn.classList.toggle('is-active', isGlobal);
+      globalBtn.addEventListener('click', async () => {
+        if (globalBtn.classList.contains('is-active')) {
+          const result = await notifyBackground({
+            type: MSG.CONFIG_SET,
+            config: { globalProxyEnabled: false, globalProxyId: null }
+          });
+          if (!result || result.ok === false) {
+            setOnlineStatus(getStatusContext());
+            return;
+          }
+          globalBtn.classList.remove('is-active');
+          await loadProxyRouterUI();
+          return;
+        }
+
+        if (typeof confirm === 'function' && !confirm(globalProxyConfirmMessage())) {
+          return;
+        }
+        pc.enabled = true;
+        if (enabledToggle) enabledToggle.checked = true;
+        const saveResult = await saveAllConfigs();
+        if (!saveResult || saveResult.ok === false) {
+          pc.enabled = isEnabled;
+          if (enabledToggle) enabledToggle.checked = isEnabled;
+          setOnlineStatus(getStatusContext());
           return;
         }
         const result = await notifyBackground({
           type: MSG.CONFIG_SET,
           config: {
-            globalProxyEnabled: isChecked,
-            globalProxyId: isChecked ? pc.id : null
+            globalProxyEnabled: true,
+            globalProxyId: pc.id
           }
         });
         if (!result || result.ok === false) {
-          e.target.checked = !isChecked;
+          globalBtn.classList.toggle('is-active', isGlobal);
           setOnlineStatus(getStatusContext());
           return;
         }
-        if (isChecked) {
-          document.querySelectorAll('.proxy-global-toggle').forEach(t => {
-            if (t !== globalToggle) t.checked = false;
-          });
+        await loadProxyRouterUI();
+      });
+    }
+
+    if (enabledToggle) {
+      enabledToggle.checked = isEnabled;
+      enabledToggle.addEventListener('change', async (e) => {
+        const wasEnabled = pc.enabled !== false;
+        const nextEnabled = e.target.checked;
+        pc.enabled = nextEnabled;
+        const result = await saveAllConfigs();
+        if (!result || result.ok === false) {
+          pc.enabled = wasEnabled;
+          e.target.checked = wasEnabled;
         }
         await loadProxyRouterUI();
       });
@@ -237,12 +373,17 @@ const ChromaProxyUI = (() => {
     };
 
     refreshBtn?.addEventListener('click', testConnection);
-    if (accepted) testConnection();
+    if (accepted && isEnabled) {
+      testConnection();
+    } else if (accepted) {
+      setOnlineStatus(getStatusContext());
+    }
     return card;
   }
 
   async function renderPopupSummary(container, addBtn, proxyConfigs) {
     const { config: proxyConfigState = {} } = await chrome.storage.local.get('config');
+    const { saveAllConfigs } = createProxyStore(proxyConfigs);
     if (addBtn) {
       addBtn.title = 'Manage Proxies';
       addBtn.onclick = openProxySettings;
@@ -252,7 +393,7 @@ const ChromaProxyUI = (() => {
     if (proxyConfigs.length === 0) {
       container.innerHTML = '<div class="protection-list proxy-empty">No proxy servers configured.</div>';
     } else {
-      proxyConfigs.forEach((pc, i) => container.appendChild(renderPopupProxyCard(pc, i, proxyConfigState)));
+      proxyConfigs.forEach((pc, i) => container.appendChild(renderPopupProxyCard(pc, i, proxyConfigState, { saveAllConfigs })));
     }
 
     const manage = document.createElement('button');
@@ -275,6 +416,7 @@ const ChromaProxyUI = (() => {
           port: pc.port,
           type: pc.type,
           accepted: pc.accepted,
+          enabled: pc.enabled !== false,
           domains: pc.domains,
           credentialAction: action
         };
@@ -292,7 +434,7 @@ const ChromaProxyUI = (() => {
     return { saveAllConfigs };
   }
 
-  function renderSettingsEditor(container, addBtn, proxyConfigs) {
+  async function renderSettingsEditor(container, addBtn, proxyConfigs) {
     const { saveAllConfigs } = createProxyStore(proxyConfigs);
 
     const renderProxyCard = (pc, index) => {
@@ -394,7 +536,8 @@ const ChromaProxyUI = (() => {
       const delServerBtn = card.querySelector('.proxy-del-server-btn');
       const editBtn = card.querySelector('.proxy-edit-btn');
       const refreshBtn = card.querySelector('.proxy-refresh-btn');
-      const globalToggle = card.querySelector('.proxy-global-toggle');
+      const globalBtn = card.querySelector('.proxy-global-btn');
+      const enabledToggle = card.querySelector('.proxy-enabled-toggle');
 
       clearCredentialsBtn?.addEventListener('click', async () => {
         clearCredentialInputs();
@@ -409,18 +552,21 @@ const ChromaProxyUI = (() => {
       });
 
       const updateGlobalUI = async () => {
-        if (!globalToggle) return;
+        if (!globalBtn) return;
         const { config: c } = await chrome.storage.local.get('config');
-        const isGlobal = (c?.globalProxyEnabled && c?.globalProxyId === pc.id);
-        globalToggle.checked = isGlobal;
-        
-        // Hide domain controls if this is the global catch-all
-        const domainGrid = card.querySelector('.proxy-grid-full');
-        const domainList = card.querySelector('.proxy-domain-list');
-        setHidden(domainGrid, isGlobal);
-        setHidden(domainList, isGlobal);
-        
+        const isGlobal = !!(c?.globalProxyEnabled && c?.globalProxyId === pc.id);
+        globalBtn.classList.toggle('is-active', isGlobal);
+        setGlobalDomainVisibility(isGlobal);
         updateStatusLine();
+      };
+
+      const updateEnabledUI = () => {
+        if (enabledToggle) enabledToggle.checked = pc.enabled !== false;
+      };
+
+      const setGlobalDomainVisibility = (isGlobal) => {
+        setHidden(card.querySelector('.proxy-domain-tools'), isGlobal);
+        setHidden(card.querySelector('.proxy-domain-list'), isGlobal);
       };
 
       const updateStatusLine = (ip = null) => {
@@ -428,20 +574,27 @@ const ChromaProxyUI = (() => {
         const dot = card.querySelector('.proxy-status-dot');
         if (!txt || !dot) return;
 
+        const isEnabled = pc.enabled !== false;
+        if (!isEnabled) {
+          txt.textContent = 'DISABLED';
+          setStatusDotState(dot, 'muted');
+          return;
+        }
+
         // If we're verifying and don't have an IP yet, don't overwrite the 'Verifying...' state
         if (!ip && (txt.textContent === 'Checking...' || txt.textContent === 'Verifying...')) return;
         
         // If we're offline, don't overwrite unless we have a new IP
         if (!ip && txt.textContent.startsWith('Offline')) return;
 
-        const isGlobal = (globalToggle && globalToggle.checked);
+        const isGlobal = globalBtn?.classList.contains('is-active') === true;
         const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
 
         const currentIp = ip || txt.textContent.match(/\((.*?)\)/)?.[1] || '';
         const ipSuffix = currentIp ? ` (${currentIp})` : '';
 
         if (isGlobal) {
-          txt.textContent = `GLOBAL VPN ACTIVE${ipSuffix}`;
+          txt.textContent = `GLOBAL PROXY ACTIVE${ipSuffix}`;
           setStatusDotState(dot, 'online');
         } else if (activeDomainCount > 0) {
           txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
@@ -456,6 +609,10 @@ const ChromaProxyUI = (() => {
         const dot = card.querySelector('.proxy-status-dot');
         const txt = card.querySelector('.proxy-status-text');
         if (!dot || !txt) return;
+        if (pc.enabled === false) {
+          updateStatusLine();
+          return;
+        }
 
         setStatusDotState(dot, 'muted');
         txt.textContent = 'Verifying...';
@@ -496,60 +653,84 @@ const ChromaProxyUI = (() => {
       };
 
       renderDomains();
+      updateEnabledUI();
 
       if (pc.accepted && pc.host && pc.port) {
-        testConnection();
+        if (pc.enabled !== false) testConnection();
         updateGlobalUI();
       }
 
-      globalToggle?.addEventListener('change', async (e) => {
-        const isChecked = e.target.checked;
-        if (isChecked && typeof confirm === 'function' && !confirm('Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches. Enable it?')) {
-          e.target.checked = false;
+      globalBtn?.addEventListener('click', async () => {
+        if (globalBtn.classList.contains('is-active')) {
+          const result = await notifyBackground({
+            type: MSG.CONFIG_SET,
+            config: { globalProxyEnabled: false, globalProxyId: null }
+          });
+          if (!result || result.ok === false) {
+            updateStatusLine();
+            return;
+          }
+          globalBtn.classList.remove('is-active');
+          setGlobalDomainVisibility(false);
+          updateChromeServiceBypassWarning(false);
+          updateStatusLine();
           return;
         }
-        await notifyBackground({ 
+
+        if (typeof confirm === 'function' && !confirm(globalProxyConfirmMessage())) {
+          return;
+        }
+        const wasEnabled = pc.enabled !== false;
+        pc.enabled = true;
+        updateEnabledUI();
+        const saveResult = await saveAllConfigs();
+        if (!saveResult || saveResult.ok === false) {
+          pc.enabled = wasEnabled;
+          updateEnabledUI();
+          updateStatusLine();
+          return;
+        }
+        const result = await notifyBackground({
           type: MSG.CONFIG_SET, 
           config: { 
-            globalProxyEnabled: isChecked,
-            globalProxyId: isChecked ? pc.id : null 
+            globalProxyEnabled: true,
+            globalProxyId: pc.id
           } 
         });
-        
-        // If we turned this one ON, we need to turn others OFF in the UI
-        if (isChecked) {
-          document.querySelectorAll('.proxy-global-toggle').forEach(t => {
-            if (t !== globalToggle) {
-              t.checked = false;
-              // Trigger a UI update for the other cards to show their domain lists again
-              const otherCard = t.closest('.protection-list');
-              const dGrid = otherCard?.querySelector('.proxy-grid-full');
-              const dList = otherCard?.querySelector('.proxy-domain-list');
-              setHidden(dGrid, false);
-              setHidden(dList, false);
-            }
-          });
+        if (!result || result.ok === false) {
+          updateStatusLine();
+          return;
         }
-        
-        // Update this card's domain visibility
-        const domainGrid = card.querySelector('.proxy-grid-full');
-        const domainList = card.querySelector('.proxy-domain-list');
-        setHidden(domainGrid, isChecked);
-        setHidden(domainList, isChecked);
+        document.querySelectorAll('.proxy-global-btn').forEach(btn => {
+          btn.classList.toggle('is-active', btn === globalBtn);
+          const otherCard = btn.closest('.proxy-card');
+          setHidden(otherCard?.querySelector('.proxy-domain-tools'), btn === globalBtn);
+          setHidden(otherCard?.querySelector('.proxy-domain-list'), btn === globalBtn);
+        });
+        updateChromeServiceBypassWarning(true);
+        updateStatusLine();
+      });
+
+      enabledToggle?.addEventListener('change', async (e) => {
+        const wasEnabled = pc.enabled !== false;
+        const nextEnabled = e.target.checked;
+        pc.enabled = nextEnabled;
+        const result = await saveAllConfigs();
+        if (!result || result.ok === false) {
+          pc.enabled = wasEnabled;
+          e.target.checked = wasEnabled;
+        }
         updateStatusLine();
       });
 
       acceptBtn.addEventListener('click', async () => {
         showProxyError('');
-        let host = hostInput.value.trim();
-        if (host.includes('.com') && !host.includes('://')) {
-          host = 'https://' + host;
-          hostInput.value = host;
-        }
+        const host = hostInput.value.trim().replace(/^[a-z][a-z0-9+\-.]*:\/\//i, '').replace(/\/.*$/, '');
         pc.name = nameInput.value.trim();
         pc.type = typeSelect.value;
         pc.host = host;
         pc.port = portInput.value.trim();
+        pc.enabled = pc.enabled !== false;
         const credentialResult = readCredentialAction();
         if (!credentialResult.ok) {
           showProxyError(credentialResult.error);
@@ -589,7 +770,7 @@ const ChromaProxyUI = (() => {
         if (idx > -1) proxyConfigs.splice(idx, 1);
         await saveAllConfigs();
         if (proxyConfigs.length === 0) {
-          renderAll();
+          await renderAll();
         } else {
           card.remove();
         }
@@ -618,15 +799,17 @@ const ChromaProxyUI = (() => {
       return card;
     };
 
-    const renderAll = () => {
+    const renderAll = async () => {
       container.innerHTML = '';
       if (proxyConfigs.length === 0) {
-        container.innerHTML = '<div class="protection-list proxy-empty">No proxy servers configured. Click + to add one.</div>';
+        appendElement(container, 'div', 'protection-list proxy-empty', 'No proxy servers configured. Click + to add one.');
       } else {
         proxyConfigs.forEach((pc, i) => {
           container.appendChild(renderProxyCard(pc, i));
         });
       }
+      await renderChromeServiceBypassControl(container);
+      await renderWebRtcControl(container);
     };
 
     addBtn.onclick = async () => {
@@ -637,16 +820,17 @@ const ChromaProxyUI = (() => {
         port: '',
         accepted: false,
         domains: [],
+        enabled: true,
         hasCredentials: false,
         credentialAction: 'preserve'
       };
       proxyConfigs.push(newPc);
       container.querySelector('.proxy-empty')?.remove();
-      container.appendChild(renderProxyCard(newPc, proxyConfigs.length - 1));
-      container.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
+      container.insertBefore(renderProxyCard(newPc, proxyConfigs.length - 1), container.querySelector('.proxy-chrome-service-bypass-control'));
+      container.querySelector(`[data-index="${proxyConfigs.length - 1}"]`)?.scrollIntoView({ behavior: 'smooth' });
     };
 
-    renderAll();
+    await renderAll();
   }
 
   async function loadProxyRouterUI() {
@@ -656,7 +840,15 @@ const ChromaProxyUI = (() => {
 
     const settingsMode = isSettingsPage();
     if (settingsMode && !addBtn) return;
-    let proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+    let proxyConfigs = [];
+    try {
+      proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+    } catch (error) {
+      console.error('Chroma proxy config failed to load:', error);
+      container.innerHTML = '';
+      appendElement(container, 'div', settingsMode ? 'protection-list proxy-empty hydration-error' : 'protection-list proxy-empty', 'Proxy router unavailable.');
+      return;
+    }
     proxyConfigs.forEach(pc => {
       pc.credentialAction = 'preserve';
       delete pc.username;
@@ -670,7 +862,13 @@ const ChromaProxyUI = (() => {
       return;
     }
 
-    renderSettingsEditor(container, addBtn, proxyConfigs);
+    try {
+      await renderSettingsEditor(container, addBtn, proxyConfigs);
+    } catch (error) {
+      console.error('Chroma proxy editor failed to render:', error);
+      container.innerHTML = '';
+      appendElement(container, 'div', 'protection-list proxy-empty hydration-error', 'Proxy router unavailable.');
+    }
   }
 
   return { loadProxyRouterUI };

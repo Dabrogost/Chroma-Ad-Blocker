@@ -7,6 +7,11 @@
 
 'use strict';
 
+import {
+  getWebRtcLeakProtectionStatus,
+  syncWebRtcLeakProtection
+} from './webrtc.js';
+
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END = 99999;
 const SUBSCRIPTION_RULE_ID_START = 100000;
@@ -14,6 +19,7 @@ const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
 const REQUEST_LOG_MAX_ENTRIES = 500;
 const FPR_CONTENT_SCRIPT_ID = 'chroma_fpr';
+const USER_SCRIPTS_ACTION = 'Open Chrome extension details and enable Allow User Scripts.';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -78,10 +84,41 @@ function isConfiguredProxy(pc) {
   );
 }
 
+function hasUserScriptsApi() {
+  return !!(
+    chrome.userScripts &&
+    typeof chrome.userScripts.getScripts === 'function' &&
+    typeof chrome.userScripts.register === 'function' &&
+    typeof chrome.userScripts.unregister === 'function'
+  );
+}
+
+function isActiveProxy(pc) {
+  return pc?.accepted === true && pc.enabled !== false;
+}
+
+function summarizeWebRtcStatus(status, config) {
+  const mode = typeof config?.webRtcLeakProtection === 'string'
+    ? config.webRtcLeakProtection
+    : 'auto';
+
+  return {
+    available: status?.available === true,
+    mode,
+    value: status?.value ?? null,
+    levelOfControl: status?.levelOfControl ?? null,
+    controllable: status?.controllable === true,
+    protected: status?.protected === true,
+    partial: status?.partial === true,
+    recommended: config?.globalProxyEnabled === true,
+    error: status?.error || null
+  };
+}
+
 function countEnabledProxyDomains(proxyConfigs) {
   let count = 0;
   for (const pc of asArray(proxyConfigs)) {
-    if (!isConfiguredProxy(pc) || pc.accepted !== true) continue;
+    if (!isConfiguredProxy(pc) || !isActiveProxy(pc)) continue;
     count += asArray(pc.domains).filter(domain => domain?.enabled !== false).length;
   }
   return count;
@@ -134,7 +171,7 @@ async function getDnrSnapshot(masterEnabled, networkBlocking, expectedStaticRule
 }
 
 async function getScriptletStatus(storedRuleCount) {
-  const apiAvailable = !!chrome.userScripts?.register;
+  const apiAvailable = hasUserScriptsApi();
   const status = {
     apiAvailable,
     registeredUserScriptCount: null,
@@ -145,15 +182,14 @@ async function getScriptletStatus(storedRuleCount) {
   if (!apiAvailable) return status;
 
   try {
-    const registered = typeof chrome.userScripts.getScripts === 'function'
-      ? await chrome.userScripts.getScripts()
-      : [];
+    const registered = await chrome.userScripts.getScripts();
     status.registeredUserScriptCount = asArray(registered).length;
     status.registrationStatus = storedRuleCount > 0
       ? (status.registeredUserScriptCount > 0 ? 'active' : 'empty')
       : 'empty';
   } catch (err) {
-    status.registrationStatus = 'error';
+    status.apiAvailable = false;
+    status.registrationStatus = 'unavailable';
     status.error = sanitizeText(err?.message || err);
   }
 
@@ -193,7 +229,10 @@ function computeOverall({
   storedScriptletRuleCount,
   scriptlets,
   subscriptionErrors,
-  debugLoggingAvailable
+  debugLoggingAvailable,
+  webrtc,
+  globalProxyEnabled,
+  globalProxyConfigured
 }) {
   const issues = [];
 
@@ -233,14 +272,30 @@ function computeOverall({
       'warning',
       'scriptlets',
       'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
-      'Open Chrome extension details and enable Allow User Scripts.'
+      USER_SCRIPTS_ACTION
     ));
-  } else if (scriptlets.registrationStatus === 'error') {
-    issues.push(makeIssue('warning', 'scriptlets', 'Scriptlet registration could not be inspected.', 'Reload the extension and check User Scripts access.'));
   }
 
   if (subscriptionErrors.length > 0) {
     issues.push(makeIssue('warning', 'subscriptions', `${subscriptionErrors.length} subscription list(s) have refresh errors.`, 'Refresh the affected lists or disable broken lists.'));
+  }
+
+  if (globalProxyEnabled && !webrtc?.available) {
+    issues.push(makeIssue('warning', 'webrtc', 'WebRTC leak protection could not inspect Chrome privacy settings.', 'Check browser support for Chrome privacy settings.'));
+  } else if (globalProxyEnabled && webrtc?.levelOfControl && !webrtc.controllable) {
+    issues.push(makeIssue(
+      'warning',
+      'webrtc',
+      'WebRTC leak protection is controlled by another extension or browser policy.',
+      'Disable the conflicting extension or browser policy if you want Chroma to control WebRTC leak protection.'
+    ));
+  } else if (globalProxyEnabled && globalProxyConfigured && !webrtc?.protected) {
+    issues.push(makeIssue(
+      'warning',
+      'webrtc',
+      'Global proxy is enabled, but WebRTC leak protection is not fully active.',
+      'Set WebRTC Leak Protection to Auto or Strict.'
+    ));
   }
 
   if (!masterEnabled || !networkBlocking) {
@@ -249,7 +304,11 @@ function computeOverall({
   if (!dnrAvailable || dnrError || !staticRulesetsOk) {
     return { status: 'error', issues };
   }
-  if ((!scriptlets.apiAvailable && storedScriptletRuleCount > 0) || subscriptionErrors.length > 0 || scriptlets.registrationStatus === 'error') {
+  if (
+    (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) ||
+    subscriptionErrors.length > 0 ||
+    issues.some(issue => issue.severity === 'warning')
+  ) {
     return { status: 'degraded', issues };
   }
   return { status: 'healthy', issues };
@@ -295,11 +354,17 @@ export async function getHealthStatus() {
   const proxyConfigs = asArray(storage.proxyConfigs);
   const configuredProxies = proxyConfigs.filter(isConfiguredProxy);
   const acceptedProxies = configuredProxies.filter(pc => pc.accepted === true);
+  const activeProxies = configuredProxies.filter(isActiveProxy);
   const globalProxyId = config.globalProxyId;
-  const globalProxyConfigured = globalProxyId != null && acceptedProxies.some(pc => pc.id === globalProxyId);
+  const globalProxyConfigured = globalProxyId != null && activeProxies.some(pc => pc.id === globalProxyId);
   const scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
+  await syncWebRtcLeakProtection(config, proxyConfigs);
+  const webrtc = summarizeWebRtcStatus(
+    await getWebRtcLeakProtectionStatus(config, proxyConfigs),
+    config
+  );
 
   const health = {
     generatedAt: Date.now(),
@@ -363,6 +428,7 @@ export async function getHealthStatus() {
       globalProxyEnabled: config.globalProxyEnabled === true,
       globalProxyConfigured
     },
+    webrtc,
     whitelist: {
       domainCount: asArray(storage.whitelist).length,
       fprDomainCount: asArray(storage.fprWhitelist).length
@@ -389,7 +455,10 @@ export async function getHealthStatus() {
     storedScriptletRuleCount: health.scriptlets.storedRuleCount,
     scriptlets: health.scriptlets,
     subscriptionErrors,
-    debugLoggingAvailable: requestLogAvailable
+    debugLoggingAvailable: requestLogAvailable,
+    webrtc,
+    globalProxyEnabled: health.proxy.globalProxyEnabled,
+    globalProxyConfigured
   });
 
   return health;

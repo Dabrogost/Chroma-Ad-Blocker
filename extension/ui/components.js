@@ -24,6 +24,51 @@ const ChromaComponents = (() => {
     </svg>
   `;
 
+  function renderSkeletonLine(className = '') {
+    return `<div class="skeleton-line${className ? ` ${className}` : ''}" aria-hidden="true"></div>`;
+  }
+
+  function renderSkeletonRows(count = 3, className = '') {
+    return Array.from({ length: count }, (_, index) => `
+      <div class="skeleton-row${className ? ` ${className}` : ''}" aria-hidden="true">
+        <div class="skeleton-row__content">
+          ${renderSkeletonLine(index % 2 ? 'skeleton-line--medium' : 'skeleton-line--long')}
+          ${renderSkeletonLine(index % 2 ? 'skeleton-line--long' : 'skeleton-line--short')}
+        </div>
+        ${renderSkeletonLine('skeleton-line--pill')}
+      </div>
+    `).join('');
+  }
+
+  function renderSkeletonCards(count = 4, className = '') {
+    return Array.from({ length: count }, (_, index) => `
+      <div class="skeleton-card${className ? ` ${className}` : ''}" aria-hidden="true">
+        ${renderSkeletonLine(index % 2 ? 'skeleton-line--medium' : 'skeleton-line--short')}
+        ${renderSkeletonLine('skeleton-line--value')}
+      </div>
+    `).join('');
+  }
+
+  function renderSkeletonGrid(count = 4, className = '') {
+    return `
+      <div class="skeleton-grid${className ? ` ${className}` : ''}" aria-hidden="true">
+        ${renderSkeletonCards(count)}
+      </div>
+    `;
+  }
+
+  function renderSkeletonBars(count = 5) {
+    return Array.from({ length: count }, (_, index) => `
+      <div class="skeleton-row skeleton-row--timeline" aria-hidden="true">
+        <div class="skeleton-row__content">
+          ${renderSkeletonLine('skeleton-line--short')}
+          <div class="skeleton-bar skeleton-bar--${(index % 5) + 1}"></div>
+        </div>
+        ${renderSkeletonLine('skeleton-line--tiny')}
+      </div>
+    `).join('');
+  }
+
   function renderHeader() {
     return `
       <header>
@@ -167,7 +212,7 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderFilterListShell() {
+  function renderFilterListShell({ settingsMode = false } = {}) {
     return `
       <div class="section-title section-title--inline">
         <span class="section-title-text">Filter Lists</span>
@@ -187,9 +232,11 @@ const ChromaComponents = (() => {
         </div>
       </div>
       <div class="protection-list" id="subscriptionList">
-        <div class="toggle-row loading-row">
-          <span class="loading-text">Loading subscriptions...</span>
-        </div>
+        ${settingsMode ? renderSkeletonRows(3, 'subscription-skeleton-row') : `
+          <div class="toggle-row loading-row">
+            <span class="loading-text">Loading subscriptions...</span>
+          </div>
+        `}
       </div>
     `;
   }
@@ -203,10 +250,10 @@ const ChromaComponents = (() => {
             <div class="name">Overall: <span id="healthOverallLabel" class="health-status health-status--disabled">Loading</span></div>
             <div class="desc" id="healthVersionText">Checking protection layers...</div>
           </div>
-          <button class="reset-btn compact-action-btn" id="refreshHealthBtn">Refresh Health</button>
+          <button class="reset-btn compact-action-btn" id="refreshHealthBtn" disabled>Refresh Health</button>
         </div>
-        <div class="health-grid" id="healthPanelBody">
-          <div class="health-empty">Loading health diagnostics...</div>
+        <div class="health-grid is-loading" id="healthPanelBody">
+          ${renderSkeletonGrid(6, 'health-skeleton-grid')}
         </div>
       </div>
     `;
@@ -223,42 +270,54 @@ const ChromaComponents = (() => {
           </div>
         </div>
 
-        <div class="stats-card-grid" id="statisticsTopCards"></div>
+        <div class="stats-card-grid is-loading" id="statisticsTopCards">
+          ${renderSkeletonCards(8)}
+        </div>
 
         <div class="stats-subsection">
           <div class="stats-subsection-title">Overview</div>
-          <div class="stats-range-grid" id="statsRangeSummary"></div>
+          <div class="stats-range-grid is-loading" id="statsRangeSummary">
+            ${renderSkeletonCards(4)}
+          </div>
         </div>
 
         <div class="stats-subsection">
           <div class="stats-subsection-title">Sites</div>
-          <div class="stats-list" id="statsSitesList"></div>
+          <div class="stats-list is-loading" id="statsSitesList">
+            ${renderSkeletonRows(4)}
+          </div>
         </div>
 
         <div class="stats-subsection">
           <div class="stats-subsection-title">Rules</div>
-          <div class="stats-list" id="statsRulesList"></div>
+          <div class="stats-list is-loading" id="statsRulesList">
+            ${renderSkeletonRows(4)}
+          </div>
         </div>
 
         <div class="stats-subsection">
           <div class="stats-subsection-title">Timeline</div>
-          <div class="stats-timeline" id="statsTimelineList"></div>
+          <div class="stats-timeline is-loading" id="statsTimelineList">
+            ${renderSkeletonBars(5)}
+          </div>
         </div>
 
         <div class="stats-subsection">
           <div class="stats-subsection-title">Events</div>
-          <div class="stats-list" id="statsEventsList"></div>
+          <div class="stats-list is-loading" id="statsEventsList">
+            ${renderSkeletonRows(4)}
+          </div>
         </div>
 
         <div class="stats-subsection stats-privacy">
           <div class="stats-subsection-title">Privacy</div>
           <div class="stats-controls-grid">
-            <select id="statsModeSelect" class="chroma-input chroma-input--compact">
+            <select id="statsModeSelect" class="chroma-input chroma-input--compact control-pending" disabled>
               <option value="basic">Basic: totals only</option>
               <option value="aggregated">Aggregated: domains and rule sources</option>
               <option value="debug">Debug: include recent full URLs</option>
             </select>
-            <select id="statsRetentionSelect" class="chroma-input chroma-input--compact">
+            <select id="statsRetentionSelect" class="chroma-input chroma-input--compact control-pending" disabled>
               <option value="30">30 days</option>
               <option value="90">90 days</option>
               <option value="180">180 days</option>
@@ -287,7 +346,7 @@ const ChromaComponents = (() => {
         ` : ''}
       </div>
       <div id="proxyRouterContainer">
-        <!-- Proxy entries will be injected here -->
+        ${settingsMode ? renderSkeletonRows(2, 'proxy-skeleton-row') : '<!-- Proxy entries will be injected here -->'}
       </div>
     `;
   }
@@ -296,9 +355,7 @@ const ChromaComponents = (() => {
     return `
       <div class="section-title section-title--spaced">Local Zapper Rules</div>
       <div class="protection-list" id="localZapperRules">
-        <div class="toggle-row loading-row">
-          <span class="loading-text">Loading local rules...</span>
-        </div>
+        ${renderSkeletonRows(3, 'zapper-skeleton-row')}
       </div>
     `;
   }
@@ -329,7 +386,7 @@ const ChromaComponents = (() => {
           <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" target="_blank" class="github-link" title="View Source on GitHub">
             ${githubIcon}
           </a>
-          <span class="version" id="versionText">v1.0.1 &middot; MV3</span>
+          <span class="version" id="versionText">v1.1.0 &middot; MV3</span>
         </div>
       </footer>
     `;
@@ -345,7 +402,7 @@ const ChromaComponents = (() => {
       ${settingsMode ? renderHealthPanelShell() : ''}
       ${settingsMode ? renderStatisticsShell() : ''}
       ${renderProtectionControls({ showZapper: !settingsMode })}
-      ${renderFilterListShell()}
+      ${renderFilterListShell({ settingsMode })}
       ${renderProxyShell({ settingsMode })}
       ${settingsMode ? renderLocalZapperShell() : ''}
       ${renderRequestLogShell()}

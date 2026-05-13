@@ -20,6 +20,7 @@ import * as router from '../core/messageRouter.js';
 import { registerAll } from './handlers.js';
 import { createDefaultStatsV2, recordStatsEvent } from './stats.js';
 import './proxy.js';
+import { syncWebRtcLeakProtection } from './webrtc.js';
 
 const DEBUG = false;
 
@@ -103,6 +104,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         enabled: true,
         globalProxyEnabled: false,
         globalProxyId: null,
+        chromeServiceProxyBypass: true,
+        webRtcLeakProtection: 'auto',
         fingerprintRandomization: false,
       },
       statsV2: createDefaultStatsV2(),
@@ -143,9 +146,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
   }
 
-  const { config: storedConfig } = await chrome.storage.local.get('config');
+  const { config: storedConfig, proxyConfigs: storedProxyConfigs = [] } = await chrome.storage.local.get(['config', 'proxyConfigs']);
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
+  await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await updateDNRState(isEnabled && isNetworkBlocking);
   await initSubscriptions();
   await refreshAllStale();
@@ -160,9 +164,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  const { config: storedConfig } = await chrome.storage.local.get('config');
+  const { config: storedConfig, proxyConfigs: storedProxyConfigs = [] } = await chrome.storage.local.get(['config', 'proxyConfigs']);
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
+  await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await updateDNRState(isEnabled && isNetworkBlocking);
   await chrome.storage.local.set({ requestLog: [] });
   await ensureAlarm();
@@ -342,7 +347,8 @@ export async function syncWhitelistRules() {
 
 // ─── CONFIGURATION VALIDATION ─────
 export function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'fingerprintRandomization'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization'];
+  const webRtcModes = new Set(['off', 'auto', 'balanced', 'strict']);
   const validatedConfig = {};
 
   if (inputConfig && typeof inputConfig === 'object') {
@@ -353,12 +359,16 @@ export function validateConfig(inputConfig) {
           if (typeof val === 'number' && val > 0 && val <= 16) {
             validatedConfig[key] = val;
           }
-        } else if (typeof val === 'boolean') {
-          validatedConfig[key] = val;
         } else if (key === 'globalProxyId') {
           if (val === null || typeof val === 'number') {
             validatedConfig[key] = val;
           }
+        } else if (key === 'webRtcLeakProtection') {
+          if (webRtcModes.has(val)) {
+            validatedConfig[key] = val;
+          }
+        } else if (typeof val === 'boolean') {
+          validatedConfig[key] = val;
         }
       }
     }

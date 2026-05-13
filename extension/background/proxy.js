@@ -20,10 +20,73 @@ let _proxyTestLock = Promise.resolve();
 let _syncQueue = Promise.resolve();
 let _pendingProxyAuthChallenges = 0;
 let _proxyAuthStatsTimer = null;
-const PROXY_TEST_DOMAIN = 'icanhazip.com';
+const PROXY_TEST_ENDPOINTS = Object.freeze([
+  {
+    id: 'cloudflare-trace',
+    url: 'https://www.cloudflare.com/cdn-cgi/trace',
+    domains: ['www.cloudflare.com', 'cloudflare.com'],
+    parse: text => text.match(/^ip=(.+)$/m)?.[1]?.trim()
+  },
+  {
+    id: 'aws-checkip',
+    url: 'https://checkip.amazonaws.com/',
+    domains: ['checkip.amazonaws.com'],
+    parse: text => text.trim()
+  },
+  {
+    id: 'ipify',
+    url: 'https://api64.ipify.org?format=json',
+    domains: ['api64.ipify.org'],
+    parse: text => JSON.parse(text).ip
+  },
+  {
+    id: 'icanhazip',
+    url: 'https://icanhazip.com/',
+    domains: ['icanhazip.com'],
+    parse: text => text.trim()
+  }
+]);
+const PROXY_TEST_DOMAINS = Object.freeze(
+  [...new Set(PROXY_TEST_ENDPOINTS.flatMap(endpoint => endpoint.domains))]
+);
+const PROXY_TEST_CACHE_TTL_MS = 60_000;
+const _proxyTestCache = new Map();
+let _proxyConfigRevision = 0;
 const VALID_PAC_TYPES = new Set(['PROXY', 'HTTPS', 'SOCKS4', 'SOCKS5']);
 const PROXY_AUTH_STATS_FLUSH_MS = 10000;
 const PROXY_AUTH_STATS_BATCH_CAP = 25;
+const CHROME_SERVICE_BYPASS_DOMAINS = [
+  'optimizationguide-pa.googleapis.com',
+  'optimizationguide.googleapis.com',
+  'gemini.google.com',
+  'bard.google.com',
+  'generativelanguage.googleapis.com',
+  'accounts.google.com',
+  'oauthaccountmanager.googleapis.com',
+  'update.googleapis.com',
+  'tools.google.com',
+  'clients1.google.com',
+  'clients2.google.com',
+  'clients3.google.com',
+  'clients4.google.com',
+  'clients5.google.com',
+  'clients6.google.com',
+  'dl.google.com',
+  'dl-ssl.google.com',
+  'edgedl.me.gvt1.com',
+  'redirector.gvt1.com',
+  'redirector.gvt2.com',
+  'gvt1.com',
+  'gvt2.com',
+  'gvt3.com',
+  'storage.googleapis.com',
+  'commondatastorage.googleapis.com',
+  'www.googleapis.com',
+  'aratea-pa.googleapis.com',
+  'scone-pa.clients6.google.com',
+  'gstatic.com',
+  'googleusercontent.com'
+];
 const YOUTUBE_SMART_LINK_DOMAINS = [
   'googlevideo.com',
   'ytimg.com',
@@ -69,6 +132,76 @@ function expandDomains(domains) {
   return Array.from(expanded);
 }
 
+function buildPacDomainConditions(domains) {
+  return domains
+    .map(d => `host === ${JSON.stringify(d)} || dnsDomainIs(host, ${JSON.stringify('.' + d)})`)
+    .join(' || ');
+}
+
+function shuffleEndpoints(endpoints) {
+  const copy = [...endpoints];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function isLikelyIp(value) {
+  if (typeof value !== 'string') return false;
+  const ip = value.trim();
+  if (!ip || ip.length > 64) return false;
+  const ipv4Parts = ip.split('.');
+  if (ipv4Parts.length === 4 && ipv4Parts.every(part => /^\d{1,3}$/.test(part))) {
+    return ipv4Parts.every(part => Number(part) >= 0 && Number(part) <= 255);
+  }
+  return (
+    ip.includes(':') &&
+    /^[a-f0-9:]+$/i.test(ip)
+  );
+}
+
+async function fetchProxyIp(signal) {
+  const endpoints = shuffleEndpoints(PROXY_TEST_ENDPOINTS).slice(0, 2);
+  let lastError = 'No verification endpoint available';
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint.url, {
+        signal,
+        cache: 'no-cache'
+      });
+
+      if (!res.ok) {
+        lastError = `${endpoint.id}: HTTP ${res.status}`;
+        continue;
+      }
+
+      const text = await res.text();
+      const ip = endpoint.parse(text);
+
+      if (!isLikelyIp(ip)) {
+        lastError = `${endpoint.id}: invalid IP response`;
+        continue;
+      }
+
+      return {
+        ok: true,
+        ip: ip.trim(),
+        providerId: endpoint.id
+      };
+    } catch (err) {
+      if (err?.name === 'AbortError') throw err;
+      lastError = `${endpoint.id}: ${err?.message || 'request failed'}`;
+    }
+  }
+
+  return {
+    ok: false,
+    error: lastError
+  };
+}
+
 function getProxyString(pc) {
   const type = VALID_PAC_TYPES.has(pc.type) ? pc.type : null;
   const host = typeof pc.host === 'string' ? pc.host : '';
@@ -103,8 +236,23 @@ function isSafeProxyConfig(pc) {
   );
 }
 
+function isProxyEnabled(pc) {
+  return pc?.enabled !== false;
+}
+
 function hasStoredAuth(pc) {
   return !!(pc && pc.authIv && pc.authCipher);
+}
+
+function getProxyTestCacheFingerprint(pc) {
+  return JSON.stringify({
+    id: pc?.id,
+    type: pc?.type,
+    host: pc?.host,
+    port: String(pc?.port ?? ''),
+    hasAuth: hasStoredAuth(pc),
+    revision: _proxyConfigRevision
+  });
 }
 
 function flushProxyAuthStats() {
@@ -168,11 +316,12 @@ async function _syncProxyStateImpl(proxyConfigs) {
   const { config } = await chrome.storage.local.get('config');
   const globalEnabled = config?.globalProxyEnabled === true;
   const globalId = config?.globalProxyId;
-  const validGlobalProxy = globalEnabled && globalId != null
+  const chromeServiceBypassEnabled = config?.chromeServiceProxyBypass !== false;
+  const selectedGlobalProxy = globalEnabled && globalId != null
     ? proxyConfigs.find(pc => pc.id === globalId && isSafeProxyConfig(pc))
     : null;
 
-  if (globalEnabled && globalId != null && !validGlobalProxy) {
+  if (globalEnabled && globalId != null && !selectedGlobalProxy) {
     await chrome.storage.local.set({
       config: {
         ...config,
@@ -184,8 +333,13 @@ async function _syncProxyStateImpl(proxyConfigs) {
   }
 
   let scriptData = "function FindProxyForURL(url, host) { \n";
+  scriptData += "  host = String(host || '').toLowerCase().replace(/\\.$/, '');\n";
   let hasSpecificRules = false;
   let fallbackStr = "'DIRECT'";
+
+  if (chromeServiceBypassEnabled) {
+    scriptData += `  if (${buildPacDomainConditions(CHROME_SERVICE_BYPASS_DOMAINS)}) return 'DIRECT';\n`;
+  }
 
   for (const pc of proxyConfigs) {
     if (!isSafeProxyConfig(pc)) continue;
@@ -194,21 +348,23 @@ async function _syncProxyStateImpl(proxyConfigs) {
 
     const proxyStr = getProxyString(pc);
     const isTest = (id === _currentlyTestingId);
-    const activeDomains = expandDomains(getEnabledRouteDomains(pc));
+    const routeEnabled = isProxyEnabled(pc);
+    const activeDomains = routeEnabled ? expandDomains(getEnabledRouteDomains(pc)) : [];
 
     // 1. Add Domain-Specific Rules
     if (activeDomains.length > 0 || isTest) {
       // JSON.stringify safely escapes any quotes/backslashes in user-supplied domains,
       // preventing a malformed config from breaking the entire PAC script.
-      const conditions = activeDomains.map(d => `host === ${JSON.stringify(d)} || dnsDomainIs(host, ${JSON.stringify('.' + d)})`);
-      if (isTest) conditions.push(`host === ${JSON.stringify(PROXY_TEST_DOMAIN)}`);
+      const conditions = [];
+      if (activeDomains.length > 0) conditions.push(buildPacDomainConditions(activeDomains));
+      if (isTest) conditions.push(buildPacDomainConditions(PROXY_TEST_DOMAINS));
 
       scriptData += `  if (${conditions.join(' || ')}) return ${proxyStr};\n`;
       hasSpecificRules = true;
     }
 
     // 2. Identify the Global Fallback
-    if (validGlobalProxy && id === globalId) {
+    if (routeEnabled && selectedGlobalProxy && id === globalId) {
       fallbackStr = proxyStr;
     }
   }
@@ -239,7 +395,28 @@ async function _syncProxyStateImpl(proxyConfigs) {
 /**
  * Encapsulates the sequential lock + PAC-swap + fetch flow for a proxy test.
  */
-export function runProxyTest(proxyId) {
+export async function runProxyTest(proxyId) {
+  const { proxyConfigs: cachedProxyConfigs = [] } = await chrome.storage.local.get('proxyConfigs');
+  const cachedPc = proxyId === undefined
+    ? cachedProxyConfigs.find(isSafeProxyConfig)
+    : cachedProxyConfigs.find(p => p.id === proxyId && isSafeProxyConfig(p));
+
+  if (!cachedPc) {
+    recordStatsEvent({ layer: 'proxy', type: 'test_failure', error: 'Proxy not configured' });
+    return { ok: false, error: 'Proxy not configured' };
+  }
+
+  const cacheFingerprint = getProxyTestCacheFingerprint(cachedPc);
+  const cached = _proxyTestCache.get(cachedPc.id);
+  if (
+    cached?.ok === true &&
+    cached.fingerprint === cacheFingerprint &&
+    Date.now() - cached.checkedAt < PROXY_TEST_CACHE_TTL_MS
+  ) {
+    const { checkedAt, fingerprint, ...cachedResult } = cached;
+    return cachedResult;
+  }
+
   const currentLock = _proxyTestLock;
   const nextLock = (async () => {
     await currentLock;
@@ -254,6 +431,17 @@ export function runProxyTest(proxyId) {
         return { ok: false, error: 'Proxy not configured' };
       }
 
+      const lockedCacheFingerprint = getProxyTestCacheFingerprint(pc);
+      const lockedCached = _proxyTestCache.get(pc.id);
+      if (
+        lockedCached?.ok === true &&
+        lockedCached.fingerprint === lockedCacheFingerprint &&
+        Date.now() - lockedCached.checkedAt < PROXY_TEST_CACHE_TTL_MS
+      ) {
+        const { checkedAt, fingerprint, ...cachedResult } = lockedCached;
+        return cachedResult;
+      }
+
       _currentlyTestingId = pc.id;
       await syncProxyState(proxyConfigs);
       await new Promise(r => setTimeout(r, 150)); // Tiny grace period for Chrome to apply PAC settings
@@ -262,19 +450,24 @@ export function runProxyTest(proxyId) {
       const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       try {
-        // icanhazip.com is always proxied when a proxy is active (see PROXY_DOMAIN_EXPANSION)
-        const res = await fetch('https://icanhazip.com', {
-          signal: controller.signal,
-          cache: 'no-cache'
-        });
+        const result = await fetchProxyIp(controller.signal);
         clearTimeout(timeoutId);
-        if (res.ok) {
-          const ip = (await res.text()).trim();
+        if (result.ok) {
+          const { ip, providerId } = result;
+          const success = {
+            ok: true,
+            proxyId: pc.id,
+            ip,
+            providerId,
+            fingerprint: lockedCacheFingerprint,
+            checkedAt: Date.now()
+          };
+          _proxyTestCache.set(pc.id, success);
           recordStatsEvent({ layer: 'proxy', type: 'test_pass', proxyId: pc.id });
-          return { ok: true, proxyId: pc.id, ip };
+          return { ok: true, proxyId: pc.id, ip, providerId };
         }
-        recordStatsEvent({ layer: 'proxy', type: 'test_failure', proxyId: pc.id, error: `HTTP ${res.status}` });
-        return { ok: false, error: `HTTP ${res.status}` };
+        recordStatsEvent({ layer: 'proxy', type: 'test_failure', proxyId: pc.id, error: result.error });
+        return { ok: false, error: result.error };
       } catch (fetchErr) {
         clearTimeout(timeoutId);
         const error = fetchErr.name === 'AbortError' ? 'Timeout' : fetchErr.message;
@@ -299,6 +492,8 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     if (changes.proxyConfigs) {
       const oldConfigs = changes.proxyConfigs.oldValue || [];
       const newConfigs = changes.proxyConfigs.newValue || [];
+      _proxyConfigRevision++;
+      _proxyTestCache.clear();
 
       // Cleanup globalProxyId if the proxy was deleted
       if (oldConfigs.length > newConfigs.length) {
@@ -322,7 +517,11 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     if (changes.config) {
       const oldC = changes.config.oldValue;
       const newC = changes.config.newValue;
-      if (oldC?.globalProxyEnabled !== newC?.globalProxyEnabled || oldC?.globalProxyId !== newC?.globalProxyId) {
+      if (
+        oldC?.globalProxyEnabled !== newC?.globalProxyEnabled ||
+        oldC?.globalProxyId !== newC?.globalProxyId ||
+        oldC?.chromeServiceProxyBypass !== newC?.chromeServiceProxyBypass
+      ) {
         const { proxyConfigs } = await chrome.storage.local.get('proxyConfigs');
         syncProxyState(proxyConfigs);
       }

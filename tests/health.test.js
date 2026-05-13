@@ -5,6 +5,10 @@ const path = require('path');
 const vm = require('vm');
 
 const healthJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'health.js'), 'utf8')
+  .replace(/import\s*\{[\s\S]*?getWebRtcLeakProtectionStatus,[\s\S]*?syncWebRtcLeakProtection[\s\S]*?\}\s*from\s*'\.\/webrtc\.js';/, `
+    var getWebRtcLeakProtectionStatus = globalThis._mockGetWebRtcLeakProtectionStatus;
+    var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection;
+  `)
   .replace(/^export\s+/gm, '');
 
 const manifest = {
@@ -20,6 +24,15 @@ const manifest = {
 
 function plain(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function fullUserScriptsApi(overrides = {}) {
+  return {
+    getScripts: async () => [],
+    register: async () => {},
+    unregister: async () => {},
+    ...overrides
+  };
 }
 
 function loadHealthSandbox(options = {}) {
@@ -46,6 +59,16 @@ function loadHealthSandbox(options = {}) {
     appliedNetworkRuleCount: 0,
     ...(options.storage || {})
   };
+  const webrtcStatus = options.webrtcStatus || {
+    available: true,
+    value: 'default',
+    levelOfControl: 'controllable_by_this_extension',
+    controllable: true,
+    protected: false,
+    partial: false,
+    error: null
+  };
+  const syncResults = [];
   const enabledRulesets = options.enabledRulesets || ['static_a', 'static_b'];
   const dynamicRules = options.dynamicRules || [];
   const dnr = options.noDnr
@@ -57,6 +80,9 @@ function loadHealthSandbox(options = {}) {
   if (dnr && options.debugLogging !== false) {
     dnr.onRuleMatchedDebug = { addListener: () => {} };
   }
+  const userScripts = Object.prototype.hasOwnProperty.call(options, 'userScripts')
+    ? options.userScripts
+    : fullUserScriptsApi();
 
   const sandbox = {
     chrome: {
@@ -77,7 +103,7 @@ function loadHealthSandbox(options = {}) {
         }
       },
       declarativeNetRequest: dnr,
-      userScripts: options.userScripts,
+      userScripts,
       scripting: options.scripting || {
         getRegisteredContentScripts: async () => []
       }
@@ -90,6 +116,12 @@ function loadHealthSandbox(options = {}) {
     Set,
     console
   };
+  sandbox._mockGetWebRtcLeakProtectionStatus = async () => webrtcStatus;
+  sandbox._mockSyncWebRtcLeakProtection = async (config, proxyConfigs) => {
+    syncResults.push({ config, proxyConfigs });
+    return options.webrtcSyncResult || { ok: true };
+  };
+  sandbox._webrtcSyncResults = syncResults;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(healthJsCode, sandbox);
@@ -99,8 +131,7 @@ function loadHealthSandbox(options = {}) {
 test('health diagnostics', async (t) => {
   await t.test('master disabled returns overall disabled', async () => {
     const sandbox = loadHealthSandbox({
-      storage: { config: { enabled: false, networkBlocking: true } },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      storage: { config: { enabled: false, networkBlocking: true } }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -125,10 +156,84 @@ test('health diagnostics', async (t) => {
     assert.ok(health.overall.issues.some(issue => issue.area === 'scriptlets' && issue.severity === 'warning'));
   });
 
+  await t.test('userScripts unavailable is visible without degrading when no scriptlet rules are stored', async () => {
+    const sandbox = loadHealthSandbox({
+      userScripts: undefined
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'healthy');
+    assert.strictEqual(health.scriptlets.apiAvailable, false);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'unavailable');
+    assert.strictEqual(health.overall.issues.some(issue => issue.area === 'scriptlets'), false);
+  });
+
+  await t.test('partial userScripts API is reported unavailable', async () => {
+    for (const userScripts of [
+      { register: async () => {} },
+      { getScripts: async () => [], register: async () => {} },
+      { getScripts: async () => [], unregister: async () => {} },
+      { getScripts: true, register: async () => {}, unregister: async () => {} }
+    ]) {
+      const sandbox = loadHealthSandbox({
+        storage: {
+          subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+        },
+        userScripts
+      });
+
+      const health = await sandbox.getHealthStatus();
+
+      assert.strictEqual(health.scriptlets.apiAvailable, false);
+      assert.strictEqual(health.scriptlets.registrationStatus, 'unavailable');
+    }
+  });
+
+  await t.test('complete userScripts API is reported available', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => [{ id: 'scriptlet_1' }]
+      })
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.scriptlets.apiAvailable, true);
+    assert.strictEqual(health.scriptlets.registeredUserScriptCount, 1);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'active');
+  });
+
+  await t.test('userScripts inspection failure reports Allow User Scripts diagnostic', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => {
+          throw new Error('User Scripts permission is not enabled');
+        }
+      })
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.scriptlets.apiAvailable, false);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'unavailable');
+    assert.match(health.scriptlets.error, /permission is not enabled/i);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'scriptlets' &&
+      /Allow User Scripts/i.test(issue.message)
+    ));
+  });
+
   await t.test('network enabled with missing static ruleset returns error', async () => {
     const sandbox = loadHealthSandbox({
-      enabledRulesets: ['static_a'],
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      enabledRulesets: ['static_a']
     });
 
     const health = await sandbox.getHealthStatus();
@@ -147,8 +252,7 @@ test('health diagnostics', async (t) => {
           lastError: 'HTTP 500 from https://example.com/list.txt',
           ruleCount: { network: 10, cosmetic: 2, scriptlet: 1 }
         }]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -175,8 +279,7 @@ test('health diagnostics', async (t) => {
             ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
           }
         ]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -203,8 +306,7 @@ test('health diagnostics', async (t) => {
             ruleCount: { network: 1, cosmetic: 0, scriptlet: 0 }
           }
         ]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -216,8 +318,7 @@ test('health diagnostics', async (t) => {
 
   await t.test('request logging unavailable is diagnostic only', async () => {
     const sandbox = loadHealthSandbox({
-      debugLogging: false,
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      debugLogging: false
     });
 
     const health = await sandbox.getHealthStatus();
@@ -250,8 +351,7 @@ test('health diagnostics', async (t) => {
           authIv: 'iv-secret',
           authCipher: 'cipher-secret'
         }]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -272,6 +372,198 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(serialized.includes('cipher-secret'), false);
   });
 
+  await t.test('disabled proxy domains and global selection are not reported as active routing', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7
+        },
+        proxyConfigs: [{
+          id: 7,
+          name: 'Paused',
+          host: 'proxy.example.com',
+          port: 8080,
+          type: 'PROXY',
+          accepted: true,
+          enabled: false,
+          domains: [{ host: 'media.example.com', enabled: true }]
+        }]
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.deepStrictEqual(plain(health.proxy), {
+      configuredCount: 1,
+      acceptedCount: 1,
+      routedDomainCount: 0,
+      globalProxyEnabled: true,
+      globalProxyConfigured: false
+    });
+  });
+
+  await t.test('global proxy configured with WebRTC strict has no WebRTC warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7,
+          webRtcLeakProtection: 'auto'
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'disable_non_proxied_udp',
+        levelOfControl: 'controlled_by_this_extension',
+        controllable: true,
+        protected: true,
+        partial: false,
+        error: null
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.webrtc.protected, true);
+    assert.strictEqual(health.overall.issues.some(issue => issue.area === 'webrtc'), false);
+    assert.strictEqual(sandbox._webrtcSyncResults.length, 1);
+  });
+
+  await t.test('global proxy configured with WebRTC off/default creates warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7,
+          webRtcLeakProtection: 'off'
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'default',
+        levelOfControl: 'controllable_by_this_extension',
+        controllable: true,
+        protected: false,
+        partial: false,
+        error: null
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.ok(health.overall.issues.some(issue => issue.area === 'webrtc' && issue.severity === 'warning'));
+  });
+
+  await t.test('privacy API unavailable with global proxy enabled creates warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: false,
+        value: null,
+        levelOfControl: null,
+        controllable: false,
+        protected: false,
+        partial: false,
+        error: 'Chrome privacy WebRTC setting unavailable'
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.ok(health.overall.issues.some(issue => issue.area === 'webrtc' && /could not inspect/i.test(issue.message)));
+  });
+
+  await t.test('controlled_by_other_extensions with global proxy enabled creates warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: true,
+          globalProxyId: 7
+        },
+        proxyConfigs: [{
+          id: 7,
+          host: 'proxy.example.com',
+          port: 8080,
+          accepted: true
+        }]
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'default',
+        levelOfControl: 'controlled_by_other_extensions',
+        controllable: false,
+        protected: false,
+        partial: false,
+        error: 'WebRTC privacy setting is controlled elsewhere'
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.ok(health.overall.issues.some(issue => issue.area === 'webrtc' && /controlled/i.test(issue.message)));
+  });
+
+  await t.test('global proxy disabled with WebRTC off has no WebRTC warning', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          globalProxyEnabled: false,
+          globalProxyId: null,
+          webRtcLeakProtection: 'off'
+        }
+      },
+      webrtcStatus: {
+        available: true,
+        value: 'default',
+        levelOfControl: 'controllable_by_this_extension',
+        controllable: true,
+        protected: false,
+        partial: false,
+        error: null
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.issues.some(issue => issue.area === 'webrtc'), false);
+  });
+
   await t.test('dynamic rules are counted by documented ID ranges', async () => {
     const sandbox = loadHealthSandbox({
       dynamicRules: [
@@ -281,8 +573,7 @@ test('health diagnostics', async (t) => {
         { id: 8999999 },
         { id: 9000000 }
       ],
-      storage: { appliedNetworkRuleCount: 2 },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      storage: { appliedNetworkRuleCount: 2 }
     });
 
     const health = await sandbox.getHealthStatus();

@@ -25,6 +25,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
+  .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -77,6 +78,7 @@ function loadHandlers(options = {}) {
     Number,
     encryptAuth: options.encryptAuth || (async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })),
     syncWhitelistRules: options.syncWhitelistRules || (async () => {}),
+    syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
     chrome: {
       storage: {
         local: {
@@ -308,6 +310,7 @@ test('Security Hardening - handlers.js', async (t) => {
       port: 1080,
       type: 'SOCKS5',
       accepted: true,
+      enabled: true,
       domains: [{ host: 'youtube.com', enabled: true }],
       authIv: 'iv:user',
       authCipher: 'ct:pass'
@@ -354,8 +357,27 @@ test('Security Hardening - handlers.js', async (t) => {
       port: 8080,
       type: 'PROXY',
       accepted: true,
+      enabled: true,
       domains: [{ host: 'good.example.com', enabled: true }]
     });
+  });
+
+  await t.test('proxy config validation preserves disabled proxy state', async () => {
+    const result = await loadHandlers().validateProxyConfigsForStorage([{
+      id: 30,
+      name: 'Paused Media',
+      host: 'proxy.example.com',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      enabled: false,
+      domains: [{ host: 'youtube.com', enabled: true }]
+    }]);
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.configs.length, 1);
+    assert.strictEqual(result.configs[0].enabled, false);
+    assert.deepStrictEqual(plain(result.configs[0].domains), [{ host: 'youtube.com', enabled: true }]);
   });
 
   await t.test('rejects non-integer proxy test ids before dispatch', async () => {
@@ -375,6 +397,7 @@ test('Security Hardening - handlers.js', async (t) => {
           port: 8080,
           type: 'PROXY',
           accepted: true,
+          enabled: false,
           domains: [{ host: 'example.com', enabled: true }],
           authIv: 'iv-secret',
           authCipher: 'cipher-secret'
@@ -391,6 +414,7 @@ test('Security Hardening - handlers.js', async (t) => {
       port: 8080,
       type: 'PROXY',
       accepted: true,
+      enabled: false,
       domains: [{ host: 'example.com', enabled: true }],
       hasCredentials: true
     }]);
