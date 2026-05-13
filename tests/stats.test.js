@@ -71,6 +71,49 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function seededDetailedStats(settings = { mode: 'aggregated', retentionDays: 90, storeFullUrls: false }) {
+  const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
+  const ruleKey = 'static_ruleset:main:12';
+  return {
+    version: 1,
+    settings,
+    totals: { protectionEvents: 5, networkBlocks: 4, cosmeticHides: 1 },
+    byDay: {
+      [today]: { day: today, protectionEvents: 5, networkBlocks: 4, cosmeticHides: 1 }
+    },
+    bySite: {
+      'ads.example.com': { domain: 'ads.example.com', protectionEvents: 4, networkBlocks: 4, lastSeen: now }
+    },
+    byResourceType: {
+      script: { resourceType: 'script', protectionEvents: 4, networkBlocks: 4, lastSeen: now }
+    },
+    byRule: {
+      [ruleKey]: {
+        key: ruleKey,
+        ruleId: 12,
+        rulesetId: 'main',
+        ruleSource: 'static_ruleset',
+        protectionEvents: 4,
+        networkBlocks: 4,
+        lastSeen: now
+      }
+    },
+    recentEvents: [{
+      ts: now,
+      layer: 'network',
+      type: 'block',
+      domain: 'ads.example.com',
+      resourceType: 'script',
+      ruleId: 12,
+      rulesetId: 'main',
+      ruleSource: 'static_ruleset',
+      count: 1,
+      url: 'https://ads.example.com/ad.js?token=secret'
+    }]
+  };
+}
+
 test('statsV2 core aggregation and privacy', async (t) => {
   await t.test('creates default versioned schema', async () => {
     const stats = loadStatsSandbox();
@@ -248,7 +291,35 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(event.url, 'https://ads.example.com/path?debug=true');
   });
 
-  await t.test('stats mode changes reduce stored detail safely', async () => {
+  await t.test('switching from aggregated to basic preserves historical intelligence buckets', async () => {
+    const stats = loadStatsSandbox({ statsV2: seededDetailedStats() });
+
+    await stats.setStatsSettings({ mode: 'basic' });
+    const stored = stats.storage.statsV2;
+
+    assert.strictEqual(stored.settings.mode, 'basic');
+    assert.strictEqual(stored.totals.networkBlocks, 4);
+    assert.ok(Object.keys(stored.byDay).length > 0);
+    assert.ok(Object.keys(stored.bySite).length > 0);
+    assert.ok(Object.keys(stored.byResourceType).length > 0);
+    assert.ok(Object.keys(stored.byRule).length > 0);
+    assert.strictEqual(stored.recentEvents.length, 1);
+    assert.strictEqual('url' in stored.recentEvents[0], false);
+  });
+
+  await t.test('switching from debug to basic strips full URLs without clearing recent events', async () => {
+    const stats = loadStatsSandbox({
+      statsV2: seededDetailedStats({ mode: 'debug', retentionDays: 90, storeFullUrls: true })
+    });
+
+    await stats.setStatsSettings({ mode: 'basic' });
+
+    assert.strictEqual(stats.storage.statsV2.settings.mode, 'basic');
+    assert.strictEqual(stats.storage.statsV2.recentEvents.length, 1);
+    assert.strictEqual('url' in stats.storage.statsV2.recentEvents[0], false);
+  });
+
+  await t.test('stats mode changes reduce stored URL detail safely', async () => {
     const stats = loadStatsSandbox();
 
     await stats.setStatsSettings({ mode: 'debug', storeFullUrls: true });
@@ -271,11 +342,36 @@ test('statsV2 core aggregation and privacy', async (t) => {
     await stats.setStatsSettings({ mode: 'basic' });
     const snapshot = await stats.getStatsSnapshot();
     assert.strictEqual(snapshot.totals.networkBlocks, 1);
-    assert.deepStrictEqual(plain(snapshot.byDay), {});
-    assert.deepStrictEqual(plain(snapshot.bySite), {});
-    assert.deepStrictEqual(plain(snapshot.byResourceType), {});
-    assert.deepStrictEqual(plain(snapshot.byRule), {});
-    assert.deepStrictEqual(plain(snapshot.recentEvents), []);
+    assert.ok(Object.keys(snapshot.byDay).length > 0);
+    assert.ok(Object.keys(snapshot.bySite).length > 0);
+    assert.ok(Object.keys(snapshot.byResourceType).length > 0);
+    assert.ok(Object.keys(snapshot.byRule).length > 0);
+    assert.strictEqual(snapshot.recentEvents.length, 1);
+    assert.strictEqual('url' in snapshot.recentEvents[0], false);
+  });
+
+  await t.test('basic mode preserves old intelligence but records new events as totals only', async () => {
+    const stats = loadStatsSandbox({ statsV2: seededDetailedStats() });
+
+    await stats.setStatsSettings({ mode: 'basic' });
+    stats.recordStatsEvent({
+      layer: 'network',
+      type: 'block',
+      domain: 'new.example.com',
+      resourceType: 'image',
+      ruleId: 99,
+      rulesetId: 'main',
+      ruleSource: 'static_ruleset'
+    });
+    await stats.flushStatsQueue();
+
+    const snapshot = await stats.getStatsSnapshot();
+    assert.strictEqual(snapshot.totals.networkBlocks, 5);
+    assert.strictEqual(snapshot.bySite['ads.example.com'].networkBlocks, 4);
+    assert.strictEqual(snapshot.bySite['new.example.com'], undefined);
+    assert.strictEqual(snapshot.byResourceType.image, undefined);
+    assert.strictEqual(snapshot.byRule['static_ruleset:main:99'], undefined);
+    assert.strictEqual(snapshot.recentEvents.length, 1);
   });
 
   await t.test('invalid URLs do not crash and domain extraction is safe', async () => {

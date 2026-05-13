@@ -254,7 +254,6 @@ function normalizeStats(raw) {
       .filter(Boolean)
     : [];
 
-  if (stats.settings.mode === 'basic') clearDetailedStats(stats);
   pruneStats(stats);
   return stats;
 }
@@ -677,9 +676,7 @@ export async function setStatsSettings(input = {}) {
   const stats = await ensureStatsV2();
   stats.settings = normalizeSettings({ ...stats.settings, ...input });
 
-  if (stats.settings.mode === 'basic') {
-    clearDetailedStats(stats);
-  } else if (!stats.settings.storeFullUrls) {
+  if (!stats.settings.storeFullUrls) {
     stats.recentEvents = stats.recentEvents.map(event => {
       const { url, ...rest } = event;
       return rest;
