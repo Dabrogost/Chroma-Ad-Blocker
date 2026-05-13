@@ -13,6 +13,7 @@
 - [System Layers](#system-layers)
 - [Privacy & Transparency](#privacy--transparency)
 - [Media Proxy Router](#media-proxy-router-split-tunneling)
+  - [How This Differs From FoxyProxy](#how-this-differs-from-foxyproxy)
 - [YouTube Ad Stripping](#youtube-ad-stripping)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
@@ -23,14 +24,14 @@
 ## Key Features
 
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, including sponsored Shorts overlay payloads, providing a seamless, high-performance viewing experience without the need for acceleration.
-- **Split-Tunnel Proxy Router**: Allows routing specific domains through a custom HTTP, HTTPS, or SOCKS5 proxy server directly in the browser while leaving all other traffic direct. Includes a **Global Fallback** mode to route all browser traffic while preserving specific domain-to-proxy rules. Proxy credentials are stored locally in an obfuscated form and used only for proxy authentication. Includes real-time connectivity verification.
+- **Split-Tunnel Proxy Router**: Allows selected media domains to route through a custom HTTP, HTTPS, SOCKS4, or SOCKS5 proxy server directly in the browser while keeping unrelated traffic direct. This is designed for routing media sites through proxy regions that reduce ad serving or match country-specific media delivery. Includes a **Global Fallback** mode for unmatched browser traffic, domain-specific proxy overrides, Smart-Link Auto-Expansion for supported media/CDN domains, real-time connectivity verification, and local-only proxy credential handling for HTTP/HTTPS proxy authentication.
 - **Source-Generated DNR Network Blocking**: Uses a generated OISD Big static Declarative Net Request (DNR) ruleset, a protected custom static layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from settings without editing filter lists.
 - **Local Event Tracker**: The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
-- **Main-World Safety Exclusions**: Bypasses Chroma's MAIN-world interception layer on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network and cosmetic blocking remain user-controllable through per-domain whitelisting.
+- **Main-World Interceptor Safety Exclusions**: Bypasses Chroma's generic MAIN-world interceptor/bridge on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network, cosmetic, and scriptlet behavior remains governed by user settings, subscriptions, and per-domain whitelisting.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
 - **Dynamic Ad Acceleration**: Automatically identifies and accelerates video ads at a configurable speed (×4–×16, default ×8) on YouTube and Amazon Prime Video (Twitch uses server-side ad insertion and does not support ad acceleration), serving as a robust fallback when stripping is disabled.
@@ -102,21 +103,21 @@ graph TD
     NET["Network"]:::browser
     TABS["Open Tabs"]:::actor
 
-    UI -->|"runtime messages"| SW
-    SW <-->|"config, stats, whitelist, proxy settings"| STORE
-    SW -->|"CONFIG_UPDATE"| TABS
-    SW -->|"enable static rules / sync dynamic rules"| DNR
+    UI --> SW
+    SW <-->|"local storage"| STORE
+    SW --> TABS
+    SW --> DNR
 
-    SW -->|"install, startup, alarm, manual refresh"| SUBS
-    SUBS -->|"parsed network rules"| DNR
-    SUBS -->|"cosmetic + scriptlet rules"| STORE
+    SW --> SUBS
+    SUBS --> DNR
+    SUBS --> STORE
     STORE --> SCRIPTS
-    SCRIPTS -->|"registered MAIN-world scripts"| TABS
+    SCRIPTS --> TABS
 
     STORE --> PROXY
-    REQ -->|"blocked or allowed before network"| DNR
-    DNR -->|"allowed requests"| PROXY
-    PROXY -->|"direct or proxied"| NET
+    REQ -->|"DNR policy gate"| DNR
+    DNR --> PROXY
+    PROXY -->|"PAC route"| NET
 ```
 
 ---
@@ -134,30 +135,30 @@ Users often wonder how static rules can operate without moving every request thr
 - **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This ensures that the dynamic rule budget is reserved only for unique, high-priority threats.
 
 
-### Layer 2: YouTube Ad Stripping (yt_handler.js)
-A specialized surgical layer designed specifically for YouTube. It intercepts raw JSON responses from the YouTube API and surgically removes ad metadata (e.g., `adPlacements`, `playerAds`) before the player reads them. This results in a seamless, ad-free experience without pauses or the need for playback acceleration. Session state is fully private to the handler closure — host-page scripts cannot observe or tamper with internal state.
-
-### Layer 3: Scriptlet Injection (scriptlets/engine.js)
+### Layer 2: Scriptlet Injection (scriptlets/engine.js)
 The advanced surgical layer of the extension, migrated to the high-performance `chrome.userScripts` API. This engine parses complex scriptlet rules from filter list subscriptions, including uBlock Origin and AdGuard aliases. Key capabilities include:
 - **JSON Pruning**: Uses strict dot-notation path pruning (`json-prune`) to intercept and clean dynamic data payloads in `JSON.parse` calls.
 - **Regex Translation**: Features a built-in pre-processor that translates uBO network-style patterns (e.g., `||example.com^`) into optimized JavaScript RegExp strings for runtime matching.
 - **Flexible Execution Timing**: Supports explicit timing flags (`document_start`, `document_idle`, `document_end`), ensuring scriptlets execute at the optimal lifecycle moment (defaulting to `document_start` for critical API tampering).
 - **Broad Compatibility**: Supports a wide range of scriptlets including `abort-on-property-read`, `set-constant`, `prevent-fetch`, and `no-eval-if`.
 
-### Layer 4: Cosmetic & Warning Suppression (content.js)
+### Layer 3: Cosmetic & Warning Suppression (content.js)
 Utilizes a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up the UI by removing non-video components like Shorts, Merchandise, and Movie/TV offers.
 
-### Layer 4b: Element Zapper (content/zapper.js, background/handlers.js)
+### Layer 3b: Element Zapper (content/zapper.js, background/handlers.js)
 An on-demand cosmetic rule builder for elements that are too site-specific or personal to belong in a shared filter list. From the popup, click **Zap Element**, choose the page element, and Chroma generates a scoped selector preview before saving it as a local rule. Saved zapper rules are stored locally, applied by the cosmetic layer, and can be enabled, disabled, or removed from settings.
 
-### Layer 5: Universal Protection (protection.js, interceptor.js)
+### Layer 4: Universal Protection (protection.js, interceptor.js)
 A proactive security layer that maintains extension integrity across execution contexts. `interceptor.js` runs in the Main World to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, dispatches the `__EXT_INIT__` document event to signal the MAIN world handlers, and relays live config updates from the background to the MAIN world handlers via CustomEvent.
+
+### Layer 5: YouTube Ad Stripping (yt_handler.js)
+A specialized platform layer designed specifically for YouTube. It intercepts raw JSON responses from the YouTube API and surgically removes ad metadata (e.g., `adPlacements`, `playerAds`) before the player reads them. This results in a seamless, ad-free experience without pauses or the need for playback acceleration. Session state is fully private to the handler closure — host-page scripts cannot observe or tamper with internal state.
 
 ### Layer 6: Recipe & Blog Protection (recipes.js)
 A specialized defense-in-depth layer optimized for high-clutter recipe and lifestyle blogs (e.g., CafeMedia/Raptive and Dotdash Meredith sites). It implements a multi-pronged strategy to ensure a clean reading experience:
 - **Style Protection**: Prevents aggressive anti-adblock scripts from stripping `<style>` and `<link>` elements, ensuring the site's layout remains intact.
 - **Recipe Content Preservation**: Uses semantic and container-based exclusion to ensure that ingredients and instructions are never accidentally hidden by cosmetic filters.
-- **Anti-Adblock Containment**: Neutres known anti-adblock recovery payloads in script handlers and redirects, and suppresses intrusive alert/confirm dialogs.
+- **Anti-Adblock Containment**: Neutralizes known anti-adblock recovery payloads in script handlers and redirects, and suppresses intrusive alert/confirm dialogs.
 - **Scroll Lock Recovery**: Dynamically detects and reverses scroll-locks (e.g., `overflow: hidden`) and body-hiding tactics used by ad-block walls.
 - **Site-Specific Rules**: Includes custom cosmetic overrides for major platforms like AllRecipes, Food Network, NYT Cooking, and Serious Eats.
 
@@ -176,7 +177,31 @@ Chroma does not intercept or store any data from these requests. For a full expl
 
 ## Media Proxy Router (Split-Tunneling)
 
-Chroma includes a built-in split-tunnel proxy router that allows you to route traffic for specific domains through a proxy server while keeping the rest of your browser traffic on your direct, local connection. This operates entirely within the browser via dynamic Proxy Auto-Configuration (PAC) scripts, meaning it does not require a system-level VPN installation.
+Chroma includes a built-in split-tunnel proxy router that allows you to route traffic for specific media domains through a proxy server while keeping the rest of your browser traffic on your direct, local connection. It is designed for media-site routing: sending supported services through proxy regions that reduce ad serving, or through country-specific routes for region-specific media delivery. This operates entirely within the browser via dynamic Proxy Auto-Configuration (PAC) scripts, meaning it does not require a system-level VPN installation.
+
+### How This Differs From FoxyProxy
+
+Chroma's proxy router is not intended to replace a full general-purpose proxy manager such as FoxyProxy. FoxyProxy is designed around proxy profiles, URL patterns, tab-level routing, quick switching, import/export workflows, and broad user-defined proxy management.
+
+Chroma's router is narrower by design. It exists as one layer of Chroma's larger local protection stack: DNR network blocking, scriptlets, cosmetic filtering, media handling, local event tracking, and optional browser-level routing all work together. The proxy layer is focused on split-tunneling selected media domains through user-provided proxies while keeping unrelated browser traffic direct, or optionally sending unmatched browser traffic through a Global Fallback proxy.
+
+The main difference is that Chroma is media-aware. When a supported streaming or media service is routed, Chroma can automatically include related CDN and delivery domains so the service UI and media stream are less likely to split across different IP paths. For example, adding `youtube.com` can also route related YouTube delivery domains such as `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com`.
+
+Chroma's design principle is:
+
+> DNR is the policy gate. PAC is the transport selector.
+
+Network filtering decides what should be blocked or allowed by the browser's DNR engine. Proxy routing decides whether browser traffic that proceeds through Chrome's network stack should go direct or through a selected proxy.
+
+| Feature | Chroma Proxy Router | General Proxy Manager |
+|---|---|---|
+| Primary purpose | Media-aware split tunneling for ad-reducing or country-specific media routes inside Chroma's protection stack | Full proxy profile and rule management |
+| Routing model | Domain-specific rules, Smart-Link CDN expansion, optional Global Fallback | Proxy profiles, URL patterns, tab rules, PAC URLs, quick switching |
+| Scope | Browser-level routing for selected traffic | General-purpose proxy control |
+| Ad-block integration | Works alongside Chroma's DNR, scriptlet, cosmetic, and media layers | Usually separate from ad blocking |
+| Best use case | Route a service like YouTube, Netflix, Prime Video, or Twitch through a chosen media region without routing everything | Manage many proxies and complex user-defined routing rules |
+
+Use FoxyProxy when you want a dedicated proxy manager. Use Chroma's proxy router when you want routing to work as part of Chroma's ad-blocking, media, and privacy stack.
 
 ### Supported Protocols
 Chroma supports `HTTP`, `HTTPS`, `SOCKS4`, and `SOCKS5` proxies. Choose the protocol from the proxy setup dropdown, then enter the proxy host without a protocol prefix.
@@ -189,7 +214,7 @@ This limitation is specific to browser-level proxy routing in Chromium. It does 
 Your proxy credentials (username and password) are stored locally in an obfuscated form using a bundled extension key. They are decoded in memory only when the proxy server challenges the browser for authentication. This can reduce casual readability in extension storage, but it is not strong encryption and is not a substitute for operating-system or browser-profile security.
 
 ### Connection Verification
-The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension periodically verifies connectivity to the proxy server and displays a status indicator (Connected/Offline) along with your current proxied IP address. 
+The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension verifies connectivity when the proxy card loads or when you manually refresh it, then displays a status indicator (Connected/Offline) along with the detected proxied IP address when available.
 
 ### Global Proxy Fallback
 In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. Click the **GLOBAL** button on a proxy card to select that proxy as the fallback for browser traffic that does not match a domain-specific rule. This is browser-level proxy routing, not a system VPN, while still allowing you to send specific traffic (e.g., YouTube) to a different proxy server (e.g., Belize) simultaneously.
@@ -202,7 +227,7 @@ The main switch on each proxy card is a per-proxy enabled/disabled control:
 ### Chrome Browser Services Bypass
 When Global Proxy Fallback is enabled, Chroma can optionally bypass Chrome-owned browser service traffic so Chrome's own infrastructure can still connect directly. The **Bypass Chrome Browser Services** toggle is enabled by default so the extension does not appear to break Chrome functionality when Global Proxy is enabled.
 
-Recommended. Lets Chrome-owned services connect directly while Global Proxy is enabled, helping updates, sign-in, Gemini, and model downloads work. Turning this off is more secure/strict, but may break Chrome AI / Gemini Nano.
+Recommended: lets Chrome-owned services connect directly while Global Proxy is enabled, helping updates, sign-in, Gemini, and model downloads work. Turning this off is more secure/strict, but may break Chrome AI / Gemini Nano.
 
 WebRTC Leak Protection helps prevent WebRTC/STUN traffic from bypassing proxy routing. WebRTC can discover network candidates through paths that are separate from normal browser page requests, so a page may be able to see a WebRTC public IP even while regular traffic is routed through Chroma's proxy fallback. Chroma controls Chrome's native WebRTC IP handling policy to reduce that bypass risk.
 
@@ -337,7 +362,12 @@ Chroma implements several advanced security measures to ensure extension integri
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offer modules. | `true` |
 | `suppressWarnings` | Removes unsolicited overlay dialogs that restrict content access. | `true` |
-| `whitelist` | Toggles blocking for the current domain. | `false` |
+| `whitelist` | Stores domains where Chroma blocking is disabled. The current-site popup toggle updates this list. | `[]` |
+| `globalProxyEnabled` | Enables browser-level fallback routing through the selected proxy when no domain-specific proxy rule matches. | `false` |
+| `globalProxyId` | Stores the selected global fallback proxy ID. | `null` |
+| `chromeServiceProxyBypass` | Lets Chrome-owned browser services connect directly while Global Proxy Fallback is enabled. | `true` |
+| `webRtcLeakProtection` | Controls Chrome's WebRTC IP handling policy: `off`, `auto`, `balanced`, or `strict`. | `auto` |
+| `fingerprintRandomization` | Enables optional per-site fingerprint randomization. | `false` |
 
 ## Health Panel
 
@@ -369,9 +399,11 @@ Payload cleanup remains visible in the Event Tracker for transparency, but it is
 
 Statistics are stored only in `chrome.storage.local`.
 
-- **Basic**: totals only.
+- **Basic**: records totals only going forward. Existing aggregated history is preserved locally unless the user explicitly resets stats.
 - **Aggregated**: totals plus domains, rule sources, resource types, timelines, and recent event summaries.
 - **Debug**: may include recent full request URLs where they are available.
+
+Switching privacy modes changes future collection behavior and URL visibility; it does not erase saved aggregate intelligence unless a reset action is used.
 
 Aggregated mode is the default. Chroma stores domains by default, not full URLs. Full request URLs are only kept when Debug mode is enabled, and the bounded debug request log remains separate from `statsV2`.
 
