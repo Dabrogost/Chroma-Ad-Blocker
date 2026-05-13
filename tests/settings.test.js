@@ -550,7 +550,24 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, true);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').disabled, true);
-    assert.match(harness.dom.window.document.querySelector('.hydration-error').textContent, /Settings are unavailable/);
+    assert.match(harness.dom.window.document.querySelector('.hydration-error--inline').textContent, /Settings are unavailable/);
+    [
+      'healthPanelBody',
+      'statisticsTopCards',
+      'statsRangeSummary',
+      'statsSitesList',
+      'statsRulesList',
+      'statsTimelineList',
+      'statsEventsList',
+      'subscriptionList',
+      'proxyRouterContainer',
+      'localZapperRules'
+    ].forEach(id => {
+      const section = harness.dom.window.document.getElementById(id);
+      assert.ok(section, `${id} should exist`);
+      assert.strictEqual(section.querySelector('.skeleton-row, .skeleton-card, .skeleton-grid'), null, `${id} should not keep skeletons`);
+      assert.match(section.textContent, /Unavailable until the extension background responds/);
+    });
     assert.strictEqual(harness.messages.some(message => message.type === 'STATS_GET'), false);
   });
 

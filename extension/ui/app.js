@@ -669,6 +669,24 @@ const ChromaApp = (() => {
       controls.prepend(error);
     }
 
+    function failSettingsHydration(message) {
+      showConfigLoadError(message);
+      [
+        'healthPanelBody',
+        'statisticsTopCards',
+        'statsRangeSummary',
+        'statsSitesList',
+        'statsRulesList',
+        'statsTimelineList',
+        'statsEventsList',
+        'subscriptionList',
+        'proxyRouterContainer',
+        'localZapperRules'
+      ].forEach(id => setSectionError(id, 'Unavailable until the extension background responds.'));
+      setStatsControlsPending(true);
+      setControlsPending(true);
+    }
+
     setControlsPending(true);
     setStatsControlsPending(true);
 
@@ -676,13 +694,17 @@ const ChromaApp = (() => {
     try {
       const configResponse = await notifyBackground({ type: MSG.CONFIG_GET });
       if (!configResponse && settingsMode) {
-        showConfigLoadError('Settings are unavailable until the extension background responds.');
+        failSettingsHydration('Settings are unavailable until the extension background responds.');
         return;
       }
       config = configResponse || {};
     } catch (error) {
       console.error('Chroma config failed to load:', error);
-      showConfigLoadError('Settings are unavailable until the extension background responds.');
+      if (settingsMode) {
+        failSettingsHydration('Settings are unavailable until the extension background responds.');
+      } else {
+        showConfigLoadError('Settings are unavailable until the extension background responds.');
+      }
       return;
     }
 
