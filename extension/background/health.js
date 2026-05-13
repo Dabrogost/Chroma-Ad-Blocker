@@ -19,6 +19,7 @@ const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
 const REQUEST_LOG_MAX_ENTRIES = 500;
 const FPR_CONTENT_SCRIPT_ID = 'chroma_fpr';
+const USER_SCRIPTS_ACTION = 'Open Chrome extension details and enable Allow User Scripts.';
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -80,6 +81,15 @@ function isConfiguredProxy(pc) {
     Number.isInteger(port) &&
     port >= 1 &&
     port <= 65535
+  );
+}
+
+function hasUserScriptsApi() {
+  return !!(
+    chrome.userScripts &&
+    typeof chrome.userScripts.getScripts === 'function' &&
+    typeof chrome.userScripts.register === 'function' &&
+    typeof chrome.userScripts.unregister === 'function'
   );
 }
 
@@ -161,7 +171,7 @@ async function getDnrSnapshot(masterEnabled, networkBlocking, expectedStaticRule
 }
 
 async function getScriptletStatus(storedRuleCount) {
-  const apiAvailable = !!chrome.userScripts?.register;
+  const apiAvailable = hasUserScriptsApi();
   const status = {
     apiAvailable,
     registeredUserScriptCount: null,
@@ -172,15 +182,14 @@ async function getScriptletStatus(storedRuleCount) {
   if (!apiAvailable) return status;
 
   try {
-    const registered = typeof chrome.userScripts.getScripts === 'function'
-      ? await chrome.userScripts.getScripts()
-      : [];
+    const registered = await chrome.userScripts.getScripts();
     status.registeredUserScriptCount = asArray(registered).length;
     status.registrationStatus = storedRuleCount > 0
       ? (status.registeredUserScriptCount > 0 ? 'active' : 'empty')
       : 'empty';
   } catch (err) {
-    status.registrationStatus = 'error';
+    status.apiAvailable = false;
+    status.registrationStatus = 'unavailable';
     status.error = sanitizeText(err?.message || err);
   }
 
@@ -263,10 +272,8 @@ function computeOverall({
       'warning',
       'scriptlets',
       'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
-      'Open Chrome extension details and enable Allow User Scripts.'
+      USER_SCRIPTS_ACTION
     ));
-  } else if (scriptlets.registrationStatus === 'error') {
-    issues.push(makeIssue('warning', 'scriptlets', 'Scriptlet registration could not be inspected.', 'Reload the extension and check User Scripts access.'));
   }
 
   if (subscriptionErrors.length > 0) {
@@ -300,7 +307,6 @@ function computeOverall({
   if (
     (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) ||
     subscriptionErrors.length > 0 ||
-    scriptlets.registrationStatus === 'error' ||
     issues.some(issue => issue.severity === 'warning')
   ) {
     return { status: 'degraded', issues };

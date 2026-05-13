@@ -283,9 +283,16 @@ test('reddit-promoted-ads', async (t) => {
   });
 });
 
-function loadScriptletEngine(storageState) {
+function loadScriptletEngine(storageState, options = {}) {
   const registered = [];
   let changeListener = null;
+  const userScripts = Object.prototype.hasOwnProperty.call(options, 'userScripts')
+    ? options.userScripts
+    : {
+      getScripts: async () => [],
+      unregister: async () => {},
+      register: async scripts => { registered.push(...scripts); }
+    };
   const sandbox = {
     SCRIPTLET_MAP: new Map([
       ['set-constant', function setConstant() {}]
@@ -303,11 +310,7 @@ function loadScriptletEngine(storageState) {
           addListener: fn => { changeListener = fn; }
         }
       },
-      userScripts: {
-        getScripts: async () => [],
-        unregister: async () => {},
-        register: async scripts => { registered.push(...scripts); }
-      },
+      userScripts,
       scripting: {
         getRegisteredContentScripts: async () => [],
         unregisterContentScripts: async () => {},
@@ -362,5 +365,57 @@ test('scriptlet engine whitelist hardening', async (t) => {
       '*://example.com/*',
       '*://*.example.com/*'
     ]);
+  });
+});
+
+test('scriptlet engine userScripts API availability', async (t) => {
+  await t.test('missing chrome.userScripts does not throw during init', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    }, {
+      userScripts: undefined
+    });
+
+    await assert.doesNotReject(() => sandbox.initScriptletEngine());
+    assert.strictEqual(registered.length, 0);
+  });
+
+  await t.test('partial chrome.userScripts object is treated as unavailable', async () => {
+    let getScriptsCalled = false;
+    let registerCalled = false;
+    const cases = [
+      {
+        register: async () => {
+          registerCalled = true;
+        }
+      },
+      {
+        getScripts: async () => {
+          getScriptsCalled = true;
+          return [];
+        },
+        register: async () => {
+          registerCalled = true;
+        }
+      }
+    ];
+
+    for (const userScripts of cases) {
+      const { sandbox, registered } = loadScriptletEngine({
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+        whitelist: [],
+        config: {},
+        fprWhitelist: []
+      }, { userScripts });
+
+      await assert.doesNotReject(() => sandbox.initScriptletEngine());
+      assert.strictEqual(registered.length, 0);
+    }
+
+    assert.strictEqual(getScriptsCalled, false);
+    assert.strictEqual(registerCalled, false);
   });
 });

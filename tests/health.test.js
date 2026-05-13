@@ -26,6 +26,15 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function fullUserScriptsApi(overrides = {}) {
+  return {
+    getScripts: async () => [],
+    register: async () => {},
+    unregister: async () => {},
+    ...overrides
+  };
+}
+
 function loadHealthSandbox(options = {}) {
   const storage = {
     config: {
@@ -71,6 +80,9 @@ function loadHealthSandbox(options = {}) {
   if (dnr && options.debugLogging !== false) {
     dnr.onRuleMatchedDebug = { addListener: () => {} };
   }
+  const userScripts = Object.prototype.hasOwnProperty.call(options, 'userScripts')
+    ? options.userScripts
+    : fullUserScriptsApi();
 
   const sandbox = {
     chrome: {
@@ -91,7 +103,7 @@ function loadHealthSandbox(options = {}) {
         }
       },
       declarativeNetRequest: dnr,
-      userScripts: options.userScripts,
+      userScripts,
       scripting: options.scripting || {
         getRegisteredContentScripts: async () => []
       }
@@ -119,8 +131,7 @@ function loadHealthSandbox(options = {}) {
 test('health diagnostics', async (t) => {
   await t.test('master disabled returns overall disabled', async () => {
     const sandbox = loadHealthSandbox({
-      storage: { config: { enabled: false, networkBlocking: true } },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      storage: { config: { enabled: false, networkBlocking: true } }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -145,10 +156,84 @@ test('health diagnostics', async (t) => {
     assert.ok(health.overall.issues.some(issue => issue.area === 'scriptlets' && issue.severity === 'warning'));
   });
 
+  await t.test('userScripts unavailable is visible without degrading when no scriptlet rules are stored', async () => {
+    const sandbox = loadHealthSandbox({
+      userScripts: undefined
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'healthy');
+    assert.strictEqual(health.scriptlets.apiAvailable, false);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'unavailable');
+    assert.strictEqual(health.overall.issues.some(issue => issue.area === 'scriptlets'), false);
+  });
+
+  await t.test('partial userScripts API is reported unavailable', async () => {
+    for (const userScripts of [
+      { register: async () => {} },
+      { getScripts: async () => [], register: async () => {} },
+      { getScripts: async () => [], unregister: async () => {} },
+      { getScripts: true, register: async () => {}, unregister: async () => {} }
+    ]) {
+      const sandbox = loadHealthSandbox({
+        storage: {
+          subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+        },
+        userScripts
+      });
+
+      const health = await sandbox.getHealthStatus();
+
+      assert.strictEqual(health.scriptlets.apiAvailable, false);
+      assert.strictEqual(health.scriptlets.registrationStatus, 'unavailable');
+    }
+  });
+
+  await t.test('complete userScripts API is reported available', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => [{ id: 'scriptlet_1' }]
+      })
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.scriptlets.apiAvailable, true);
+    assert.strictEqual(health.scriptlets.registeredUserScriptCount, 1);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'active');
+  });
+
+  await t.test('userScripts inspection failure reports Allow User Scripts diagnostic', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => {
+          throw new Error('User Scripts permission is not enabled');
+        }
+      })
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.scriptlets.apiAvailable, false);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'unavailable');
+    assert.match(health.scriptlets.error, /permission is not enabled/i);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'scriptlets' &&
+      /Allow User Scripts/i.test(issue.message)
+    ));
+  });
+
   await t.test('network enabled with missing static ruleset returns error', async () => {
     const sandbox = loadHealthSandbox({
-      enabledRulesets: ['static_a'],
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      enabledRulesets: ['static_a']
     });
 
     const health = await sandbox.getHealthStatus();
@@ -167,8 +252,7 @@ test('health diagnostics', async (t) => {
           lastError: 'HTTP 500 from https://example.com/list.txt',
           ruleCount: { network: 10, cosmetic: 2, scriptlet: 1 }
         }]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -195,8 +279,7 @@ test('health diagnostics', async (t) => {
             ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
           }
         ]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -223,8 +306,7 @@ test('health diagnostics', async (t) => {
             ruleCount: { network: 1, cosmetic: 0, scriptlet: 0 }
           }
         ]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -236,8 +318,7 @@ test('health diagnostics', async (t) => {
 
   await t.test('request logging unavailable is diagnostic only', async () => {
     const sandbox = loadHealthSandbox({
-      debugLogging: false,
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      debugLogging: false
     });
 
     const health = await sandbox.getHealthStatus();
@@ -270,8 +351,7 @@ test('health diagnostics', async (t) => {
           authIv: 'iv-secret',
           authCipher: 'cipher-secret'
         }]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -311,8 +391,7 @@ test('health diagnostics', async (t) => {
           enabled: false,
           domains: [{ host: 'media.example.com', enabled: true }]
         }]
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -351,8 +430,7 @@ test('health diagnostics', async (t) => {
         protected: true,
         partial: false,
         error: null
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -387,8 +465,7 @@ test('health diagnostics', async (t) => {
         protected: false,
         partial: false,
         error: null
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -420,8 +497,7 @@ test('health diagnostics', async (t) => {
         protected: false,
         partial: false,
         error: 'Chrome privacy WebRTC setting unavailable'
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -453,8 +529,7 @@ test('health diagnostics', async (t) => {
         protected: false,
         partial: false,
         error: 'WebRTC privacy setting is controlled elsewhere'
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -481,8 +556,7 @@ test('health diagnostics', async (t) => {
         protected: false,
         partial: false,
         error: null
-      },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -499,8 +573,7 @@ test('health diagnostics', async (t) => {
         { id: 8999999 },
         { id: 9000000 }
       ],
-      storage: { appliedNetworkRuleCount: 2 },
-      userScripts: { register: async () => {}, getScripts: async () => [] }
+      storage: { appliedNetworkRuleCount: 2 }
     });
 
     const health = await sandbox.getHealthStatus();

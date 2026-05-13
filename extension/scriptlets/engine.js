@@ -22,6 +22,15 @@ const DEBUG = false;
 const FPR_ID = 'chroma_fpr';
 const FPR_FILE = 'scriptlets/fingerprintRandomization.js';
 
+function hasUserScriptsApi() {
+  return !!(
+    chrome.userScripts &&
+    typeof chrome.userScripts.getScripts === 'function' &&
+    typeof chrome.userScripts.register === 'function' &&
+    typeof chrome.userScripts.unregister === 'function'
+  );
+}
+
 /**
  * Synchronizes the chrome.userScripts registry with the current rules in storage.
  */
@@ -85,6 +94,13 @@ const CHUNK_SIZE = 100;
 
 async function _syncUserScriptsImpl() {
   try {
+    if (!hasUserScriptsApi()) {
+      if (DEBUG) {
+        console.warn('[Chroma Scriptlets] userScripts API unavailable. Enable Allow User Scripts in Chrome extension details.');
+      }
+      return;
+    }
+
     const {
       subscriptionScriptletRules = [],
       whitelist = []

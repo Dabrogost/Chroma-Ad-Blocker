@@ -505,6 +505,48 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(failure.dom.window.document.querySelector('#healthPanelBody').textContent, /Could not load health diagnostics/);
   });
 
+  await t.test('health panel surfaces Allow User Scripts diagnostic', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          overall: {
+            status: 'degraded',
+            issues: [{
+              severity: 'warning',
+              area: 'scriptlets',
+              message: 'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
+              action: 'Open Chrome extension details and enable Allow User Scripts.'
+            }]
+          },
+          manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+          master: { enabled: true, networkBlocking: true },
+          dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true, appliedNetworkRuleCount: 12, whitelistRuleCount: 0 },
+          subscriptions: { enabled: 1, total: 1, appliedNetwork: 12, cosmetic: 4, scriptlet: 1, withErrors: 0 },
+          scriptlets: {
+            apiAvailable: false,
+            registeredUserScriptCount: null,
+            storedRuleCount: 1,
+            registrationStatus: 'unavailable',
+            error: null
+          },
+          cosmetic: { subscriptionCosmeticRuleCount: 4, enabledLocalZapperRuleCount: 0, localZapperRuleCount: 0 },
+          proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, globalProxyEnabled: false, globalProxyConfigured: false },
+          webrtc: { available: true, mode: 'auto', protected: true },
+          requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const bodyText = harness.dom.window.document.querySelector('#healthPanelBody').textContent;
+
+    assert.match(bodyText, /UserScripts API\s*Unavailable/i);
+    assert.match(bodyText, /Enable Allow User Scripts/i);
+    assert.match(bodyText, /Chrome extension details/i);
+  });
+
   await t.test('stats skeleton is replaced on success and on unavailable response', async () => {
     const success = createSettingsHarness();
     await success.sandbox.ChromaApp.initSharedUI();
