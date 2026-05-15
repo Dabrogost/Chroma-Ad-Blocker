@@ -11,6 +11,10 @@ import {
   getWebRtcLeakProtectionStatus,
   syncWebRtcLeakProtection
 } from './webrtc.js';
+import {
+  getBrowserPrivacyHardeningStatus,
+  syncBrowserPrivacyHardening
+} from './browserPrivacy.js';
 
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END = 99999;
@@ -232,7 +236,8 @@ function computeOverall({
   debugLoggingAvailable,
   webrtc,
   globalProxyEnabled,
-  globalProxyConfigured
+  globalProxyConfigured,
+  browserPrivacy
 }) {
   const issues = [];
 
@@ -295,6 +300,29 @@ function computeOverall({
       'webrtc',
       'Global proxy is enabled, but WebRTC leak protection is not fully active.',
       'Set WebRTC Leak Protection to Auto or Strict.'
+    ));
+  }
+
+  if (browserPrivacy?.enabled && !browserPrivacy.available) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy hardening could not inspect every Chrome privacy setting.',
+      'Check browser support for Chrome privacy settings.'
+    ));
+  } else if (browserPrivacy?.enabled && browserPrivacy.blockedCount > 0) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy hardening is partially controlled by another extension or browser policy.',
+      'Disable the conflicting extension or browser policy if you want Chroma to control these settings.'
+    ));
+  } else if (browserPrivacy?.enabled && !browserPrivacy.active) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy hardening is not fully active.',
+      'Turn Chrome Privacy Hardening off and on, or reload the extension.'
     ));
   }
 
@@ -361,10 +389,12 @@ export async function getHealthStatus() {
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
   await syncWebRtcLeakProtection(config, proxyConfigs);
+  await syncBrowserPrivacyHardening(config);
   const webrtc = summarizeWebRtcStatus(
     await getWebRtcLeakProtectionStatus(config, proxyConfigs),
     config
   );
+  const browserPrivacy = await getBrowserPrivacyHardeningStatus(config);
 
   const health = {
     generatedAt: Date.now(),
@@ -378,7 +408,8 @@ export async function getHealthStatus() {
       cosmetic: config.cosmetic !== false,
       stripping: config.stripping !== false,
       acceleration: bool(config.acceleration, false),
-      fingerprintRandomization: bool(config.fingerprintRandomization, false)
+      fingerprintRandomization: bool(config.fingerprintRandomization, false),
+      browserPrivacyHardening: bool(config.browserPrivacyHardening, false)
     },
     dnr: {
       available: !!chrome.declarativeNetRequest,
@@ -429,6 +460,7 @@ export async function getHealthStatus() {
       globalProxyConfigured
     },
     webrtc,
+    browserPrivacy,
     whitelist: {
       domainCount: asArray(storage.whitelist).length,
       fprDomainCount: asArray(storage.fprWhitelist).length
@@ -458,7 +490,8 @@ export async function getHealthStatus() {
     debugLoggingAvailable: requestLogAvailable,
     webrtc,
     globalProxyEnabled: health.proxy.globalProxyEnabled,
-    globalProxyConfigured
+    globalProxyConfigured,
+    browserPrivacy
   });
 
   return health;

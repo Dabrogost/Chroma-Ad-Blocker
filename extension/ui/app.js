@@ -51,6 +51,7 @@ const ChromaApp = (() => {
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
     ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
+    ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
   ];
   let healthLoadSerial = 0;
 
@@ -171,6 +172,49 @@ const ChromaApp = (() => {
       return ['WebRTC leak protection', mode === 'balanced' ? 'Balanced' : `${modeLabel} (Partial)`, globalProxyActive ? 'warning' : 'ok'];
     }
     return ['WebRTC leak protection', mode === 'off' ? 'Off' : `${modeLabel} (Off)`, globalProxyActive ? 'warning' : 'disabled'];
+  }
+
+  function getBrowserPrivacySetting(health, key) {
+    const settings = Array.isArray(health.browserPrivacy?.settings)
+      ? health.browserPrivacy.settings
+      : [];
+    return settings.find(setting => setting?.key === key) || null;
+  }
+
+  function getBrowserPrivacySettingLabel(health, key) {
+    const setting = getBrowserPrivacySetting(health, key);
+    if (!health.browserPrivacy?.enabled) return 'Disabled';
+    if (!setting?.available) return 'Unavailable';
+    if (setting.levelOfControl && !setting.controllable && !setting.hardened) return 'Controlled elsewhere';
+    return setting.hardened ? 'Hardened' : 'Not hardened';
+  }
+
+  function getBrowserPrivacySettingStatus(health, key) {
+    const setting = getBrowserPrivacySetting(health, key);
+    if (!health.browserPrivacy?.enabled) return 'disabled';
+    if (!setting?.available) return 'warning';
+    return setting.hardened ? 'ok' : 'warning';
+  }
+
+  function getPrivacySandboxSettings(health) {
+    return ['adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled']
+      .map(key => getBrowserPrivacySetting(health, key))
+      .filter(Boolean);
+  }
+
+  function getPrivacySandboxLabel(health) {
+    if (!health.browserPrivacy?.enabled) return 'Disabled';
+    const settings = getPrivacySandboxSettings(health);
+    if (settings.length === 0) return 'Unavailable';
+    const hardened = settings.filter(setting => setting.hardened).length;
+    return hardened === settings.length ? 'Hardened' : `${formatCount(hardened)} / ${formatCount(settings.length)} hardened`;
+  }
+
+  function getPrivacySandboxStatus(health) {
+    if (!health.browserPrivacy?.enabled) return 'disabled';
+    const settings = getPrivacySandboxSettings(health);
+    if (settings.length === 0) return 'warning';
+    return settings.every(setting => setting.hardened) ? 'ok' : 'warning';
   }
 
   function getStatsTotals(stats) {
@@ -579,6 +623,13 @@ const ChromaApp = (() => {
       ['Routed domains', formatCount(health.proxy?.routedDomainCount), ''],
       ['Global proxy', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'Enabled' : 'Misconfigured') : 'Disabled', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'ok' : 'warning') : 'disabled'],
       getWebRtcHealthMetric(health)
+    ]);
+
+    addHealthSection(body, 'Browser Privacy', [
+      ['Chrome Privacy Hardening', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'Active' : `${formatCount(health.browserPrivacy?.hardenedCount)} / ${formatCount(health.browserPrivacy?.totalCount)} active`) : 'Disabled', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'ok' : 'warning') : 'disabled'],
+      ['Third-party cookies', getBrowserPrivacySettingLabel(health, 'thirdPartyCookiesAllowed'), getBrowserPrivacySettingStatus(health, 'thirdPartyCookiesAllowed')],
+      ['Do Not Track', getBrowserPrivacySettingLabel(health, 'doNotTrackEnabled'), getBrowserPrivacySettingStatus(health, 'doNotTrackEnabled')],
+      ['Privacy Sandbox ads', getPrivacySandboxLabel(health), getPrivacySandboxStatus(health)]
     ]);
 
     addHealthSection(body, 'Debug Logging', [

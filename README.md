@@ -173,6 +173,12 @@ Chroma processes everything locally — no data is ever sent to Chroma's servers
 
 Chroma does not intercept or store any data from these requests. For a full explanation of this tradeoff, see the [Privacy Policy](docs/PRIVACY_POLICY.md).
 
+### Google My Ad Center Tip
+
+For another account-level privacy improvement, open [Google My Ad Center](https://myadcenter.google.com) and turn **Personalized Ads** to **OFF**.
+
+This can reduce ad personalization and tracking activity tied to your Google account.
+
 ---
 
 ## Media Proxy Router (Split-Tunneling)
@@ -315,7 +321,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
 | `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
 | `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
-| `privacy` | Allows Chroma to apply optional WebRTC leak protection by setting Chrome's WebRTC IP handling policy. Used only when WebRTC Leak Protection is enabled or Auto mode applies with Global Proxy Fallback. |
+| `privacy` | Allows Chroma to apply optional browser-level privacy controls, including WebRTC leak protection and Chrome Privacy Hardening. |
 | `webRequest` | Used to intercept authentication challenges from proxy servers. |
 | `webRequestAuthProvider` | Required to provide credentials to proxy servers via the `onAuthRequired` listener. |
 
@@ -368,10 +374,11 @@ Chroma implements several advanced security measures to ensure extension integri
 | `chromeServiceProxyBypass` | Lets Chrome-owned browser services connect directly while Global Proxy Fallback is enabled. | `true` |
 | `webRtcLeakProtection` | Controls Chrome's WebRTC IP handling policy: `off`, `auto`, `balanced`, or `strict`. | `auto` |
 | `fingerprintRandomization` | Enables optional per-site fingerprint randomization. | `false` |
+| `browserPrivacyHardening` | Applies Chrome privacy settings for third-party cookies, Do Not Track, and Privacy Sandbox ad APIs. | `false` |
 
 ## Health Panel
 
-The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, proxy routing, whitelists, and request-log/debug availability.
+The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, browser privacy hardening, proxy routing, whitelists, and request-log/debug availability.
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents. DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts; when that logging is unavailable, blocking can still work normally.
 

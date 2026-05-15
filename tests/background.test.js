@@ -26,6 +26,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = globalThis._mockCreateDefaultStatsV2 || (() => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] })); var recordStatsEvent = globalThis._mockRecordStatsEvent || (() => {});")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection || (async () => ({}));")
+  .replace("import { syncBrowserPrivacyHardening } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening || (async () => ({}));")
   .replace(/^export\s+/gm, "");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'defaultDynamicRules.js'), 'utf8');
@@ -165,6 +166,19 @@ test('getDefaultDynamicRules', async (t) => {
     );
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: 'false' }))), {});
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: null }))), {});
+  });
+
+  await t.test('config validation accepts browser privacy hardening booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: true }))),
+      { browserPrivacyHardening: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: false }))),
+      { browserPrivacyHardening: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: 'true' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: null }))), {});
   });
 });
 

@@ -28,6 +28,7 @@ import {
 import { runProxyTest } from './proxy.js';
 import { getHealthStatus } from './health.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';
+import { syncBrowserPrivacyHardening } from './browserPrivacy.js';
 import {
   exportStats,
   getStatsSnapshot,
@@ -474,6 +475,7 @@ async function handleConfigSet(msg) {
   const newConfig = { ...currentConfig, ...validated };
   await chrome.storage.local.set({ config: newConfig });
   await syncWebRtcLeakProtection(newConfig, proxyConfigs);
+  await syncBrowserPrivacyHardening(newConfig);
 
   const wasDNRActive = currentConfig.enabled !== false && currentConfig.networkBlocking !== false;
   const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;

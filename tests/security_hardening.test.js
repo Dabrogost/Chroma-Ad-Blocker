@@ -26,6 +26,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
+  .replace("import { syncBrowserPrivacyHardening } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = async () => ({});")
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -79,6 +80,7 @@ function loadHandlers(options = {}) {
     encryptAuth: options.encryptAuth || (async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })),
     syncWhitelistRules: options.syncWhitelistRules || (async () => {}),
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
+    syncBrowserPrivacyHardening: options.syncBrowserPrivacyHardening || (async () => ({})),
     chrome: {
       storage: {
         local: {

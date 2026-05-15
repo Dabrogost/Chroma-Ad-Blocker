@@ -197,6 +197,11 @@ const ChromaComponents = (() => {
           desc: 'Per-site noise to break cross-site tracking (does not lower uniqueness scores)'
         })}
         ${renderToggleRow({
+          inputId: 'toggleBrowserPrivacyHardening',
+          name: 'Chrome Privacy Hardening',
+          desc: 'Blocks third-party cookies, keeps DNT off, and disables Chrome ad APIs'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleFprWhitelist',
           rowId: 'rowFprWhitelist',
           rowClass: 'fpr-whitelist-row',

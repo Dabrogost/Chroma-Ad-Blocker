@@ -9,6 +9,10 @@ const healthJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ba
     var getWebRtcLeakProtectionStatus = globalThis._mockGetWebRtcLeakProtectionStatus;
     var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection;
   `)
+  .replace(/import\s*\{[\s\S]*?getBrowserPrivacyHardeningStatus,[\s\S]*?syncBrowserPrivacyHardening[\s\S]*?\}\s*from\s*'\.\/browserPrivacy\.js';/, `
+    var getBrowserPrivacyHardeningStatus = globalThis._mockGetBrowserPrivacyHardeningStatus;
+    var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening;
+  `)
   .replace(/^export\s+/gm, '');
 
 const manifest = {
@@ -44,6 +48,7 @@ function loadHealthSandbox(options = {}) {
       stripping: true,
       acceleration: false,
       fingerprintRandomization: false,
+      browserPrivacyHardening: false,
       globalProxyEnabled: false,
       globalProxyId: null
     },
@@ -69,6 +74,17 @@ function loadHealthSandbox(options = {}) {
     error: null
   };
   const syncResults = [];
+  const browserPrivacySyncResults = [];
+  const browserPrivacyStatus = options.browserPrivacyStatus || {
+    enabled: storage.config?.browserPrivacyHardening === true,
+    available: true,
+    active: storage.config?.browserPrivacyHardening === true,
+    partial: false,
+    hardenedCount: storage.config?.browserPrivacyHardening === true ? 5 : 0,
+    totalCount: 5,
+    blockedCount: 0,
+    settings: []
+  };
   const enabledRulesets = options.enabledRulesets || ['static_a', 'static_b'];
   const dynamicRules = options.dynamicRules || [];
   const dnr = options.noDnr
@@ -121,7 +137,13 @@ function loadHealthSandbox(options = {}) {
     syncResults.push({ config, proxyConfigs });
     return options.webrtcSyncResult || { ok: true };
   };
+  sandbox._mockGetBrowserPrivacyHardeningStatus = async () => browserPrivacyStatus;
+  sandbox._mockSyncBrowserPrivacyHardening = async (config) => {
+    browserPrivacySyncResults.push({ config });
+    return options.browserPrivacySyncResult || { ok: true };
+  };
   sandbox._webrtcSyncResults = syncResults;
+  sandbox._browserPrivacySyncResults = browserPrivacySyncResults;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(healthJsCode, sandbox);
