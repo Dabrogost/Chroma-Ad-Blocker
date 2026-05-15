@@ -13,6 +13,7 @@ const healthJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ba
     var getBrowserPrivacyHardeningStatus = globalThis._mockGetBrowserPrivacyHardeningStatus;
     var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening;
   `)
+  .replace("import { syncUserScripts } from '../scriptlets/engine.js';", "var syncUserScripts = globalThis._mockSyncUserScripts || (async () => {});")
   .replace(/^export\s+/gm, '');
 
 const manifest = {
@@ -76,6 +77,7 @@ function loadHealthSandbox(options = {}) {
   };
   const syncResults = [];
   const browserPrivacySyncResults = [];
+  const userScriptSyncResults = [];
   const browserPrivacyStatus = options.browserPrivacyStatus || {
     enabled: storage.config?.browserPrivacyHardening === true,
     available: true,
@@ -143,8 +145,16 @@ function loadHealthSandbox(options = {}) {
     browserPrivacySyncResults.push({ config });
     return options.browserPrivacySyncResult || { ok: true };
   };
+  sandbox._mockSyncUserScripts = async () => {
+    userScriptSyncResults.push({ ts: Date.now() });
+    if (typeof options.onUserScriptSync === 'function') {
+      await options.onUserScriptSync();
+    }
+    return options.userScriptSyncResult || undefined;
+  };
   sandbox._webrtcSyncResults = syncResults;
   sandbox._browserPrivacySyncResults = browserPrivacySyncResults;
+  sandbox._userScriptSyncResults = userScriptSyncResults;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(healthJsCode, sandbox);
@@ -228,6 +238,51 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.scriptlets.apiAvailable, true);
     assert.strictEqual(health.scriptlets.registeredUserScriptCount, 1);
     assert.strictEqual(health.scriptlets.registrationStatus, 'active');
+  });
+
+  await t.test('stored scriptlets self-heal when userScripts becomes available but registry is empty', async () => {
+    const registered = [];
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => registered
+      }),
+      onUserScriptSync: async () => {
+        registered.push({ id: 'scriptlet_1' });
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(sandbox._userScriptSyncResults.length, 1);
+    assert.strictEqual(health.overall.status, 'healthy');
+    assert.strictEqual(health.scriptlets.apiAvailable, true);
+    assert.strictEqual(health.scriptlets.registeredUserScriptCount, 1);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'active');
+  });
+
+  await t.test('empty userScripts registry remains degraded when retry cannot register parsed scriptlets', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => []
+      })
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(sandbox._userScriptSyncResults.length, 1);
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.scriptlets.apiAvailable, true);
+    assert.strictEqual(health.scriptlets.registeredUserScriptCount, 0);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'scriptlets' &&
+      /not registered/i.test(issue.message)
+    ));
   });
 
   await t.test('fingerprint randomization reports active registered surfaces', async () => {

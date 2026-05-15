@@ -15,6 +15,7 @@ import {
   getBrowserPrivacyHardeningStatus,
   syncBrowserPrivacyHardening
 } from './browserPrivacy.js';
+import { syncUserScripts } from '../scriptlets/engine.js';
 
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END = 99999;
@@ -207,6 +208,14 @@ async function getScriptletStatus(storedRuleCount) {
   return status;
 }
 
+function shouldRetryScriptletRegistration(scriptlets, storedRuleCount) {
+  return (
+    storedRuleCount > 0 &&
+    scriptlets?.apiAvailable === true &&
+    scriptlets?.registeredUserScriptCount === 0
+  );
+}
+
 async function getFprStatus(fprEnabled) {
   const status = {
     enabled: fprEnabled,
@@ -294,6 +303,13 @@ function computeOverall({
       'scriptlets',
       'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
       USER_SCRIPTS_ACTION
+    ));
+  } else if (shouldRetryScriptletRegistration(scriptlets, storedScriptletRuleCount)) {
+    issues.push(makeIssue(
+      'warning',
+      'scriptlets',
+      'Scriptlet rules are parsed but not registered.',
+      'Open Chroma settings or reload the extension to retry scriptlet registration.'
     ));
   }
 
@@ -410,7 +426,11 @@ export async function getHealthStatus() {
   const activeProxies = configuredProxies.filter(isActiveProxy);
   const globalProxyId = config.globalProxyId;
   const globalProxyConfigured = globalProxyId != null && activeProxies.some(pc => pc.id === globalProxyId);
-  const scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
+  let scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
+  if (shouldRetryScriptletRegistration(scriptlets, subscriptionScriptletRules.length)) {
+    await syncUserScripts();
+    scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
+  }
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
   await syncWebRtcLeakProtection(config, proxyConfigs);

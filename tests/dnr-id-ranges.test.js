@@ -17,7 +17,7 @@ const backgroundJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension',
     var addSubscription = async () => ({ ok: true });
     var removeSubscription = async () => ({ ok: true });
   `)
-  .replace("import { initScriptletEngine } from '../scriptlets/engine.js';", 'var initScriptletEngine = async () => {};')
+  .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, 'var initScriptletEngine = async () => {}; var recoverUserScriptsIfNeeded = async () => false;')
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, 'var MSG = {};')
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, 'var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };')
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, 'var registerAll = () => {};')

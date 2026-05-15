@@ -470,6 +470,66 @@ test('scriptlet engine userScripts API availability', async (t) => {
     assert.strictEqual(getScriptsCalled, false);
     assert.strictEqual(registerCalled, false);
   });
+
+  await t.test('syncUserScripts registers stored rules after API becomes available', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    }, {
+      userScripts: undefined
+    });
+
+    await sandbox.initScriptletEngine();
+    assert.strictEqual(registered.length, 0);
+
+    sandbox.chrome.userScripts = {
+      getScripts: async () => [],
+      unregister: async () => {},
+      register: async scripts => { registered.push(...scripts); }
+    };
+
+    await sandbox.syncUserScripts();
+
+    assert.strictEqual(registered.length, 1);
+    assert.strictEqual(registered[0].id, 'scriptlet_1');
+  });
+
+  await t.test('recoverUserScriptsIfNeeded only syncs an empty registry with stored rules', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    });
+
+    const recovered = await sandbox.recoverUserScriptsIfNeeded();
+
+    assert.strictEqual(recovered, true);
+    assert.strictEqual(registered.length, 1);
+  });
+
+  await t.test('recoverUserScriptsIfNeeded skips when scripts are already registered', async () => {
+    let registerCalled = false;
+    const { sandbox } = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    }, {
+      userScripts: {
+        getScripts: async () => [{ id: 'scriptlet_1' }],
+        unregister: async () => {},
+        register: async () => { registerCalled = true; }
+      }
+    });
+
+    const recovered = await sandbox.recoverUserScriptsIfNeeded();
+
+    assert.strictEqual(recovered, false);
+    assert.strictEqual(registerCalled, false);
+  });
 });
 
 test('fingerprint randomization language normalization', async (t) => {

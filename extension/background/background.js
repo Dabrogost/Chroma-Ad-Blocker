@@ -14,7 +14,7 @@ import {
   ensureAlarm,
   refreshAllStale
 } from '../subscriptions/manager.js';
-import { initScriptletEngine } from '../scriptlets/engine.js';
+import { initScriptletEngine, recoverUserScriptsIfNeeded } from '../scriptlets/engine.js';
 import { MSG } from '../core/messageTypes.js';
 import * as router from '../core/messageRouter.js';
 import { registerAll } from './handlers.js';
@@ -489,3 +489,10 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
 // handlers.js sees resolved bindings through the live ES-module import.
 registerAll(router);
 router.attachListener();
+
+// MV3 service workers wake without firing runtime.onStartup. If the user
+// enables Chrome's Allow User Scripts toggle after install, a normal worker
+// wake should be enough to register already-parsed subscription scriptlets.
+recoverUserScriptsIfNeeded().catch(err => {
+  if (DEBUG) console.error('[Chroma Scriptlets] Wake sync failed:', err);
+});
