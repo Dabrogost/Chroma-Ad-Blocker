@@ -1,6 +1,0 @@
-node_modules/
-reports/*.json
-reports/*.ndjson
-reports/raw/
-.profiles/
-*.log
