@@ -374,7 +374,7 @@ Chroma implements several advanced security measures to ensure extension integri
 | `globalProxyId` | Stores the selected global fallback proxy ID. | `null` |
 | `chromeServiceProxyBypass` | Lets Chrome-owned browser services connect directly while Global Proxy Fallback is enabled. | `true` |
 | `webRtcLeakProtection` | Controls Chrome's WebRTC IP handling policy: `off`, `auto`, `balanced`, or `strict`. | `auto` |
-| `fingerprintRandomization` | Enables optional per-site fingerprint randomization. | `false` |
+| `fingerprintRandomization` | Enables optional per-site canvas, audio, WebGL, navigator, and language API farbling. | `false` |
 | `browserPrivacyHardening` | Applies Chrome privacy settings for third-party cookies, Do Not Track, and Privacy Sandbox ad APIs. | `false` |
 
 ## Health Panel

@@ -229,6 +229,52 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.scriptlets.registrationStatus, 'active');
   });
 
+  await t.test('fingerprint randomization reports active registered surfaces', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          fingerprintRandomization: true
+        }
+      },
+      scripting: {
+        getRegisteredContentScripts: async () => [{ id: 'chroma_fpr' }]
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'healthy');
+    assert.strictEqual(health.fpr.enabled, true);
+    assert.strictEqual(health.fpr.active, true);
+    assert.strictEqual(health.fpr.registrationStatus, 'active');
+    assert.ok(health.fpr.protectedSurfaces.includes('Language APIs'));
+  });
+
+  await t.test('fingerprint randomization warns when enabled but not registered', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          fingerprintRandomization: true
+        }
+      },
+      scripting: {
+        getRegisteredContentScripts: async () => []
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.fpr.enabled, true);
+    assert.strictEqual(health.fpr.active, false);
+    assert.strictEqual(health.fpr.registrationStatus, 'missing');
+    assert.ok(health.overall.issues.some(issue => issue.area === 'fingerprint'));
+  });
+
   await t.test('userScripts inspection failure reports Allow User Scripts diagnostic', async () => {
     const sandbox = loadHealthSandbox({
       storage: {

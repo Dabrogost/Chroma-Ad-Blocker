@@ -16,6 +16,10 @@ const engineCode = fs.readFileSync(
   .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?\s*/g, '')
   .replace(/^export\s+/gm, '');
 
+const fingerprintRandomizationCode = fs.readFileSync(
+  path.join(__dirname, '..', 'extension', 'scriptlets', 'fingerprintRandomization.js'), 'utf8'
+);
+
 const plain = value => JSON.parse(JSON.stringify(value));
 
 const libCode = fs.readFileSync(
@@ -51,6 +55,54 @@ function runScriptlet(name, args, windowOverrides = {}) {
   vm.createContext(sandbox);
   vm.runInContext(libCode, sandbox);
   vm.runInContext(`${name}(${JSON.stringify(args)})`, sandbox);
+  return sandbox;
+}
+
+function runFingerprintRandomization({
+  language = 'en-US',
+  languages = ['en-US', 'en']
+} = {}) {
+  const storage = new Map();
+  const sandbox = {
+    console,
+    location: { hostname: 'www.example.com' },
+    sessionStorage: {
+      getItem: key => storage.get(key) || null,
+      setItem: (key, value) => storage.set(key, String(value))
+    },
+    crypto: {
+      getRandomValues: buffer => {
+        for (let i = 0; i < buffer.length; i++) buffer[i] = i + 1;
+        return buffer;
+      }
+    },
+    Uint8Array,
+    Uint8ClampedArray
+  };
+  sandbox.self = sandbox;
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(`
+    const initialLanguage = ${JSON.stringify(language)};
+    const initialLanguages = ${JSON.stringify(languages)};
+    function Navigator() {}
+    function getLanguage() { return initialLanguage; }
+    function getLanguages() { return initialLanguages.slice(); }
+    Object.defineProperty(Navigator.prototype, 'language', {
+      get: getLanguage,
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(Navigator.prototype, 'languages', {
+      get: getLanguages,
+      configurable: true,
+      enumerable: true
+    });
+    self.Navigator = Navigator;
+    self.navigator = new Navigator();
+  `, sandbox);
+  vm.runInContext(fingerprintRandomizationCode, sandbox);
   return sandbox;
 }
 
@@ -417,5 +469,28 @@ test('scriptlet engine userScripts API availability', async (t) => {
 
     assert.strictEqual(getScriptsCalled, false);
     assert.strictEqual(registerCalled, false);
+  });
+});
+
+test('fingerprint randomization language normalization', async (t) => {
+  await t.test('reports the top preferred language plus base language', () => {
+    const sandbox = runFingerprintRandomization({
+      language: 'EN_us',
+      languages: ['EN_us', 'ko-KR', 'es-ES']
+    });
+
+    assert.strictEqual(vm.runInContext('navigator.language', sandbox), 'en-US');
+    assert.deepStrictEqual(plain(vm.runInContext('navigator.languages', sandbox)), ['en-US', 'en']);
+    assert.strictEqual(vm.runInContext('Object.isFrozen(navigator.languages)', sandbox), true);
+  });
+
+  await t.test('keeps single base-language preferences collapsed to one value', () => {
+    const sandbox = runFingerprintRandomization({
+      language: 'fr',
+      languages: ['fr', 'en-US']
+    });
+
+    assert.strictEqual(vm.runInContext('navigator.language', sandbox), 'fr');
+    assert.deepStrictEqual(plain(vm.runInContext('navigator.languages', sandbox)), ['fr']);
   });
 });

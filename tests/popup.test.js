@@ -12,6 +12,7 @@ const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', '
 const uiScriptsCode = [componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
+const uiCssCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
 
 async function settlePopupAsyncWork(turns = 20) {
   for (let i = 0; i < turns; i++) {
@@ -424,6 +425,9 @@ test('popup.js functionality', async (t) => {
 
 test('UI hardening copy', () => {
   assert.match(componentsJsCode, /changes anti-detection network behavior/);
+  assert.match(componentsJsCode, /rowClass: 'fpr-toggle-row'/);
+  assert.match(componentsJsCode, /Compat/);
+  assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);
   assert.match(componentsJsCode, /Protection Events/);
   assert.match(componentsJsCode, /Protection Intelligence/);
   assert.doesNotMatch(componentsJsCode, /Ads Blocked/);

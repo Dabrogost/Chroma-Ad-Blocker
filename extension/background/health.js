@@ -23,6 +23,13 @@ const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
 const REQUEST_LOG_MAX_ENTRIES = 500;
 const FPR_CONTENT_SCRIPT_ID = 'chroma_fpr';
+const FPR_PROTECTED_SURFACES = [
+  'Canvas',
+  'WebGL',
+  'Audio',
+  'Navigator',
+  'Language APIs'
+];
 const USER_SCRIPTS_ACTION = 'Open Chrome extension details and enable Allow User Scripts.';
 
 function asArray(value) {
@@ -204,18 +211,26 @@ async function getFprStatus(fprEnabled) {
   const status = {
     enabled: fprEnabled,
     registered: null,
+    active: false,
+    registrationStatus: fprEnabled ? 'unknown' : 'disabled',
+    protectedSurfaces: FPR_PROTECTED_SURFACES,
     error: null
   };
 
   if (!fprEnabled) return status;
 
   try {
-    const registered = typeof chrome.scripting?.getRegisteredContentScripts === 'function'
-      ? await chrome.scripting.getRegisteredContentScripts({ ids: [FPR_CONTENT_SCRIPT_ID] })
-      : [];
+    if (typeof chrome.scripting?.getRegisteredContentScripts !== 'function') {
+      status.registrationStatus = 'unavailable';
+      return status;
+    }
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [FPR_CONTENT_SCRIPT_ID] });
     status.registered = asArray(registered).some(script => script?.id === FPR_CONTENT_SCRIPT_ID);
+    status.active = status.registered === true;
+    status.registrationStatus = status.active ? 'active' : 'missing';
   } catch (err) {
     status.registered = null;
+    status.registrationStatus = 'unavailable';
     status.error = sanitizeText(err?.message || err);
   }
 
@@ -237,6 +252,7 @@ function computeOverall({
   webrtc,
   globalProxyEnabled,
   globalProxyConfigured,
+  fpr,
   browserPrivacy
 }) {
   const issues = [];
@@ -323,6 +339,15 @@ function computeOverall({
       'browserPrivacy',
       'Browser privacy hardening is not fully active.',
       'Turn Chrome Privacy Hardening off and on, or reload the extension.'
+    ));
+  }
+
+  if (fpr?.enabled && fpr.active !== true) {
+    issues.push(makeIssue(
+      'warning',
+      'fingerprint',
+      'Fingerprint Randomization is enabled but its MAIN-world script is not registered.',
+      'Turn Fingerprint Randomization off and on, or reload the extension.'
     ));
   }
 
@@ -492,6 +517,7 @@ export async function getHealthStatus() {
     webrtc,
     globalProxyEnabled: health.proxy.globalProxyEnabled,
     globalProxyConfigured,
+    fpr,
     browserPrivacy
   });
 

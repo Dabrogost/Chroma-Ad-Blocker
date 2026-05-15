@@ -218,6 +218,13 @@ const ChromaApp = (() => {
     return settings.every(setting => setting.hardened) ? 'ok' : 'warning';
   }
 
+  function getFprProtectedSurfaceLabel(health) {
+    const surfaces = Array.isArray(health.fpr?.protectedSurfaces)
+      ? health.fpr.protectedSurfaces
+      : [];
+    return surfaces.length ? surfaces.join(', ') : 'Unknown';
+  }
+
   function getStatsTotals(stats) {
     return stats?.totals || {};
   }
@@ -614,6 +621,12 @@ const ChromaApp = (() => {
       ['UserScripts API', health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable', health.scriptlets?.apiAvailable ? 'ok' : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')],
       ['Registered scripts', health.scriptlets?.registeredUserScriptCount === null ? 'Unknown' : formatCount(health.scriptlets?.registeredUserScriptCount), ''],
       ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), '']
+    ]);
+
+    addHealthSection(body, 'Fingerprint', [
+      ['Fingerprint Randomization', health.fpr?.enabled ? (health.fpr?.active ? 'Active' : 'Not registered') : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
+      ['Protected surfaces', health.fpr?.enabled ? getFprProtectedSurfaceLabel(health) : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
+      ['FPR whitelist', `${formatCount(health.whitelist?.fprDomainCount)} domain(s)`, '']
     ]);
 
     addHealthSection(body, 'Cosmetic & Local', [

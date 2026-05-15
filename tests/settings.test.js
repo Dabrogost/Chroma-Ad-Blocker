@@ -59,6 +59,7 @@ function createSettingsHarness({
     dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true, appliedNetworkRuleCount: 12, whitelistRuleCount: 0 },
     subscriptions: { enabled: 1, total: 1, appliedNetwork: 12, cosmetic: 4, scriptlet: 2, withErrors: 0 },
     scriptlets: { apiAvailable: true, registeredUserScriptCount: 2, storedRuleCount: 2 },
+    fpr: { enabled: true, active: true, protectedSurfaces: ['Canvas', 'WebGL', 'Audio', 'Navigator', 'Language APIs'] },
     cosmetic: { subscriptionCosmeticRuleCount: 4, enabledLocalZapperRuleCount: 0, localZapperRuleCount: 0 },
     proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, globalProxyEnabled: false, globalProxyConfigured: false },
     webrtc: { available: true, mode: 'auto', protected: true },
@@ -495,6 +496,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
     assert.match(success.dom.window.document.querySelector('#healthOverallLabel').textContent, /Healthy/);
     assert.ok(success.dom.window.document.querySelector('#healthPanelBody .health-section'));
+    assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /Fingerprint Randomization\s*Active/);
+    assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /Language APIs/);
 
     const failure = createSettingsHarness({ responses: { HEALTH_GET: null } });
     await failure.sandbox.ChromaApp.initSharedUI();
