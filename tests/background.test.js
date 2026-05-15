@@ -194,6 +194,19 @@ test('getDefaultDynamicRules', async (t) => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ trackingUrlCleanup: null }))), {});
   });
 
+  await t.test('config validation accepts De-AMP booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: true }))),
+      { deAmpLinks: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: false }))),
+      { deAmpLinks: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: 'true' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: null }))), {});
+  });
+
   await t.test('tracking URL cleanup rule strips known tracking params on top-level navigations only', () => {
     const rules = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true });
     const cleanupRule = rules.find(rule => rule.id === 2000);

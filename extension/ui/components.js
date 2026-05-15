@@ -150,6 +150,11 @@ const ChromaComponents = (() => {
           desc: 'Removes known tracking parameters from page URLs'
         })}
         ${renderToggleRow({
+          inputId: 'toggleDeAmpLinks',
+          name: 'De-AMP Links',
+          desc: 'Redirects supported AMP viewer pages to publisher URLs'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleStripping',
           name: 'YouTube Ad Block',
           desc: 'Strips ads from YouTube API before playback'

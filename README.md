@@ -360,6 +360,7 @@ Chroma implements several advanced security measures to ensure extension integri
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR ruleset blocking. | `true` |
 | `trackingUrlCleanup` | Removes known tracking query parameters from top-level navigation URLs. | `true` |
+| `deAmpLinks` | Redirects supported AMP viewer pages to publisher URLs. | `false` |
 | `stripping` | Enables YouTube Ad Stripping (the primary blocker). | `true` |
 | `acceleration` | Enables accelerated ad playback (as a fallback). | `false` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (×4, ×8, ×12, or ×16). | `8` |
@@ -379,7 +380,7 @@ Chroma implements several advanced security measures to ensure extension integri
 
 ## Health Panel
 
-The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, browser privacy hardening, proxy routing, whitelists, and request-log/debug availability.
+The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, tracking URL cleanup, De-AMP redirects, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, browser privacy hardening, proxy routing, whitelists, and request-log/debug availability.
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents. DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts; when that logging is unavailable, blocking can still work normally.
 

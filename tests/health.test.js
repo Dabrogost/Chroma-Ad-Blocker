@@ -49,6 +49,7 @@ function loadHealthSandbox(options = {}) {
       acceleration: false,
       fingerprintRandomization: false,
       browserPrivacyHardening: false,
+      deAmpLinks: false,
       globalProxyEnabled: false,
       globalProxyId: null
     },
@@ -395,6 +396,23 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.requestLog.available, false);
     assert.match(health.requestLog.note, /blocking can still work/i);
     assert.ok(health.overall.issues.some(issue => issue.area === 'requestLog' && issue.severity === 'info'));
+  });
+
+  await t.test('De-AMP status is reported as an opt-in master protection', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: false,
+          deAmpLinks: true
+        }
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.master.deAmpLinks, true);
+    assert.strictEqual(health.overall.status, 'disabled');
   });
 
   await t.test('proxy health never exposes auth fields or proxy hosts', async () => {

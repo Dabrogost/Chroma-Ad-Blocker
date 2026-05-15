@@ -435,7 +435,8 @@ export async function getHealthStatus() {
       acceleration: bool(config.acceleration, false),
       fingerprintRandomization: bool(config.fingerprintRandomization, false),
       browserPrivacyHardening: bool(config.browserPrivacyHardening, false),
-      trackingUrlCleanup: config.trackingUrlCleanup !== false
+      trackingUrlCleanup: config.trackingUrlCleanup !== false,
+      deAmpLinks: bool(config.deAmpLinks, false)
     },
     dnr: {
       available: !!chrome.declarativeNetRequest,

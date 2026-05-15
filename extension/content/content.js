@@ -18,6 +18,7 @@
     hideMerch: true,
     hideOffers: true,
     suppressWarnings: true,
+    deAmpLinks: false,
   };
 
   const isYouTube = window.location.hostname.includes('youtube.com');
@@ -142,6 +143,83 @@
 
   function domainMatches(hostname, domain) {
     return hostname === domain || hostname.endsWith('.' + domain);
+  }
+
+  function isValidHostname(hostname) {
+    if (typeof hostname !== 'string' || hostname.length < 1 || hostname.length > 253) return false;
+    if (hostname.startsWith('.') || hostname.endsWith('.')) return false;
+    return hostname.split('.').every(label =>
+      label.length >= 1 &&
+      label.length <= 63 &&
+      /^[a-z0-9-]+$/i.test(label) &&
+      !label.startsWith('-') &&
+      !label.endsWith('-')
+    );
+  }
+
+  function isGoogleAmpViewerHost(hostname) {
+    return hostname === 'www.google.com' || hostname === 'google.com';
+  }
+
+  function buildAmpTargetUrl(rawTarget, protocol) {
+    if (typeof rawTarget !== 'string') return null;
+    const target = rawTarget.replace(/^\/+/, '');
+    if (!target || target.includes('\\')) return null;
+    const slashIndex = target.indexOf('/');
+    const hostname = (slashIndex === -1 ? target : target.slice(0, slashIndex)).toLowerCase();
+    if (!isValidHostname(hostname)) return null;
+    const path = slashIndex === -1 ? '/' : '/' + target.slice(slashIndex + 1);
+    try {
+      return new URL(`${protocol}//${hostname}${path}`).href;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function getDeAmpRedirectUrl(inputUrl) {
+    let url;
+    try {
+      url = new URL(inputUrl);
+    } catch (_) {
+      return null;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+    const path = url.pathname;
+
+    if (isGoogleAmpViewerHost(hostname)) {
+      const httpsMatch = path.match(/^\/amp\/s\/(.+)$/);
+      if (httpsMatch) return buildAmpTargetUrl(httpsMatch[1], 'https:');
+
+      const httpMatch = path.match(/^\/amp\/(.+)$/);
+      if (httpMatch && !httpMatch[1].startsWith('s/')) {
+        return buildAmpTargetUrl(httpMatch[1], 'http:');
+      }
+    }
+
+    if (hostname.endsWith('.cdn.ampproject.org')) {
+      const httpsCacheMatch = path.match(/^\/c\/s\/(.+)$/);
+      if (httpsCacheMatch) return buildAmpTargetUrl(httpsCacheMatch[1], 'https:');
+
+      const httpCacheMatch = path.match(/^\/c\/(.+)$/);
+      if (httpCacheMatch && !httpCacheMatch[1].startsWith('s/')) {
+        return buildAmpTargetUrl(httpCacheMatch[1], 'http:');
+      }
+    }
+
+    return null;
+  }
+
+  function shouldSkipDeAmpRedirect(targetUrl, currentHostname, whitelist) {
+    if (!Array.isArray(whitelist)) return false;
+    const current = typeof currentHostname === 'string' ? currentHostname.trim().toLowerCase() : '';
+    let targetHostname = '';
+    try { targetHostname = new URL(targetUrl).hostname.toLowerCase(); } catch (_) {}
+    return whitelist.some(rawDomain => {
+      const domain = typeof rawDomain === 'string' ? rawDomain.trim().toLowerCase() : '';
+      return isValidHostname(domain) &&
+        (domainMatches(current, domain) || domainMatches(targetHostname, domain));
+    });
   }
 
   function getMatchingLocalZapperSelectors(rules, hostname = window.location.hostname) {
@@ -588,19 +666,30 @@
   async function init() {
     try {
       const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist', 'subscriptionCosmeticRules', 'localCosmeticRules']);
-      
+
+      if (data.config) {
+        Object.assign(CONFIG, data.config);
+      }
+
       const whitelist = data.whitelist || [];
       const hostname = window.location.hostname;
+      const deAmpTarget = getDeAmpRedirectUrl(window.location.href);
+      if (
+        CONFIG.enabled &&
+        CONFIG.deAmpLinks === true &&
+        deAmpTarget &&
+        !shouldSkipDeAmpRedirect(deAmpTarget, hostname, whitelist)
+      ) {
+        try { window.location.replace(deAmpTarget); } catch (_) {}
+        return;
+      }
+
       IS_WHITELISTED = whitelist.some(d => hostname === d || hostname.endsWith('.' + d));
       if (IS_WHITELISTED) {
         if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
         return;
       }
 
-      if (data.config) {
-        Object.assign(CONFIG, data.config);
-      }
-      
       if (data.HIDE_SELECTORS) {
         HIDE_SELECTORS = getValidSelectors(data.HIDE_SELECTORS);
       }
@@ -685,5 +774,7 @@
     globalThis.queueStatsEvent = queueStatsEvent;
     globalThis.flushStatsQueue = flushStatsQueue;
     globalThis.getPendingStatsQueue = () => statsQueue.slice();
+    globalThis.getDeAmpRedirectUrl = getDeAmpRedirectUrl;
+    globalThis.shouldSkipDeAmpRedirect = shouldSkipDeAmpRedirect;
   }
 })();

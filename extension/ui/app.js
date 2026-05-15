@@ -44,6 +44,7 @@ const ChromaApp = (() => {
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
     ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
+    ['toggleDeAmpLinks',   'deAmpLinks',               false],
     ['toggleStripping',    'stripping',                true],
     ['toggleAcceleration', 'acceleration',             false],
     ['toggleCosmetic',     'cosmetic',                 true],
@@ -600,10 +601,12 @@ const ChromaApp = (() => {
     }
     const networkBlockingActive = health.master?.networkBlocking && health.master?.enabled;
     const trackingUrlCleanupActive = health.master?.trackingUrlCleanup && networkBlockingActive;
+    const deAmpLinksActive = health.master?.deAmpLinks && health.master?.enabled;
 
     addHealthSection(body, 'Core', [
       ['Network blocking', networkBlockingActive ? 'Active' : 'Disabled', networkBlockingActive ? 'ok' : 'disabled'],
       ['Tracking URL cleanup', trackingUrlCleanupActive ? 'Active' : 'Disabled', trackingUrlCleanupActive ? 'ok' : 'disabled'],
+      ['De-AMP links', deAmpLinksActive ? 'Active' : 'Disabled', deAmpLinksActive ? 'ok' : 'disabled'],
       ['Static rulesets', `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`, health.dnr?.staticRulesetsOk ? 'ok' : (health.master?.networkBlocking ? 'error' : 'disabled')],
       ['Dynamic rules', `${formatCount(health.dnr?.appliedNetworkRuleCount)} active`, ''],
       ['Whitelist rules', formatCount(health.dnr?.whitelistRuleCount), '']
@@ -1377,8 +1380,11 @@ const ChromaApp = (() => {
   function scrollToProxyHash() {
     if (globalThis.location?.hash !== '#proxy') return;
     const scroll = () => {
-      const section = $('proxySection') || $('proxyRouterContainer');
-      section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const pageHeight = Math.max(
+        document.body?.scrollHeight || 0,
+        document.documentElement?.scrollHeight || 0
+      );
+      globalThis.scrollTo?.({ top: pageHeight, behavior: 'smooth' });
     };
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(scroll);

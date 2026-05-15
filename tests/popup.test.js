@@ -425,6 +425,8 @@ test('popup.js functionality', async (t) => {
 
 test('UI hardening copy', () => {
   assert.match(componentsJsCode, /changes anti-detection network behavior/);
+  assert.match(componentsJsCode, /De-AMP Links/);
+  assert.match(componentsJsCode, /Redirects supported AMP viewer pages to publisher URLs/);
   assert.match(componentsJsCode, /rowClass: 'fpr-toggle-row'/);
   assert.match(componentsJsCode, /Compat/);
   assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);

@@ -422,7 +422,7 @@ test('settings page proxy and zapper management safety', async (t) => {
   await t.test('settings page supports direct proxy hash entry points', () => {
     assert.match(componentsJs, /id="proxySection"/);
     assert.match(appJs, /location\?\.hash !== '#proxy'/);
-    assert.match(appJs, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
+    assert.match(appJs, /scrollTo\?\.\(\{ top: pageHeight, behavior: 'smooth' \}\)/);
   });
 
   await t.test('settings statistics panel is local-only and uses stats messages', () => {
@@ -496,6 +496,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
     assert.match(success.dom.window.document.querySelector('#healthOverallLabel').textContent, /Healthy/);
     assert.ok(success.dom.window.document.querySelector('#healthPanelBody .health-section'));
+    assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /De-AMP links\s*Disabled/);
     assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /Fingerprint Randomization\s*Active/);
     assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /Language APIs/);
 
@@ -645,16 +646,18 @@ test('settings page proxy and zapper management safety', async (t) => {
   await t.test('settings proxy hash scrolls after synchronous shell render', async () => {
     const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxy' });
     await harness.sandbox.ChromaApp.initSharedUI();
-    const section = harness.dom.window.document.querySelector('#proxySection');
-    let scrolled = false;
-    section.scrollIntoView = options => {
-      scrolled = options?.block === 'start';
+    Object.defineProperty(harness.dom.window.document.documentElement, 'scrollHeight', { configurable: true, value: 2400 });
+    Object.defineProperty(harness.dom.window.document.body, 'scrollHeight', { configurable: true, value: 1800 });
+    let scrollOptions = null;
+    harness.sandbox.scrollTo = options => {
+      scrollOptions = options;
     };
 
     harness.sandbox.ChromaApp.scrollToProxyHash();
     await settleDomAsyncWork();
 
-    assert.strictEqual(scrolled, true);
+    assert.strictEqual(scrollOptions?.top, 2400);
+    assert.strictEqual(scrollOptions?.behavior, 'smooth');
   });
 
   await t.test('skeleton CSS includes reduced-motion handling', () => {
