@@ -209,16 +209,19 @@ test('getDefaultDynamicRules', async (t) => {
 
   await t.test('tracking URL cleanup rule strips known tracking params on top-level navigations only', () => {
     const rules = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true });
-    const cleanupRule = rules.find(rule => rule.id === 2000);
-    assert.ok(cleanupRule, 'tracking cleanup rule should be present when enabled');
-    assert.strictEqual(cleanupRule.action.type, 'redirect');
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(cleanupRule.condition.resourceTypes)), ['main_frame']);
-    assert.ok(cleanupRule.condition.regexFilter.includes('utm_source'));
-    assert.ok(cleanupRule.condition.regexFilter.includes('fbclid'));
-    assert.ok(cleanupRule.condition.excludedRequestDomains.includes('accounts.google.com'));
-    assert.ok(cleanupRule.condition.excludedRequestDomains.includes('paypal.com'));
-    assert.ok(cleanupRule.action.redirect.transform.queryTransform.removeParams.includes('utm_campaign'));
-    assert.ok(cleanupRule.action.redirect.transform.queryTransform.removeParams.includes('gclid'));
+    const cleanupRules = rules.filter(rule => rule.id >= 2000 && rule.id <= 2099);
+    assert.ok(cleanupRules.length > 1, 'tracking cleanup should be split into small DNR regex rules');
+    const combinedRegex = cleanupRules.map(rule => rule.condition.regexFilter).join('\n');
+    for (const cleanupRule of cleanupRules) {
+      assert.strictEqual(cleanupRule.action.type, 'redirect');
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(cleanupRule.condition.resourceTypes)), ['main_frame']);
+      assert.ok(cleanupRule.condition.excludedRequestDomains.includes('accounts.google.com'));
+      assert.ok(cleanupRule.condition.excludedRequestDomains.includes('paypal.com'));
+      assert.ok(cleanupRule.action.redirect.transform.queryTransform.removeParams.includes('utm_campaign'));
+      assert.ok(cleanupRule.action.redirect.transform.queryTransform.removeParams.includes('gclid'));
+    }
+    assert.ok(combinedRegex.includes('utm_source'));
+    assert.ok(combinedRegex.includes('fbclid'));
   });
 
   await t.test('tracking URL cleanup allowlist accepts fragile-site exclusions', () => {
@@ -263,6 +266,7 @@ test('getDefaultDynamicRules', async (t) => {
 test('syncDynamicRules successful syncing', async (t) => {
   const sandbox = {};
   let updateDynamicRulesArgs = null;
+  let updateDynamicRulesCalls = [];
   let getDynamicRulesCalled = false;
 
   const mockExistingRules = [{ id: 1001 }, { id: 1002 }];
@@ -299,6 +303,7 @@ test('syncDynamicRules successful syncing', async (t) => {
       },
       updateDynamicRules: async (args) => {
         updateDynamicRulesArgs = args;
+        updateDynamicRulesCalls.push(args);
         return Promise.resolve();
       },
       onRuleMatchedDebug: { addListener: () => {} }
@@ -356,6 +361,7 @@ test('syncDynamicRules successful syncing', async (t) => {
   await t.test('uses stored rules and removes existing ones', async () => {
     sandbox.mockStorageRules = mockStoredRules;
     updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
     getDynamicRulesCalled = false;
 
     await sandbox.syncDynamicRules();
@@ -363,9 +369,12 @@ test('syncDynamicRules successful syncing', async (t) => {
     assert.strictEqual(getDynamicRulesCalled, true, 'getDynamicRules should have been called');
     assert.ok(updateDynamicRulesArgs, 'updateDynamicRules should have been called');
     assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [1001, 1002], 'Should remove existing rules');
+    const expectedTrackingIds = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true })
+      .filter(rule => rule.id >= 2000 && rule.id <= 2099)
+      .map(rule => rule.id);
     assert.deepStrictEqual(
       JSON.parse(JSON.stringify(updateDynamicRulesArgs.addRules.map(rule => rule.id))),
-      [999, 2000],
+      [999, ...expectedTrackingIds],
       'Should add stored rules plus tracking URL cleanup when enabled'
     );
   });
@@ -373,6 +382,7 @@ test('syncDynamicRules successful syncing', async (t) => {
   await t.test('falls back to default rules when none are stored', async () => {
     sandbox.mockStorageRules = undefined;
     updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
     getDynamicRulesCalled = false;
 
     await sandbox.syncDynamicRules();
@@ -393,6 +403,7 @@ test('syncDynamicRules successful syncing', async (t) => {
       return {};
     };
     updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
 
     await sandbox.syncDynamicRules();
 
@@ -408,6 +419,7 @@ test('syncDynamicRules successful syncing', async (t) => {
       return {};
     };
     updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
 
     await sandbox.syncDynamicRules();
 
@@ -417,8 +429,37 @@ test('syncDynamicRules successful syncing', async (t) => {
     assert.strictEqual(cleanupRule.action.type, 'redirect');
   });
 
+  await t.test('tracking URL cleanup rejection does not block core default dynamic rules', async () => {
+    chromeMock.storage.local.get = async (key) => {
+      if (key === 'config') return { config: { acceleration: true, trackingUrlCleanup: true } };
+      if (key === 'dynamicRules') return { dynamicRules: undefined };
+      if (key === 'whitelist') return { whitelist: [] };
+      return {};
+    };
+    updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
+    chromeMock.declarativeNetRequest.updateDynamicRules = async (args) => {
+      updateDynamicRulesArgs = args;
+      updateDynamicRulesCalls.push(args);
+      if (args.addRules?.some(rule => rule.id === 2000)) {
+        throw new Error('Invalid redirect rule');
+      }
+    };
+
+    await sandbox.syncDynamicRules();
+
+    assert.strictEqual(updateDynamicRulesCalls.length, 2);
+    assert.ok(updateDynamicRulesArgs.addRules.some(rule => rule.id === 1004), 'core default dynamic rules should still be installed');
+    assert.strictEqual(updateDynamicRulesArgs.addRules.some(rule => rule.id === 2000), false);
+  });
+
   await t.test('classifies DNR matches without treating all matches as blocks', async () => {
     chromeMock.storage.local.get = defaultStorageGet;
+    chromeMock.declarativeNetRequest.updateDynamicRules = async (args) => {
+      updateDynamicRulesArgs = args;
+      updateDynamicRulesCalls.push(args);
+      return Promise.resolve();
+    };
     sandbox.mockStorageRules = [
       { id: 1001, action: { type: 'allow' } },
       { id: 1002, action: { type: 'block' } }

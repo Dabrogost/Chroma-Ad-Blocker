@@ -116,6 +116,12 @@ async function attach(cdp, targetId) {
   return sessionId;
 }
 
+async function closeTarget(cdp, target) {
+  const targetId = typeof target === 'string' ? target : target?.targetId;
+  if (!targetId) return;
+  await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
+}
+
 async function evaluate(cdp, sessionId, expression, awaitPromise = true) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -343,6 +349,7 @@ async function getTabs(cdp, workerSession) {
 
 module.exports = {
   attach,
+  closeTarget,
   createPage,
   evaluate,
   expectedRulesets,

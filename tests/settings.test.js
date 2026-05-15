@@ -55,8 +55,8 @@ function createSettingsHarness({
   const defaultHealth = {
     overall: { status: 'healthy', issues: [] },
     manifest: { version: '1.0.1', minimumChromeVersion: '120' },
-    master: { enabled: true, networkBlocking: true },
-    dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true, appliedNetworkRuleCount: 12, whitelistRuleCount: 0 },
+    master: { enabled: true, networkBlocking: true, trackingUrlCleanup: true },
+    dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true, appliedNetworkRuleCount: 12, whitelistRuleCount: 0, trackingUrlCleanupRuleCount: 1, trackingUrlCleanupActive: true },
     subscriptions: { enabled: 1, total: 1, appliedNetwork: 12, cosmetic: 4, scriptlet: 2, withErrors: 0 },
     scriptlets: { apiAvailable: true, registeredUserScriptCount: 2, storedRuleCount: 2 },
     fpr: { enabled: true, active: true, protectedSurfaces: ['Canvas', 'WebGL', 'Audio', 'Navigator', 'Language APIs'] },
@@ -554,8 +554,51 @@ test('settings page proxy and zapper management safety', async (t) => {
     const bodyText = harness.dom.window.document.querySelector('#healthPanelBody').textContent;
 
     assert.match(bodyText, /UserScripts API\s*Unavailable/i);
+    assert.match(bodyText, /Registered scripts\s*Unavailable/i);
     assert.match(bodyText, /Enable Allow User Scripts/i);
     assert.match(bodyText, /Chrome extension details/i);
+  });
+
+  await t.test('health panel reports Tracking URL Cleanup when its DNR rule is missing', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          overall: {
+            status: 'degraded',
+            issues: [{
+              severity: 'warning',
+              area: 'trackingUrlCleanup',
+              message: 'Tracking URL Cleanup is enabled but its DNR redirect rule is not registered.',
+              action: 'Reload the extension, or turn Tracking URL Cleanup off and on.'
+            }]
+          },
+          manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+          master: { enabled: true, networkBlocking: true, trackingUrlCleanup: true },
+          dnr: {
+            enabledStaticRulesets: ['a'],
+            expectedStaticRulesets: ['a'],
+            staticRulesetsOk: true,
+            appliedNetworkRuleCount: 12,
+            whitelistRuleCount: 0,
+            trackingUrlCleanupRuleCount: 0,
+            trackingUrlCleanupActive: false
+          },
+          subscriptions: { enabled: 1, total: 1, appliedNetwork: 12, cosmetic: 4, scriptlet: 0, withErrors: 0 },
+          scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 0 },
+          cosmetic: { subscriptionCosmeticRuleCount: 4, enabledLocalZapperRuleCount: 0, localZapperRuleCount: 0 },
+          proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, globalProxyEnabled: false, globalProxyConfigured: false },
+          webrtc: { available: true, mode: 'auto', protected: true },
+          requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const bodyText = harness.dom.window.document.querySelector('#healthPanelBody').textContent;
+    assert.match(bodyText, /Tracking URL cleanup\s*Not registered/i);
+    assert.match(bodyText, /DNR redirect rule is not registered/i);
   });
 
   await t.test('stats skeleton is replaced on success and on unavailable response', async () => {

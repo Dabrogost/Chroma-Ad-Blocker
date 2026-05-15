@@ -431,6 +431,10 @@ test('UI hardening copy', () => {
     componentsJsCode.indexOf("name: 'Chrome Privacy Hardening'") < componentsJsCode.indexOf("name: 'De-AMP Links'"),
     'De-AMP Links should render below Chrome Privacy Hardening'
   );
+  assert.ok(
+    componentsJsCode.indexOf("name: 'Cosmetic Filtering'") < componentsJsCode.indexOf("name: 'Tracking URL Cleanup'"),
+    'Tracking URL Cleanup should render below Cosmetic Filtering'
+  );
   assert.match(componentsJsCode, /rowClass: 'fpr-toggle-row'/);
   assert.match(componentsJsCode, /Compat/);
   assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);

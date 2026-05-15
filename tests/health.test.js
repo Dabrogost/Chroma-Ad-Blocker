@@ -89,7 +89,7 @@ function loadHealthSandbox(options = {}) {
     settings: []
   };
   const enabledRulesets = options.enabledRulesets || ['static_a', 'static_b'];
-  const dynamicRules = options.dynamicRules || [];
+  const dynamicRules = options.dynamicRules || [{ id: 2000 }];
   const dnr = options.noDnr
     ? undefined
     : {
@@ -468,6 +468,30 @@ test('health diagnostics', async (t) => {
 
     assert.strictEqual(health.master.deAmpLinks, true);
     assert.strictEqual(health.overall.status, 'disabled');
+  });
+
+  await t.test('Tracking URL Cleanup warns when enabled but its dynamic rule is missing', async () => {
+    const sandbox = loadHealthSandbox({
+      dynamicRules: [],
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          trackingUrlCleanup: true
+        }
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.master.trackingUrlCleanup, true);
+    assert.strictEqual(health.dnr.trackingUrlCleanupRuleCount, 0);
+    assert.strictEqual(health.dnr.trackingUrlCleanupActive, false);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'trackingUrlCleanup' &&
+      /not registered/i.test(issue.message)
+    ));
   });
 
   await t.test('proxy health never exposes auth fields or proxy hosts', async () => {

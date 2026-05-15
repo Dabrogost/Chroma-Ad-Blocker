@@ -226,6 +226,33 @@ const ChromaApp = (() => {
     return surfaces.length ? surfaces.join(', ') : 'Unknown';
   }
 
+  function getRegisteredScriptletLabel(health) {
+    const scriptlets = health.scriptlets || {};
+    if (scriptlets.apiAvailable === false) return 'Unavailable';
+    return scriptlets.registeredUserScriptCount === null
+      ? 'Unknown'
+      : formatCount(scriptlets.registeredUserScriptCount);
+  }
+
+  function getRegisteredScriptletStatus(health) {
+    const scriptlets = health.scriptlets || {};
+    if (scriptlets.apiAvailable === false) {
+      return scriptlets.storedRuleCount > 0 ? 'warning' : 'disabled';
+    }
+    if (scriptlets.storedRuleCount > 0 && scriptlets.registeredUserScriptCount === 0) return 'warning';
+    return '';
+  }
+
+  function getTrackingUrlCleanupLabel(health, networkBlockingActive) {
+    if (!health.master?.trackingUrlCleanup || !networkBlockingActive) return 'Disabled';
+    return health.dnr?.trackingUrlCleanupActive ? 'Active' : 'Not registered';
+  }
+
+  function getTrackingUrlCleanupStatus(health, networkBlockingActive) {
+    if (!health.master?.trackingUrlCleanup || !networkBlockingActive) return 'disabled';
+    return health.dnr?.trackingUrlCleanupActive ? 'ok' : 'warning';
+  }
+
   function getStatsTotals(stats) {
     return stats?.totals || {};
   }
@@ -600,12 +627,11 @@ const ChromaApp = (() => {
       versionText.textContent = `${version} \u00b7 ${chromeMin}`;
     }
     const networkBlockingActive = health.master?.networkBlocking && health.master?.enabled;
-    const trackingUrlCleanupActive = health.master?.trackingUrlCleanup && networkBlockingActive;
     const deAmpLinksActive = health.master?.deAmpLinks && health.master?.enabled;
 
     addHealthSection(body, 'Core', [
       ['Network blocking', networkBlockingActive ? 'Active' : 'Disabled', networkBlockingActive ? 'ok' : 'disabled'],
-      ['Tracking URL cleanup', trackingUrlCleanupActive ? 'Active' : 'Disabled', trackingUrlCleanupActive ? 'ok' : 'disabled'],
+      ['Tracking URL cleanup', getTrackingUrlCleanupLabel(health, networkBlockingActive), getTrackingUrlCleanupStatus(health, networkBlockingActive)],
       ['De-AMP links', deAmpLinksActive ? 'Active' : 'Disabled', deAmpLinksActive ? 'ok' : 'disabled'],
       ['Static rulesets', `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`, health.dnr?.staticRulesetsOk ? 'ok' : (health.master?.networkBlocking ? 'error' : 'disabled')],
       ['Dynamic rules', `${formatCount(health.dnr?.appliedNetworkRuleCount)} active`, ''],
@@ -622,7 +648,7 @@ const ChromaApp = (() => {
 
     addHealthSection(body, 'Scriptlets', [
       ['UserScripts API', health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable', health.scriptlets?.apiAvailable ? 'ok' : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')],
-      ['Registered scripts', health.scriptlets?.registeredUserScriptCount === null ? 'Unknown' : formatCount(health.scriptlets?.registeredUserScriptCount), ''],
+      ['Registered scripts', getRegisteredScriptletLabel(health), getRegisteredScriptletStatus(health)],
       ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), '']
     ]);
 

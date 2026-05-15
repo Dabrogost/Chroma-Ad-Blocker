@@ -145,11 +145,6 @@ const ChromaComponents = (() => {
           desc: 'Blocks known ad and tracker requests'
         })}
         ${renderToggleRow({
-          inputId: 'toggleTrackingUrlCleanup',
-          name: 'Tracking URL Cleanup',
-          desc: 'Removes known tracking parameters from page URLs'
-        })}
-        ${renderToggleRow({
           inputId: 'toggleStripping',
           name: 'YouTube Ad Block',
           desc: 'Strips ads from YouTube API before playback'
@@ -174,6 +169,11 @@ const ChromaComponents = (() => {
           inputId: 'toggleCosmetic',
           name: 'Cosmetic Filtering',
           desc: 'Hides banners, sponsored slots, overlays'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleTrackingUrlCleanup',
+          name: 'Tracking URL Cleanup',
+          desc: 'Removes known tracking parameters from page URLs'
         })}
         ${renderToggleRow({
           inputId: 'toggleShorts',

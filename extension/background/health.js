@@ -19,6 +19,8 @@ import { syncUserScripts } from '../scriptlets/engine.js';
 
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END = 99999;
+const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
+const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
 const SUBSCRIPTION_RULE_ID_START = 100000;
 const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
@@ -254,6 +256,8 @@ function computeOverall({
   staticRulesetsOk,
   expectedStaticRulesets,
   enabledStaticRulesets,
+  trackingUrlCleanupEnabled,
+  trackingUrlCleanupRuleCount,
   storedScriptletRuleCount,
   scriptlets,
   subscriptionErrors,
@@ -310,6 +314,20 @@ function computeOverall({
       'scriptlets',
       'Scriptlet rules are parsed but not registered.',
       'Open Chroma settings or reload the extension to retry scriptlet registration.'
+    ));
+  }
+
+  if (
+    masterEnabled &&
+    networkBlocking &&
+    trackingUrlCleanupEnabled &&
+    trackingUrlCleanupRuleCount === 0
+  ) {
+    issues.push(makeIssue(
+      'warning',
+      'trackingUrlCleanup',
+      'Tracking URL Cleanup is enabled but its DNR redirect rule is not registered.',
+      'Reload the extension, or turn Tracking URL Cleanup off and on.'
     ));
   }
 
@@ -406,6 +424,11 @@ export async function getHealthStatus() {
   const dnrSnapshot = await getDnrSnapshot(masterEnabled, networkBlocking, expectedStaticRulesets);
   const dynamicRules = asArray(dnrSnapshot.dynamicRules);
   const defaultDynamicRuleCount = countByRange(dynamicRules, DEFAULT_RULE_ID_START, DEFAULT_RULE_ID_END);
+  const trackingUrlCleanupRuleCount = countByRange(
+    dynamicRules,
+    TRACKING_URL_CLEANUP_RULE_ID_START,
+    TRACKING_URL_CLEANUP_RULE_ID_END
+  );
   const subscriptionDynamicRuleCount = countByRange(dynamicRules, SUBSCRIPTION_RULE_ID_START, SUBSCRIPTION_RULE_ID_END);
   const whitelistRuleCount = countByRange(dynamicRules, WHITELIST_RULE_ID_START);
 
@@ -465,6 +488,8 @@ export async function getHealthStatus() {
       staticRulesetsOk: !!dnrSnapshot.staticRulesetsOk,
       dynamicRuleCount: dynamicRules.length,
       defaultDynamicRuleCount,
+      trackingUrlCleanupRuleCount,
+      trackingUrlCleanupActive: masterEnabled && networkBlocking && config.trackingUrlCleanup !== false && trackingUrlCleanupRuleCount > 0,
       subscriptionDynamicRuleCount,
       whitelistRuleCount,
       appliedNetworkRuleCount: defaultDynamicRuleCount + subscriptionDynamicRuleCount + whitelistRuleCount,
@@ -531,6 +556,8 @@ export async function getHealthStatus() {
     staticRulesetsOk: health.dnr.staticRulesetsOk,
     expectedStaticRulesets,
     enabledStaticRulesets: health.dnr.enabledStaticRulesets,
+    trackingUrlCleanupEnabled: health.master.trackingUrlCleanup,
+    trackingUrlCleanupRuleCount: health.dnr.trackingUrlCleanupRuleCount,
     storedScriptletRuleCount: health.scriptlets.storedRuleCount,
     scriptlets: health.scriptlets,
     subscriptionErrors,

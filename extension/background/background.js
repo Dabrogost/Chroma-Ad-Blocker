@@ -311,20 +311,31 @@ export async function syncDynamicRules() {
       .filter(r => r.id >= DEFAULT_RULE_ID_START && r.id <= DEFAULT_RULE_ID_END)
       .map(r => r.id);
 
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: removeIds,
-      addRules: rules,
-    });
+    let appliedRules = rules;
+    try {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: removeIds,
+        addRules: appliedRules,
+      });
+    } catch (err) {
+      if (!rules.some(isTrackingCleanupRule)) throw err;
+      appliedRules = rules.filter(rule => !isTrackingCleanupRule(rule));
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: removeIds,
+        addRules: appliedRules,
+      });
+      if (DEBUG) console.warn('[Chroma Ad-Blocker] Tracking URL cleanup rule was not accepted by Chrome DNR:', err);
+    }
 
     for (const id of removeIds) dynamicRuleClassifications.delete(id);
-    for (const rule of rules) {
+    for (const rule of appliedRules) {
       dynamicRuleClassifications.set(rule.id, {
         actionType: rule.action?.type || 'unknown',
         ruleSource: 'default_dynamic'
       });
     }
 
-    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
+    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${appliedRules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
   } catch (err) {
     if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }

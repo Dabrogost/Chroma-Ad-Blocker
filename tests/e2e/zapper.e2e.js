@@ -2,6 +2,7 @@ const http = require('node:http');
 const test = require('node:test');
 const assert = require('node:assert');
 const {
+  closeTarget,
   createPage,
   evaluate,
   getTabs,
@@ -42,6 +43,18 @@ function startServer() {
       const { port } = server.address();
       resolve({ server, url: `http://127.0.0.1:${port}/fixture.html` });
     });
+  });
+}
+
+function closeServer(server) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(resolve, 2000);
+    server.close(err => {
+      clearTimeout(timeout);
+      return err ? reject(err) : resolve();
+    });
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
   });
 }
 
@@ -93,7 +106,9 @@ test('zapper browser interaction E2E', async (t) => {
   const fixture = await startServer();
   const browser = await startExtensionBrowser();
   t.after(async () => {
-    fixture.server.close();
+    await closeTarget(browser.cdp, extensionPage);
+    await closeTarget(browser.cdp, page);
+    await closeServer(fixture.server).catch(() => {});
     await browser.cleanup();
   });
 

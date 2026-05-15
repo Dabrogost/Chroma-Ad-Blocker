@@ -48,9 +48,8 @@ const TRACKING_QUERY_PARAMS = [
   'sc_outcome'
 ];
 
-const TRACKING_QUERY_PARAM_PATTERN = TRACKING_QUERY_PARAMS
-  .map(param => param.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  .join('|');
+const TRACKING_CLEANUP_DYNAMIC_RULE_ID_START = 2000;
+const TRACKING_QUERY_PARAM_REGEX_CHUNK_SIZE = 4;
 
 // Domains where query parameters are frequently meaningful for auth/payment
 // handoff or bot checks. These are intentionally broad safety exclusions.
@@ -87,6 +86,18 @@ function isValidExcludedRequestDomain(domain) {
   );
 }
 
+function escapeRegexLiteral(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
 function getTrackingUrlCleanupRules(extraExcludedRequestDomains = []) {
   const excludedRequestDomains = Array.from(new Set([
     ...TRACKING_CLEANUP_EXCLUDED_REQUEST_DOMAINS,
@@ -95,9 +106,12 @@ function getTrackingUrlCleanupRules(extraExcludedRequestDomains = []) {
       .filter(isValidExcludedRequestDomain)
   ]));
 
-  return [
-    {
-      id: 2000,
+  // Chrome compiles regexFilter with a small memory budget. A single large
+  // alternation for every tracking parameter exceeds that limit, so use small
+  // matchers while keeping each transform able to remove the full param set.
+  return chunkArray(TRACKING_QUERY_PARAMS, TRACKING_QUERY_PARAM_REGEX_CHUNK_SIZE)
+    .map((params, index) => ({
+      id: TRACKING_CLEANUP_DYNAMIC_RULE_ID_START + index,
       priority: 2,
       action: {
         type: 'redirect',
@@ -110,12 +124,11 @@ function getTrackingUrlCleanupRules(extraExcludedRequestDomains = []) {
         }
       },
       condition: {
-        regexFilter: `[?&](${TRACKING_QUERY_PARAM_PATTERN})=`,
+        regexFilter: `[?&](${params.map(escapeRegexLiteral).join('|')})=`,
         resourceTypes: ['main_frame'],
         excludedRequestDomains
       }
-    }
-  ];
+    }));
 }
 
 /**
