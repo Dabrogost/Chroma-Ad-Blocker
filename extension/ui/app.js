@@ -26,7 +26,7 @@ const ChromaApp = (() => {
   }
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
-  const PROXY_SETTINGS_PATH = 'ui/settings.html#proxy';
+  const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
   const HEALTH_REFRESH_KEYS = [
     'config',
     'subscriptions',
@@ -1230,6 +1230,7 @@ const ChromaApp = (() => {
     async function loadProxyRouterSection() {
       if (globalThis.ChromaProxyUI?.loadProxyRouterUI) {
         await globalThis.ChromaProxyUI.loadProxyRouterUI();
+        scrollToProxyHash();
       }
     }
 
@@ -1378,19 +1379,19 @@ const ChromaApp = (() => {
   }
 
   function scrollToProxyHash() {
-    if (globalThis.location?.hash !== '#proxy') return;
-    const scroll = () => {
-      const pageHeight = Math.max(
-        document.body?.scrollHeight || 0,
-        document.documentElement?.scrollHeight || 0
-      );
-      globalThis.scrollTo?.({ top: pageHeight, behavior: 'smooth' });
+    if (!['#proxy', '#proxySection'].includes(globalThis.location?.hash)) return;
+    const scroll = (behavior = 'smooth') => {
+      const section = $('proxySection') || $('proxyRouterContainer');
+      section?.scrollIntoView({ behavior, block: 'start' });
     };
     if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(scroll);
+      requestAnimationFrame(() => scroll());
     } else {
       Promise.resolve().then(scroll);
     }
+    [120, 360, 720].forEach(delay => {
+      setTimeout(() => scroll('auto'), delay);
+    });
   }
 
   return {

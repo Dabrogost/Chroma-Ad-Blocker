@@ -403,7 +403,7 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(typeof sandbox.openProxySettings, 'function');
     await sandbox.openProxySettings();
 
-    assert.strictEqual(chromeMock.tabs.created.at(-1)?.url, 'chrome-extension://test/ui/settings.html#proxy');
+    assert.strictEqual(chromeMock.tabs.created.at(-1)?.url, 'chrome-extension://test/ui/settings.html#proxySection');
     assert.strictEqual(messages.some(m =>
       m.type === 'PROXY_CONFIG_SET' &&
       JSON.stringify(m).match(/username|password|credentialAction":"replace/)
@@ -451,7 +451,7 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(proxyUiJsCode, /style\.cssText/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
   assert.match(appJsCode, /function openProxySettings\(\)/);
-  assert.match(appJsCode, /ui\/settings\.html#proxy/);
+  assert.match(appJsCode, /ui\/settings\.html#proxySection/);
   assert.match(proxyUiJsCode, /if \(!settingsMode\)/);
   assert.match(proxyUiJsCode, /\.filter\(pc => pc\.accepted === true\)/);
   assert.match(proxyUiJsCode, /Manage proxies/);
@@ -466,7 +466,7 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy/);
   assert.match(componentsJsCode, /id="proxySection"/);
   assert.match(settingsJsCode, /scrollToProxyHash/);
-  assert.match(appJsCode, /location\?\.hash !== '#proxy'/);
+  assert.match(appJsCode, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
   assert.doesNotMatch(proxyUiJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);
   assert.doesNotMatch(proxyUiJsCode, /stageCredentialsFromInputs/);
 });

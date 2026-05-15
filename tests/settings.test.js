@@ -427,8 +427,9 @@ test('settings page proxy and zapper management safety', async (t) => {
 
   await t.test('settings page supports direct proxy hash entry points', () => {
     assert.match(componentsJs, /id="proxySection"/);
-    assert.match(appJs, /location\?\.hash !== '#proxy'/);
-    assert.match(appJs, /scrollTo\?\.\(\{ top: pageHeight, behavior: 'smooth' \}\)/);
+    assert.match(appJs, /PROXY_SETTINGS_PATH = 'ui\/settings\.html#proxySection'/);
+    assert.match(appJs, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
+    assert.match(appJs, /scrollIntoView\(\{ behavior, block: 'start' \}\)/);
   });
 
   await t.test('settings statistics panel is local-only and uses stats messages', () => {
@@ -649,21 +650,87 @@ test('settings page proxy and zapper management safety', async (t) => {
     slow.ZAPPER_RULES_GET.resolve({ rules: [] });
   });
 
-  await t.test('settings proxy hash scrolls after synchronous shell render', async () => {
-    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxy' });
+  await t.test('settings proxy hash scrolls proxy header after synchronous shell render', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxySection' });
     await harness.sandbox.ChromaApp.initSharedUI();
-    Object.defineProperty(harness.dom.window.document.documentElement, 'scrollHeight', { configurable: true, value: 2400 });
-    Object.defineProperty(harness.dom.window.document.body, 'scrollHeight', { configurable: true, value: 1800 });
+    const section = harness.dom.window.document.querySelector('#proxySection');
     let scrollOptions = null;
-    harness.sandbox.scrollTo = options => {
+    section.scrollIntoView = options => {
       scrollOptions = options;
     };
 
     harness.sandbox.ChromaApp.scrollToProxyHash();
     await settleDomAsyncWork();
 
-    assert.strictEqual(scrollOptions?.top, 2400);
     assert.strictEqual(scrollOptions?.behavior, 'smooth');
+    assert.strictEqual(scrollOptions?.block, 'start');
+  });
+
+  await t.test('settings proxy hash ignores requestAnimationFrame timestamps', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxySection' });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    let scrollOptions = null;
+    section.scrollIntoView = options => {
+      scrollOptions = options;
+    };
+    harness.sandbox.requestAnimationFrame = callback => {
+      callback(83.1);
+    };
+
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+
+    assert.strictEqual(scrollOptions?.behavior, 'smooth');
+    assert.strictEqual(scrollOptions?.block, 'start');
+  });
+
+  await t.test('settings proxy hash still supports legacy proxy hash', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxy' });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    let scrolled = false;
+    section.scrollIntoView = () => {
+      scrolled = true;
+    };
+
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(scrolled, true);
+  });
+
+  await t.test('settings proxy hash scrolls proxy header again after proxy hydration', async () => {
+    const slow = { PROXY_CONFIG_GET: deferred() };
+    const harness = createSettingsHarness({
+      url: 'chrome-extension://test/ui/settings.html#proxySection',
+      pending: slow
+    });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    const scrollBlocks = [];
+    section.scrollIntoView = options => {
+      scrollBlocks.push(options?.block);
+    };
+    slow.PROXY_CONFIG_GET.resolve([]);
+    await settleDomAsyncWork();
+
+    assert.ok(scrollBlocks.includes('start'));
+  });
+
+  await t.test('settings proxy hash keeps realigning proxy header after delayed layout growth', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxySection' });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    const scrollCalls = [];
+    section.scrollIntoView = options => {
+      scrollCalls.push(options);
+    };
+
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+    await new Promise(resolve => setTimeout(resolve, 180));
+
+    assert.strictEqual(scrollCalls.at(-1)?.behavior, 'auto');
+    assert.strictEqual(scrollCalls.at(-1)?.block, 'start');
   });
 
   await t.test('skeleton CSS includes reduced-motion handling', () => {
