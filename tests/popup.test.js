@@ -427,6 +427,10 @@ test('UI hardening copy', () => {
   assert.match(componentsJsCode, /changes anti-detection network behavior/);
   assert.match(componentsJsCode, /De-AMP Links/);
   assert.match(componentsJsCode, /Redirects supported AMP viewer pages to publisher URLs/);
+  assert.ok(
+    componentsJsCode.indexOf("name: 'Chrome Privacy Hardening'") < componentsJsCode.indexOf("name: 'De-AMP Links'"),
+    'De-AMP Links should render below Chrome Privacy Hardening'
+  );
   assert.match(componentsJsCode, /rowClass: 'fpr-toggle-row'/);
   assert.match(componentsJsCode, /Compat/);
   assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);

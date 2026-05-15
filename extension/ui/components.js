@@ -150,11 +150,6 @@ const ChromaComponents = (() => {
           desc: 'Removes known tracking parameters from page URLs'
         })}
         ${renderToggleRow({
-          inputId: 'toggleDeAmpLinks',
-          name: 'De-AMP Links',
-          desc: 'Redirects supported AMP viewer pages to publisher URLs'
-        })}
-        ${renderToggleRow({
           inputId: 'toggleStripping',
           name: 'YouTube Ad Block',
           desc: 'Strips ads from YouTube API before playback'
@@ -211,6 +206,11 @@ const ChromaComponents = (() => {
           inputId: 'toggleBrowserPrivacyHardening',
           name: 'Chrome Privacy Hardening',
           desc: 'Blocks third-party cookies, keeps DNT off, and disables Chrome ad APIs'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleDeAmpLinks',
+          name: 'De-AMP Links',
+          desc: 'Redirects supported AMP viewer pages to publisher URLs'
         })}
         ${renderToggleRow({
           inputId: 'toggleFprWhitelist',
