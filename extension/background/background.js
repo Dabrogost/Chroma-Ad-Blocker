@@ -109,6 +109,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         webRtcLeakProtection: 'auto',
         fingerprintRandomization: false,
         browserPrivacyHardening: false,
+        trackingUrlCleanup: true,
       },
       statsV2: createDefaultStatsV2(),
       requestLog: [],
@@ -196,6 +197,8 @@ const DEFAULT_RULE_ID_END   = 99999;
 const SUBSCRIPTION_RULE_ID_START = 100000;
 const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
+const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
+const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
 const dynamicRuleClassifications = new Map();
 const STATIC_RULE_ACTION_OVERRIDES = new Map([
   ['custom_static_rules:28', 'allow'],
@@ -269,16 +272,36 @@ export async function syncDynamicRules() {
   try {
     const { config } = await chrome.storage.local.get('config');
     const isAccelerationEnabled = config?.acceleration !== false;
+    const isTrackingUrlCleanupEnabled = config?.trackingUrlCleanup !== false;
+    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
+    const trackingUrlCleanupOptions = {
+      trackingUrlCleanup: isTrackingUrlCleanupEnabled,
+      trackingUrlCleanupExcludedRequestDomains: whitelist
+    };
 
     const stored = await chrome.storage.local.get('dynamicRules');
-    let rules = stored.dynamicRules || getDefaultDynamicRules();
+    let rules = stored.dynamicRules || getDefaultDynamicRules(trackingUrlCleanupOptions);
+
+    const isTrackingCleanupRule = rule =>
+      rule?.id >= TRACKING_URL_CLEANUP_RULE_ID_START &&
+      rule?.id <= TRACKING_URL_CLEANUP_RULE_ID_END;
+    rules = rules.filter(rule => !isTrackingCleanupRule(rule));
+    if (isTrackingUrlCleanupEnabled) {
+      const trackingCleanupRules = getDefaultDynamicRules({
+        ...trackingUrlCleanupOptions,
+        trackingUrlCleanup: true
+      })
+        .filter(isTrackingCleanupRule);
+      rules = [...rules, ...trackingCleanupRules];
+    }
 
     if (!isAccelerationEnabled) {
-      // Reverse logic: Change 'allow' (Anti-Detection) to 'block'
+      // Reverse logic: Change YouTube anti-detection 'allow' rules to 'block'
       // when Acceleration is disabled, so ads are blocked by dynamic rules.
+      // Non-allow rules, such as URL cleanup redirects, must stay intact.
       rules = rules.map(r => ({
         ...r,
-        action: { ...r.action, type: 'block' }
+        action: r.action?.type === 'allow' ? { ...r.action, type: 'block' } : r.action
       }));
     }
 
@@ -351,7 +374,7 @@ export async function syncWhitelistRules() {
 
 // ─── CONFIGURATION VALIDATION ─────
 export function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening', 'trackingUrlCleanup'];
   const webRtcModes = new Set(['off', 'auto', 'balanced', 'strict']);
   const validatedConfig = {};
 

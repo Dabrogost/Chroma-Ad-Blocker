@@ -43,6 +43,7 @@ const ChromaApp = (() => {
   const HEALTH_ISSUE_CLASSES = new Set(['info', 'warning', 'error']);
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
+    ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
     ['toggleStripping',    'stripping',                true],
     ['toggleAcceleration', 'acceleration',             false],
     ['toggleCosmetic',     'cosmetic',                 true],
@@ -590,9 +591,12 @@ const ChromaApp = (() => {
       const chromeMin = health.manifest?.minimumChromeVersion ? `Chrome ${health.manifest.minimumChromeVersion}+` : 'Chrome version unknown';
       versionText.textContent = `${version} \u00b7 ${chromeMin}`;
     }
+    const networkBlockingActive = health.master?.networkBlocking && health.master?.enabled;
+    const trackingUrlCleanupActive = health.master?.trackingUrlCleanup && networkBlockingActive;
 
     addHealthSection(body, 'Core', [
-      ['Network blocking', health.master?.networkBlocking && health.master?.enabled ? 'Active' : 'Disabled', health.master?.networkBlocking && health.master?.enabled ? 'ok' : 'disabled'],
+      ['Network blocking', networkBlockingActive ? 'Active' : 'Disabled', networkBlockingActive ? 'ok' : 'disabled'],
+      ['Tracking URL cleanup', trackingUrlCleanupActive ? 'Active' : 'Disabled', trackingUrlCleanupActive ? 'ok' : 'disabled'],
       ['Static rulesets', `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`, health.dnr?.staticRulesetsOk ? 'ok' : (health.master?.networkBlocking ? 'error' : 'disabled')],
       ['Dynamic rules', `${formatCount(health.dnr?.appliedNetworkRuleCount)} active`, ''],
       ['Whitelist rules', formatCount(health.dnr?.whitelistRuleCount), '']

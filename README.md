@@ -359,6 +359,7 @@ Chroma implements several advanced security measures to ensure extension integri
 |---------|-------------|---------|
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR ruleset blocking. | `true` |
+| `trackingUrlCleanup` | Removes known tracking query parameters from top-level navigation URLs. | `true` |
 | `stripping` | Enables YouTube Ad Stripping (the primary blocker). | `true` |
 | `acceleration` | Enables accelerated ad playback (as a fallback). | `false` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (×4, ×8, ×12, or ×16). | `8` |

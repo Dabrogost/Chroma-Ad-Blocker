@@ -481,7 +481,11 @@ async function handleConfigSet(msg) {
   const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
   if (isDNRActive !== wasDNRActive) {
     await updateDNRState(isDNRActive);
-  } else if (isDNRActive && currentConfig.acceleration !== newConfig.acceleration) {
+  } else if (
+    isDNRActive &&
+    (currentConfig.acceleration !== newConfig.acceleration ||
+     currentConfig.trackingUrlCleanup !== newConfig.trackingUrlCleanup)
+  ) {
     await syncDynamicRules();
   }
 
@@ -499,6 +503,13 @@ async function handleWhitelistGet() {
   return { whitelist };
 }
 
+async function syncDynamicRulesIfNetworkBlockingActive() {
+  const { config = {} } = await chrome.storage.local.get('config');
+  if (config.enabled !== false && config.networkBlocking !== false) {
+    await syncDynamicRules();
+  }
+}
+
 async function handleWhitelistAdd(msg) {
   const { whitelist = [] } = await chrome.storage.local.get('whitelist');
   const domain = normalizeDomain(msg.domain);
@@ -508,6 +519,7 @@ async function handleWhitelistAdd(msg) {
     whitelist.push(domain);
     await chrome.storage.local.set({ whitelist });
     await syncWhitelistRules();
+    await syncDynamicRulesIfNetworkBlockingActive();
   }
   return { ok: true };
 }
@@ -519,6 +531,7 @@ async function handleWhitelistRemove(msg) {
   if (next.length !== whitelist.length) {
     await chrome.storage.local.set({ whitelist: next });
     await syncWhitelistRules();
+    await syncDynamicRulesIfNetworkBlockingActive();
   }
   return { ok: true };
 }

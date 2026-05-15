@@ -5,10 +5,125 @@
  * YouTube from blocking the extension.
  */
 /**
+ * Query parameters removed from top-level navigations when Tracking URL
+ * Cleanup is enabled. Keep this list conservative: only parameters whose
+ * common purpose is cross-site attribution/tracking.
+ */
+const TRACKING_QUERY_PARAMS = [
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'utm_id',
+  'utm_name',
+  'utm_cid',
+  'utm_reader',
+  'utm_viz_id',
+  'utm_pubreferrer',
+  'utm_swu',
+  'fbclid',
+  'gclid',
+  'dclid',
+  'gbraid',
+  'wbraid',
+  'msclkid',
+  'yclid',
+  'mc_cid',
+  'mc_eid',
+  'igshid',
+  'mibextid',
+  'oly_enc_id',
+  'oly_anon_id',
+  'vero_id',
+  '_hsenc',
+  '_hsmi',
+  'spm',
+  'sc_channel',
+  'sc_campaign',
+  'sc_content',
+  'sc_country',
+  'sc_geo',
+  'sc_medium',
+  'sc_outcome'
+];
+
+const TRACKING_QUERY_PARAM_PATTERN = TRACKING_QUERY_PARAMS
+  .map(param => param.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('|');
+
+// Domains where query parameters are frequently meaningful for auth/payment
+// handoff or bot checks. These are intentionally broad safety exclusions.
+const TRACKING_CLEANUP_EXCLUDED_REQUEST_DOMAINS = [
+  'accounts.google.com',
+  'appleid.apple.com',
+  'login.microsoftonline.com',
+  'okta.com',
+  'auth0.com',
+  'github.com',
+  'paypal.com',
+  'stripe.com',
+  'plaid.com',
+  'squareup.com',
+  'chase.com',
+  'bankofamerica.com',
+  'wellsfargo.com',
+  'citi.com',
+  'americanexpress.com',
+  'capitalone.com',
+  'discover.com',
+  'usbank.com'
+];
+
+function isValidExcludedRequestDomain(domain) {
+  if (typeof domain !== 'string' || domain.length < 1 || domain.length > 253) return false;
+  if (domain.startsWith('.') || domain.endsWith('.')) return false;
+  return domain.split('.').every(label =>
+    label.length >= 1 &&
+    label.length <= 63 &&
+    /^[a-z0-9-]+$/i.test(label) &&
+    !label.startsWith('-') &&
+    !label.endsWith('-')
+  );
+}
+
+function getTrackingUrlCleanupRules(extraExcludedRequestDomains = []) {
+  const excludedRequestDomains = Array.from(new Set([
+    ...TRACKING_CLEANUP_EXCLUDED_REQUEST_DOMAINS,
+    ...(Array.isArray(extraExcludedRequestDomains) ? extraExcludedRequestDomains : [])
+      .map(domain => typeof domain === 'string' ? domain.trim().toLowerCase() : domain)
+      .filter(isValidExcludedRequestDomain)
+  ]));
+
+  return [
+    {
+      id: 2000,
+      priority: 2,
+      action: {
+        type: 'redirect',
+        redirect: {
+          transform: {
+            queryTransform: {
+              removeParams: TRACKING_QUERY_PARAMS
+            }
+          }
+        }
+      },
+      condition: {
+        regexFilter: `[?&](${TRACKING_QUERY_PARAM_PATTERN})=`,
+        resourceTypes: ['main_frame'],
+        excludedRequestDomains
+      }
+    }
+  ];
+}
+
+/**
+ * @param {{ trackingUrlCleanup?: boolean, trackingUrlCleanupExcludedRequestDomains?: string[] }} [options]
  * @returns {chrome.declarativeNetRequest.Rule[]}
  */
-export function getDefaultDynamicRules() {
-  return [
+export function getDefaultDynamicRules(options = {}) {
+  const rules = [
     // Allow YouTube's ad measurement ping endpoints (Exemption)
     {
       id: 1001,
@@ -197,4 +312,10 @@ export function getDefaultDynamicRules() {
       },
     },
   ];
+
+  if (options.trackingUrlCleanup === true) {
+    rules.push(...getTrackingUrlCleanupRules(options.trackingUrlCleanupExcludedRequestDomains));
+  }
+
+  return rules;
 }

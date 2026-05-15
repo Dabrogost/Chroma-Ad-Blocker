@@ -79,6 +79,7 @@ function loadHandlers(options = {}) {
     Number,
     encryptAuth: options.encryptAuth || (async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })),
     syncWhitelistRules: options.syncWhitelistRules || (async () => {}),
+    syncDynamicRules: options.syncDynamicRules || (async () => {}),
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
     syncBrowserPrivacyHardening: options.syncBrowserPrivacyHardening || (async () => ({})),
     chrome: {
@@ -260,6 +261,7 @@ test('Security Hardening - handlers.js', async (t) => {
 
   await t.test('normalizes whitelist and FPR whitelist additions', async () => {
     let syncCount = 0;
+    let dynamicSyncCount = 0;
     const sandbox = loadHandlers({
       storage: {
         whitelist: [],
@@ -267,6 +269,9 @@ test('Security Hardening - handlers.js', async (t) => {
       },
       syncWhitelistRules: async () => {
         syncCount++;
+      },
+      syncDynamicRules: async () => {
+        dynamicSyncCount++;
       }
     });
 
@@ -278,6 +283,30 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['example.com']);
     assert.deepStrictEqual(plain(sandbox._storage.fprWhitelist), ['login.example.com']);
     assert.strictEqual(syncCount, 1);
+    assert.strictEqual(dynamicSyncCount, 1);
+  });
+
+  await t.test('whitelist changes do not re-sync dynamic rules when network blocking is disabled', async () => {
+    let syncCount = 0;
+    let dynamicSyncCount = 0;
+    const sandbox = loadHandlers({
+      storage: {
+        config: { networkBlocking: false },
+        whitelist: []
+      },
+      syncWhitelistRules: async () => {
+        syncCount++;
+      },
+      syncDynamicRules: async () => {
+        dynamicSyncCount++;
+      }
+    });
+
+    await sandbox.handleWhitelistAdd({ domain: 'example.com' });
+
+    assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['example.com']);
+    assert.strictEqual(syncCount, 1);
+    assert.strictEqual(dynamicSyncCount, 0);
   });
 
   await t.test('normalizes valid proxy configs and drops invalid entries', async () => {

@@ -145,6 +145,11 @@ const ChromaComponents = (() => {
           desc: 'Blocks known ad and tracker requests'
         })}
         ${renderToggleRow({
+          inputId: 'toggleTrackingUrlCleanup',
+          name: 'Tracking URL Cleanup',
+          desc: 'Removes known tracking parameters from page URLs'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleStripping',
           name: 'YouTube Ad Block',
           desc: 'Strips ads from YouTube API before playback'

@@ -409,7 +409,8 @@ export async function getHealthStatus() {
       stripping: config.stripping !== false,
       acceleration: bool(config.acceleration, false),
       fingerprintRandomization: bool(config.fingerprintRandomization, false),
-      browserPrivacyHardening: bool(config.browserPrivacyHardening, false)
+      browserPrivacyHardening: bool(config.browserPrivacyHardening, false),
+      trackingUrlCleanup: config.trackingUrlCleanup !== false
     },
     dnr: {
       available: !!chrome.declarativeNetRequest,
