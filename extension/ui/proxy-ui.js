@@ -91,8 +91,8 @@ const ChromaProxyUI = (() => {
     ].join('\n');
   }
 
-  async function renderWebRtcControl(container) {
-    const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+  async function renderWebRtcControl(container, config = null) {
+    config = config || (await notifyBackground({ type: MSG.CONFIG_GET })) || {};
     const row = document.createElement('div');
     row.className = 'protection-list proxy-webrtc-control';
 
@@ -125,8 +125,8 @@ const ChromaProxyUI = (() => {
     container.appendChild(row);
   }
 
-  async function renderChromeServiceBypassControl(container) {
-    const config = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+  async function renderChromeServiceBypassControl(container, config = null) {
+    config = config || (await notifyBackground({ type: MSG.CONFIG_GET })) || {};
     const row = document.createElement('div');
     row.className = 'protection-list proxy-chrome-service-bypass-control';
 
@@ -828,8 +828,8 @@ const ChromaProxyUI = (() => {
           container.appendChild(renderProxyCard(pc, i));
         });
       }
-      await renderChromeServiceBypassControl(container);
-      await renderWebRtcControl(container);
+      await renderChromeServiceBypassControl(container, proxyConfigState);
+      await renderWebRtcControl(container, proxyConfigState);
     };
 
     addBtn.onclick = async () => {
