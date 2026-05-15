@@ -331,6 +331,10 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
 
     cards[1].querySelector('.proxy-global-btn').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    assert.strictEqual(cards[0].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), true);
+    assert.strictEqual(cards[0].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
     await settleDomAsyncWork();
 
     assert.strictEqual(config.globalProxyEnabled, true);
@@ -368,6 +372,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
 
     cards[1].querySelector('.proxy-global-btn').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
     await settleDomAsyncWork();
 
     assert.strictEqual(config.globalProxyEnabled, false);

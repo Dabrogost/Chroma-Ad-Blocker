@@ -43,6 +43,37 @@ const ChromaProxyUI = (() => {
     `;
   }
 
+  function updateProxyCardStatusLine(card, pc, isGlobal, ip = null) {
+    const txt = card?.querySelector('.proxy-status-text');
+    const dot = card?.querySelector('.proxy-status-dot');
+    if (!txt || !dot || !pc) return;
+
+    const isEnabled = pc.enabled !== false;
+    if (!isEnabled) {
+      txt.textContent = 'DISABLED';
+      setStatusDotState(dot, 'muted');
+      return;
+    }
+
+    if (!ip && (txt.textContent === 'Checking...' || txt.textContent === 'Verifying...')) return;
+    if (!ip && txt.textContent.startsWith('Offline')) return;
+
+    const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
+    const currentIp = ip || txt.textContent.match(/\((.*?)\)/)?.[1] || '';
+    const ipSuffix = currentIp ? ` (${currentIp})` : '';
+
+    if (isGlobal) {
+      txt.textContent = `GLOBAL PROXY ACTIVE${ipSuffix}`;
+      setStatusDotState(dot, 'online');
+    } else if (activeDomainCount > 0) {
+      txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
+      setStatusDotState(dot, 'online');
+    } else {
+      txt.textContent = `CONNECTED${ipSuffix}`;
+      setStatusDotState(dot, 'online');
+    }
+  }
+
   function updateChromeServiceBypassWarning(globalProxyEnabled) {
     const warning = document.querySelector('.proxy-chrome-service-bypass-warning');
     const toggle = document.querySelector('.proxy-chrome-service-bypass-toggle');
@@ -436,11 +467,26 @@ const ChromaProxyUI = (() => {
 
   async function renderSettingsEditor(container, addBtn, proxyConfigs) {
     const { saveAllConfigs } = createProxyStore(proxyConfigs);
+    let proxyConfigState = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
+
+    const applyGlobalButtonState = () => {
+      const activeGlobalId = proxyConfigState.globalProxyEnabled ? proxyConfigState.globalProxyId : null;
+      container.querySelectorAll('.proxy-card').forEach(card => {
+        const cardProxy = proxyConfigs.find(pc => String(pc.id) === card.dataset.proxyId);
+        const isGlobal = !!(cardProxy && activeGlobalId === cardProxy.id);
+        card.querySelector('.proxy-global-btn')?.classList.toggle('is-active', isGlobal);
+        setHidden(card.querySelector('.proxy-domain-tools'), isGlobal);
+        setHidden(card.querySelector('.proxy-domain-list'), isGlobal);
+        updateProxyCardStatusLine(card, cardProxy, isGlobal);
+      });
+      updateChromeServiceBypassWarning(proxyConfigState.globalProxyEnabled === true);
+    };
 
     const renderProxyCard = (pc, index) => {
       const card = document.createElement('div');
       card.className = 'protection-list proxy-card';
       card.dataset.index = index;
+      card.dataset.proxyId = pc.id;
 
       const inputGroupId = `proxyInputGroup_${index}`;
       const activeGroupId = `proxyActiveGroup_${index}`;
@@ -551,10 +597,9 @@ const ChromaProxyUI = (() => {
         replaceThisCard();
       });
 
-      const updateGlobalUI = async () => {
+      const updateGlobalUI = () => {
         if (!globalBtn) return;
-        const { config: c } = await chrome.storage.local.get('config');
-        const isGlobal = !!(c?.globalProxyEnabled && c?.globalProxyId === pc.id);
+        const isGlobal = !!(proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
         globalBtn.classList.toggle('is-active', isGlobal);
         setGlobalDomainVisibility(isGlobal);
         updateStatusLine();
@@ -570,39 +615,8 @@ const ChromaProxyUI = (() => {
       };
 
       const updateStatusLine = (ip = null) => {
-        const txt = card.querySelector('.proxy-status-text');
-        const dot = card.querySelector('.proxy-status-dot');
-        if (!txt || !dot) return;
-
-        const isEnabled = pc.enabled !== false;
-        if (!isEnabled) {
-          txt.textContent = 'DISABLED';
-          setStatusDotState(dot, 'muted');
-          return;
-        }
-
-        // If we're verifying and don't have an IP yet, don't overwrite the 'Verifying...' state
-        if (!ip && (txt.textContent === 'Checking...' || txt.textContent === 'Verifying...')) return;
-        
-        // If we're offline, don't overwrite unless we have a new IP
-        if (!ip && txt.textContent.startsWith('Offline')) return;
-
         const isGlobal = globalBtn?.classList.contains('is-active') === true;
-        const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
-
-        const currentIp = ip || txt.textContent.match(/\((.*?)\)/)?.[1] || '';
-        const ipSuffix = currentIp ? ` (${currentIp})` : '';
-
-        if (isGlobal) {
-          txt.textContent = `GLOBAL PROXY ACTIVE${ipSuffix}`;
-          setStatusDotState(dot, 'online');
-        } else if (activeDomainCount > 0) {
-          txt.textContent = `ROUTING ${activeDomainCount} DOMAIN${activeDomainCount > 1 ? 'S' : ''}${ipSuffix}`;
-          setStatusDotState(dot, 'online');
-        } else {
-          txt.textContent = `CONNECTED${ipSuffix}`;
-          setStatusDotState(dot, 'online');
-        }
+        updateProxyCardStatusLine(card, pc, isGlobal, ip);
       };
 
       const testConnection = async () => {
@@ -662,32 +676,44 @@ const ChromaProxyUI = (() => {
 
       globalBtn?.addEventListener('click', async () => {
         if (globalBtn.classList.contains('is-active')) {
+          const previousConfig = {
+            globalProxyEnabled: proxyConfigState.globalProxyEnabled,
+            globalProxyId: proxyConfigState.globalProxyId
+          };
+          proxyConfigState.globalProxyEnabled = false;
+          proxyConfigState.globalProxyId = null;
+          applyGlobalButtonState();
           const result = await notifyBackground({
             type: MSG.CONFIG_SET,
             config: { globalProxyEnabled: false, globalProxyId: null }
           });
           if (!result || result.ok === false) {
-            updateStatusLine();
+            Object.assign(proxyConfigState, previousConfig);
+            applyGlobalButtonState();
             return;
           }
-          globalBtn.classList.remove('is-active');
-          setGlobalDomainVisibility(false);
-          updateChromeServiceBypassWarning(false);
-          updateStatusLine();
           return;
         }
 
         if (typeof confirm === 'function' && !confirm(globalProxyConfirmMessage())) {
           return;
         }
+        const previousConfig = {
+          globalProxyEnabled: proxyConfigState.globalProxyEnabled,
+          globalProxyId: proxyConfigState.globalProxyId
+        };
         const wasEnabled = pc.enabled !== false;
         pc.enabled = true;
         updateEnabledUI();
+        proxyConfigState.globalProxyEnabled = true;
+        proxyConfigState.globalProxyId = pc.id;
+        applyGlobalButtonState();
         const saveResult = await saveAllConfigs();
         if (!saveResult || saveResult.ok === false) {
           pc.enabled = wasEnabled;
           updateEnabledUI();
-          updateStatusLine();
+          Object.assign(proxyConfigState, previousConfig);
+          applyGlobalButtonState();
           return;
         }
         const result = await notifyBackground({
@@ -698,29 +724,23 @@ const ChromaProxyUI = (() => {
           } 
         });
         if (!result || result.ok === false) {
-          updateStatusLine();
+          Object.assign(proxyConfigState, previousConfig);
+          applyGlobalButtonState();
           return;
         }
-        document.querySelectorAll('.proxy-global-btn').forEach(btn => {
-          btn.classList.toggle('is-active', btn === globalBtn);
-          const otherCard = btn.closest('.proxy-card');
-          setHidden(otherCard?.querySelector('.proxy-domain-tools'), btn === globalBtn);
-          setHidden(otherCard?.querySelector('.proxy-domain-list'), btn === globalBtn);
-        });
-        updateChromeServiceBypassWarning(true);
-        updateStatusLine();
       });
 
       enabledToggle?.addEventListener('change', async (e) => {
         const wasEnabled = pc.enabled !== false;
         const nextEnabled = e.target.checked;
         pc.enabled = nextEnabled;
+        updateStatusLine();
         const result = await saveAllConfigs();
         if (!result || result.ok === false) {
           pc.enabled = wasEnabled;
           e.target.checked = wasEnabled;
+          updateStatusLine();
         }
-        updateStatusLine();
       });
 
       acceptBtn.addEventListener('click', async () => {
