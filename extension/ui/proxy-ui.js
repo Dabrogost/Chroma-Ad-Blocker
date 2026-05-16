@@ -303,13 +303,14 @@ const ChromaProxyUI = (() => {
     setStatusDotState(dot, 'online');
   }
 
-  function renderPopupProxyCard(pc, index, proxyConfigState, { saveAllConfigs }) {
+  function renderPopupProxyCard(pc, index, proxyConfigState, { saveAllConfigs, applyGlobalButtonState }) {
     const accepted = !!(pc.accepted && pc.host && pc.port);
     const isEnabled = pc.enabled !== false;
     const activeDomainCount = (pc.domains || []).filter(d => d.enabled).length;
     const isGlobal = !!(accepted && proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === pc.id);
     const card = document.createElement('div');
     card.className = 'protection-list proxy-card';
+    card.dataset.proxyId = pc.id;
     card.innerHTML = renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal, isEnabled });
 
     const txt = card.querySelector('.proxy-status-text');
@@ -334,16 +335,23 @@ const ChromaProxyUI = (() => {
       globalBtn.classList.toggle('is-active', isGlobal);
       globalBtn.addEventListener('click', async () => {
         if (globalBtn.classList.contains('is-active')) {
+          const previousConfig = {
+            globalProxyEnabled: proxyConfigState.globalProxyEnabled,
+            globalProxyId: proxyConfigState.globalProxyId
+          };
           const result = await notifyBackground({
             type: MSG.CONFIG_SET,
             config: { globalProxyEnabled: false, globalProxyId: null }
           });
           if (!result || result.ok === false) {
+            Object.assign(proxyConfigState, previousConfig);
+            applyGlobalButtonState();
             setOnlineStatus(getStatusContext());
             return;
           }
-          globalBtn.classList.remove('is-active');
-          await loadProxyRouterUI();
+          proxyConfigState.globalProxyEnabled = false;
+          proxyConfigState.globalProxyId = null;
+          applyGlobalButtonState();
           return;
         }
 
@@ -368,10 +376,13 @@ const ChromaProxyUI = (() => {
         });
         if (!result || result.ok === false) {
           globalBtn.classList.toggle('is-active', isGlobal);
+          applyGlobalButtonState();
           setOnlineStatus(getStatusContext());
           return;
         }
-        await loadProxyRouterUI();
+        proxyConfigState.globalProxyEnabled = true;
+        proxyConfigState.globalProxyId = pc.id;
+        applyGlobalButtonState();
       });
     }
 
@@ -413,19 +424,34 @@ const ChromaProxyUI = (() => {
   }
 
   async function renderPopupSummary(container, addBtn, proxyConfigs) {
-    const { config: proxyConfigState = {} } = await chrome.storage.local.get('config');
+    const proxyConfigState = await notifyBackground({ type: MSG.CONFIG_GET }) || {};
     const { saveAllConfigs } = createProxyStore(proxyConfigs);
     if (addBtn) {
       addBtn.title = 'Manage Proxies';
       addBtn.onclick = openProxySettings;
     }
 
+    const applyGlobalButtonState = () => {
+      const activeGlobalId = proxyConfigState.globalProxyEnabled ? proxyConfigState.globalProxyId : null;
+      container.querySelectorAll('.proxy-card').forEach(card => {
+        const cardProxy = proxyConfigs.find(pc => String(pc.id) === card.dataset.proxyId);
+        if (!cardProxy) return;
+        const isGlobal = activeGlobalId === cardProxy.id;
+        card.querySelector('.proxy-global-btn')?.classList.toggle('is-active', isGlobal);
+        updateProxyCardStatusLine(card, cardProxy, isGlobal);
+      });
+    };
+
     container.innerHTML = '';
     if (proxyConfigs.length === 0) {
       container.innerHTML = '<div class="protection-list proxy-empty">No proxy servers configured.</div>';
     } else {
-      proxyConfigs.forEach((pc, i) => container.appendChild(renderPopupProxyCard(pc, i, proxyConfigState, { saveAllConfigs })));
+      proxyConfigs.forEach((pc, i) => {
+        const card = renderPopupProxyCard(pc, i, proxyConfigState, { saveAllConfigs, applyGlobalButtonState });
+        container.appendChild(card);
+      });
     }
+    applyGlobalButtonState();
 
     const manage = document.createElement('button');
     manage.className = 'reset-btn proxy-manage-btn';

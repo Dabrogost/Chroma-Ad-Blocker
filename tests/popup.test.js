@@ -472,6 +472,11 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /SOCKS username\/password auth is not supported by Chrome here/);
   assert.match(proxyUiJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\./);
   assert.match(proxyUiJsCode, /WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy/);
+  assert.match(proxyUiJsCode, /const proxyConfigState = await notifyBackground\(\{ type: MSG\.CONFIG_GET \}\) \|\| \{\};/);
+  assert.match(proxyUiJsCode, /function renderPopupProxyCard\(pc, index, proxyConfigState, \{ saveAllConfigs, applyGlobalButtonState \}\)/);
+  assert.match(proxyUiJsCode, /card\.dataset\.proxyId = pc\.id/);
+  assert.match(proxyUiJsCode, /applyGlobalButtonState\(\);/);
+  assert.doesNotMatch(proxyUiJsCode, /async function renderPopupSummary[\s\S]*chrome\.storage\.local\.get\('config'\)/);
   assert.match(componentsJsCode, /id="proxySection"/);
   assert.match(settingsJsCode, /scrollToProxyHash/);
   assert.match(appJsCode, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
