@@ -60,15 +60,24 @@ function runScriptlet(name, args, windowOverrides = {}) {
 
 function runFingerprintRandomization({
   language = 'en-US',
-  languages = ['en-US', 'en']
+  languages = ['en-US', 'en'],
+  hostname = 'www.example.com',
+  exposeSeedForTest = false
 } = {}) {
   const storage = new Map();
+  const storageAccesses = [];
   const sandbox = {
     console,
-    location: { hostname: 'www.example.com' },
+    location: { hostname },
     sessionStorage: {
-      getItem: key => storage.get(key) || null,
-      setItem: (key, value) => storage.set(key, String(value))
+      getItem: key => {
+        storageAccesses.push(['getItem', key]);
+        return storage.get(key) || null;
+      },
+      setItem: (key, value) => {
+        storageAccesses.push(['setItem', key]);
+        storage.set(key, String(value));
+      }
     },
     crypto: {
       getRandomValues: buffer => {
@@ -82,6 +91,7 @@ function runFingerprintRandomization({
   sandbox.self = sandbox;
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
+  sandbox.__storageAccesses = storageAccesses;
   vm.createContext(sandbox);
   vm.runInContext(`
     const initialLanguage = ${JSON.stringify(language)};
@@ -102,7 +112,13 @@ function runFingerprintRandomization({
     self.Navigator = Navigator;
     self.navigator = new Navigator();
   `, sandbox);
-  vm.runInContext(fingerprintRandomizationCode, sandbox);
+  const code = exposeSeedForTest
+    ? fingerprintRandomizationCode.replace(
+      'const seed = fnv1a(seedScope + \'|\' + salt);',
+      'const seed = fnv1a(seedScope + \'|\' + salt); self.__chromaFprTestSeedScope = seedScope; self.__chromaFprTestSeed = seed;'
+    )
+    : fingerprintRandomizationCode;
+  vm.runInContext(code, sandbox);
   return sandbox;
 }
 
@@ -533,6 +549,27 @@ test('scriptlet engine userScripts API availability', async (t) => {
 });
 
 test('fingerprint randomization language normalization', async (t) => {
+  await t.test('does not create page-visible storage artifacts', () => {
+    const sandbox = runFingerprintRandomization();
+
+    assert.deepStrictEqual(sandbox.__storageAccesses, []);
+  });
+
+  await t.test('uses full hostname instead of rough public suffix collapsing', () => {
+    const first = runFingerprintRandomization({ hostname: 'shop.example.co.uk', exposeSeedForTest: true });
+    const second = runFingerprintRandomization({ hostname: 'news.other.co.uk', exposeSeedForTest: true });
+
+    assert.strictEqual(first.__chromaFprTestSeedScope, 'shop.example.co.uk');
+    assert.strictEqual(second.__chromaFprTestSeedScope, 'news.other.co.uk');
+    assert.notStrictEqual(first.__chromaFprTestSeed, second.__chromaFprTestSeed);
+  });
+
+  await t.test('does not hard-spoof WebGL vendor or renderer values', () => {
+    assert.doesNotMatch(fingerprintRandomizationCode, /SPOOFED_VENDOR|SPOOFED_RENDERER|UNMASKED_VENDOR_WEBGL|UNMASKED_RENDERER_WEBGL/);
+    assert.doesNotMatch(fingerprintRandomizationCode, /Google Inc\. \(Intel\)|ANGLE \(Intel/);
+    assert.doesNotMatch(fingerprintRandomizationCode, /replaceProtoMethod\(GL[12]\.prototype, 'getParameter'/);
+  });
+
   await t.test('reports the top preferred language plus base language', () => {
     const sandbox = runFingerprintRandomization({
       language: 'EN_us',
