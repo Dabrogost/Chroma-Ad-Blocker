@@ -17,13 +17,14 @@ const backgroundJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension',
     var addSubscription = async () => ({ ok: true });
     var removeSubscription = async () => ({ ok: true });
   `)
-  .replace("import { initScriptletEngine } from '../scriptlets/engine.js';", 'var initScriptletEngine = async () => {};')
+  .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, 'var initScriptletEngine = async () => {}; var recoverUserScriptsIfNeeded = async () => false;')
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, 'var MSG = {};')
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, 'var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };')
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, 'var registerAll = () => {};')
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, '')
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
+  .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = async () => ({}); var syncGeolocationProtection = async () => ({});")
   .replace(/^export\s+/gm, '')
   + '\nglobalThis.__backgroundExports = { updateDNRState, syncDynamicRules, syncWhitelistRules };\n';
 
@@ -149,8 +150,8 @@ test('DNR dynamic ID ranges stay isolated', async (t) => {
 
     await bg.syncDynamicRules();
 
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].removeRuleIds, [1000, 99999]);
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id), [1000, 1001]);
+    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].removeRuleIds), [1000, 99999]);
+    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id)), [1000, 1001]);
   });
 
   await t.test('subscription apply removes only subscription IDs and assigns non-overlapping IDs', async () => {
@@ -209,8 +210,8 @@ test('DNR dynamic ID ranges stay isolated', async (t) => {
     await bg.updateDNRState(true);
 
     assert.deepStrictEqual(plain(bg.updateEnabledRulesetsCalls[0].enableRulesetIds), staticRulesetIds);
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].removeRuleIds, [1000]);
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id), [1000, 1001]);
+    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].removeRuleIds), [1000]);
+    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id)), [1000, 1001]);
     assert.deepStrictEqual(bg.updateDynamicRulesCalls[1].removeRuleIds, [9000000]);
     assert.deepStrictEqual(bg.updateDynamicRulesCalls[1].addRules.map(r => r.id), [9000000]);
   });

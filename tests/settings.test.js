@@ -55,10 +55,11 @@ function createSettingsHarness({
   const defaultHealth = {
     overall: { status: 'healthy', issues: [] },
     manifest: { version: '1.0.1', minimumChromeVersion: '120' },
-    master: { enabled: true, networkBlocking: true },
-    dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true, appliedNetworkRuleCount: 12, whitelistRuleCount: 0 },
+    master: { enabled: true, networkBlocking: true, trackingUrlCleanup: true },
+    dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true, appliedNetworkRuleCount: 12, whitelistRuleCount: 0, trackingUrlCleanupRuleCount: 1, trackingUrlCleanupActive: true },
     subscriptions: { enabled: 1, total: 1, appliedNetwork: 12, cosmetic: 4, scriptlet: 2, withErrors: 0 },
     scriptlets: { apiAvailable: true, registeredUserScriptCount: 2, storedRuleCount: 2 },
+    fpr: { enabled: true, active: true, protectedSurfaces: ['Canvas', 'WebGL', 'Audio', 'Navigator', 'Language APIs'] },
     cosmetic: { subscriptionCosmeticRuleCount: 4, enabledLocalZapperRuleCount: 0, localZapperRuleCount: 0 },
     proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, globalProxyEnabled: false, globalProxyConfigured: false },
     webrtc: { available: true, mode: 'auto', protected: true },
@@ -330,6 +331,10 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
 
     cards[1].querySelector('.proxy-global-btn').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    assert.strictEqual(cards[0].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), true);
+    assert.strictEqual(cards[0].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
     await settleDomAsyncWork();
 
     assert.strictEqual(config.globalProxyEnabled, true);
@@ -367,6 +372,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), true);
 
     cards[1].querySelector('.proxy-global-btn').dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    assert.strictEqual(cards[1].querySelector('.proxy-global-btn').classList.contains('is-active'), false);
+    assert.strictEqual(cards[1].querySelector('.proxy-domain-tools').classList.contains('is-hidden'), false);
     await settleDomAsyncWork();
 
     assert.strictEqual(config.globalProxyEnabled, false);
@@ -420,8 +427,9 @@ test('settings page proxy and zapper management safety', async (t) => {
 
   await t.test('settings page supports direct proxy hash entry points', () => {
     assert.match(componentsJs, /id="proxySection"/);
-    assert.match(appJs, /location\?\.hash !== '#proxy'/);
-    assert.match(appJs, /scrollIntoView\(\{ behavior: 'smooth', block: 'start' \}\)/);
+    assert.match(appJs, /PROXY_SETTINGS_PATH = 'ui\/settings\.html#proxySection'/);
+    assert.match(appJs, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
+    assert.match(appJs, /scrollIntoView\(\{ behavior, block: 'start' \}\)/);
   });
 
   await t.test('settings statistics panel is local-only and uses stats messages', () => {
@@ -495,6 +503,9 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
     assert.match(success.dom.window.document.querySelector('#healthOverallLabel').textContent, /Healthy/);
     assert.ok(success.dom.window.document.querySelector('#healthPanelBody .health-section'));
+    assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /De-AMP links\s*Disabled/);
+    assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /Fingerprint Randomization\s*Active/);
+    assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /Language APIs/);
 
     const failure = createSettingsHarness({ responses: { HEALTH_GET: null } });
     await failure.sandbox.ChromaApp.initSharedUI();
@@ -543,8 +554,51 @@ test('settings page proxy and zapper management safety', async (t) => {
     const bodyText = harness.dom.window.document.querySelector('#healthPanelBody').textContent;
 
     assert.match(bodyText, /UserScripts API\s*Unavailable/i);
+    assert.match(bodyText, /Registered scripts\s*Unavailable/i);
     assert.match(bodyText, /Enable Allow User Scripts/i);
     assert.match(bodyText, /Chrome extension details/i);
+  });
+
+  await t.test('health panel reports Tracking URL Cleanup when its DNR rule is missing', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          overall: {
+            status: 'degraded',
+            issues: [{
+              severity: 'warning',
+              area: 'trackingUrlCleanup',
+              message: 'Tracking URL Cleanup is enabled but its DNR redirect rule is not registered.',
+              action: 'Reload the extension, or turn Tracking URL Cleanup off and on.'
+            }]
+          },
+          manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+          master: { enabled: true, networkBlocking: true, trackingUrlCleanup: true },
+          dnr: {
+            enabledStaticRulesets: ['a'],
+            expectedStaticRulesets: ['a'],
+            staticRulesetsOk: true,
+            appliedNetworkRuleCount: 12,
+            whitelistRuleCount: 0,
+            trackingUrlCleanupRuleCount: 0,
+            trackingUrlCleanupActive: false
+          },
+          subscriptions: { enabled: 1, total: 1, appliedNetwork: 12, cosmetic: 4, scriptlet: 0, withErrors: 0 },
+          scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 0 },
+          cosmetic: { subscriptionCosmeticRuleCount: 4, enabledLocalZapperRuleCount: 0, localZapperRuleCount: 0 },
+          proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, globalProxyEnabled: false, globalProxyConfigured: false },
+          webrtc: { available: true, mode: 'auto', protected: true },
+          requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const bodyText = harness.dom.window.document.querySelector('#healthPanelBody').textContent;
+    assert.match(bodyText, /Tracking URL cleanup\s*Not registered/i);
+    assert.match(bodyText, /DNR redirect rule is not registered/i);
   });
 
   await t.test('stats skeleton is replaced on success and on unavailable response', async () => {
@@ -639,19 +693,87 @@ test('settings page proxy and zapper management safety', async (t) => {
     slow.ZAPPER_RULES_GET.resolve({ rules: [] });
   });
 
-  await t.test('settings proxy hash scrolls after synchronous shell render', async () => {
+  await t.test('settings proxy hash scrolls proxy header after synchronous shell render', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxySection' });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    let scrollOptions = null;
+    section.scrollIntoView = options => {
+      scrollOptions = options;
+    };
+
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(scrollOptions?.behavior, 'smooth');
+    assert.strictEqual(scrollOptions?.block, 'start');
+  });
+
+  await t.test('settings proxy hash ignores requestAnimationFrame timestamps', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxySection' });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    let scrollOptions = null;
+    section.scrollIntoView = options => {
+      scrollOptions = options;
+    };
+    harness.sandbox.requestAnimationFrame = callback => {
+      callback(83.1);
+    };
+
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+
+    assert.strictEqual(scrollOptions?.behavior, 'smooth');
+    assert.strictEqual(scrollOptions?.block, 'start');
+  });
+
+  await t.test('settings proxy hash still supports legacy proxy hash', async () => {
     const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxy' });
     await harness.sandbox.ChromaApp.initSharedUI();
     const section = harness.dom.window.document.querySelector('#proxySection');
     let scrolled = false;
-    section.scrollIntoView = options => {
-      scrolled = options?.block === 'start';
+    section.scrollIntoView = () => {
+      scrolled = true;
     };
 
     harness.sandbox.ChromaApp.scrollToProxyHash();
     await settleDomAsyncWork();
 
     assert.strictEqual(scrolled, true);
+  });
+
+  await t.test('settings proxy hash scrolls proxy header again after proxy hydration', async () => {
+    const slow = { PROXY_CONFIG_GET: deferred() };
+    const harness = createSettingsHarness({
+      url: 'chrome-extension://test/ui/settings.html#proxySection',
+      pending: slow
+    });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    const scrollBlocks = [];
+    section.scrollIntoView = options => {
+      scrollBlocks.push(options?.block);
+    };
+    slow.PROXY_CONFIG_GET.resolve([]);
+    await settleDomAsyncWork();
+
+    assert.ok(scrollBlocks.includes('start'));
+  });
+
+  await t.test('settings proxy hash keeps realigning proxy header after delayed layout growth', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxySection' });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const section = harness.dom.window.document.querySelector('#proxySection');
+    const scrollCalls = [];
+    section.scrollIntoView = options => {
+      scrollCalls.push(options);
+    };
+
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+    await new Promise(resolve => setTimeout(resolve, 180));
+
+    assert.strictEqual(scrollCalls.at(-1)?.behavior, 'auto');
+    assert.strictEqual(scrollCalls.at(-1)?.block, 'start');
   });
 
   await t.test('skeleton CSS includes reduced-motion handling', () => {

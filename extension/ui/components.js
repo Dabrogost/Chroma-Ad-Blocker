@@ -171,6 +171,11 @@ const ChromaComponents = (() => {
           desc: 'Hides banners, sponsored slots, overlays'
         })}
         ${renderToggleRow({
+          inputId: 'toggleTrackingUrlCleanup',
+          name: 'Tracking URL Cleanup',
+          desc: 'Removes known tracking parameters from page URLs'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleShorts',
           name: 'Hide YT Shorts',
           desc: 'Hides Shorts shelves and sidebar tabs'
@@ -192,9 +197,25 @@ const ChromaComponents = (() => {
         })}
         ${renderToggleRow({
           inputId: 'toggleFingerprintRandomization',
+          rowClass: 'fpr-toggle-row',
           name: 'Fingerprint Randomization',
-          badge: ' <span class="badge purple" title="Experimental &mdash; opt-in">Beta</span>',
-          desc: 'Per-site noise to break cross-site tracking (does not lower uniqueness scores)'
+          badge: '<span class="badge purple" title="May affect bot checks, captchas, or device checks">Compat</span>',
+          desc: 'Per-site canvas, audio, WebGL, navigator, and language API farbling'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleBrowserPrivacyHardening',
+          name: 'Chrome Privacy Hardening',
+          desc: 'Blocks third-party cookies, keeps DNT off, and disables Chrome ad APIs'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleGeolocationProtection',
+          name: 'Geolocation Protection',
+          desc: 'Blocks sites from accessing your real physical location'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleDeAmpLinks',
+          name: 'De-AMP Links',
+          desc: 'Redirects supported AMP viewer pages to publisher URLs'
         })}
         ${renderToggleRow({
           inputId: 'toggleFprWhitelist',
@@ -386,7 +407,7 @@ const ChromaComponents = (() => {
           <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" target="_blank" class="github-link" title="View Source on GitHub">
             ${githubIcon}
           </a>
-          <span class="version" id="versionText">v1.1.0 &middot; MV3</span>
+          <span class="version" id="versionText">v1.2.0 &middot; MV3</span>
         </div>
       </footer>
     `;

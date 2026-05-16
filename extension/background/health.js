@@ -11,14 +11,30 @@ import {
   getWebRtcLeakProtectionStatus,
   syncWebRtcLeakProtection
 } from './webrtc.js';
+import {
+  getBrowserPrivacyHardeningStatus,
+  getGeolocationProtectionStatus,
+  syncBrowserPrivacyHardening,
+  syncGeolocationProtection
+} from './browserPrivacy.js';
+import { syncUserScripts } from '../scriptlets/engine.js';
 
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END = 99999;
+const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
+const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
 const SUBSCRIPTION_RULE_ID_START = 100000;
 const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
 const REQUEST_LOG_MAX_ENTRIES = 500;
 const FPR_CONTENT_SCRIPT_ID = 'chroma_fpr';
+const FPR_PROTECTED_SURFACES = [
+  'Canvas',
+  'WebGL',
+  'Audio',
+  'Navigator',
+  'Language APIs'
+];
 const USER_SCRIPTS_ACTION = 'Open Chrome extension details and enable Allow User Scripts.';
 
 function asArray(value) {
@@ -196,22 +212,38 @@ async function getScriptletStatus(storedRuleCount) {
   return status;
 }
 
+function shouldRetryScriptletRegistration(scriptlets, storedRuleCount) {
+  return (
+    storedRuleCount > 0 &&
+    scriptlets?.apiAvailable === true &&
+    scriptlets?.registeredUserScriptCount === 0
+  );
+}
+
 async function getFprStatus(fprEnabled) {
   const status = {
     enabled: fprEnabled,
     registered: null,
+    active: false,
+    registrationStatus: fprEnabled ? 'unknown' : 'disabled',
+    protectedSurfaces: FPR_PROTECTED_SURFACES,
     error: null
   };
 
   if (!fprEnabled) return status;
 
   try {
-    const registered = typeof chrome.scripting?.getRegisteredContentScripts === 'function'
-      ? await chrome.scripting.getRegisteredContentScripts({ ids: [FPR_CONTENT_SCRIPT_ID] })
-      : [];
+    if (typeof chrome.scripting?.getRegisteredContentScripts !== 'function') {
+      status.registrationStatus = 'unavailable';
+      return status;
+    }
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [FPR_CONTENT_SCRIPT_ID] });
     status.registered = asArray(registered).some(script => script?.id === FPR_CONTENT_SCRIPT_ID);
+    status.active = status.registered === true;
+    status.registrationStatus = status.active ? 'active' : 'missing';
   } catch (err) {
     status.registered = null;
+    status.registrationStatus = 'unavailable';
     status.error = sanitizeText(err?.message || err);
   }
 
@@ -226,13 +258,18 @@ function computeOverall({
   staticRulesetsOk,
   expectedStaticRulesets,
   enabledStaticRulesets,
+  trackingUrlCleanupEnabled,
+  trackingUrlCleanupRuleCount,
   storedScriptletRuleCount,
   scriptlets,
   subscriptionErrors,
   debugLoggingAvailable,
   webrtc,
   globalProxyEnabled,
-  globalProxyConfigured
+  globalProxyConfigured,
+  fpr,
+  browserPrivacy,
+  geolocation
 }) {
   const issues = [];
 
@@ -274,6 +311,27 @@ function computeOverall({
       'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
       USER_SCRIPTS_ACTION
     ));
+  } else if (shouldRetryScriptletRegistration(scriptlets, storedScriptletRuleCount)) {
+    issues.push(makeIssue(
+      'warning',
+      'scriptlets',
+      'Scriptlet rules are parsed but not registered.',
+      'Open Chroma settings or reload the extension to retry scriptlet registration.'
+    ));
+  }
+
+  if (
+    masterEnabled &&
+    networkBlocking &&
+    trackingUrlCleanupEnabled &&
+    trackingUrlCleanupRuleCount === 0
+  ) {
+    issues.push(makeIssue(
+      'warning',
+      'trackingUrlCleanup',
+      'Tracking URL Cleanup is enabled but its DNR redirect rule is not registered.',
+      'Reload the extension, or turn Tracking URL Cleanup off and on.'
+    ));
   }
 
   if (subscriptionErrors.length > 0) {
@@ -295,6 +353,54 @@ function computeOverall({
       'webrtc',
       'Global proxy is enabled, but WebRTC leak protection is not fully active.',
       'Set WebRTC Leak Protection to Auto or Strict.'
+    ));
+  }
+
+  if (browserPrivacy?.enabled && !browserPrivacy.available) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy hardening could not inspect every Chrome privacy setting.',
+      'Check browser support for Chrome privacy settings.'
+    ));
+  } else if (browserPrivacy?.enabled && browserPrivacy.blockedCount > 0) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy hardening is partially controlled by another extension or browser policy.',
+      'Disable the conflicting extension or browser policy if you want Chroma to control these settings.'
+    ));
+  } else if (browserPrivacy?.enabled && !browserPrivacy.active) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy hardening is not fully active.',
+      'Turn Chrome Privacy Hardening off and on, or reload the extension.'
+    ));
+  }
+
+  if (geolocation?.enabled && !geolocation.available) {
+    issues.push(makeIssue(
+      'warning',
+      'geolocation',
+      'Geolocation protection could not inspect Chrome location settings.',
+      'Check browser support for Chrome content settings.'
+    ));
+  } else if (geolocation?.enabled && !geolocation.active) {
+    issues.push(makeIssue(
+      'warning',
+      'geolocation',
+      'Geolocation protection is enabled but Chrome location access is not blocked.',
+      'Turn Geolocation Protection off and on, or reload the extension.'
+    ));
+  }
+
+  if (fpr?.enabled && fpr.active !== true) {
+    issues.push(makeIssue(
+      'warning',
+      'fingerprint',
+      'Fingerprint Randomization is enabled but its MAIN-world script is not registered.',
+      'Turn Fingerprint Randomization off and on, or reload the extension.'
     ));
   }
 
@@ -337,6 +443,11 @@ export async function getHealthStatus() {
   const dnrSnapshot = await getDnrSnapshot(masterEnabled, networkBlocking, expectedStaticRulesets);
   const dynamicRules = asArray(dnrSnapshot.dynamicRules);
   const defaultDynamicRuleCount = countByRange(dynamicRules, DEFAULT_RULE_ID_START, DEFAULT_RULE_ID_END);
+  const trackingUrlCleanupRuleCount = countByRange(
+    dynamicRules,
+    TRACKING_URL_CLEANUP_RULE_ID_START,
+    TRACKING_URL_CLEANUP_RULE_ID_END
+  );
   const subscriptionDynamicRuleCount = countByRange(dynamicRules, SUBSCRIPTION_RULE_ID_START, SUBSCRIPTION_RULE_ID_END);
   const whitelistRuleCount = countByRange(dynamicRules, WHITELIST_RULE_ID_START);
 
@@ -357,14 +468,22 @@ export async function getHealthStatus() {
   const activeProxies = configuredProxies.filter(isActiveProxy);
   const globalProxyId = config.globalProxyId;
   const globalProxyConfigured = globalProxyId != null && activeProxies.some(pc => pc.id === globalProxyId);
-  const scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
+  let scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
+  if (shouldRetryScriptletRegistration(scriptlets, subscriptionScriptletRules.length)) {
+    await syncUserScripts();
+    scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
+  }
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
   await syncWebRtcLeakProtection(config, proxyConfigs);
+  await syncBrowserPrivacyHardening(config);
+  await syncGeolocationProtection(config);
   const webrtc = summarizeWebRtcStatus(
     await getWebRtcLeakProtectionStatus(config, proxyConfigs),
     config
   );
+  const browserPrivacy = await getBrowserPrivacyHardeningStatus(config);
+  const geolocation = await getGeolocationProtectionStatus(config);
 
   const health = {
     generatedAt: Date.now(),
@@ -378,7 +497,11 @@ export async function getHealthStatus() {
       cosmetic: config.cosmetic !== false,
       stripping: config.stripping !== false,
       acceleration: bool(config.acceleration, false),
-      fingerprintRandomization: bool(config.fingerprintRandomization, false)
+      fingerprintRandomization: bool(config.fingerprintRandomization, false),
+      browserPrivacyHardening: bool(config.browserPrivacyHardening, false),
+      geolocationProtection: bool(config.geolocationProtection, false),
+      trackingUrlCleanup: config.trackingUrlCleanup !== false,
+      deAmpLinks: bool(config.deAmpLinks, false)
     },
     dnr: {
       available: !!chrome.declarativeNetRequest,
@@ -387,6 +510,8 @@ export async function getHealthStatus() {
       staticRulesetsOk: !!dnrSnapshot.staticRulesetsOk,
       dynamicRuleCount: dynamicRules.length,
       defaultDynamicRuleCount,
+      trackingUrlCleanupRuleCount,
+      trackingUrlCleanupActive: masterEnabled && networkBlocking && config.trackingUrlCleanup !== false && trackingUrlCleanupRuleCount > 0,
       subscriptionDynamicRuleCount,
       whitelistRuleCount,
       appliedNetworkRuleCount: defaultDynamicRuleCount + subscriptionDynamicRuleCount + whitelistRuleCount,
@@ -429,6 +554,8 @@ export async function getHealthStatus() {
       globalProxyConfigured
     },
     webrtc,
+    browserPrivacy,
+    geolocation,
     whitelist: {
       domainCount: asArray(storage.whitelist).length,
       fprDomainCount: asArray(storage.fprWhitelist).length
@@ -452,13 +579,18 @@ export async function getHealthStatus() {
     staticRulesetsOk: health.dnr.staticRulesetsOk,
     expectedStaticRulesets,
     enabledStaticRulesets: health.dnr.enabledStaticRulesets,
+    trackingUrlCleanupEnabled: health.master.trackingUrlCleanup,
+    trackingUrlCleanupRuleCount: health.dnr.trackingUrlCleanupRuleCount,
     storedScriptletRuleCount: health.scriptlets.storedRuleCount,
     scriptlets: health.scriptlets,
     subscriptionErrors,
     debugLoggingAvailable: requestLogAvailable,
     webrtc,
     globalProxyEnabled: health.proxy.globalProxyEnabled,
-    globalProxyConfigured
+    globalProxyConfigured,
+    fpr,
+    browserPrivacy,
+    geolocation
   });
 
   return health;

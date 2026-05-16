@@ -19,13 +19,14 @@ const backgroundJsCode = backgroundJsCodeRaw
     var addSubscription         = async () => ({ ok: true });
     var removeSubscription      = async () => ({ ok: true });
   `)
-  .replace("import { initScriptletEngine } from '../scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;")
+  .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
+  .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = async () => ({}); var syncGeolocationProtection = async () => ({});")
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -78,7 +79,10 @@ function loadHandlers(options = {}) {
     Number,
     encryptAuth: options.encryptAuth || (async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })),
     syncWhitelistRules: options.syncWhitelistRules || (async () => {}),
+    syncDynamicRules: options.syncDynamicRules || (async () => {}),
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
+    syncBrowserPrivacyHardening: options.syncBrowserPrivacyHardening || (async () => ({})),
+    syncGeolocationProtection: options.syncGeolocationProtection || (async () => ({})),
     chrome: {
       storage: {
         local: {
@@ -258,6 +262,7 @@ test('Security Hardening - handlers.js', async (t) => {
 
   await t.test('normalizes whitelist and FPR whitelist additions', async () => {
     let syncCount = 0;
+    let dynamicSyncCount = 0;
     const sandbox = loadHandlers({
       storage: {
         whitelist: [],
@@ -265,6 +270,9 @@ test('Security Hardening - handlers.js', async (t) => {
       },
       syncWhitelistRules: async () => {
         syncCount++;
+      },
+      syncDynamicRules: async () => {
+        dynamicSyncCount++;
       }
     });
 
@@ -276,6 +284,30 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['example.com']);
     assert.deepStrictEqual(plain(sandbox._storage.fprWhitelist), ['login.example.com']);
     assert.strictEqual(syncCount, 1);
+    assert.strictEqual(dynamicSyncCount, 1);
+  });
+
+  await t.test('whitelist changes do not re-sync dynamic rules when network blocking is disabled', async () => {
+    let syncCount = 0;
+    let dynamicSyncCount = 0;
+    const sandbox = loadHandlers({
+      storage: {
+        config: { networkBlocking: false },
+        whitelist: []
+      },
+      syncWhitelistRules: async () => {
+        syncCount++;
+      },
+      syncDynamicRules: async () => {
+        dynamicSyncCount++;
+      }
+    });
+
+    await sandbox.handleWhitelistAdd({ domain: 'example.com' });
+
+    assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['example.com']);
+    assert.strictEqual(syncCount, 1);
+    assert.strictEqual(dynamicSyncCount, 0);
   });
 
   await t.test('normalizes valid proxy configs and drops invalid entries', async () => {

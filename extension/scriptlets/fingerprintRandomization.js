@@ -6,15 +6,15 @@
  * which gives the same ordering guarantee as a manifest content_script — i.e.
  * the patches install BEFORE any page script runs and snapshots prototypes.
  *
- * Strategy: Brave-style farbling. Per-session × per-eTLD+1 deterministic seed
+ * Strategy: Brave-style farbling. Per-document × per-host deterministic seed
  * adds sub-perceptual noise to canvas/audio/WebGL reads and clamps a small set
- * of navigator fields. Goal is to randomize the fingerprint hash per site/per
- * session so cross-site correlation breaks — NOT to reduce uniqueness scores
+ * of navigator fields. Goal is to randomize the fingerprint hash per host/per
+ * page load so cross-site correlation breaks — NOT to reduce uniqueness scores
  * on tests like amiunique. Wrappers are Proxy-based so .name/.length/typeof
  * and Function.prototype.toString all match native, defeating standard probes.
  *
  * Vectors: canvas2d, WebGL1+2, AudioBuffer, Navigator (hwConcurrency,
- * deviceMemory, userAgentData high-entropy values).
+ * deviceMemory, language(s), userAgentData high-entropy values).
  *
  * Out of band: when this scriptlet is not registered (toggle off), the page
  * sees a vanilla environment — zero observable hooks.
@@ -44,36 +44,29 @@
     const AudioBuf = self.AudioBuffer;
     const _Navigator = self.Navigator;
 
-    // ─── Seed derivation: per-session × per-eTLD+1 ─────
-    // Approximate eTLD+1 with last two labels (good enough; ccTLDs like
-    // .co.uk over-collapse to .co.uk which is fine — same site → same seed).
+    // ─── Seed derivation: per-document × full hostname ─────
+    // Avoid rough eTLD+1 guessing. Without the public suffix list, collapsing
+    // hostnames can accidentally link unrelated sites such as *.co.uk.
     let host = '';
-    try { host = self.location.hostname || ''; } catch (e) {}
-    const labels = host.split('.');
-    const site = labels.length >= 2 ? labels.slice(-2).join('.') : host;
+    try { host = String(self.location.hostname || '').toLowerCase(); } catch (e) {}
+    const seedScope = host;
 
-    let salt = '0';
+    let salt = '';
     try {
-      salt = self.sessionStorage.getItem('__chroma_afp_s');
-      if (!salt) {
-        const buf = new _Uint8Array(8);
-        _crypto.getRandomValues(buf);
-        salt = '';
-        for (let i = 0; i < buf.length; i++) {
-          const h = buf[i].toString(16);
-          salt += h.length < 2 ? '0' + h : h;
-        }
-        self.sessionStorage.setItem('__chroma_afp_s', salt);
+      const buf = new _Uint8Array(8);
+      _crypto.getRandomValues(buf);
+      for (let i = 0; i < buf.length; i++) {
+        const h = buf[i].toString(16);
+        salt += h.length < 2 ? '0' + h : h;
       }
     } catch (e) {
       // Sandboxed iframes etc. — fall back to a fresh random seed; consistency
-      // within this frame only.
+      // within this document only.
       try {
-        const buf = new _Uint8Array(8);
-        _crypto.getRandomValues(buf);
-        salt = '';
-        for (let i = 0; i < buf.length; i++) salt += buf[i].toString(16);
-      } catch (e2) {}
+        salt = String(Date.now()) + ':' + String(Math.random());
+      } catch (e2) {
+        salt = '0';
+      }
     }
 
     function fnv1a(str) {
@@ -84,7 +77,7 @@
       }
       return h >>> 0;
     }
-    const seed = fnv1a(site + '|' + salt);
+    const seed = fnv1a(seedScope + '|' + salt);
 
     // ─── Wrapper toolkit: Proxy + native-toString camouflage ─────
     const wrappedSet = new _WeakSet();
@@ -271,23 +264,8 @@
 
     // ─── Vector 2: WebGL ─────
     try {
-      // Generic, popular ANGLE values. Goal: collapse all Chroma+AF users
-      // into a single anonymity bucket on the Windows bucket. (Linux/Mac
-      // users still benefit — collapsing a small extension userbase to a
-      // single value is a net entropy reduction.)
-      const SPOOFED_VENDOR = 'Google Inc. (Intel)';
-      const SPOOFED_RENDERER = 'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)';
-      const UNMASKED_VENDOR_WEBGL = 0x9245;
-      const UNMASKED_RENDERER_WEBGL = 0x9246;
-
-      function makeGetParameterWrapper(orig) {
-        return wrap(orig, function (t, thisArg, args) {
-          const pname = args[0];
-          if (pname === UNMASKED_VENDOR_WEBGL) return SPOOFED_VENDOR;
-          if (pname === UNMASKED_RENDERER_WEBGL) return SPOOFED_RENDERER;
-          return _Reflect.apply(t, thisArg, args);
-        });
-      }
+      // Do not hard-spoof WebGL vendor/renderer. A fake fixed GPU can be more
+      // identifying than the native value when it conflicts with the platform.
       function makeReadPixelsWrapper(orig) {
         return wrap(orig, function (t, thisArg, args) {
           const r = _Reflect.apply(t, thisArg, args);
@@ -313,11 +291,9 @@
       }
 
       if (GL1) {
-        replaceProtoMethod(GL1.prototype, 'getParameter', makeGetParameterWrapper);
         replaceProtoMethod(GL1.prototype, 'readPixels', makeReadPixelsWrapper);
       }
       if (GL2) {
-        replaceProtoMethod(GL2.prototype, 'getParameter', makeGetParameterWrapper);
         replaceProtoMethod(GL2.prototype, 'readPixels', makeReadPixelsWrapper);
       }
     } catch (e) {
@@ -378,6 +354,52 @@
       // is a no-op if the descriptor isn't a getter.
       replaceProtoGetter(_Navigator.prototype, 'deviceMemory', function (origGet) {
         return wrap(origGet, function () { return 8; });
+      });
+
+      // Language preferences can be a high-entropy ordered list. Preserve the
+      // primary locale for compatibility, but collapse the exposed preference
+      // list to the primary tag plus its base language.
+      function normalizeLanguageTag(value) {
+        if (typeof value !== 'string') return null;
+        const clean = value.trim().replace(/_/g, '-');
+        if (!clean) return null;
+        const parts = clean.split('-').filter(Boolean);
+        if (!parts.length || !/^[a-z]{2,3}$/i.test(parts[0])) return null;
+        const language = parts[0].toLowerCase();
+        const region = parts.find(function (part, index) {
+          return index > 0 && /^[a-z]{2}$/i.test(part);
+        });
+        return region ? language + '-' + region.toUpperCase() : language;
+      }
+
+      function getNativeLanguageFallback() {
+        try {
+          const nativeLanguages = self.navigator && self.navigator.languages;
+          if (nativeLanguages && nativeLanguages.length) {
+            const fromList = normalizeLanguageTag(nativeLanguages[0]);
+            if (fromList) return fromList;
+          }
+        } catch (e) {}
+        try {
+          const fromLanguage = normalizeLanguageTag(self.navigator && self.navigator.language);
+          if (fromLanguage) return fromLanguage;
+        } catch (e) {}
+        return 'en-US';
+      }
+
+      const normalizedLanguage = getNativeLanguageFallback();
+      const baseLanguage = normalizedLanguage.split('-')[0];
+      const normalizedLanguages = _Object.freeze(
+        normalizedLanguage === baseLanguage
+          ? [baseLanguage]
+          : [normalizedLanguage, baseLanguage]
+      );
+
+      replaceProtoGetter(_Navigator.prototype, 'language', function (origGet) {
+        return wrap(origGet, function () { return normalizedLanguage; });
+      });
+      replaceProtoGetter(_Navigator.prototype, 'languages', function (origGet) {
+        return wrap(origGet, function () { return normalizedLanguages; });
       });
 
       // userAgentData.getHighEntropyValues: drop high-entropy fields.

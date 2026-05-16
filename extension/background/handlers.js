@@ -28,6 +28,7 @@ import {
 import { runProxyTest } from './proxy.js';
 import { getHealthStatus } from './health.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';
+import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';
 import {
   exportStats,
   getStatsSnapshot,
@@ -474,12 +475,18 @@ async function handleConfigSet(msg) {
   const newConfig = { ...currentConfig, ...validated };
   await chrome.storage.local.set({ config: newConfig });
   await syncWebRtcLeakProtection(newConfig, proxyConfigs);
+  await syncBrowserPrivacyHardening(newConfig);
+  await syncGeolocationProtection(newConfig);
 
   const wasDNRActive = currentConfig.enabled !== false && currentConfig.networkBlocking !== false;
   const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
   if (isDNRActive !== wasDNRActive) {
     await updateDNRState(isDNRActive);
-  } else if (isDNRActive && currentConfig.acceleration !== newConfig.acceleration) {
+  } else if (
+    isDNRActive &&
+    (currentConfig.acceleration !== newConfig.acceleration ||
+     currentConfig.trackingUrlCleanup !== newConfig.trackingUrlCleanup)
+  ) {
     await syncDynamicRules();
   }
 
@@ -497,6 +504,13 @@ async function handleWhitelistGet() {
   return { whitelist };
 }
 
+async function syncDynamicRulesIfNetworkBlockingActive() {
+  const { config = {} } = await chrome.storage.local.get('config');
+  if (config.enabled !== false && config.networkBlocking !== false) {
+    await syncDynamicRules();
+  }
+}
+
 async function handleWhitelistAdd(msg) {
   const { whitelist = [] } = await chrome.storage.local.get('whitelist');
   const domain = normalizeDomain(msg.domain);
@@ -506,6 +520,7 @@ async function handleWhitelistAdd(msg) {
     whitelist.push(domain);
     await chrome.storage.local.set({ whitelist });
     await syncWhitelistRules();
+    await syncDynamicRulesIfNetworkBlockingActive();
   }
   return { ok: true };
 }
@@ -517,6 +532,7 @@ async function handleWhitelistRemove(msg) {
   if (next.length !== whitelist.length) {
     await chrome.storage.local.set({ whitelist: next });
     await syncWhitelistRules();
+    await syncDynamicRulesIfNetworkBlockingActive();
   }
   return { ok: true };
 }

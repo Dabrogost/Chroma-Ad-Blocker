@@ -16,6 +16,10 @@ const engineCode = fs.readFileSync(
   .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?\s*/g, '')
   .replace(/^export\s+/gm, '');
 
+const fingerprintRandomizationCode = fs.readFileSync(
+  path.join(__dirname, '..', 'extension', 'scriptlets', 'fingerprintRandomization.js'), 'utf8'
+);
+
 const plain = value => JSON.parse(JSON.stringify(value));
 
 const libCode = fs.readFileSync(
@@ -51,6 +55,70 @@ function runScriptlet(name, args, windowOverrides = {}) {
   vm.createContext(sandbox);
   vm.runInContext(libCode, sandbox);
   vm.runInContext(`${name}(${JSON.stringify(args)})`, sandbox);
+  return sandbox;
+}
+
+function runFingerprintRandomization({
+  language = 'en-US',
+  languages = ['en-US', 'en'],
+  hostname = 'www.example.com',
+  exposeSeedForTest = false
+} = {}) {
+  const storage = new Map();
+  const storageAccesses = [];
+  const sandbox = {
+    console,
+    location: { hostname },
+    sessionStorage: {
+      getItem: key => {
+        storageAccesses.push(['getItem', key]);
+        return storage.get(key) || null;
+      },
+      setItem: (key, value) => {
+        storageAccesses.push(['setItem', key]);
+        storage.set(key, String(value));
+      }
+    },
+    crypto: {
+      getRandomValues: buffer => {
+        for (let i = 0; i < buffer.length; i++) buffer[i] = i + 1;
+        return buffer;
+      }
+    },
+    Uint8Array,
+    Uint8ClampedArray
+  };
+  sandbox.self = sandbox;
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  sandbox.__storageAccesses = storageAccesses;
+  vm.createContext(sandbox);
+  vm.runInContext(`
+    const initialLanguage = ${JSON.stringify(language)};
+    const initialLanguages = ${JSON.stringify(languages)};
+    function Navigator() {}
+    function getLanguage() { return initialLanguage; }
+    function getLanguages() { return initialLanguages.slice(); }
+    Object.defineProperty(Navigator.prototype, 'language', {
+      get: getLanguage,
+      configurable: true,
+      enumerable: true
+    });
+    Object.defineProperty(Navigator.prototype, 'languages', {
+      get: getLanguages,
+      configurable: true,
+      enumerable: true
+    });
+    self.Navigator = Navigator;
+    self.navigator = new Navigator();
+  `, sandbox);
+  const code = exposeSeedForTest
+    ? fingerprintRandomizationCode.replace(
+      'const seed = fnv1a(seedScope + \'|\' + salt);',
+      'const seed = fnv1a(seedScope + \'|\' + salt); self.__chromaFprTestSeedScope = seedScope; self.__chromaFprTestSeed = seed;'
+    )
+    : fingerprintRandomizationCode;
+  vm.runInContext(code, sandbox);
   return sandbox;
 }
 
@@ -417,5 +485,109 @@ test('scriptlet engine userScripts API availability', async (t) => {
 
     assert.strictEqual(getScriptsCalled, false);
     assert.strictEqual(registerCalled, false);
+  });
+
+  await t.test('syncUserScripts registers stored rules after API becomes available', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    }, {
+      userScripts: undefined
+    });
+
+    await sandbox.initScriptletEngine();
+    assert.strictEqual(registered.length, 0);
+
+    sandbox.chrome.userScripts = {
+      getScripts: async () => [],
+      unregister: async () => {},
+      register: async scripts => { registered.push(...scripts); }
+    };
+
+    await sandbox.syncUserScripts();
+
+    assert.strictEqual(registered.length, 1);
+    assert.strictEqual(registered[0].id, 'scriptlet_1');
+  });
+
+  await t.test('recoverUserScriptsIfNeeded only syncs an empty registry with stored rules', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    });
+
+    const recovered = await sandbox.recoverUserScriptsIfNeeded();
+
+    assert.strictEqual(recovered, true);
+    assert.strictEqual(registered.length, 1);
+  });
+
+  await t.test('recoverUserScriptsIfNeeded skips when scripts are already registered', async () => {
+    let registerCalled = false;
+    const { sandbox } = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    }, {
+      userScripts: {
+        getScripts: async () => [{ id: 'scriptlet_1' }],
+        unregister: async () => {},
+        register: async () => { registerCalled = true; }
+      }
+    });
+
+    const recovered = await sandbox.recoverUserScriptsIfNeeded();
+
+    assert.strictEqual(recovered, false);
+    assert.strictEqual(registerCalled, false);
+  });
+});
+
+test('fingerprint randomization language normalization', async (t) => {
+  await t.test('does not create page-visible storage artifacts', () => {
+    const sandbox = runFingerprintRandomization();
+
+    assert.deepStrictEqual(sandbox.__storageAccesses, []);
+  });
+
+  await t.test('uses full hostname instead of rough public suffix collapsing', () => {
+    const first = runFingerprintRandomization({ hostname: 'shop.example.co.uk', exposeSeedForTest: true });
+    const second = runFingerprintRandomization({ hostname: 'news.other.co.uk', exposeSeedForTest: true });
+
+    assert.strictEqual(first.__chromaFprTestSeedScope, 'shop.example.co.uk');
+    assert.strictEqual(second.__chromaFprTestSeedScope, 'news.other.co.uk');
+    assert.notStrictEqual(first.__chromaFprTestSeed, second.__chromaFprTestSeed);
+  });
+
+  await t.test('does not hard-spoof WebGL vendor or renderer values', () => {
+    assert.doesNotMatch(fingerprintRandomizationCode, /SPOOFED_VENDOR|SPOOFED_RENDERER|UNMASKED_VENDOR_WEBGL|UNMASKED_RENDERER_WEBGL/);
+    assert.doesNotMatch(fingerprintRandomizationCode, /Google Inc\. \(Intel\)|ANGLE \(Intel/);
+    assert.doesNotMatch(fingerprintRandomizationCode, /replaceProtoMethod\(GL[12]\.prototype, 'getParameter'/);
+  });
+
+  await t.test('reports the top preferred language plus base language', () => {
+    const sandbox = runFingerprintRandomization({
+      language: 'EN_us',
+      languages: ['EN_us', 'ko-KR', 'es-ES']
+    });
+
+    assert.strictEqual(vm.runInContext('navigator.language', sandbox), 'en-US');
+    assert.deepStrictEqual(plain(vm.runInContext('navigator.languages', sandbox)), ['en-US', 'en']);
+    assert.strictEqual(vm.runInContext('Object.isFrozen(navigator.languages)', sandbox), true);
+  });
+
+  await t.test('keeps single base-language preferences collapsed to one value', () => {
+    const sandbox = runFingerprintRandomization({
+      language: 'fr',
+      languages: ['fr', 'en-US']
+    });
+
+    assert.strictEqual(vm.runInContext('navigator.language', sandbox), 'fr');
+    assert.deepStrictEqual(plain(vm.runInContext('navigator.languages', sandbox)), ['fr']);
   });
 });

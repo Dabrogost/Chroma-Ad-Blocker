@@ -12,6 +12,7 @@ const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', '
 const uiScriptsCode = [componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
+const uiCssCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
 
 async function settlePopupAsyncWork(turns = 20) {
   for (let i = 0; i < turns; i++) {
@@ -402,7 +403,7 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(typeof sandbox.openProxySettings, 'function');
     await sandbox.openProxySettings();
 
-    assert.strictEqual(chromeMock.tabs.created.at(-1)?.url, 'chrome-extension://test/ui/settings.html#proxy');
+    assert.strictEqual(chromeMock.tabs.created.at(-1)?.url, 'chrome-extension://test/ui/settings.html#proxySection');
     assert.strictEqual(messages.some(m =>
       m.type === 'PROXY_CONFIG_SET' &&
       JSON.stringify(m).match(/username|password|credentialAction":"replace/)
@@ -424,6 +425,25 @@ test('popup.js functionality', async (t) => {
 
 test('UI hardening copy', () => {
   assert.match(componentsJsCode, /changes anti-detection network behavior/);
+  assert.match(componentsJsCode, /De-AMP Links/);
+  assert.match(componentsJsCode, /Geolocation Protection/);
+  assert.match(componentsJsCode, /Blocks sites from accessing your real physical location/);
+  assert.match(componentsJsCode, /Redirects supported AMP viewer pages to publisher URLs/);
+  assert.ok(
+    componentsJsCode.indexOf("name: 'Chrome Privacy Hardening'") < componentsJsCode.indexOf("name: 'Geolocation Protection'"),
+    'Geolocation Protection should render below Chrome Privacy Hardening'
+  );
+  assert.ok(
+    componentsJsCode.indexOf("name: 'Geolocation Protection'") < componentsJsCode.indexOf("name: 'De-AMP Links'"),
+    'De-AMP Links should render below Geolocation Protection'
+  );
+  assert.ok(
+    componentsJsCode.indexOf("name: 'Cosmetic Filtering'") < componentsJsCode.indexOf("name: 'Tracking URL Cleanup'"),
+    'Tracking URL Cleanup should render below Cosmetic Filtering'
+  );
+  assert.match(componentsJsCode, /rowClass: 'fpr-toggle-row'/);
+  assert.match(componentsJsCode, /Compat/);
+  assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);
   assert.match(componentsJsCode, /Protection Events/);
   assert.match(componentsJsCode, /Protection Intelligence/);
   assert.doesNotMatch(componentsJsCode, /Ads Blocked/);
@@ -445,7 +465,7 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(proxyUiJsCode, /style\.cssText/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
   assert.match(appJsCode, /function openProxySettings\(\)/);
-  assert.match(appJsCode, /ui\/settings\.html#proxy/);
+  assert.match(appJsCode, /ui\/settings\.html#proxySection/);
   assert.match(proxyUiJsCode, /if \(!settingsMode\)/);
   assert.match(proxyUiJsCode, /\.filter\(pc => pc\.accepted === true\)/);
   assert.match(proxyUiJsCode, /Manage proxies/);
@@ -458,9 +478,14 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /SOCKS username\/password auth is not supported by Chrome here/);
   assert.match(proxyUiJsCode, /Global proxy mode can route all browser traffic through this proxy when no domain-specific route matches\./);
   assert.match(proxyUiJsCode, /WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy/);
+  assert.match(proxyUiJsCode, /const proxyConfigState = await notifyBackground\(\{ type: MSG\.CONFIG_GET \}\) \|\| \{\};/);
+  assert.match(proxyUiJsCode, /function renderPopupProxyCard\(pc, index, proxyConfigState, \{ saveAllConfigs, applyGlobalButtonState \}\)/);
+  assert.match(proxyUiJsCode, /card\.dataset\.proxyId = pc\.id/);
+  assert.match(proxyUiJsCode, /applyGlobalButtonState\(\);/);
+  assert.doesNotMatch(proxyUiJsCode, /async function renderPopupSummary[\s\S]*chrome\.storage\.local\.get\('config'\)/);
   assert.match(componentsJsCode, /id="proxySection"/);
   assert.match(settingsJsCode, /scrollToProxyHash/);
-  assert.match(appJsCode, /location\?\.hash !== '#proxy'/);
+  assert.match(appJsCode, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
   assert.doesNotMatch(proxyUiJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);
   assert.doesNotMatch(proxyUiJsCode, /stageCredentialsFromInputs/);
 });

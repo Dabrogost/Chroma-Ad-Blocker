@@ -14,13 +14,14 @@ import {
   ensureAlarm,
   refreshAllStale
 } from '../subscriptions/manager.js';
-import { initScriptletEngine } from '../scriptlets/engine.js';
+import { initScriptletEngine, recoverUserScriptsIfNeeded } from '../scriptlets/engine.js';
 import { MSG } from '../core/messageTypes.js';
 import * as router from '../core/messageRouter.js';
 import { registerAll } from './handlers.js';
 import { createDefaultStatsV2, recordStatsEvent } from './stats.js';
 import './proxy.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';
+import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';
 
 const DEBUG = false;
 
@@ -107,6 +108,10 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         chromeServiceProxyBypass: true,
         webRtcLeakProtection: 'auto',
         fingerprintRandomization: false,
+        browserPrivacyHardening: false,
+        geolocationProtection: false,
+        trackingUrlCleanup: true,
+        deAmpLinks: false,
       },
       statsV2: createDefaultStatsV2(),
       requestLog: [],
@@ -150,6 +155,8 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
+  await syncBrowserPrivacyHardening(storedConfig || {});
+  await syncGeolocationProtection(storedConfig || {});
   await updateDNRState(isEnabled && isNetworkBlocking);
   await initSubscriptions();
   await refreshAllStale();
@@ -168,6 +175,8 @@ chrome.runtime.onStartup.addListener(async () => {
   const isEnabled = storedConfig ? storedConfig.enabled : true;
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
+  await syncBrowserPrivacyHardening(storedConfig || {});
+  await syncGeolocationProtection(storedConfig || {});
   await updateDNRState(isEnabled && isNetworkBlocking);
   await chrome.storage.local.set({ requestLog: [] });
   await ensureAlarm();
@@ -192,6 +201,8 @@ const DEFAULT_RULE_ID_END   = 99999;
 const SUBSCRIPTION_RULE_ID_START = 100000;
 const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
+const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
+const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
 const dynamicRuleClassifications = new Map();
 const STATIC_RULE_ACTION_OVERRIDES = new Map([
   ['custom_static_rules:28', 'allow'],
@@ -265,16 +276,36 @@ export async function syncDynamicRules() {
   try {
     const { config } = await chrome.storage.local.get('config');
     const isAccelerationEnabled = config?.acceleration !== false;
+    const isTrackingUrlCleanupEnabled = config?.trackingUrlCleanup !== false;
+    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
+    const trackingUrlCleanupOptions = {
+      trackingUrlCleanup: isTrackingUrlCleanupEnabled,
+      trackingUrlCleanupExcludedRequestDomains: whitelist
+    };
 
     const stored = await chrome.storage.local.get('dynamicRules');
-    let rules = stored.dynamicRules || getDefaultDynamicRules();
+    let rules = stored.dynamicRules || getDefaultDynamicRules(trackingUrlCleanupOptions);
+
+    const isTrackingCleanupRule = rule =>
+      rule?.id >= TRACKING_URL_CLEANUP_RULE_ID_START &&
+      rule?.id <= TRACKING_URL_CLEANUP_RULE_ID_END;
+    rules = rules.filter(rule => !isTrackingCleanupRule(rule));
+    if (isTrackingUrlCleanupEnabled) {
+      const trackingCleanupRules = getDefaultDynamicRules({
+        ...trackingUrlCleanupOptions,
+        trackingUrlCleanup: true
+      })
+        .filter(isTrackingCleanupRule);
+      rules = [...rules, ...trackingCleanupRules];
+    }
 
     if (!isAccelerationEnabled) {
-      // Reverse logic: Change 'allow' (Anti-Detection) to 'block'
+      // Reverse logic: Change YouTube anti-detection 'allow' rules to 'block'
       // when Acceleration is disabled, so ads are blocked by dynamic rules.
+      // Non-allow rules, such as URL cleanup redirects, must stay intact.
       rules = rules.map(r => ({
         ...r,
-        action: { ...r.action, type: 'block' }
+        action: r.action?.type === 'allow' ? { ...r.action, type: 'block' } : r.action
       }));
     }
 
@@ -283,20 +314,31 @@ export async function syncDynamicRules() {
       .filter(r => r.id >= DEFAULT_RULE_ID_START && r.id <= DEFAULT_RULE_ID_END)
       .map(r => r.id);
 
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: removeIds,
-      addRules: rules,
-    });
+    let appliedRules = rules;
+    try {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: removeIds,
+        addRules: appliedRules,
+      });
+    } catch (err) {
+      if (!rules.some(isTrackingCleanupRule)) throw err;
+      appliedRules = rules.filter(rule => !isTrackingCleanupRule(rule));
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: removeIds,
+        addRules: appliedRules,
+      });
+      if (DEBUG) console.warn('[Chroma Ad-Blocker] Tracking URL cleanup rule was not accepted by Chrome DNR:', err);
+    }
 
     for (const id of removeIds) dynamicRuleClassifications.delete(id);
-    for (const rule of rules) {
+    for (const rule of appliedRules) {
       dynamicRuleClassifications.set(rule.id, {
         actionType: rule.action?.type || 'unknown',
         ruleSource: 'default_dynamic'
       });
     }
 
-    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${rules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
+    if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${appliedRules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
   } catch (err) {
     if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }
@@ -347,7 +389,7 @@ export async function syncWhitelistRules() {
 
 // ─── CONFIGURATION VALIDATION ─────
 export function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening', 'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks'];
   const webRtcModes = new Set(['off', 'auto', 'balanced', 'strict']);
   const validatedConfig = {};
 
@@ -461,3 +503,10 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
 // handlers.js sees resolved bindings through the live ES-module import.
 registerAll(router);
 router.attachListener();
+
+// MV3 service workers wake without firing runtime.onStartup. If the user
+// enables Chrome's Allow User Scripts toggle after install, a normal worker
+// wake should be enough to register already-parsed subscription scriptlets.
+recoverUserScriptsIfNeeded().catch(err => {
+  if (DEBUG) console.error('[Chroma Scriptlets] Wake sync failed:', err);
+});

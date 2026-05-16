@@ -45,8 +45,9 @@ const contentJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'c
 
 // ─── CONTENT SCRIPT GENERIC FUNCTIONALITY ─────
 test('Content script generic functionality', async (t) => {
-  const createSandbox = (setupDoc) => {
+  const createSandbox = (setupDoc, options = {}) => {
     const sentMessages = [];
+    const location = options.location || { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' };
     const sandbox = {
       chrome: {
         runtime: {
@@ -58,7 +59,7 @@ test('Content script generic functionality', async (t) => {
         },
         storage: {
           local: {
-            get: () => Promise.resolve({}),
+            get: () => Promise.resolve(options.storage || {}),
             set: () => Promise.resolve()
           }
         }
@@ -102,10 +103,11 @@ test('Content script generic functionality', async (t) => {
       Boolean: Boolean,
       Math: Math,
       Date: Date,
+      URL,
       Promise: Promise,
       Error: Error,
       window: { 
-        location: { hostname: 'www.youtube.com' },
+        location,
         addEventListener: () => {},
         removeEventListener: () => {},
         requestAnimationFrame: (cb) => cb(),
@@ -113,7 +115,7 @@ test('Content script generic functionality', async (t) => {
         innerHeight: 1000,
         innerWidth: 1000
       },
-      location: { hostname: 'www.youtube.com' },
+      location,
       __CHROMA_INTERNAL_TEST_STRICT__: true,
       Node: { ELEMENT_NODE: 1 },
       MSG: {
@@ -337,5 +339,84 @@ test('Content script generic functionality', async (t) => {
     assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
     const batch = sandbox.__sentMessages.find(msg => msg.type === 'STATS_EVENT_BATCH');
     assert.strictEqual(batch, undefined);
+  });
+
+  await t.test('De-AMP URL transforms only supported AMP viewer URLs', () => {
+    const sandbox = createSandbox();
+
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://www.google.com/amp/s/example.com/story'),
+      'https://example.com/story'
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://google.com/amp/example.com/story'),
+      'http://example.com/story'
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://example-com.cdn.ampproject.org/c/s/example.com/story'),
+      'https://example.com/story'
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://publisher.example/amp/story'),
+      null
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://google.evil.com/amp/s/example.com/story'),
+      null
+    );
+  });
+
+  await t.test('De-AMP skips current and target whitelisted domains', () => {
+    const sandbox = createSandbox();
+    const target = 'https://example.com/story';
+
+    assert.strictEqual(
+      sandbox.shouldSkipDeAmpRedirect(target, 'www.google.com', ['example.com']),
+      true
+    );
+    assert.strictEqual(
+      sandbox.shouldSkipDeAmpRedirect(target, 'www.google.com', ['google.com']),
+      true
+    );
+    assert.strictEqual(
+      sandbox.shouldSkipDeAmpRedirect(target, 'www.google.com', ['other.example']),
+      false
+    );
+    assert.strictEqual(
+      sandbox.shouldSkipDeAmpRedirect(target, 'www.google.com', ['bad/path', '-bad.example.com']),
+      false
+    );
+  });
+
+  await t.test('De-AMP redirects only when the opt-in toggle is enabled', async () => {
+    const redirects = [];
+    const location = {
+      hostname: 'www.google.com',
+      href: 'https://www.google.com/amp/s/example.com/story',
+      replace: url => redirects.push(url)
+    };
+
+    createSandbox(null, {
+      location,
+      storage: {
+        config: { enabled: true, deAmpLinks: true },
+        whitelist: []
+      }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.deepStrictEqual(redirects, ['https://example.com/story']);
+
+    redirects.length = 0;
+    createSandbox(null, {
+      location,
+      storage: {
+        config: { enabled: true, deAmpLinks: false },
+        whitelist: []
+      }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.deepStrictEqual(redirects, []);
   });
 });

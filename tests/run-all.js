@@ -6,6 +6,7 @@ const testDir = __dirname;
 const TIERS = {
   quick: [
     'background.test.js',
+    'browser_privacy.test.js',
     'content.test.js',
     'health.test.js',
     'interceptor.test.js',
@@ -23,6 +24,7 @@ const TIERS = {
   ],
   security: [
     'dnr-id-ranges.test.js',
+    'browser_privacy.test.js',
     'health.test.js',
     'interceptor.test.js',
     'message-types.test.js',

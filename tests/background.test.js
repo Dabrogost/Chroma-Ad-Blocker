@@ -19,13 +19,14 @@ const backgroundJsCode = backgroundJsCodeRaw
     var addSubscription      = globalThis._mockAddSubscription;
     var removeSubscription   = globalThis._mockRemoveSubscription;
   `)
-  .replace("import { initScriptletEngine } from '../scriptlets/engine.js';", "var initScriptletEngine = globalThis._mockInitScriptletEngine;")
+  .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = globalThis._mockCreateDefaultStatsV2 || (() => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] })); var recordStatsEvent = globalThis._mockRecordStatsEvent || (() => {});")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection || (async () => ({}));")
+  .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening || (async () => ({})); var syncGeolocationProtection = globalThis._mockSyncGeolocationProtection || (async () => ({}));")
   .replace(/^export\s+/gm, "");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'defaultDynamicRules.js'), 'utf8');
@@ -166,16 +167,129 @@ test('getDefaultDynamicRules', async (t) => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: 'false' }))), {});
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ chromeServiceProxyBypass: null }))), {});
   });
+
+  await t.test('config validation accepts browser privacy hardening booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: true }))),
+      { browserPrivacyHardening: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: false }))),
+      { browserPrivacyHardening: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: 'true' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ browserPrivacyHardening: null }))), {});
+  });
+
+  await t.test('config validation accepts geolocation protection booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ geolocationProtection: true }))),
+      { geolocationProtection: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ geolocationProtection: false }))),
+      { geolocationProtection: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ geolocationProtection: 'true' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ geolocationProtection: null }))), {});
+  });
+
+  await t.test('config validation accepts tracking URL cleanup booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ trackingUrlCleanup: true }))),
+      { trackingUrlCleanup: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ trackingUrlCleanup: false }))),
+      { trackingUrlCleanup: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ trackingUrlCleanup: 'false' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ trackingUrlCleanup: null }))), {});
+  });
+
+  await t.test('config validation accepts De-AMP booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: true }))),
+      { deAmpLinks: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: false }))),
+      { deAmpLinks: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: 'true' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: null }))), {});
+  });
+
+  await t.test('tracking URL cleanup rule strips known tracking params on top-level navigations only', () => {
+    const rules = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true });
+    const cleanupRules = rules.filter(rule => rule.id >= 2000 && rule.id <= 2099);
+    assert.ok(cleanupRules.length > 1, 'tracking cleanup should be split into small DNR regex rules');
+    const combinedRegex = cleanupRules.map(rule => rule.condition.regexFilter).join('\n');
+    for (const cleanupRule of cleanupRules) {
+      assert.strictEqual(cleanupRule.action.type, 'redirect');
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(cleanupRule.condition.resourceTypes)), ['main_frame']);
+      assert.ok(cleanupRule.condition.excludedRequestDomains.includes('accounts.google.com'));
+      assert.ok(cleanupRule.condition.excludedRequestDomains.includes('paypal.com'));
+      assert.ok(cleanupRule.action.redirect.transform.queryTransform.removeParams.includes('utm_campaign'));
+      assert.ok(cleanupRule.action.redirect.transform.queryTransform.removeParams.includes('gclid'));
+    }
+    assert.ok(combinedRegex.includes('utm_source'));
+    assert.ok(combinedRegex.includes('fbclid'));
+  });
+
+  await t.test('tracking URL cleanup allowlist accepts fragile-site exclusions', () => {
+    const cleanupRule = sandbox.getDefaultDynamicRules({
+      trackingUrlCleanup: true,
+      trackingUrlCleanupExcludedRequestDomains: ['fragile.example', 'bad/path']
+    }).find(rule => rule.id === 2000);
+    const excluded = JSON.parse(JSON.stringify(cleanupRule.condition.excludedRequestDomains));
+    assert.ok(excluded.includes('fragile.example'));
+    assert.strictEqual(excluded.includes('bad/path'), false);
+  });
+
+  await t.test('tracking URL cleanup transform removes only listed params', () => {
+    const cleanupRule = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true })
+      .find(rule => rule.id === 2000);
+    const removeParams = cleanupRule.action.redirect.transform.queryTransform.removeParams;
+    const applyTransform = (input) => {
+      const url = new URL(input);
+      for (const param of removeParams) url.searchParams.delete(param);
+      return url.href;
+    };
+
+    assert.strictEqual(
+      applyTransform('https://example.com/story?id=42&utm_source=newsletter&fbclid=abc&utm_campaign=spring'),
+      'https://example.com/story?id=42'
+    );
+    assert.strictEqual(
+      applyTransform('https://example.com/story?product=abc&variant=blue'),
+      'https://example.com/story?product=abc&variant=blue'
+    );
+  });
+
+  await t.test('tracking URL cleanup rule is omitted by default for callers that do not opt in', () => {
+    assert.strictEqual(
+      sandbox.getDefaultDynamicRules().some(rule => rule.id === 2000),
+      false
+    );
+  });
 });
 
 // ─── SYNCDYNAMICRULES SUCCESSFUL SYNCING ─────
 test('syncDynamicRules successful syncing', async (t) => {
   const sandbox = {};
   let updateDynamicRulesArgs = null;
+  let updateDynamicRulesCalls = [];
   let getDynamicRulesCalled = false;
 
   const mockExistingRules = [{ id: 1001 }, { id: 1002 }];
   const mockStoredRules = [{ id: 999, action: { type: 'block' } }];
+  const defaultStorageGet = async (key) => {
+    if (key === 'dynamicRules') {
+      return { dynamicRules: sandbox.mockStorageRules };
+    }
+    return {};
+  };
 
   const chromeMock = {
     runtime: {
@@ -186,12 +300,7 @@ test('syncDynamicRules successful syncing', async (t) => {
     },
     storage: {
       local: {
-        get: async (key) => {
-          if (key === 'dynamicRules') {
-            return { dynamicRules: sandbox.mockStorageRules };
-          }
-          return {};
-        },
+        get: defaultStorageGet,
         set: () => Promise.resolve()
       },
       session: {
@@ -207,6 +316,7 @@ test('syncDynamicRules successful syncing', async (t) => {
       },
       updateDynamicRules: async (args) => {
         updateDynamicRulesArgs = args;
+        updateDynamicRulesCalls.push(args);
         return Promise.resolve();
       },
       onRuleMatchedDebug: { addListener: () => {} }
@@ -264,6 +374,7 @@ test('syncDynamicRules successful syncing', async (t) => {
   await t.test('uses stored rules and removes existing ones', async () => {
     sandbox.mockStorageRules = mockStoredRules;
     updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
     getDynamicRulesCalled = false;
 
     await sandbox.syncDynamicRules();
@@ -271,12 +382,20 @@ test('syncDynamicRules successful syncing', async (t) => {
     assert.strictEqual(getDynamicRulesCalled, true, 'getDynamicRules should have been called');
     assert.ok(updateDynamicRulesArgs, 'updateDynamicRules should have been called');
     assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [1001, 1002], 'Should remove existing rules');
-    assert.deepStrictEqual(updateDynamicRulesArgs.addRules, mockStoredRules, 'Should add stored rules');
+    const expectedTrackingIds = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true })
+      .filter(rule => rule.id >= 2000 && rule.id <= 2099)
+      .map(rule => rule.id);
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(updateDynamicRulesArgs.addRules.map(rule => rule.id))),
+      [999, ...expectedTrackingIds],
+      'Should add stored rules plus tracking URL cleanup when enabled'
+    );
   });
 
   await t.test('falls back to default rules when none are stored', async () => {
     sandbox.mockStorageRules = undefined;
     updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
     getDynamicRulesCalled = false;
 
     await sandbox.syncDynamicRules();
@@ -286,11 +405,74 @@ test('syncDynamicRules successful syncing', async (t) => {
     assert.deepStrictEqual(updateDynamicRulesArgs.removeRuleIds, [1001, 1002], 'Should remove existing rules');
 
     // Add rules should match the default rules
-    const defaultRules = sandbox.getDefaultDynamicRules();
+    const defaultRules = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true });
     assert.deepStrictEqual(updateDynamicRulesArgs.addRules, defaultRules, 'Should add default rules');
   });
 
+  await t.test('tracking URL cleanup can be disabled without disabling default dynamic rules', async () => {
+    chromeMock.storage.local.get = async (key) => {
+      if (key === 'config') return { config: { trackingUrlCleanup: false } };
+      if (key === 'dynamicRules') return { dynamicRules: undefined };
+      return {};
+    };
+    updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
+
+    await sandbox.syncDynamicRules();
+
+    assert.ok(updateDynamicRulesArgs, 'updateDynamicRules should have been called');
+    assert.strictEqual(updateDynamicRulesArgs.addRules.some(rule => rule.id === 2000), false);
+    assert.ok(updateDynamicRulesArgs.addRules.some(rule => rule.id === 1001));
+  });
+
+  await t.test('acceleration-off rule reversal leaves URL cleanup redirects intact', async () => {
+    chromeMock.storage.local.get = async (key) => {
+      if (key === 'config') return { config: { acceleration: false, trackingUrlCleanup: true } };
+      if (key === 'dynamicRules') return { dynamicRules: undefined };
+      return {};
+    };
+    updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
+
+    await sandbox.syncDynamicRules();
+
+    const allowRule = updateDynamicRulesArgs.addRules.find(rule => rule.id === 1001);
+    const cleanupRule = updateDynamicRulesArgs.addRules.find(rule => rule.id === 2000);
+    assert.strictEqual(allowRule.action.type, 'block');
+    assert.strictEqual(cleanupRule.action.type, 'redirect');
+  });
+
+  await t.test('tracking URL cleanup rejection does not block core default dynamic rules', async () => {
+    chromeMock.storage.local.get = async (key) => {
+      if (key === 'config') return { config: { acceleration: true, trackingUrlCleanup: true } };
+      if (key === 'dynamicRules') return { dynamicRules: undefined };
+      if (key === 'whitelist') return { whitelist: [] };
+      return {};
+    };
+    updateDynamicRulesArgs = null;
+    updateDynamicRulesCalls = [];
+    chromeMock.declarativeNetRequest.updateDynamicRules = async (args) => {
+      updateDynamicRulesArgs = args;
+      updateDynamicRulesCalls.push(args);
+      if (args.addRules?.some(rule => rule.id === 2000)) {
+        throw new Error('Invalid redirect rule');
+      }
+    };
+
+    await sandbox.syncDynamicRules();
+
+    assert.strictEqual(updateDynamicRulesCalls.length, 2);
+    assert.ok(updateDynamicRulesArgs.addRules.some(rule => rule.id === 1004), 'core default dynamic rules should still be installed');
+    assert.strictEqual(updateDynamicRulesArgs.addRules.some(rule => rule.id === 2000), false);
+  });
+
   await t.test('classifies DNR matches without treating all matches as blocks', async () => {
+    chromeMock.storage.local.get = defaultStorageGet;
+    chromeMock.declarativeNetRequest.updateDynamicRules = async (args) => {
+      updateDynamicRulesArgs = args;
+      updateDynamicRulesCalls.push(args);
+      return Promise.resolve();
+    };
     sandbox.mockStorageRules = [
       { id: 1001, action: { type: 'allow' } },
       { id: 1002, action: { type: 'block' } }

@@ -40,7 +40,7 @@ function hasUserScriptsApi() {
 let _syncInFlight = null;
 let _syncPending = false;
 
-function syncUserScripts() {
+export function syncUserScripts() {
   if (_syncInFlight) {
     _syncPending = true;
     return _syncInFlight;
@@ -57,6 +57,18 @@ function syncUserScripts() {
     }
   })();
   return _syncInFlight;
+}
+
+export async function recoverUserScriptsIfNeeded() {
+  if (!hasUserScriptsApi()) return false;
+  const { subscriptionScriptletRules = [] } = await chrome.storage.local.get(['subscriptionScriptletRules']);
+  if (!Array.isArray(subscriptionScriptletRules) || subscriptionScriptletRules.length === 0) return false;
+
+  const registered = await chrome.userScripts.getScripts();
+  if (Array.isArray(registered) && registered.length > 0) return false;
+
+  await syncUserScripts();
+  return true;
 }
 
 // Filter-list domains can include forms Chrome match patterns reject:

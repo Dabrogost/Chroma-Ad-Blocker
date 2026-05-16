@@ -9,6 +9,13 @@ const healthJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ba
     var getWebRtcLeakProtectionStatus = globalThis._mockGetWebRtcLeakProtectionStatus;
     var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection;
   `)
+  .replace(/import\s*\{[\s\S]*?getBrowserPrivacyHardeningStatus,[\s\S]*?getGeolocationProtectionStatus,[\s\S]*?syncBrowserPrivacyHardening,[\s\S]*?syncGeolocationProtection[\s\S]*?\}\s*from\s*'\.\/browserPrivacy\.js';/, `
+    var getBrowserPrivacyHardeningStatus = globalThis._mockGetBrowserPrivacyHardeningStatus;
+    var getGeolocationProtectionStatus = globalThis._mockGetGeolocationProtectionStatus;
+    var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening;
+    var syncGeolocationProtection = globalThis._mockSyncGeolocationProtection;
+  `)
+  .replace("import { syncUserScripts } from '../scriptlets/engine.js';", "var syncUserScripts = globalThis._mockSyncUserScripts || (async () => {});")
   .replace(/^export\s+/gm, '');
 
 const manifest = {
@@ -44,6 +51,9 @@ function loadHealthSandbox(options = {}) {
       stripping: true,
       acceleration: false,
       fingerprintRandomization: false,
+      browserPrivacyHardening: false,
+      geolocationProtection: false,
+      deAmpLinks: false,
       globalProxyEnabled: false,
       globalProxyId: null
     },
@@ -69,8 +79,28 @@ function loadHealthSandbox(options = {}) {
     error: null
   };
   const syncResults = [];
+  const browserPrivacySyncResults = [];
+  const geolocationSyncResults = [];
+  const userScriptSyncResults = [];
+  const browserPrivacyStatus = options.browserPrivacyStatus || {
+    enabled: storage.config?.browserPrivacyHardening === true,
+    available: true,
+    active: storage.config?.browserPrivacyHardening === true,
+    partial: false,
+    hardenedCount: storage.config?.browserPrivacyHardening === true ? 5 : 0,
+    totalCount: 5,
+    blockedCount: 0,
+    settings: []
+  };
+  const geolocationStatus = options.geolocationStatus || {
+    enabled: storage.config?.geolocationProtection === true,
+    available: true,
+    active: storage.config?.geolocationProtection === true,
+    setting: storage.config?.geolocationProtection === true ? 'block' : 'ask',
+    error: null
+  };
   const enabledRulesets = options.enabledRulesets || ['static_a', 'static_b'];
-  const dynamicRules = options.dynamicRules || [];
+  const dynamicRules = options.dynamicRules || [{ id: 2000 }];
   const dnr = options.noDnr
     ? undefined
     : {
@@ -121,7 +151,27 @@ function loadHealthSandbox(options = {}) {
     syncResults.push({ config, proxyConfigs });
     return options.webrtcSyncResult || { ok: true };
   };
+  sandbox._mockGetBrowserPrivacyHardeningStatus = async () => browserPrivacyStatus;
+  sandbox._mockSyncBrowserPrivacyHardening = async (config) => {
+    browserPrivacySyncResults.push({ config });
+    return options.browserPrivacySyncResult || { ok: true };
+  };
+  sandbox._mockGetGeolocationProtectionStatus = async () => geolocationStatus;
+  sandbox._mockSyncGeolocationProtection = async (config) => {
+    geolocationSyncResults.push({ config });
+    return options.geolocationSyncResult || { ok: true };
+  };
+  sandbox._mockSyncUserScripts = async () => {
+    userScriptSyncResults.push({ ts: Date.now() });
+    if (typeof options.onUserScriptSync === 'function') {
+      await options.onUserScriptSync();
+    }
+    return options.userScriptSyncResult || undefined;
+  };
   sandbox._webrtcSyncResults = syncResults;
+  sandbox._browserPrivacySyncResults = browserPrivacySyncResults;
+  sandbox._geolocationSyncResults = geolocationSyncResults;
+  sandbox._userScriptSyncResults = userScriptSyncResults;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(healthJsCode, sandbox);
@@ -205,6 +255,97 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.scriptlets.apiAvailable, true);
     assert.strictEqual(health.scriptlets.registeredUserScriptCount, 1);
     assert.strictEqual(health.scriptlets.registrationStatus, 'active');
+  });
+
+  await t.test('stored scriptlets self-heal when userScripts becomes available but registry is empty', async () => {
+    const registered = [];
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => registered
+      }),
+      onUserScriptSync: async () => {
+        registered.push({ id: 'scriptlet_1' });
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(sandbox._userScriptSyncResults.length, 1);
+    assert.strictEqual(health.overall.status, 'healthy');
+    assert.strictEqual(health.scriptlets.apiAvailable, true);
+    assert.strictEqual(health.scriptlets.registeredUserScriptCount, 1);
+    assert.strictEqual(health.scriptlets.registrationStatus, 'active');
+  });
+
+  await t.test('empty userScripts registry remains degraded when retry cannot register parsed scriptlets', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['x', 'true'] }]
+      },
+      userScripts: fullUserScriptsApi({
+        getScripts: async () => []
+      })
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(sandbox._userScriptSyncResults.length, 1);
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.scriptlets.apiAvailable, true);
+    assert.strictEqual(health.scriptlets.registeredUserScriptCount, 0);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'scriptlets' &&
+      /not registered/i.test(issue.message)
+    ));
+  });
+
+  await t.test('fingerprint randomization reports active registered surfaces', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          fingerprintRandomization: true
+        }
+      },
+      scripting: {
+        getRegisteredContentScripts: async () => [{ id: 'chroma_fpr' }]
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'healthy');
+    assert.strictEqual(health.fpr.enabled, true);
+    assert.strictEqual(health.fpr.active, true);
+    assert.strictEqual(health.fpr.registrationStatus, 'active');
+    assert.ok(health.fpr.protectedSurfaces.includes('Language APIs'));
+  });
+
+  await t.test('fingerprint randomization warns when enabled but not registered', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          fingerprintRandomization: true
+        }
+      },
+      scripting: {
+        getRegisteredContentScripts: async () => []
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.fpr.enabled, true);
+    assert.strictEqual(health.fpr.active, false);
+    assert.strictEqual(health.fpr.registrationStatus, 'missing');
+    assert.ok(health.overall.issues.some(issue => issue.area === 'fingerprint'));
   });
 
   await t.test('userScripts inspection failure reports Allow User Scripts diagnostic', async () => {
@@ -327,6 +468,78 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.requestLog.available, false);
     assert.match(health.requestLog.note, /blocking can still work/i);
     assert.ok(health.overall.issues.some(issue => issue.area === 'requestLog' && issue.severity === 'info'));
+  });
+
+  await t.test('De-AMP status is reported as an opt-in master protection', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: false,
+          deAmpLinks: true
+        }
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.master.deAmpLinks, true);
+    assert.strictEqual(health.overall.status, 'disabled');
+  });
+
+  await t.test('Tracking URL Cleanup warns when enabled but its dynamic rule is missing', async () => {
+    const sandbox = loadHealthSandbox({
+      dynamicRules: [],
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          trackingUrlCleanup: true
+        }
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.master.trackingUrlCleanup, true);
+    assert.strictEqual(health.dnr.trackingUrlCleanupRuleCount, 0);
+    assert.strictEqual(health.dnr.trackingUrlCleanupActive, false);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'trackingUrlCleanup' &&
+      /not registered/i.test(issue.message)
+    ));
+  });
+
+  await t.test('Geolocation Protection status is reported as browser privacy', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          geolocationProtection: true
+        }
+      },
+      geolocationStatus: {
+        enabled: true,
+        available: true,
+        active: true,
+        setting: 'block',
+        error: null
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.master.geolocationProtection, true);
+    assert.deepStrictEqual(plain(health.geolocation), {
+      enabled: true,
+      available: true,
+      active: true,
+      setting: 'block',
+      error: null
+    });
+    assert.strictEqual(sandbox._geolocationSyncResults.length, 1);
   });
 
   await t.test('proxy health never exposes auth fields or proxy hosts', async () => {

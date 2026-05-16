@@ -71,6 +71,19 @@ test('DNR match/outcome E2E', async (t) => {
     assert.strictEqual(outcome.matchedRules.length, 0, 'plain first-party application script should not match');
   });
 
+  await t.test('Tracking URL Cleanup rule matches known tracking query params', async () => {
+    const outcome = await testMatchOutcome(browser, {
+      url: 'https://example.com/story?id=42&utm_source=newsletter&fbclid=abc',
+      type: 'main_frame',
+      initiator: 'https://example.com'
+    });
+    console.log(`DNR cleanup match: ${ruleSummary(outcome)}`);
+    assert.ok(
+      outcome.matchedRules.some(rule => rule.ruleId >= 2000 && rule.ruleId <= 2099),
+      'tracking cleanup redirect rule should match known tracking query params'
+    );
+  });
+
   await t.test('recipe/blog clutter URL matches recipe rules when covered', async () => {
     const outcome = await testMatchOutcome(browser, {
       url: 'https://raptive.com/script.js',

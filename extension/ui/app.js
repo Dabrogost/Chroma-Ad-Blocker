@@ -26,7 +26,7 @@ const ChromaApp = (() => {
   }
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
-  const PROXY_SETTINGS_PATH = 'ui/settings.html#proxy';
+  const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
   const HEALTH_REFRESH_KEYS = [
     'config',
     'subscriptions',
@@ -43,6 +43,8 @@ const ChromaApp = (() => {
   const HEALTH_ISSUE_CLASSES = new Set(['info', 'warning', 'error']);
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
+    ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
+    ['toggleDeAmpLinks',   'deAmpLinks',               false],
     ['toggleStripping',    'stripping',                true],
     ['toggleAcceleration', 'acceleration',             false],
     ['toggleCosmetic',     'cosmetic',                 true],
@@ -51,6 +53,8 @@ const ChromaApp = (() => {
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
     ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
+    ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
+    ['toggleGeolocationProtection', 'geolocationProtection', false],
   ];
   let healthLoadSerial = 0;
 
@@ -171,6 +175,97 @@ const ChromaApp = (() => {
       return ['WebRTC leak protection', mode === 'balanced' ? 'Balanced' : `${modeLabel} (Partial)`, globalProxyActive ? 'warning' : 'ok'];
     }
     return ['WebRTC leak protection', mode === 'off' ? 'Off' : `${modeLabel} (Off)`, globalProxyActive ? 'warning' : 'disabled'];
+  }
+
+  function getBrowserPrivacySetting(health, key) {
+    const settings = Array.isArray(health.browserPrivacy?.settings)
+      ? health.browserPrivacy.settings
+      : [];
+    return settings.find(setting => setting?.key === key) || null;
+  }
+
+  function getBrowserPrivacySettingLabel(health, key) {
+    const setting = getBrowserPrivacySetting(health, key);
+    if (!health.browserPrivacy?.enabled) return 'Disabled';
+    if (!setting?.available) return 'Unavailable';
+    if (setting.levelOfControl && !setting.controllable && !setting.hardened) return 'Controlled elsewhere';
+    return setting.hardened ? 'Hardened' : 'Not hardened';
+  }
+
+  function getBrowserPrivacySettingStatus(health, key) {
+    const setting = getBrowserPrivacySetting(health, key);
+    if (!health.browserPrivacy?.enabled) return 'disabled';
+    if (!setting?.available) return 'warning';
+    return setting.hardened ? 'ok' : 'warning';
+  }
+
+  function getPrivacySandboxSettings(health) {
+    return ['adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled']
+      .map(key => getBrowserPrivacySetting(health, key))
+      .filter(Boolean);
+  }
+
+  function getPrivacySandboxLabel(health) {
+    if (!health.browserPrivacy?.enabled) return 'Disabled';
+    const settings = getPrivacySandboxSettings(health);
+    if (settings.length === 0) return 'Unavailable';
+    const hardened = settings.filter(setting => setting.hardened).length;
+    return hardened === settings.length ? 'Hardened' : `${formatCount(hardened)} / ${formatCount(settings.length)} hardened`;
+  }
+
+  function getPrivacySandboxStatus(health) {
+    if (!health.browserPrivacy?.enabled) return 'disabled';
+    const settings = getPrivacySandboxSettings(health);
+    if (settings.length === 0) return 'warning';
+    return settings.every(setting => setting.hardened) ? 'ok' : 'warning';
+  }
+
+  function getGeolocationProtectionLabel(health) {
+    const geo = health.geolocation || {};
+    if (!geo.enabled) return 'Disabled';
+    if (!geo.available) return 'Unavailable';
+    return geo.active ? 'Blocked' : 'Not blocked';
+  }
+
+  function getGeolocationProtectionStatus(health) {
+    const geo = health.geolocation || {};
+    if (!geo.enabled) return 'disabled';
+    if (!geo.available) return 'warning';
+    return geo.active ? 'ok' : 'warning';
+  }
+
+  function getFprProtectedSurfaceLabel(health) {
+    const surfaces = Array.isArray(health.fpr?.protectedSurfaces)
+      ? health.fpr.protectedSurfaces
+      : [];
+    return surfaces.length ? surfaces.join(', ') : 'Unknown';
+  }
+
+  function getRegisteredScriptletLabel(health) {
+    const scriptlets = health.scriptlets || {};
+    if (scriptlets.apiAvailable === false) return 'Unavailable';
+    return scriptlets.registeredUserScriptCount === null
+      ? 'Unknown'
+      : formatCount(scriptlets.registeredUserScriptCount);
+  }
+
+  function getRegisteredScriptletStatus(health) {
+    const scriptlets = health.scriptlets || {};
+    if (scriptlets.apiAvailable === false) {
+      return scriptlets.storedRuleCount > 0 ? 'warning' : 'disabled';
+    }
+    if (scriptlets.storedRuleCount > 0 && scriptlets.registeredUserScriptCount === 0) return 'warning';
+    return '';
+  }
+
+  function getTrackingUrlCleanupLabel(health, networkBlockingActive) {
+    if (!health.master?.trackingUrlCleanup || !networkBlockingActive) return 'Disabled';
+    return health.dnr?.trackingUrlCleanupActive ? 'Active' : 'Not registered';
+  }
+
+  function getTrackingUrlCleanupStatus(health, networkBlockingActive) {
+    if (!health.master?.trackingUrlCleanup || !networkBlockingActive) return 'disabled';
+    return health.dnr?.trackingUrlCleanupActive ? 'ok' : 'warning';
   }
 
   function getStatsTotals(stats) {
@@ -546,9 +641,13 @@ const ChromaApp = (() => {
       const chromeMin = health.manifest?.minimumChromeVersion ? `Chrome ${health.manifest.minimumChromeVersion}+` : 'Chrome version unknown';
       versionText.textContent = `${version} \u00b7 ${chromeMin}`;
     }
+    const networkBlockingActive = health.master?.networkBlocking && health.master?.enabled;
+    const deAmpLinksActive = health.master?.deAmpLinks && health.master?.enabled;
 
     addHealthSection(body, 'Core', [
-      ['Network blocking', health.master?.networkBlocking && health.master?.enabled ? 'Active' : 'Disabled', health.master?.networkBlocking && health.master?.enabled ? 'ok' : 'disabled'],
+      ['Network blocking', networkBlockingActive ? 'Active' : 'Disabled', networkBlockingActive ? 'ok' : 'disabled'],
+      ['Tracking URL cleanup', getTrackingUrlCleanupLabel(health, networkBlockingActive), getTrackingUrlCleanupStatus(health, networkBlockingActive)],
+      ['De-AMP links', deAmpLinksActive ? 'Active' : 'Disabled', deAmpLinksActive ? 'ok' : 'disabled'],
       ['Static rulesets', `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`, health.dnr?.staticRulesetsOk ? 'ok' : (health.master?.networkBlocking ? 'error' : 'disabled')],
       ['Dynamic rules', `${formatCount(health.dnr?.appliedNetworkRuleCount)} active`, ''],
       ['Whitelist rules', formatCount(health.dnr?.whitelistRuleCount), '']
@@ -564,8 +663,14 @@ const ChromaApp = (() => {
 
     addHealthSection(body, 'Scriptlets', [
       ['UserScripts API', health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable', health.scriptlets?.apiAvailable ? 'ok' : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')],
-      ['Registered scripts', health.scriptlets?.registeredUserScriptCount === null ? 'Unknown' : formatCount(health.scriptlets?.registeredUserScriptCount), ''],
+      ['Registered scripts', getRegisteredScriptletLabel(health), getRegisteredScriptletStatus(health)],
       ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), '']
+    ]);
+
+    addHealthSection(body, 'Fingerprint', [
+      ['Fingerprint Randomization', health.fpr?.enabled ? (health.fpr?.active ? 'Active' : 'Not registered') : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
+      ['Protected surfaces', health.fpr?.enabled ? getFprProtectedSurfaceLabel(health) : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
+      ['FPR whitelist', `${formatCount(health.whitelist?.fprDomainCount)} domain(s)`, '']
     ]);
 
     addHealthSection(body, 'Cosmetic & Local', [
@@ -579,6 +684,14 @@ const ChromaApp = (() => {
       ['Routed domains', formatCount(health.proxy?.routedDomainCount), ''],
       ['Global proxy', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'Enabled' : 'Misconfigured') : 'Disabled', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'ok' : 'warning') : 'disabled'],
       getWebRtcHealthMetric(health)
+    ]);
+
+    addHealthSection(body, 'Browser Privacy', [
+      ['Chrome Privacy Hardening', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'Active' : `${formatCount(health.browserPrivacy?.hardenedCount)} / ${formatCount(health.browserPrivacy?.totalCount)} active`) : 'Disabled', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'ok' : 'warning') : 'disabled'],
+      ['Geolocation Protection', getGeolocationProtectionLabel(health), getGeolocationProtectionStatus(health)],
+      ['Third-party cookies', getBrowserPrivacySettingLabel(health, 'thirdPartyCookiesAllowed'), getBrowserPrivacySettingStatus(health, 'thirdPartyCookiesAllowed')],
+      ['Do Not Track', getBrowserPrivacySettingLabel(health, 'doNotTrackEnabled'), getBrowserPrivacySettingStatus(health, 'doNotTrackEnabled')],
+      ['Privacy Sandbox ads', getPrivacySandboxLabel(health), getPrivacySandboxStatus(health)]
     ]);
 
     addHealthSection(body, 'Debug Logging', [
@@ -1159,6 +1272,7 @@ const ChromaApp = (() => {
     async function loadProxyRouterSection() {
       if (globalThis.ChromaProxyUI?.loadProxyRouterUI) {
         await globalThis.ChromaProxyUI.loadProxyRouterUI();
+        scrollToProxyHash();
       }
     }
 
@@ -1307,16 +1421,19 @@ const ChromaApp = (() => {
   }
 
   function scrollToProxyHash() {
-    if (globalThis.location?.hash !== '#proxy') return;
-    const scroll = () => {
+    if (!['#proxy', '#proxySection'].includes(globalThis.location?.hash)) return;
+    const scroll = (behavior = 'smooth') => {
       const section = $('proxySection') || $('proxyRouterContainer');
-      section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      section?.scrollIntoView({ behavior, block: 'start' });
     };
     if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(scroll);
+      requestAnimationFrame(() => scroll());
     } else {
       Promise.resolve().then(scroll);
     }
+    [120, 360, 720].forEach(delay => {
+      setTimeout(() => scroll('auto'), delay);
+    });
   }
 
   return {

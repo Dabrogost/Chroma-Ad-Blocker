@@ -307,6 +307,21 @@ header {
 .toggle-info .name { font-size: 16px; font-weight: 600; color: var(--text); }
 .toggle-info .desc { font-size: 13px; color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.fpr-toggle-row .name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.fpr-toggle-row .badge {
+  flex: 0 0 auto;
+  margin-left: 0;
+  padding-inline: 5px;
+  letter-spacing: 0.08em;
+}
+
 .proxy-webrtc-control {
   display: flex;
   align-items: center;
@@ -1457,6 +1472,7 @@ body.popup-page {
 .popup-page .toggle-row { padding: 10px 14px; gap: 12px; }
 .popup-page .speed-selector-row { padding: 10px 14px; }
 .popup-page .toggle-info .name { font-size: 13px; }
+.popup-page .fpr-toggle-row .name { font-size: 12px; }
 .popup-page .toggle-info .desc { font-size: 10.5px; margin-top: 1px; }
 .popup-page .reset-btn { font-size: 10px; padding: 4px 10px; }
 .popup-page .version { font-size: 10px; }

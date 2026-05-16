@@ -26,11 +26,13 @@
 - **YouTube Ad Stripping**: Chroma's primary defense against YouTube ads. It intercepts and cleans ad-related metadata from JSON payloads before they reach the player, including sponsored Shorts overlay payloads, providing a seamless, high-performance viewing experience without the need for acceleration.
 - **Split-Tunnel Proxy Router**: Allows selected media domains to route through a custom HTTP, HTTPS, SOCKS4, or SOCKS5 proxy server directly in the browser while keeping unrelated traffic direct. This is designed for routing media sites through proxy regions that reduce ad serving or match country-specific media delivery. Includes a **Global Fallback** mode for unmatched browser traffic, domain-specific proxy overrides, Smart-Link Auto-Expansion for supported media/CDN domains, real-time connectivity verification, and local-only proxy credential handling for HTTP/HTTPS proxy authentication.
 - **Source-Generated DNR Network Blocking**: Uses a generated OISD Big static Declarative Net Request (DNR) ruleset, a protected custom static layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
+- **Tracking URL & AMP Cleanup**: Removes known tracking query parameters from top-level navigation URLs with DNR redirect rules, and optionally redirects supported AMP viewer pages to publisher URLs.
 - **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from settings without editing filter lists.
 - **Local Event Tracker**: The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
+- **Privacy Hardening & Fingerprint Randomization**: Optional Chrome privacy controls block third-party cookies, keep Do Not Track off, disable supported Privacy Sandbox ad APIs, and block website geolocation access. Optional per-host fingerprint randomization farbles canvas, audio, WebGL, navigator, and language APIs.
 - **Main-World Interceptor Safety Exclusions**: Bypasses Chroma's generic MAIN-world interceptor/bridge on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network, cosmetic, and scriptlet behavior remains governed by user settings, subscriptions, and per-domain whitelisting.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
@@ -134,6 +136,10 @@ Users often wonder how static rules can operate without moving every request thr
 - **Low JS Request-Path Overhead**: Because the matching logic lives outside of the extension's execution context, Chroma avoids waking its own service worker for every blocked request.
 - **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This ensures that the dynamic rule budget is reserved only for unique, high-priority threats.
 
+### Layer 1b: URL Cleanup & De-AMP (defaultDynamicRules.js, content.js)
+Chroma can clean common tracking URLs without routing requests through extension JavaScript. **Tracking URL Cleanup** uses dynamic DNR redirect rules to remove known attribution parameters such as `utm_*`, `fbclid`, `gclid`, and similar campaign IDs from top-level navigations. The cleanup rule set is split into small Chrome-compatible matchers so it stays within DNR regex limits while each matched rule still removes the full known tracking-parameter set.
+
+**De-AMP Links** is optional and disabled by default. When enabled, Chroma redirects supported Google AMP viewer and AMP cache URLs to the publisher URL, while respecting current-site and target-domain whitelists.
 
 ### Layer 2: Scriptlet Injection (scriptlets/engine.js)
 The advanced surgical layer of the extension, migrated to the high-performance `chrome.userScripts` API. This engine parses complex scriptlet rules from filter list subscriptions, including uBlock Origin and AdGuard aliases. Key capabilities include:
@@ -165,6 +171,13 @@ A specialized defense-in-depth layer optimized for high-clutter recipe and lifes
 ### Layer 7: Dynamic Ad Acceleration (prm_handler.js, yt_handler.js)
 A robust fallback and specialized layer for Amazon Prime Video and YouTube (when stripping is disabled). **Shipped in an OFF state by default**, it detects active ads and accelerates them at a configurable speed (×4–×16, default ×8) while synchronizing with a custom overlay to deliver a seamless transition.
 
+### Layer 8: Browser Privacy & Fingerprint Hardening (browserPrivacy.js, fingerprintRandomization.js)
+Chrome Privacy Hardening is optional and off by default. When enabled, Chroma uses Chrome's `privacy` API to block third-party cookies, keep Do Not Track disabled, and disable supported Privacy Sandbox ad APIs including Topics, Protected Audience, and ad measurement.
+
+Geolocation Protection is also optional and off by default. When enabled, Chroma uses Chrome's `contentSettings.location` API to block sites from accessing your real physical location. It does not spoof or synthesize fake coordinates; turning it off clears Chroma's rule so Chrome returns to the user's normal location setting.
+
+Fingerprint Randomization is also optional and off by default because some sites can be sensitive to fingerprint changes. When enabled, Chroma registers a MAIN-world script that randomizes/farbles supported fingerprint surfaces on a per-host basis, including canvas, audio, WebGL, navigator hardware fields, and normalized language APIs.
+
 ---
 
 ## Privacy & Transparency
@@ -172,6 +185,12 @@ A robust fallback and specialized layer for Amazon Prime Video and YouTube (when
 Chroma processes everything locally — no data is ever sent to Chroma's servers because there are none. However, to maintain compatibility with certain websites, Chroma includes a small set of **Allow Rules** that permit specific, standard ad-measurement requests to reach their intended destinations. These rules are scoped exclusively to the supported streaming platform as the initiator domain.
 
 Chroma does not intercept or store any data from these requests. For a full explanation of this tradeoff, see the [Privacy Policy](docs/PRIVACY_POLICY.md).
+
+### Google My Ad Center Tip
+
+For another account-level privacy improvement, open [Google My Ad Center](https://myadcenter.google.com) and turn **Personalized Ads** to **OFF**.
+
+This can reduce ad personalization and tracking activity tied to your Google account.
 
 ---
 
@@ -315,7 +334,8 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
 | `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
 | `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
-| `privacy` | Allows Chroma to apply optional WebRTC leak protection by setting Chrome's WebRTC IP handling policy. Used only when WebRTC Leak Protection is enabled or Auto mode applies with Global Proxy Fallback. |
+| `privacy` | Allows Chroma to apply optional browser-level privacy controls, including WebRTC leak protection and Chrome Privacy Hardening. |
+| `contentSettings` | Allows Chroma to provide an optional Geolocation Protection toggle that blocks website location access through Chrome's native site setting. |
 | `webRequest` | Used to intercept authentication challenges from proxy servers. |
 | `webRequestAuthProvider` | Required to provide credentials to proxy servers via the `onAuthRequired` listener. |
 
@@ -353,6 +373,8 @@ Chroma implements several advanced security measures to ensure extension integri
 |---------|-------------|---------|
 | `enabled` | Global switch for all features. | `true` |
 | `networkBlocking` | Enables DNR ruleset blocking. | `true` |
+| `trackingUrlCleanup` | Removes known tracking query parameters from top-level navigation URLs. | `true` |
+| `deAmpLinks` | Redirects supported AMP viewer pages to publisher URLs. | `false` |
 | `stripping` | Enables YouTube Ad Stripping (the primary blocker). | `true` |
 | `acceleration` | Enables accelerated ad playback (as a fallback). | `false` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (×4, ×8, ×12, or ×16). | `8` |
@@ -367,11 +389,13 @@ Chroma implements several advanced security measures to ensure extension integri
 | `globalProxyId` | Stores the selected global fallback proxy ID. | `null` |
 | `chromeServiceProxyBypass` | Lets Chrome-owned browser services connect directly while Global Proxy Fallback is enabled. | `true` |
 | `webRtcLeakProtection` | Controls Chrome's WebRTC IP handling policy: `off`, `auto`, `balanced`, or `strict`. | `auto` |
-| `fingerprintRandomization` | Enables optional per-site fingerprint randomization. | `false` |
+| `fingerprintRandomization` | Enables optional per-host canvas, audio, WebGL, navigator, and language API farbling. | `false` |
+| `browserPrivacyHardening` | Applies Chrome privacy settings for third-party cookies, Do Not Track, and Privacy Sandbox ad APIs. | `false` |
+| `geolocationProtection` | Blocks website access to real physical location through Chrome's native location content setting. | `false` |
 
 ## Health Panel
 
-The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, proxy routing, whitelists, and request-log/debug availability.
+The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including static DNR rulesets, dynamic rules, tracking URL cleanup, De-AMP redirects, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, browser privacy hardening, proxy routing, whitelists, and request-log/debug availability.
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents. DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts; when that logging is unavailable, blocking can still work normally.
 
