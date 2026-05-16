@@ -21,7 +21,7 @@ import { registerAll } from './handlers.js';
 import { createDefaultStatsV2, recordStatsEvent } from './stats.js';
 import './proxy.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';
-import { syncBrowserPrivacyHardening } from './browserPrivacy.js';
+import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';
 
 const DEBUG = false;
 
@@ -109,6 +109,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         webRtcLeakProtection: 'auto',
         fingerprintRandomization: false,
         browserPrivacyHardening: false,
+        geolocationProtection: false,
         trackingUrlCleanup: true,
         deAmpLinks: false,
       },
@@ -155,6 +156,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await syncBrowserPrivacyHardening(storedConfig || {});
+  await syncGeolocationProtection(storedConfig || {});
   await updateDNRState(isEnabled && isNetworkBlocking);
   await initSubscriptions();
   await refreshAllStale();
@@ -174,6 +176,7 @@ chrome.runtime.onStartup.addListener(async () => {
   const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await syncBrowserPrivacyHardening(storedConfig || {});
+  await syncGeolocationProtection(storedConfig || {});
   await updateDNRState(isEnabled && isNetworkBlocking);
   await chrome.storage.local.set({ requestLog: [] });
   await ensureAlarm();
@@ -386,7 +389,7 @@ export async function syncWhitelistRules() {
 
 // ─── CONFIGURATION VALIDATION ─────
 export function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening', 'trackingUrlCleanup', 'deAmpLinks'];
+  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening', 'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks'];
   const webRtcModes = new Set(['off', 'auto', 'balanced', 'strict']);
   const validatedConfig = {};
 

@@ -13,7 +13,9 @@ import {
 } from './webrtc.js';
 import {
   getBrowserPrivacyHardeningStatus,
-  syncBrowserPrivacyHardening
+  getGeolocationProtectionStatus,
+  syncBrowserPrivacyHardening,
+  syncGeolocationProtection
 } from './browserPrivacy.js';
 import { syncUserScripts } from '../scriptlets/engine.js';
 
@@ -266,7 +268,8 @@ function computeOverall({
   globalProxyEnabled,
   globalProxyConfigured,
   fpr,
-  browserPrivacy
+  browserPrivacy,
+  geolocation
 }) {
   const issues = [];
 
@@ -376,6 +379,22 @@ function computeOverall({
     ));
   }
 
+  if (geolocation?.enabled && !geolocation.available) {
+    issues.push(makeIssue(
+      'warning',
+      'geolocation',
+      'Geolocation protection could not inspect Chrome location settings.',
+      'Check browser support for Chrome content settings.'
+    ));
+  } else if (geolocation?.enabled && !geolocation.active) {
+    issues.push(makeIssue(
+      'warning',
+      'geolocation',
+      'Geolocation protection is enabled but Chrome location access is not blocked.',
+      'Turn Geolocation Protection off and on, or reload the extension.'
+    ));
+  }
+
   if (fpr?.enabled && fpr.active !== true) {
     issues.push(makeIssue(
       'warning',
@@ -458,11 +477,13 @@ export async function getHealthStatus() {
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
   await syncWebRtcLeakProtection(config, proxyConfigs);
   await syncBrowserPrivacyHardening(config);
+  await syncGeolocationProtection(config);
   const webrtc = summarizeWebRtcStatus(
     await getWebRtcLeakProtectionStatus(config, proxyConfigs),
     config
   );
   const browserPrivacy = await getBrowserPrivacyHardeningStatus(config);
+  const geolocation = await getGeolocationProtectionStatus(config);
 
   const health = {
     generatedAt: Date.now(),
@@ -478,6 +499,7 @@ export async function getHealthStatus() {
       acceleration: bool(config.acceleration, false),
       fingerprintRandomization: bool(config.fingerprintRandomization, false),
       browserPrivacyHardening: bool(config.browserPrivacyHardening, false),
+      geolocationProtection: bool(config.geolocationProtection, false),
       trackingUrlCleanup: config.trackingUrlCleanup !== false,
       deAmpLinks: bool(config.deAmpLinks, false)
     },
@@ -533,6 +555,7 @@ export async function getHealthStatus() {
     },
     webrtc,
     browserPrivacy,
+    geolocation,
     whitelist: {
       domainCount: asArray(storage.whitelist).length,
       fprDomainCount: asArray(storage.fprWhitelist).length
@@ -566,7 +589,8 @@ export async function getHealthStatus() {
     globalProxyEnabled: health.proxy.globalProxyEnabled,
     globalProxyConfigured,
     fpr,
-    browserPrivacy
+    browserPrivacy,
+    geolocation
   });
 
   return health;

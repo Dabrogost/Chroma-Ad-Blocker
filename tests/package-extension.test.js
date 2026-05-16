@@ -66,10 +66,12 @@ test('package verification rejects duplicate release entries', () => {
   );
 });
 
-test('manifest and README document privacy permission', () => {
+test('manifest and README document browser privacy permissions', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
   const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 
   assert.ok(manifest.permissions.includes('privacy'));
+  assert.ok(manifest.permissions.includes('contentSettings'));
   assert.match(readme, /\|\s*`privacy`\s*\|[^|]*WebRTC leak protection/i);
+  assert.match(readme, /\|\s*`contentSettings`\s*\|[^|]*Geolocation Protection/i);
 });

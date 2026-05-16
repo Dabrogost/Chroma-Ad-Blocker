@@ -54,6 +54,7 @@ const ChromaApp = (() => {
     ['toggleWarnings',     'suppressWarnings',         true],
     ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
     ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
+    ['toggleGeolocationProtection', 'geolocationProtection', false],
   ];
   let healthLoadSerial = 0;
 
@@ -217,6 +218,20 @@ const ChromaApp = (() => {
     const settings = getPrivacySandboxSettings(health);
     if (settings.length === 0) return 'warning';
     return settings.every(setting => setting.hardened) ? 'ok' : 'warning';
+  }
+
+  function getGeolocationProtectionLabel(health) {
+    const geo = health.geolocation || {};
+    if (!geo.enabled) return 'Disabled';
+    if (!geo.available) return 'Unavailable';
+    return geo.active ? 'Blocked' : 'Not blocked';
+  }
+
+  function getGeolocationProtectionStatus(health) {
+    const geo = health.geolocation || {};
+    if (!geo.enabled) return 'disabled';
+    if (!geo.available) return 'warning';
+    return geo.active ? 'ok' : 'warning';
   }
 
   function getFprProtectedSurfaceLabel(health) {
@@ -673,6 +688,7 @@ const ChromaApp = (() => {
 
     addHealthSection(body, 'Browser Privacy', [
       ['Chrome Privacy Hardening', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'Active' : `${formatCount(health.browserPrivacy?.hardenedCount)} / ${formatCount(health.browserPrivacy?.totalCount)} active`) : 'Disabled', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'ok' : 'warning') : 'disabled'],
+      ['Geolocation Protection', getGeolocationProtectionLabel(health), getGeolocationProtectionStatus(health)],
       ['Third-party cookies', getBrowserPrivacySettingLabel(health, 'thirdPartyCookiesAllowed'), getBrowserPrivacySettingStatus(health, 'thirdPartyCookiesAllowed')],
       ['Do Not Track', getBrowserPrivacySettingLabel(health, 'doNotTrackEnabled'), getBrowserPrivacySettingStatus(health, 'doNotTrackEnabled')],
       ['Privacy Sandbox ads', getPrivacySandboxLabel(health), getPrivacySandboxStatus(health)]

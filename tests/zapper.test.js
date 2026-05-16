@@ -73,6 +73,7 @@ function loadHandlers(options = {}) {
     syncDynamicRules: async () => {},
     syncWhitelistRules: async () => {},
     syncBrowserPrivacyHardening: async () => ({}),
+    syncGeolocationProtection: async () => ({}),
     checkForUpdate: async () => ({ updateAvailable: false }),
     resetRequestLog: async () => {},
     getMergedLog: async () => [],

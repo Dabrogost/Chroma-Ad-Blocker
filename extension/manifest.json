@@ -15,6 +15,7 @@
     "userScripts",
     "proxy",
     "privacy",
+    "contentSettings",
     "webRequest",
     "webRequestAuthProvider"
   ],

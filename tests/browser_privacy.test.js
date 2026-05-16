@@ -33,6 +33,30 @@ function createChromeSetting({ value = true, levelOfControl = 'controllable_by_t
   };
 }
 
+function createContentSetting({ setting = 'ask' } = {}) {
+  const calls = [];
+  return {
+    calls,
+    get(details, callback) {
+      calls.push({ method: 'get', details });
+      callback({ setting });
+    },
+    set(details, callback) {
+      calls.push({ method: 'set', details });
+      setting = details.setting;
+      callback();
+    },
+    clear(details, callback) {
+      calls.push({ method: 'clear', details });
+      setting = undefined;
+      callback();
+    },
+    readSetting() {
+      return setting;
+    }
+  };
+}
+
 function loadSandbox(overrides = {}) {
   const settings = {
     thirdPartyCookiesAllowed: createChromeSetting(overrides.thirdPartyCookiesAllowed),
@@ -41,6 +65,9 @@ function loadSandbox(overrides = {}) {
     topicsEnabled: createChromeSetting(overrides.topicsEnabled),
     fledgeEnabled: createChromeSetting(overrides.fledgeEnabled)
   };
+  const contentSettings = {
+    location: createContentSetting(overrides.location)
+  };
 
   const sandbox = {
     chrome: {
@@ -48,6 +75,7 @@ function loadSandbox(overrides = {}) {
       privacy: {
         websites: settings
       },
+      contentSettings,
       storage: {
         onChanged: { addListener: () => {} }
       }
@@ -61,7 +89,7 @@ function loadSandbox(overrides = {}) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(browserPrivacyCode, sandbox);
-  return { sandbox, settings };
+  return { sandbox, settings, contentSettings };
 }
 
 test('browser privacy hardening', async (t) => {
@@ -111,5 +139,45 @@ test('browser privacy hardening', async (t) => {
     assert.strictEqual(status.partial, true);
     assert.strictEqual(status.hardenedCount, 4);
     assert.strictEqual(status.blockedCount, 1);
+  });
+
+  await t.test('sets Chrome geolocation content setting to block when enabled', async () => {
+    const { sandbox, contentSettings } = loadSandbox();
+
+    const result = await sandbox.syncGeolocationProtection({ geolocationProtection: true });
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(contentSettings.location.readSetting(), 'block');
+    assert.ok(contentSettings.location.calls.some(call =>
+      call.method === 'set' &&
+      call.details.primaryPattern === '<all_urls>' &&
+      call.details.secondaryPattern === '<all_urls>' &&
+      call.details.scope === 'regular' &&
+      call.details.setting === 'block'
+    ));
+  });
+
+  await t.test('clears Chrome geolocation content setting when disabled', async () => {
+    const { sandbox, contentSettings } = loadSandbox({
+      location: { setting: 'block' }
+    });
+
+    const result = await sandbox.syncGeolocationProtection({ geolocationProtection: false });
+
+    assert.strictEqual(result.ok, true);
+    assert.ok(contentSettings.location.calls.some(call => call.method === 'clear' && call.details.scope === 'regular'));
+  });
+
+  await t.test('reports geolocation protection status from Chrome content settings', async () => {
+    const { sandbox } = loadSandbox({
+      location: { setting: 'block' }
+    });
+
+    const status = await sandbox.getGeolocationProtectionStatus({ geolocationProtection: true });
+
+    assert.strictEqual(status.enabled, true);
+    assert.strictEqual(status.available, true);
+    assert.strictEqual(status.active, true);
+    assert.strictEqual(status.setting, 'block');
   });
 });

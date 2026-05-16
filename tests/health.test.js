@@ -9,9 +9,11 @@ const healthJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ba
     var getWebRtcLeakProtectionStatus = globalThis._mockGetWebRtcLeakProtectionStatus;
     var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection;
   `)
-  .replace(/import\s*\{[\s\S]*?getBrowserPrivacyHardeningStatus,[\s\S]*?syncBrowserPrivacyHardening[\s\S]*?\}\s*from\s*'\.\/browserPrivacy\.js';/, `
+  .replace(/import\s*\{[\s\S]*?getBrowserPrivacyHardeningStatus,[\s\S]*?getGeolocationProtectionStatus,[\s\S]*?syncBrowserPrivacyHardening,[\s\S]*?syncGeolocationProtection[\s\S]*?\}\s*from\s*'\.\/browserPrivacy\.js';/, `
     var getBrowserPrivacyHardeningStatus = globalThis._mockGetBrowserPrivacyHardeningStatus;
+    var getGeolocationProtectionStatus = globalThis._mockGetGeolocationProtectionStatus;
     var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening;
+    var syncGeolocationProtection = globalThis._mockSyncGeolocationProtection;
   `)
   .replace("import { syncUserScripts } from '../scriptlets/engine.js';", "var syncUserScripts = globalThis._mockSyncUserScripts || (async () => {});")
   .replace(/^export\s+/gm, '');
@@ -50,6 +52,7 @@ function loadHealthSandbox(options = {}) {
       acceleration: false,
       fingerprintRandomization: false,
       browserPrivacyHardening: false,
+      geolocationProtection: false,
       deAmpLinks: false,
       globalProxyEnabled: false,
       globalProxyId: null
@@ -77,6 +80,7 @@ function loadHealthSandbox(options = {}) {
   };
   const syncResults = [];
   const browserPrivacySyncResults = [];
+  const geolocationSyncResults = [];
   const userScriptSyncResults = [];
   const browserPrivacyStatus = options.browserPrivacyStatus || {
     enabled: storage.config?.browserPrivacyHardening === true,
@@ -87,6 +91,13 @@ function loadHealthSandbox(options = {}) {
     totalCount: 5,
     blockedCount: 0,
     settings: []
+  };
+  const geolocationStatus = options.geolocationStatus || {
+    enabled: storage.config?.geolocationProtection === true,
+    available: true,
+    active: storage.config?.geolocationProtection === true,
+    setting: storage.config?.geolocationProtection === true ? 'block' : 'ask',
+    error: null
   };
   const enabledRulesets = options.enabledRulesets || ['static_a', 'static_b'];
   const dynamicRules = options.dynamicRules || [{ id: 2000 }];
@@ -145,6 +156,11 @@ function loadHealthSandbox(options = {}) {
     browserPrivacySyncResults.push({ config });
     return options.browserPrivacySyncResult || { ok: true };
   };
+  sandbox._mockGetGeolocationProtectionStatus = async () => geolocationStatus;
+  sandbox._mockSyncGeolocationProtection = async (config) => {
+    geolocationSyncResults.push({ config });
+    return options.geolocationSyncResult || { ok: true };
+  };
   sandbox._mockSyncUserScripts = async () => {
     userScriptSyncResults.push({ ts: Date.now() });
     if (typeof options.onUserScriptSync === 'function') {
@@ -154,6 +170,7 @@ function loadHealthSandbox(options = {}) {
   };
   sandbox._webrtcSyncResults = syncResults;
   sandbox._browserPrivacySyncResults = browserPrivacySyncResults;
+  sandbox._geolocationSyncResults = geolocationSyncResults;
   sandbox._userScriptSyncResults = userScriptSyncResults;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
@@ -492,6 +509,37 @@ test('health diagnostics', async (t) => {
       issue.area === 'trackingUrlCleanup' &&
       /not registered/i.test(issue.message)
     ));
+  });
+
+  await t.test('Geolocation Protection status is reported as browser privacy', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: true,
+          networkBlocking: true,
+          geolocationProtection: true
+        }
+      },
+      geolocationStatus: {
+        enabled: true,
+        available: true,
+        active: true,
+        setting: 'block',
+        error: null
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.master.geolocationProtection, true);
+    assert.deepStrictEqual(plain(health.geolocation), {
+      enabled: true,
+      available: true,
+      active: true,
+      setting: 'block',
+      error: null
+    });
+    assert.strictEqual(sandbox._geolocationSyncResults.length, 1);
   });
 
   await t.test('proxy health never exposes auth fields or proxy hosts', async () => {

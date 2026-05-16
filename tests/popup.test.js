@@ -426,10 +426,16 @@ test('popup.js functionality', async (t) => {
 test('UI hardening copy', () => {
   assert.match(componentsJsCode, /changes anti-detection network behavior/);
   assert.match(componentsJsCode, /De-AMP Links/);
+  assert.match(componentsJsCode, /Geolocation Protection/);
+  assert.match(componentsJsCode, /Blocks sites from accessing your real physical location/);
   assert.match(componentsJsCode, /Redirects supported AMP viewer pages to publisher URLs/);
   assert.ok(
-    componentsJsCode.indexOf("name: 'Chrome Privacy Hardening'") < componentsJsCode.indexOf("name: 'De-AMP Links'"),
-    'De-AMP Links should render below Chrome Privacy Hardening'
+    componentsJsCode.indexOf("name: 'Chrome Privacy Hardening'") < componentsJsCode.indexOf("name: 'Geolocation Protection'"),
+    'Geolocation Protection should render below Chrome Privacy Hardening'
+  );
+  assert.ok(
+    componentsJsCode.indexOf("name: 'Geolocation Protection'") < componentsJsCode.indexOf("name: 'De-AMP Links'"),
+    'De-AMP Links should render below Geolocation Protection'
   );
   assert.ok(
     componentsJsCode.indexOf("name: 'Cosmetic Filtering'") < componentsJsCode.indexOf("name: 'Tracking URL Cleanup'"),

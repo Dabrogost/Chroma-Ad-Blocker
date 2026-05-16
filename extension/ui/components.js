@@ -208,6 +208,11 @@ const ChromaComponents = (() => {
           desc: 'Blocks third-party cookies, keeps DNT off, and disables Chrome ad APIs'
         })}
         ${renderToggleRow({
+          inputId: 'toggleGeolocationProtection',
+          name: 'Geolocation Protection',
+          desc: 'Blocks sites from accessing your real physical location'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleDeAmpLinks',
           name: 'De-AMP Links',
           desc: 'Redirects supported AMP viewer pages to publisher URLs'
