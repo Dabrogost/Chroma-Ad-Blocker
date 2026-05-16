@@ -25,6 +25,47 @@
 
   log('active on', host, 'matched', siteKey);
 
+  if (siteKey === 'pcgamer.com') {
+    window.addEventListener('message', (e) => {
+      if (e.source === window && typeof e.data === 'string' && e.data.endsWith('_as_req')) {
+        const token = e.data.substring(0, e.data.length - 7);
+        window.postMessage(token + '_as_res', '*');
+      }
+    });
+
+    try {
+      const origRemove = Element.prototype.remove;
+      Element.prototype.remove = function () {
+        if (this === document.body) {
+          log('blocked document.body.remove() for PCGamer');
+          return;
+        }
+        if (origRemove) return origRemove.apply(this, arguments);
+      };
+    } catch (_) {}
+
+    try {
+      Object.defineProperty(Location.prototype, 'reload', {
+        value: function () { log('blocked location.reload() for PCGamer'); },
+        writable: false,
+        configurable: false,
+      });
+    } catch (_) {
+      try { window.location.reload = function () { log('blocked location.reload() for PCGamer'); }; } catch (_) {}
+    }
+
+    try {
+      const origGo = History.prototype.go;
+      History.prototype.go = function (delta) {
+        if (delta === 0 || delta === '0') {
+          log('blocked history.go(0) for PCGamer');
+          return;
+        }
+        if (origGo) return origGo.apply(this, arguments);
+      };
+    } catch (_) {}
+  }
+
   // ─── RECIPE CARD PROTECTION ─────
   // If a node to be hidden/removed lives inside a recipe card, leave it alone.
   const RECIPE_CARD_SELECTORS = [
