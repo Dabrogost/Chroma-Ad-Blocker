@@ -26,9 +26,10 @@
   log('active on', host, 'matched', siteKey);
 
   if (siteKey === 'pcgamer.com') {
+    const suffix = '_as_req';
     window.addEventListener('message', (e) => {
-      if (e.source === window && typeof e.data === 'string' && e.data.endsWith('_as_req')) {
-        const token = e.data.substring(0, e.data.length - 7);
+      if (e.source === window && typeof e.data === 'string' && e.data.endsWith(suffix)) {
+        const token = e.data.slice(0, -suffix.length);
         window.postMessage(token + '_as_res', '*');
       }
     });
