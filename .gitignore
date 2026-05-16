@@ -31,4 +31,4 @@ tmp/
 *.log
 *.local
 docs/testing.md
-dist.md
+docs/dist.md
