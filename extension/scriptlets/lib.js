@@ -134,6 +134,7 @@ export function noSetTimeoutIf(args) {
     if (matches(fnStr) && (delay === undefined || String(d) === String(delay))) return -1;
     return orig.apply(this, arguments);
   };
+  try { Object.defineProperty(window.setTimeout, 'name', { value: orig.name || 'setTimeout', configurable: true }); } catch (e) {}
   window.setTimeout.toString = () => orig.toString();
 }
 
@@ -157,6 +158,7 @@ export function noSetIntervalIf(args) {
     if (matches(fnStr) && (delay === undefined || String(d) === String(delay))) return -1;
     return orig.apply(this, arguments);
   };
+  try { Object.defineProperty(window.setInterval, 'name', { value: orig.name || 'setInterval', configurable: true }); } catch (e) {}
   window.setInterval.toString = () => orig.toString();
 }
 
@@ -184,6 +186,7 @@ export function preventFetch(args) {
     }
     return orig.apply(this, arguments);
   };
+  try { Object.defineProperty(window.fetch, 'name', { value: orig.name || 'fetch', configurable: true }); } catch (e) {}
   window.fetch.toString = () => orig.toString();
 }
 
@@ -209,23 +212,31 @@ export function preventXhr(args) {
     const instance = new OrigXHR();
     let _blocked = false;
 
-    const origOpen = instance.open.bind(instance);
+    const nativeOpen = instance.open;
+    const origOpen = nativeOpen.bind(instance);
     instance.open = function(method, url) {
       if (matches(String(url))) { _blocked = true; return; }
       return origOpen.apply(instance, arguments);
     };
+    try { Object.defineProperty(instance.open, 'name', { value: nativeOpen.name || 'open', configurable: true }); } catch (e) {}
+    instance.open.toString = () => nativeOpen.toString();
 
-    const origSend = instance.send.bind(instance);
+    const nativeSend = instance.send;
+    const origSend = nativeSend.bind(instance);
     instance.send = function() {
       if (_blocked) return;
       return origSend.apply(instance, arguments);
     };
+    try { Object.defineProperty(instance.send, 'name', { value: nativeSend.name || 'send', configurable: true }); } catch (e) {}
+    instance.send.toString = () => nativeSend.toString();
 
     return instance;
   }
 
   // Preserve prototype chain so instanceof checks pass
   PatchedXHR.prototype = OrigXHR.prototype;
+  try { Object.defineProperty(PatchedXHR, 'name', { value: OrigXHR.name || 'XMLHttpRequest', configurable: true }); } catch (e) {}
+  PatchedXHR.toString = () => OrigXHR.toString();
   Object.defineProperty(window, 'XMLHttpRequest', { value: PatchedXHR, writable: true, configurable: true });
 }
 
@@ -602,6 +613,7 @@ export function preventAddEventListener(args) {
     } catch (e) {}
     return orig.apply(this, arguments);
   };
+  try { Object.defineProperty(EventTarget.prototype.addEventListener, 'name', { value: orig.name || 'addEventListener', configurable: true }); } catch (e) {}
   EventTarget.prototype.addEventListener.toString = () => orig.toString();
 }
 
@@ -670,6 +682,7 @@ export function preventWindowOpen(args) {
     if (matches(url || '')) return noopWin;
     return orig.apply(this, arguments);
   };
+  try { Object.defineProperty(window.open, 'name', { value: orig.name || 'open', configurable: true }); } catch (e) {}
   window.open.toString = () => orig.toString();
 }
 
@@ -775,6 +788,7 @@ export function preventRequestAnimationFrame(args) {
     if (matches(fnStr)) return 0;
     return orig.apply(this, arguments);
   };
+  try { Object.defineProperty(window.requestAnimationFrame, 'name', { value: orig.name || 'requestAnimationFrame', configurable: true }); } catch (e) {}
   window.requestAnimationFrame.toString = () => orig.toString();
 }
 
@@ -934,6 +948,7 @@ export function preventElementSrcLoading(args) {
     }
     return origSetAttr.apply(this, arguments);
   };
+  try { Object.defineProperty(Element.prototype.setAttribute, 'name', { value: origSetAttr.name || 'setAttribute', configurable: true }); } catch (e) {}
   Element.prototype.setAttribute.toString = () => origSetAttr.toString();
 }
 
@@ -1015,17 +1030,21 @@ export function m3uPrune(args) {
       } catch (e) { return resp; }
     });
   };
+  try { Object.defineProperty(window.fetch, 'name', { value: origFetch.name || 'fetch', configurable: true }); } catch (e) {}
   window.fetch.toString = () => origFetch.toString();
 
   const OrigXHR = window.XMLHttpRequest;
   function PatchedXHR() {
     const xhr = new OrigXHR();
     let watchedUrl = '';
-    const origOpen = xhr.open.bind(xhr);
+    const nativeOpen = xhr.open;
+    const origOpen = nativeOpen.bind(xhr);
     xhr.open = function(method, url) {
       watchedUrl = String(url || '');
       return origOpen.apply(xhr, arguments);
     };
+    try { Object.defineProperty(xhr.open, 'name', { value: nativeOpen.name || 'open', configurable: true }); } catch (e) {}
+    xhr.open.toString = () => nativeOpen.toString();
     xhr.addEventListener('readystatechange', function() {
       if (xhr.readyState !== 4 || !isPlaylistUrl(watchedUrl)) return;
       try {
@@ -1039,6 +1058,8 @@ export function m3uPrune(args) {
     return xhr;
   }
   PatchedXHR.prototype = OrigXHR.prototype;
+  try { Object.defineProperty(PatchedXHR, 'name', { value: OrigXHR.name || 'XMLHttpRequest', configurable: true }); } catch (e) {}
+  PatchedXHR.toString = () => OrigXHR.toString();
   Object.defineProperty(window, 'XMLHttpRequest', { value: PatchedXHR, writable: true, configurable: true });
 }
 
@@ -1190,6 +1211,7 @@ export function spoofCss(args) {
         }
       });
     };
+    try { Object.defineProperty(window.getComputedStyle, 'name', { value: origGCS.name || 'getComputedStyle', configurable: true }); } catch (e) {}
     window.getComputedStyle.toString = () => origGCS.toString();
   }
 
@@ -1207,6 +1229,7 @@ export function spoofCss(args) {
       o[prop] = numeric;
       return o;
     };
+    try { Object.defineProperty(Element.prototype.getBoundingClientRect, 'name', { value: origRect.name || 'getBoundingClientRect', configurable: true }); } catch (e) {}
     Element.prototype.getBoundingClientRect.toString = () => origRect.toString();
   }
 }
@@ -1230,6 +1253,7 @@ export function noEvalIf(args) {
     if (matches(String(code))) return undefined;
     return orig.call(this, code);
   };
+  try { Object.defineProperty(window.eval, 'name', { value: orig.name || 'eval', configurable: true }); } catch (e) {}
   window.eval.toString = () => orig.toString();
 }
 
@@ -1267,6 +1291,7 @@ export function jsonPrune(args) {
     }
     return result;
   };
+  try { Object.defineProperty(JSON.parse, 'name', { value: origParse.name || 'parse', configurable: true }); } catch (e) {}
   JSON.parse.toString = () => origParse.toString();
 }
 

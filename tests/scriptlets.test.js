@@ -251,6 +251,136 @@ test('no-eval-if', async (t) => {
   });
 });
 
+test('scriptlet native wrapper camouflage', async (t) => {
+  await t.test('preserves function names for patched globals', () => {
+    const cases = [
+      {
+        scriptlet: 'noSetTimeoutIf',
+        args: ['adblockCheck'],
+        win: {
+          setTimeout: function setTimeout(fn) { try { fn(); } catch (e) {} return 1; }
+        },
+        expr: 'window.setTimeout.name',
+        expected: 'setTimeout'
+      },
+      {
+        scriptlet: 'noSetIntervalIf',
+        args: ['adblockCheck'],
+        win: {
+          setInterval: function setInterval() { return 1; }
+        },
+        expr: 'window.setInterval.name',
+        expected: 'setInterval'
+      },
+      {
+        scriptlet: 'preventFetch',
+        args: ['analytics.example.com'],
+        win: {
+          fetch: function fetch() { return Promise.resolve({}); }
+        },
+        expr: 'window.fetch.name',
+        expected: 'fetch'
+      },
+      {
+        scriptlet: 'preventWindowOpen',
+        args: ['ads.example.com'],
+        win: {
+          open: function open() { return { focus() {} }; }
+        },
+        expr: 'window.open.name',
+        expected: 'open'
+      },
+      {
+        scriptlet: 'preventRequestAnimationFrame',
+        args: ['adblockCheck'],
+        win: {
+          requestAnimationFrame: function requestAnimationFrame() { return 1; }
+        },
+        expr: 'window.requestAnimationFrame.name',
+        expected: 'requestAnimationFrame'
+      },
+      {
+        scriptlet: 'noEvalIf',
+        args: ['adblock'],
+        win: {
+          eval: function evalNative(code) { return code; }
+        },
+        expr: 'window.eval.name',
+        expected: 'evalNative'
+      }
+    ];
+
+    for (const c of cases) {
+      const sandbox = runScriptlet(c.scriptlet, c.args, c.win);
+      assert.strictEqual(vm.runInContext(c.expr, sandbox), c.expected, c.scriptlet);
+    }
+  });
+
+  await t.test('preserves XMLHttpRequest constructor name and source', () => {
+    const win = makeWindow();
+    win.XMLHttpRequest = class XMLHttpRequest { open() {} send() {} };
+    const origSource = win.XMLHttpRequest.toString();
+
+    const sandbox = runScriptlet('preventXhr', ['analytics.example.com'], win);
+
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.name', sandbox), 'XMLHttpRequest');
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.toString()', sandbox), origSource);
+    assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().open.name', sandbox), 'open');
+    assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().send.name', sandbox), 'send');
+  });
+
+  await t.test('preserves m3u-prune patched fetch and XHR names', () => {
+    const win = makeWindow();
+    win.fetch = function fetch() {
+      return Promise.resolve({ clone() {}, text() {} });
+    };
+    win.XMLHttpRequest = class XMLHttpRequest {
+      open() {}
+      send() {}
+      addEventListener() {}
+    };
+
+    const sandbox = runScriptlet('m3uPrune', ['ad-segment'], win);
+
+    assert.strictEqual(vm.runInContext('window.fetch.name', sandbox), 'fetch');
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.name', sandbox), 'XMLHttpRequest');
+    assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().open.name', sandbox), 'open');
+  });
+
+  await t.test('preserves patched prototype method names', () => {
+    function EventTarget() {}
+    EventTarget.prototype.addEventListener = function addEventListener() {};
+
+    function Element() {}
+    Element.prototype.setAttribute = function setAttribute() {};
+    Element.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    };
+
+    function HTMLImageElement() {}
+    HTMLImageElement.prototype = Object.create(Element.prototype);
+    Object.defineProperty(HTMLImageElement.prototype, 'src', {
+      get() { return this._src || ''; },
+      set(value) { this._src = value; },
+      configurable: true
+    });
+
+    let sandbox = runScriptlet('preventAddEventListener', ['click'], { EventTarget });
+    assert.strictEqual(vm.runInContext('EventTarget.prototype.addEventListener.name', sandbox), 'addEventListener');
+
+    sandbox = runScriptlet('preventElementSrcLoading', ['img', 'ad.png'], { Element, HTMLImageElement });
+    assert.strictEqual(vm.runInContext('Element.prototype.setAttribute.name', sandbox), 'setAttribute');
+
+    sandbox = runScriptlet('spoofCss', ['*', 'width', '10'], { Element });
+    assert.strictEqual(vm.runInContext('Element.prototype.getBoundingClientRect.name', sandbox), 'getBoundingClientRect');
+  });
+
+  await t.test('preserves JSON.parse wrapper name', () => {
+    const sandbox = runScriptlet('jsonPrune', ['adSlots']);
+    assert.strictEqual(vm.runInContext('JSON.parse.name', sandbox), 'parse');
+  });
+});
+
 test('reddit-promoted-ads', async (t) => {
   await t.test('crawls from promoted marker and hides the containing post', () => {
     const makeElement = ({ tag = 'div', id = '', className = '', text = '' } = {}) => ({
