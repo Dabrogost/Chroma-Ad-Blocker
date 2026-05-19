@@ -37,6 +37,22 @@ const SKIP_OPTIONS = new Set([
   'webrtc', 'mp4', 'empty', 'elemhide'
 ]);
 
+const DEFAULT_PARSE_BUDGET = Object.freeze({
+  maxLines: 250000,
+  maxLineLength: 4096,
+  maxNetworkRules: 100000,
+  maxCosmeticRules: 25000,
+  maxScriptletRules: 10000
+});
+
+function parseBudget(overrides = {}) {
+  return { ...DEFAULT_PARSE_BUDGET, ...overrides };
+}
+
+function assertWithinBudget(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
 // ─── LINE CLASSIFIER ─────
 /**
  * Classifies a single filter list line into a rule type.
@@ -379,6 +395,7 @@ function parseScriptletRule(line) {
  * @returns {{ networkRules: Object[], cosmeticRules: Object[], scriptletRules: Object[], skipped: Object }}
  */
 export function parseList(text) {
+  const budget = parseBudget();
   const networkRules  = [];
   const cosmeticRules = [];
   const scriptletRules = [];
@@ -390,7 +407,19 @@ export function parseList(text) {
     malformed:    0
   };
 
-  for (const rawLine of text.split('\n')) {
+  let lineCount = 0;
+  let start = 0;
+
+  for (let i = 0; i <= text.length; i++) {
+    if (i < text.length && text[i] !== '\n') continue;
+
+    lineCount++;
+    assertWithinBudget(lineCount <= budget.maxLines, `Subscription list has too many lines; limit is ${budget.maxLines}`);
+
+    const rawLine = text.slice(start, i);
+    start = i + 1;
+    assertWithinBudget(rawLine.length <= budget.maxLineLength, `Subscription filter line too long; limit is ${budget.maxLineLength} characters`);
+
     const line = rawLine.trim();
     if (!line) continue;
 
@@ -407,35 +436,50 @@ export function parseList(text) {
 
       case 'network': {
         const rule = parseNetworkRule(line, false);
-        if (rule) networkRules.push(rule);
+        if (rule) {
+          assertWithinBudget(networkRules.length < budget.maxNetworkRules, `Subscription has too many network rules; limit is ${budget.maxNetworkRules}`);
+          networkRules.push(rule);
+        }
         else skipped.malformed++;
         break;
       }
 
       case 'exception': {
         const rule = parseNetworkRule(line, true);
-        if (rule) networkRules.push(rule);
+        if (rule) {
+          assertWithinBudget(networkRules.length < budget.maxNetworkRules, `Subscription has too many network rules; limit is ${budget.maxNetworkRules}`);
+          networkRules.push(rule);
+        }
         else skipped.malformed++;
         break;
       }
 
       case 'cosmetic': {
         const rule = parseCosmeticRule(line, false);
-        if (rule) cosmeticRules.push(rule);
+        if (rule) {
+          assertWithinBudget(cosmeticRules.length < budget.maxCosmeticRules, `Subscription has too many cosmetic rules; limit is ${budget.maxCosmeticRules}`);
+          cosmeticRules.push(rule);
+        }
         else skipped.malformed++;
         break;
       }
 
       case 'cosmetic-exception': {
         const rule = parseCosmeticRule(line, true);
-        if (rule) cosmeticRules.push(rule);
+        if (rule) {
+          assertWithinBudget(cosmeticRules.length < budget.maxCosmeticRules, `Subscription has too many cosmetic rules; limit is ${budget.maxCosmeticRules}`);
+          cosmeticRules.push(rule);
+        }
         else skipped.malformed++;
         break;
       }
 
       case 'scriptlet': {
         const rule = parseScriptletRule(line);
-        if (rule) scriptletRules.push(rule);
+        if (rule) {
+          assertWithinBudget(scriptletRules.length < budget.maxScriptletRules, `Subscription has too many scriptlet rules; limit is ${budget.maxScriptletRules}`);
+          scriptletRules.push(rule);
+        }
         else skipped.malformed++;
         break;
       }

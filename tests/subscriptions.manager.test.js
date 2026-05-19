@@ -100,6 +100,7 @@ function loadManager(options = {}) {
     setTimeout,
     clearTimeout,
     AbortController,
+    TextDecoder,
     Date: options.Date || Date,
     _DEFAULT_SUBSCRIPTIONS: options.defaultSubscriptions || [],
     _parseList: parseList,
@@ -243,6 +244,68 @@ test('Subscription lifecycle manager', async (t) => {
       assert.strictEqual(result.ok, false, scenario.name);
       assert.match(result.error, scenario.pattern, scenario.name);
       assert.match(storage.subscriptions[0].lastError, scenario.pattern, scenario.name);
+      assert.strictEqual(manager.appliedRules.length, 0, scenario.name);
+    }
+  });
+
+  await t.test('refreshSubscription rejects oversized subscription bodies before parsing', async () => {
+    for (const scenario of [
+      {
+        name: 'content-length precheck',
+        fetch: async (url) => String(url).startsWith('chrome-extension://')
+          ? { ok: true, json: async () => [] }
+          : {
+              ok: true,
+              headers: { get: name => name.toLowerCase() === 'content-length' ? String(11 * 1024 * 1024) : null },
+              text: async () => {
+                throw new Error('text should not be read after content-length rejection');
+              }
+            }
+      },
+      {
+        name: 'streaming read cap',
+        fetch: async (url) => String(url).startsWith('chrome-extension://')
+          ? { ok: true, json: async () => [] }
+          : {
+              ok: true,
+              headers: { get: () => null },
+              body: {
+                getReader: () => {
+                  let remaining = 11;
+                  return {
+                    async read() {
+                      if (remaining-- <= 0) return { done: true };
+                      return { done: false, value: Buffer.alloc(1024 * 1024, 65) };
+                    },
+                    async cancel() {}
+                  };
+                }
+              },
+              text: async () => {
+                throw new Error('text fallback should not be used for streams');
+              }
+            }
+      }
+    ]) {
+      const storage = {
+        subscriptions: [{ id: scenario.name, name: scenario.name, url: `https://lists.example/${scenario.name}.txt`, enabled: true }]
+      };
+      let parseCalled = false;
+      const manager = loadManager({
+        storage,
+        fetch: scenario.fetch,
+        parseList: () => {
+          parseCalled = true;
+          return { networkRules: [], cosmeticRules: [], scriptletRules: [], skipped: {} };
+        }
+      });
+
+      const result = await manager.refreshSubscription(scenario.name);
+
+      assert.strictEqual(result.ok, false, scenario.name);
+      assert.match(result.error, /Subscription list too large/, scenario.name);
+      assert.match(storage.subscriptions[0].lastError, /Subscription list too large/, scenario.name);
+      assert.strictEqual(parseCalled, false, scenario.name);
       assert.strictEqual(manager.appliedRules.length, 0, scenario.name);
     }
   });

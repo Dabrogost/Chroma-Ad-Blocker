@@ -23,6 +23,65 @@ import { SCRIPTLET_MAP } from '../scriptlets/lib.js';
 const DEBUG = false;
 const ALARM_NAME     = 'chroma-subscription-check';
 const FETCH_TIMEOUT  = 30000; // 30s per-fetch timeout
+const MAX_LIST_BYTES = 10 * 1024 * 1024; // 10 MiB per subscription response
+
+function getHeader(res, name) {
+  if (!res.headers || typeof res.headers.get !== 'function') return null;
+  return res.headers.get(name);
+}
+
+function utf8ByteLength(text) {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+async function readResponseTextWithLimit(res, maxBytes) {
+  const contentLength = Number(getHeader(res, 'content-length'));
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new Error(`Subscription list too large: ${contentLength} bytes exceeds ${maxBytes} byte limit`);
+  }
+
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    const text = await res.text();
+    const bytes = utf8ByteLength(text);
+    if (bytes > maxBytes) {
+      throw new Error(`Subscription list too large: ${bytes} bytes exceeds ${maxBytes} byte limit`);
+    }
+    return text;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks = [];
+  let bytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    bytes += value.byteLength !== undefined ? value.byteLength : utf8ByteLength(String(value));
+    if (bytes > maxBytes) {
+      if (typeof reader.cancel === 'function') {
+        await reader.cancel().catch(() => {});
+      }
+      throw new Error(`Subscription list too large: exceeds ${maxBytes} byte limit`);
+    }
+    chunks.push(decoder.decode(value, { stream: true }));
+  }
+  chunks.push(decoder.decode());
+  return chunks.join('');
+}
 
 // ─── FETCH ─────
 /**
@@ -36,7 +95,7 @@ async function fetchList(url) {
   try {
     const res = await fetch(url, { signal: controller.signal, cache: 'no-cache' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    return await readResponseTextWithLimit(res, MAX_LIST_BYTES);
   } finally {
     clearTimeout(timer);
   }

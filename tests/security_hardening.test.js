@@ -705,4 +705,56 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.deepStrictEqual(plain(parsed.scriptletRules[2].args), ['playerResponse.adPlacements playerAds']);
     assert.deepStrictEqual(plain(parsed.scriptletRules[3].args), ['script', '/foo,bar/g', '']);
   });
+
+  await t.test('rejects absurdly long filter lines', () => {
+    const { parseList } = loadParser();
+    assert.throws(
+      () => parseList(`||${'a'.repeat(4096)}.example^`),
+      /filter line too long/
+    );
+  });
+
+  await t.test('rejects lists that exceed parser line budget', () => {
+    const { parseList } = loadParser();
+    const list = Array.from({ length: 250001 }, () => '! comment').join('\n');
+    assert.throws(
+      () => parseList(list),
+      /too many lines/
+    );
+  });
+
+  await t.test('rejects excessive stored network, cosmetic, and scriptlet rules', () => {
+    const { parseList } = loadParser();
+
+    const networkList = Array.from({ length: 100001 }, (_, index) => `||ads-${index}.example^`).join('\n');
+    assert.throws(
+      () => parseList(networkList),
+      /too many network rules/
+    );
+
+    const cosmeticList = Array.from({ length: 25001 }, (_, index) => `example.com##.ad-${index}`).join('\n');
+    assert.throws(
+      () => parseList(cosmeticList),
+      /too many cosmetic rules/
+    );
+
+    const scriptletList = Array.from({ length: 10001 }, (_, index) => `example.com##+js(set-constant, foo${index}, true)`).join('\n');
+    assert.throws(
+      () => parseList(scriptletList),
+      /too many scriptlet rules/
+    );
+  });
+
+  await t.test('malformed subscription content is counted without crashing', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      'example.com##+js(',
+      '##',
+      '||ads.example^'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.skipped.malformed, 2);
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
+  });
 });
