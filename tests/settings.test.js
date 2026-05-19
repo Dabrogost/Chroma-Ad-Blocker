@@ -702,6 +702,132 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(harness.messages.some(message => message.type === 'STATS_GET'), false);
   });
 
+  await t.test('mutating toggles roll back when background writes fail', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: {
+          enabled: true,
+          networkBlocking: true,
+          acceleration: false,
+          cosmetic: true,
+          fingerprintRandomization: true
+        },
+        CONFIG_SET: { ok: false, error: 'write failed' },
+        WHITELIST_ADD: { ok: false, error: 'write failed' },
+        FPR_WHITELIST_ADD: { ok: false, error: 'write failed' }
+      }
+    });
+    const reloads = [];
+    harness.sandbox.chrome.tabs.reload = id => reloads.push(id);
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const acceleration = harness.dom.window.document.querySelector('#toggleAcceleration');
+    acceleration.checked = true;
+    acceleration.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(acceleration.checked, false);
+
+    const master = harness.dom.window.document.querySelector('#toggleEnabled');
+    master.checked = false;
+    master.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(master.checked, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').checked, true);
+
+    const whitelist = harness.dom.window.document.querySelector('#toggleWhitelist');
+    whitelist.checked = true;
+    whitelist.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(whitelist.checked, false);
+
+    const fprWhitelist = harness.dom.window.document.querySelector('#toggleFprWhitelist');
+    fprWhitelist.checked = true;
+    fprWhitelist.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(fprWhitelist.checked, false);
+    assert.deepStrictEqual(reloads, []);
+  });
+
+  await t.test('subscription controls roll back or stay visible when writes fail', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        SUBSCRIPTION_GET: [{
+          id: 'custom_test',
+          name: 'Custom Test',
+          url: 'https://lists.example/test.txt',
+          enabled: true,
+          isCustom: true,
+          lastUpdated: 0,
+          ruleCount: { network: 10, cosmetic: 0, scriptlet: 0 }
+        }],
+        SUBSCRIPTION_SET: { ok: false, error: 'write failed' },
+        SUBSCRIPTION_REMOVE: { ok: false, error: 'remove failed' }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const toggle = harness.dom.window.document.querySelector('.sub-toggle');
+    toggle.checked = false;
+    toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(toggle.checked, true);
+    assert.strictEqual(toggle.disabled, false);
+
+    const deleteBtn = harness.dom.window.document.querySelector('.sub-delete-btn');
+    deleteBtn.dispatchEvent(new harness.dom.window.Event('click', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(deleteBtn.disabled, false);
+    assert.match(deleteBtn.title, /failed/i);
+    assert.ok(harness.dom.window.document.querySelector('.sub-toggle'));
+  });
+
+  await t.test('local zapper controls roll back or stay visible when writes fail', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        ZAPPER_RULES_GET: {
+          rules: [{
+            id: 'zapper_abc',
+            domain: 'example.com',
+            selector: '.ad-slot',
+            enabled: true,
+            createdAt: Date.now()
+          }]
+        },
+        ZAPPER_RULE_SET: { ok: false, error: 'write failed' },
+        ZAPPER_RULE_REMOVE: { ok: false, error: 'delete failed' }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const toggle = harness.dom.window.document.querySelector('.zapper-rule-toggle');
+    toggle.checked = false;
+    toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(toggle.checked, true);
+    assert.strictEqual(toggle.disabled, false);
+
+    const deleteBtn = harness.dom.window.document.querySelector('.zapper-rule-delete');
+    deleteBtn.dispatchEvent(new harness.dom.window.Event('click', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(deleteBtn.disabled, false);
+    assert.match(deleteBtn.title, /failed/i);
+    assert.ok(harness.dom.window.document.querySelector('.zapper-rule-toggle'));
+  });
+
   await t.test('initSharedUI does not await slow settings section hydration', async () => {
     const slow = {
       STATS_GET: deferred(),

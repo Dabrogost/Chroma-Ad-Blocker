@@ -348,6 +348,17 @@ const ChromaApp = (() => {
     }
   }
 
+  async function sendMutation(message) {
+    try {
+      const result = await notifyBackground(message);
+      if (!result || result.ok === false) return null;
+      return result;
+    } catch (error) {
+      console.error('Chroma mutation failed:', error);
+      return null;
+    }
+  }
+
   function renderStatsHero(stats) {
     const totals = getStatsTotals(stats);
     setText('statProtectionEvents', formatCompactCount(totals.protectionEvents));
@@ -761,6 +772,30 @@ const ChromaApp = (() => {
       });
     }
 
+    function getActiveSpeed() {
+      return parseInt(document.querySelector('.speed-btn.active')?.dataset.speed ?? config.accelerationSpeed ?? 8);
+    }
+
+    function captureProtectionState() {
+      return {
+        enabled: $('toggleEnabled')?.checked ?? true,
+        speed: getActiveSpeed(),
+        toggles: Object.fromEntries(CONFIG_TOGGLES.map(([id]) => [id, $(id)?.checked ?? false]))
+      };
+    }
+
+    function restoreProtectionState(state) {
+      if (!state) return;
+      if ($('toggleEnabled')) $('toggleEnabled').checked = state.enabled;
+      updateStatusDot(state.enabled);
+      for (const [id, checked] of Object.entries(state.toggles || {})) {
+        if ($(id)) $(id).checked = checked;
+      }
+      syncSpeedUI(state.speed ?? 8, !!state.toggles?.toggleAcceleration && state.enabled);
+      const rowFpr = $('rowFprWhitelist');
+      if (rowFpr) rowFpr.classList.toggle('is-visible', !!($('toggleFingerprintRandomization')?.checked && $('toggleEnabled')?.checked));
+    }
+
     function updateStatusDot(active) {
       const dot = $('statusDot');
       if (!dot) return;
@@ -834,29 +869,58 @@ const ChromaApp = (() => {
 
     document.querySelectorAll('.speed-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
+        const previous = captureProtectionState();
         const speed = parseInt(btn.dataset.speed);
         syncSpeedUI(speed, $('toggleAcceleration')?.checked);
-        await notifyBackground({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
+        document.querySelectorAll('.speed-btn').forEach(speedBtn => {
+          speedBtn.disabled = true;
+          speedBtn.classList.add('control-pending');
+        });
+        const result = await sendMutation({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
+        if (result) {
+          config.accelerationSpeed = speed;
+        } else {
+          restoreProtectionState(previous);
+        }
+        document.querySelectorAll('.speed-btn').forEach(speedBtn => {
+          speedBtn.disabled = false;
+          speedBtn.classList.remove('control-pending');
+        });
       });
     });
 
     for (const [elId, key] of CONFIG_TOGGLES) {
       $(elId)?.addEventListener('change', async (e) => {
         const isChecked = e.target.checked;
-        await notifyBackground({ type: MSG.CONFIG_SET, config: { [key]: isChecked } });
-
+        const previous = captureProtectionState();
+        previous.toggles[elId] = !isChecked;
+        setControlPending(elId, true);
+        const nextConfig = { [key]: isChecked };
+        let nextEnabled = $('toggleEnabled')?.checked;
         if (isChecked && !$('toggleEnabled')?.checked) {
+          nextEnabled = true;
+          nextConfig.enabled = true;
           $('toggleEnabled').checked = true;
           updateStatusDot(true);
-          await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: true } });
         } else if (!isChecked) {
           const anyOn = CONFIG_TOGGLES.some(([id]) => $(id)?.checked);
           if (!anyOn && $('toggleEnabled')) {
+            nextEnabled = false;
+            nextConfig.enabled = false;
             $('toggleEnabled').checked = false;
             updateStatusDot(false);
-            await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: false } });
           }
         }
+
+        const result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig });
+        if (!result) {
+          restoreProtectionState(previous);
+          setControlPending(elId, false);
+          return;
+        }
+        config[key] = isChecked;
+        if (typeof nextEnabled === 'boolean') config.enabled = nextEnabled;
+        setControlPending(elId, false);
       });
     }
 
@@ -867,15 +931,30 @@ const ChromaApp = (() => {
 
     $('toggleEnabled')?.addEventListener('change', async (e) => {
       const active = e.target.checked;
+      const previous = captureProtectionState();
+      previous.enabled = !active;
       updateStatusDot(active);
-      await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: active } });
+      setControlPending('toggleEnabled', true);
+      const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } });
+      if (!result) {
+        restoreProtectionState(previous);
+        setControlPending('toggleEnabled', false);
+        return;
+      }
+      config.enabled = active;
 
       if (!active) {
         syncUI({}, false);
       } else {
         const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
-        if (activeConfig) syncUI(activeConfig, true);
+        if (activeConfig) {
+          config = activeConfig;
+          syncUI(activeConfig, true);
+        } else {
+          syncUI(config, true);
+        }
       }
+      setControlPending('toggleEnabled', false);
     });
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
@@ -1017,8 +1096,15 @@ const ChromaApp = (() => {
         setControlPending('toggleWhitelist', false);
         $('toggleWhitelist').addEventListener('change', async (e) => {
           const isChecked = e.target.checked;
-          await notifyBackground({ type: isChecked ? MSG.WHITELIST_ADD : MSG.WHITELIST_REMOVE, domain: baseDomain });
-          chrome.tabs.reload(activeTab.id);
+          const previous = !isChecked;
+          setControlPending('toggleWhitelist', true);
+          const result = await sendMutation({ type: isChecked ? MSG.WHITELIST_ADD : MSG.WHITELIST_REMOVE, domain: baseDomain });
+          if (result) {
+            chrome.tabs.reload(activeTab.id);
+          } else {
+            e.target.checked = previous;
+          }
+          setControlPending('toggleWhitelist', false);
         });
       }
 
@@ -1038,8 +1124,16 @@ const ChromaApp = (() => {
         fprSiteToggle.checked = fprWhitelist.includes(baseDomain);
         setControlPending('toggleFprWhitelist', false);
         fprSiteToggle.addEventListener('change', async (e) => {
-          await notifyBackground({ type: e.target.checked ? MSG.FPR_WHITELIST_ADD : MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
-          chrome.tabs.reload(activeTab.id);
+          const isChecked = e.target.checked;
+          const previous = !isChecked;
+          setControlPending('toggleFprWhitelist', true);
+          const result = await sendMutation({ type: isChecked ? MSG.FPR_WHITELIST_ADD : MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
+          if (result) {
+            chrome.tabs.reload(activeTab.id);
+          } else {
+            e.target.checked = previous;
+          }
+          setControlPending('toggleFprWhitelist', false);
         });
       }
 
@@ -1156,8 +1250,17 @@ const ChromaApp = (() => {
       setSectionReady('subscriptionList');
       list.querySelectorAll('.sub-toggle').forEach(input => {
         input.addEventListener('change', async (e) => {
-          await notifyBackground({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
-          await loadHealthPanel();
+          const previous = !e.target.checked;
+          e.target.disabled = true;
+          e.target.classList.add('control-pending');
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
+          if (result) {
+            await loadHealthPanel();
+          } else {
+            e.target.checked = previous;
+          }
+          e.target.disabled = false;
+          e.target.classList.remove('control-pending');
         });
       });
       list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
@@ -1165,7 +1268,7 @@ const ChromaApp = (() => {
           const id = e.target.dataset.id;
           e.target.textContent = '\u2026';
           e.target.disabled = true;
-          const result = await notifyBackground({ type: MSG.SUBSCRIPTION_REFRESH, id });
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REFRESH, id });
           e.target.textContent = result && result.ok ? '\u2713' : '\u2717';
           setTimeout(() => {
             e.target.textContent = '\u21bb';
@@ -1178,9 +1281,15 @@ const ChromaApp = (() => {
       list.querySelectorAll('.sub-delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           if (!confirm('Remove this filter list?')) return;
-          await notifyBackground({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id });
-          loadSubscriptionUI();
-          loadHealthPanel();
+          e.target.disabled = true;
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id });
+          if (result) {
+            loadSubscriptionUI();
+            loadHealthPanel();
+          } else {
+            e.target.disabled = false;
+            e.target.title = 'Remove failed';
+          }
         });
       });
     }
@@ -1339,17 +1448,29 @@ const ChromaApp = (() => {
       setSectionReady('localZapperRules');
       list.querySelectorAll('.zapper-rule-toggle').forEach(input => {
         input.addEventListener('change', async (event) => {
-          await notifyBackground({
+          const previous = !event.target.checked;
+          event.target.disabled = true;
+          event.target.classList.add('control-pending');
+          const result = await sendMutation({
             type: MSG.ZAPPER_RULE_SET,
             id: event.target.dataset.id,
             enabled: event.target.checked
           });
+          if (!result) event.target.checked = previous;
+          event.target.disabled = false;
+          event.target.classList.remove('control-pending');
         });
       });
       list.querySelectorAll('.zapper-rule-delete').forEach(button => {
         button.addEventListener('click', async (event) => {
-          await notifyBackground({ type: MSG.ZAPPER_RULE_REMOVE, id: event.target.dataset.id });
-          await loadLocalZapperRulesUI();
+          event.target.disabled = true;
+          const result = await sendMutation({ type: MSG.ZAPPER_RULE_REMOVE, id: event.target.dataset.id });
+          if (result) {
+            await loadLocalZapperRulesUI();
+          } else {
+            event.target.disabled = false;
+            event.target.title = 'Delete failed';
+          }
         });
       });
     }
