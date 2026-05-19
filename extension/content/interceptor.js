@@ -73,9 +73,23 @@
   // bypassing blockers by overwriting globals later.
   const pristineSetInterval = window.setInterval.bind(window);
   const pristineClearInterval = window.clearInterval.bind(window);
+  const pristineSetTimeout = window.setTimeout.bind(window);
+  const pristineClearTimeout = window.clearTimeout.bind(window);
+  const pristineRequestAnimationFrame = typeof window.requestAnimationFrame === 'function'
+    ? window.requestAnimationFrame.bind(window)
+    : (fn) => pristineSetTimeout(fn, 16);
+  const pristineCancelAnimationFrame = typeof window.cancelAnimationFrame === 'function'
+    ? window.cancelAnimationFrame.bind(window)
+    : pristineClearTimeout;
 
   const pristineCreateElement = document.createElement.bind(document);
   const pristineQuerySelector = document.querySelector.bind(document);
+  const pristineQuerySelectorAll = typeof document.querySelectorAll === 'function'
+    ? document.querySelectorAll.bind(document)
+    : () => [];
+  const pristineGetElementsByClassName = typeof document.getElementsByClassName === 'function'
+    ? document.getElementsByClassName.bind(document)
+    : () => [];
   const pristineAddEventListener = window.addEventListener.bind(window);
   const pristineRemoveEventListener = window.removeEventListener.bind(window);
   const pristineDispatchEvent = document.dispatchEvent.bind(document);
@@ -84,6 +98,7 @@
   const pristineFnToString = Function.prototype.toString.bind(Function.prototype);
   const pristineCall = Function.prototype.call.bind(Function.prototype.call);
   const pristineIncludes = String.prototype.includes.bind(String.prototype);
+  const PristineCSSStyleSheet = typeof CSSStyleSheet === 'function' ? CSSStyleSheet : null;
 
   // ─── YOUTUBE SCROLL LOCK PREVENTION ─────
   // YouTube sets overflow:hidden on <html>/<body> and uses scroll event listeners
@@ -198,6 +213,19 @@
   let isInitialized = false;
   let localConfig = null;
 
+  function applyBridgeConfig(selectors = {}) {
+    const isInitial = !localConfig;
+    if (!localConfig) localConfig = Object.create(null);
+    Object.assign(localConfig, selectors);
+    if (isInitial || Object.prototype.hasOwnProperty.call(selectors, 'enabled')) {
+      localConfig.enabled = selectors.enabled !== false;
+    }
+  }
+
+  function getBridgeConfigSnapshot() {
+    return Object.freeze({ ...(localConfig || {}) });
+  }
+
   /**
    * @param {Object} [selectors]
    */
@@ -206,23 +234,39 @@
     isInitialized = true;
 
     // Secure Config State: Use local variables to prevent host-page tampering.
-    localConfig = {
-      enabled: selectors.enabled !== false
-    };
+    applyBridgeConfig(selectors);
     // SECURITY: Provisioning of secure messaging for authorized domains.
     if (isHostileDomain) {
       const internalBridge = Object.create(null); // SECURITY: Property Lookup Prevention via Prototype Chain
-      Object.assign(internalBridge, {
-        config: Object.freeze({ ...selectors }),
+      Object.defineProperties(internalBridge, {
+        config: {
+          get: getBridgeConfigSnapshot,
+          enumerable: true
+        },
         // Integrity Layer: API Passthrough
-        api: Object.freeze({
-          querySelector: pristineQuerySelector,
-          createElement: pristineCreateElement,
-          addEventListener: pristineAddEventListener,
-          setInterval: pristineSetInterval,
-          clearInterval: pristineClearInterval,
-          addDocEventListener: pristineAddDocEventListener
-        })
+        api: {
+          value: Object.freeze({
+            querySelector: pristineQuerySelector,
+            querySelectorAll: pristineQuerySelectorAll,
+            getElementsByClassName: pristineGetElementsByClassName,
+            createElement: pristineCreateElement,
+            addEventListener: pristineAddEventListener,
+            removeEventListener: pristineRemoveEventListener,
+            dispatchEvent: pristineDispatchEvent,
+            setTimeout: pristineSetTimeout,
+            clearTimeout: pristineClearTimeout,
+            setInterval: pristineSetInterval,
+            clearInterval: pristineClearInterval,
+            requestAnimationFrame: pristineRequestAnimationFrame,
+            cancelAnimationFrame: pristineCancelAnimationFrame,
+            addDocEventListener: pristineAddDocEventListener,
+            removeDocEventListener: pristineRemoveDocEventListener,
+            createCssStyleSheet: PristineCSSStyleSheet ? () => new PristineCSSStyleSheet() : null,
+            getAdoptedStyleSheets: () => document.adoptedStyleSheets,
+            setAdoptedStyleSheets: (sheets) => { document.adoptedStyleSheets = sheets; }
+          }),
+          enumerable: true
+        }
       });
 
       // SECURITY: Immutable Bridge
@@ -236,15 +280,14 @@
         // Fallback for non-configurable scenarios
         window.__CHROMA_INTERNAL__ = Object.freeze(internalBridge);
       }
+      pristineDispatchEvent(new CustomEvent('__CHROMA_BRIDGE_READY__', { detail: { ready: true } }));
     }
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Hostile Domain: ${isHostileDomain}`);
 
     pristineAddDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
       if (e.detail) {
-        Object.assign(localConfig, {
-          enabled: e.detail.enabled !== false
-        });
+        applyBridgeConfig(e.detail);
       }
     }, true);
 
@@ -295,6 +338,7 @@
         } else if (msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
           const resp = msgEvent.data.data;
           if (resp && resp.type === 'CONFIG_UPDATE') {
+            applyBridgeConfig(resp.config || {});
             // Internal state is locked, use CustomEvent for reactive components
             document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: resp.config }));
           }

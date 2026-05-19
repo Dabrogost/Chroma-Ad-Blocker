@@ -282,6 +282,23 @@ test('Amazon Prime Video ad acceleration', async (t) => {
     assert.strictEqual(mockVideo.playbackRate, 8, 'Playback rate should be 8 during ad');
   });
 
+  await t.test('uses bridge querySelectorAll for video discovery', () => {
+    let bridgeQueryAll = 0;
+    const originalQueryAll = sandbox.window.__CHROMA_INTERNAL__.api.querySelectorAll;
+    sandbox.window.__CHROMA_INTERNAL__.api.querySelectorAll = (sel) => {
+      bridgeQueryAll++;
+      return sel === 'video' ? [] : originalQueryAll(sel);
+    };
+
+    try {
+      sandbox.handlePrimeAdAcceleration();
+    } finally {
+      sandbox.window.__CHROMA_INTERNAL__.api.querySelectorAll = originalQueryAll;
+    }
+
+    assert.ok(bridgeQueryAll > 0, 'Prime handler should use the bridge for document-wide video discovery');
+  });
+
   await t.test('should accelerate when ad-related text is present', () => {
     // Reset state from previous tests
     sandbox.document.querySelector = () => null;

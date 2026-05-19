@@ -679,6 +679,36 @@ test('YouTube ad acceleration', async (t) => {
     assert.strictEqual(intervalsStarted, 0, 'Known disabled acceleration should not start any accelerator initialization interval');
   });
 
+  await t.test('late bridge upgrades future DOM queries to pristine API', async () => {
+    let bridgeQueries = 0;
+    const sandbox = createSandbox(null, { acceleration: false }, (sandbox) => {
+      delete sandbox.window.__CHROMA_INTERNAL__;
+    });
+
+    sandbox.window.__CHROMA_INTERNAL__ = {
+      api: {
+        querySelector: () => { bridgeQueries++; return null; },
+        querySelectorAll: () => [],
+        getElementsByClassName: () => [],
+        createElement: (tag) => sandbox.document.createElement(tag),
+        setInterval: (fn, delay) => sandbox.setInterval(fn, delay),
+        clearInterval: (id) => sandbox.clearInterval(id),
+        requestAnimationFrame: (fn) => sandbox.requestAnimationFrame(fn),
+        addDocEventListener: (evt, cb, opts) => sandbox.document.addEventListener(evt, cb, opts),
+        createCssStyleSheet: () => new sandbox.CSSStyleSheet(),
+        getAdoptedStyleSheets: () => sandbox.document.adoptedStyleSheets,
+        setAdoptedStyleSheets: (sheets) => { sandbox.document.adoptedStyleSheets = sheets; }
+      },
+      config: { enabled: true, acceleration: true, stripping: true, accelerationSpeed: 8 }
+    };
+    sandbox.CONFIG.enabled = true;
+    sandbox.CONFIG.acceleration = true;
+
+    sandbox.handleAdAcceleration();
+
+    assert.ok(bridgeQueries > 0, 'handler should resolve the bridge after load, not stay pinned to fallback APIs');
+  });
+
   await t.test('Event-Driven Initialization Flow', async (st) => {
     await st.test('aborts initialization when __EXT_INIT__ activates kill switch', async () => {
       let intervalFns = [];

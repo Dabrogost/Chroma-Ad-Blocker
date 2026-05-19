@@ -63,6 +63,8 @@ const createSandbox = () => {
     clearTimeout: () => {},
     setInterval: (cb) => { sandbox._pingInterval = cb; return 1; },
     clearInterval: () => { sandbox._pingInterval = null; },
+    requestAnimationFrame: (cb) => { sandbox._raf = cb; return 1; },
+    cancelAnimationFrame: () => {},
     addEventListener: addListener('window'),
     removeEventListener: () => {},
     dispatchEvent: dispatch('window'),
@@ -84,8 +86,12 @@ const createSandbox = () => {
     dispatchEvent: makeNative(dispatch('document')),
     createElement: makeNative(() => ({ style: {} })),
     getElementById: () => null,
-    querySelector: () => null
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    getElementsByClassName: () => [],
+    adoptedStyleSheets: []
   };
+  sandbox.CSSStyleSheet = class { replaceSync() {} };
   
   // Integrity Layer: Pre-capture global initialization.
   sandbox.globalThis = sandbox;
@@ -112,6 +118,7 @@ const createSandbox = () => {
       },
       onmessage: null
     };
+    sandbox._lastPort = port;
 
     sandbox.window.dispatchEvent({
       type: portNonce,
@@ -142,6 +149,44 @@ test('main-world interceptor initialization', async (t) => {
 
   await t.test('bridge is created on hostile domains', () => {
     assert.ok(sandbox.window.__CHROMA_INTERNAL__, 'Bridge should exist on YouTube');
+  });
+
+  await t.test('bridge exposes expanded pristine API and fresh config snapshots', () => {
+    const bridge = sandbox.window.__CHROMA_INTERNAL__;
+
+    assert.strictEqual(typeof bridge.api.querySelectorAll, 'function');
+    assert.strictEqual(typeof bridge.api.getElementsByClassName, 'function');
+    assert.strictEqual(typeof bridge.api.requestAnimationFrame, 'function');
+    assert.strictEqual(typeof bridge.api.createCssStyleSheet, 'function');
+    assert.strictEqual(bridge.config.enabled, true);
+
+    sandbox._lastPort.onmessage({
+      data: {
+        type: 'BACKGROUND_RESPONSE',
+        data: {
+          type: 'CONFIG_UPDATE',
+          config: { enabled: false, acceleration: false }
+        }
+      }
+    });
+
+    assert.strictEqual(bridge.config.enabled, false);
+    assert.strictEqual(bridge.config.acceleration, false);
+
+    sandbox._lastPort.onmessage({
+      data: {
+        type: 'BACKGROUND_RESPONSE',
+        data: {
+          type: 'CONFIG_UPDATE',
+          config: { acceleration: true }
+        }
+      }
+    });
+
+    assert.strictEqual(bridge.config.enabled, false, 'partial updates should not re-default enabled');
+    assert.strictEqual(bridge.config.acceleration, true);
+    assert.notStrictEqual(bridge.config, bridge.config, 'config getter should return immutable snapshots');
+    assert.strictEqual(Object.isFrozen(bridge.config), true);
   });
 });
 

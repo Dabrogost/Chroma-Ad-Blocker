@@ -378,41 +378,73 @@
     return result;
   };
 
-  // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
-  const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
-              window.__CHROMA_INTERNAL__.api : 
-              {
-                querySelector: document.querySelector.bind(document),
-                createElement: document.createElement.bind(document),
-                setInterval: window.setInterval.bind(window),
-                clearInterval: window.clearInterval.bind(window),
-                addDocEventListener: document.addEventListener.bind(document)
-              };
+  // Integrity Layer: resolve the secure bridge lazily so a late handshake still
+  // upgrades future DOM/timer work to the pristine API cache.
+  const FALLBACK_API = {
+    querySelector: (s) => document.querySelector(s),
+    querySelectorAll: (s) => document.querySelectorAll(s),
+    getElementsByClassName: (s) => document.getElementsByClassName(s),
+    createElement: (t) => document.createElement(t),
+    setInterval: (fn, delay) => window.setInterval(fn, delay),
+    clearInterval: (id) => window.clearInterval(id),
+    requestAnimationFrame: typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : requestAnimationFrame,
+    addDocEventListener: (evt, cb, opts) => document.addEventListener(evt, cb, opts),
+    createCssStyleSheet: () => new CSSStyleSheet(),
+    getAdoptedStyleSheets: () => document.adoptedStyleSheets,
+    setAdoptedStyleSheets: (sheets) => { document.adoptedStyleSheets = sheets; }
+  };
+
+  const getBridgeApi = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api;
+  const getBridgeConfig = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config;
+  const API = new Proxy(FALLBACK_API, {
+    get(target, key) {
+      const bridgeApi = getBridgeApi();
+      return (bridgeApi && bridgeApi[key]) || target[key];
+    }
+  });
 
   const safeQuery = (s) => API.querySelector(s);
+  const safeQueryAll = (s) => API.querySelectorAll(s);
+  const safeGetElementsByClassName = (s) => API.getElementsByClassName(s);
   const safeCreate = (t) => API.createElement(t);
-  const safeSetInterval = (f, t) => API.setInterval(f, t);
-  const safeClearInterval = (i) => API.clearInterval(i);
+  const safeSetInterval = (f, t) => {
+    const api = getBridgeApi() || FALLBACK_API;
+    return { api, id: api.setInterval(f, t) };
+  };
+  const safeClearInterval = (timer) => {
+    if (!timer) return;
+    const api = timer.api || getBridgeApi() || FALLBACK_API;
+    api.clearInterval(Object.prototype.hasOwnProperty.call(timer, 'id') ? timer.id : timer);
+  };
+  const safeRequestAnimationFrame = (f) => API.requestAnimationFrame(f);
+  const safeCreateStyleSheet = () => API.createCssStyleSheet();
+  const safeGetAdoptedStyleSheets = () => API.getAdoptedStyleSheets();
+  const safeSetAdoptedStyleSheets = (sheets) => API.setAdoptedStyleSheets(sheets);
 
   let _chromaExtInitActive = true;
   let _extInitFired = false;
   API.addDocEventListener('__EXT_INIT__', (e) => {
     _extInitFired = true;
+    const bridgeConfig = getBridgeConfig();
+    if (bridgeConfig) applyConfig(bridgeConfig);
     if (e && e.detail) {
       if (e.detail.active === false) {
         _chromaExtInitActive = false;
         CONFIG.enabled = false;
       }
-      if (e.detail.stripping !== undefined) CONFIG.stripping = e.detail.stripping;
-      if (e.detail.acceleration !== undefined) CONFIG.acceleration = e.detail.acceleration;
+      if (!bridgeConfig) {
+        if (e.detail.stripping !== undefined) CONFIG.stripping = e.detail.stripping;
+        if (e.detail.acceleration !== undefined) CONFIG.acceleration = e.detail.acceleration;
+      }
     }
 
     // Late-arrival activation: If the init polling loop already timed out
     // (cold browser start where chrome.storage was slow), activate now.
     if (!pollingInterval && _chromaExtInitActive) {
-      if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-        applyConfig(window.__CHROMA_INTERNAL__.config);
-      }
+      const config = getBridgeConfig();
+      if (config) applyConfig(config);
       
       if (CONFIG.enabled && shouldAccelerate()) {
         injectChromaCSS();
@@ -452,7 +484,7 @@
 
   function ensureSessionSheet() {
     if (sessionSheet) return;
-    sessionSheet = new CSSStyleSheet();
+    sessionSheet = safeCreateStyleSheet();
     sessionSheet.replaceSync(`
       .ytp-ad-player-overlay,
       .ytp-ad-player-overlay-instream-info {
@@ -489,17 +521,17 @@
 
   function activateSessionSheet() {
     ensureSessionSheet();
-    const sheets = document.adoptedStyleSheets;
+    const sheets = safeGetAdoptedStyleSheets();
     if (!sheets.includes(sessionSheet)) {
-      document.adoptedStyleSheets = [...sheets, sessionSheet];
+      safeSetAdoptedStyleSheets([...sheets, sessionSheet]);
     }
   }
 
   function deactivateSessionSheet() {
     if (!sessionSheet) return;
-    const sheets = document.adoptedStyleSheets;
+    const sheets = safeGetAdoptedStyleSheets();
     if (sheets.includes(sessionSheet)) {
-      document.adoptedStyleSheets = sheets.filter(s => s !== sessionSheet);
+      safeSetAdoptedStyleSheets(sheets.filter(s => s !== sessionSheet));
     }
   }
 
@@ -970,7 +1002,7 @@
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
       // SECURITY: Configuration Validation Allowlist
-      applyConfig(e.detail);
+      applyConfig(getBridgeConfig() || e.detail);
 
       if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
       
@@ -1032,7 +1064,7 @@
         if (skipButton) {
           chromaAdSkipped = true;
           if (targetAdVideo) {
-            const rawAdShowing = document.getElementsByClassName('ad-showing').length > 0;
+            const rawAdShowing = safeGetElementsByClassName('ad-showing').length > 0;
             updateAdOverlay(targetAdVideo, true, rawAdShowing);
           }
         }
@@ -1052,9 +1084,9 @@
         return;
       }
       handleAdAcceleration();
-      requestAnimationFrame(check);
+      safeRequestAnimationFrame(check);
     }
-    requestAnimationFrame(check);
+    safeRequestAnimationFrame(check);
   }
 
   // Convenience alias — ensures the session stylesheet object exists for later activation.
@@ -1064,10 +1096,10 @@
 
   function init() {
     // 1. Initial check (might be ready if script is deferred or loaded slowly)
-    const hasInitialConfig = !!(window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config);
+    const hasInitialConfig = !!getBridgeConfig();
     if (hasInitialConfig) {
       // SECURITY: Handshake Configuration Validation
-      applyConfig(window.__CHROMA_INTERNAL__.config);
+      applyConfig(getBridgeConfig());
     }
 
     // If config is already available, start immediately. Otherwise, poll for handshake.
@@ -1078,15 +1110,14 @@
     } else if (!hasInitialConfig && !_extInitFired) {
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
-      const _pollId = API.setInterval(() => {
-        const initDone = !!window.__CHROMA_INTERNAL__ || _extInitFired;
+      const _pollId = safeSetInterval(() => {
+        const initDone = !!getBridgeConfig() || _extInitFired;
         _pollCount++;
 
         if (initDone) {
-          API.clearInterval(_pollId);
-          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-            applyConfig(window.__CHROMA_INTERNAL__.config);
-          }
+          safeClearInterval(_pollId);
+          const config = getBridgeConfig();
+          if (config) applyConfig(config);
           if (!_chromaExtInitActive) return;
           if (CONFIG.enabled && shouldAccelerate()) {
             injectChromaCSS();
@@ -1094,7 +1125,7 @@
             initSkipButtonListener();
           }
         } else if (_pollCount >= 40) {
-          API.clearInterval(_pollId);
+          safeClearInterval(_pollId);
         }
       }, 50); // Polling frequency (50ms) for initialization check
     }
