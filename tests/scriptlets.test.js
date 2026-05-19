@@ -62,6 +62,7 @@ function runFingerprintRandomization({
   language = 'en-US',
   languages = ['en-US', 'en'],
   hostname = 'www.example.com',
+  saltBytes = [1, 2, 3, 4, 5, 6, 7, 8],
   exposeSeedForTest = false
 } = {}) {
   const storage = new Map();
@@ -81,7 +82,7 @@ function runFingerprintRandomization({
     },
     crypto: {
       getRandomValues: buffer => {
-        for (let i = 0; i < buffer.length; i++) buffer[i] = i + 1;
+        for (let i = 0; i < buffer.length; i++) buffer[i] = saltBytes[i % saltBytes.length];
         return buffer;
       }
     },
@@ -691,6 +692,23 @@ test('fingerprint randomization language normalization', async (t) => {
 
     assert.strictEqual(first.__chromaFprTestSeedScope, 'shop.example.co.uk');
     assert.strictEqual(second.__chromaFprTestSeedScope, 'news.other.co.uk');
+    assert.notStrictEqual(first.__chromaFprTestSeed, second.__chromaFprTestSeed);
+  });
+
+  await t.test('rotates the seed when a fresh document salt is generated', () => {
+    const first = runFingerprintRandomization({
+      hostname: 'shop.example.com',
+      saltBytes: [1, 2, 3, 4, 5, 6, 7, 8],
+      exposeSeedForTest: true
+    });
+    const second = runFingerprintRandomization({
+      hostname: 'shop.example.com',
+      saltBytes: [8, 7, 6, 5, 4, 3, 2, 1],
+      exposeSeedForTest: true
+    });
+
+    assert.strictEqual(first.__chromaFprTestSeedScope, 'shop.example.com');
+    assert.strictEqual(second.__chromaFprTestSeedScope, 'shop.example.com');
     assert.notStrictEqual(first.__chromaFprTestSeed, second.__chromaFprTestSeed);
   });
 

@@ -200,7 +200,7 @@ const ChromaComponents = (() => {
           rowClass: 'fpr-toggle-row',
           name: 'Fingerprint Randomization',
           badge: '<span class="badge purple" title="May affect bot checks, captchas, or device checks">Compat</span>',
-          desc: 'Per-site canvas, audio, WebGL, navigator, and language API farbling'
+          desc: 'Per-page canvas, audio, WebGL, navigator, and language API farbling'
         })}
         ${renderToggleRow({
           inputId: 'toggleBrowserPrivacyHardening',

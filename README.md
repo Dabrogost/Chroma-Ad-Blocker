@@ -32,7 +32,7 @@
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from settings without editing filter lists.
 - **Local Event Tracker**: The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
-- **Privacy Hardening & Fingerprint Randomization**: Optional Chrome privacy controls block third-party cookies, keep Do Not Track off, disable supported Privacy Sandbox ad APIs, and block website geolocation access. Optional per-host fingerprint randomization farbles canvas, audio, WebGL, navigator, and language APIs.
+- **Privacy Hardening & Fingerprint Randomization**: Optional Chrome privacy controls block third-party cookies, keep Do Not Track off, disable supported Privacy Sandbox ad APIs, and block website geolocation access. Optional per-document fingerprint randomization farbles canvas, audio, WebGL, navigator, and language APIs with full-hostname domain separation.
 - **Main-World Interceptor Safety Exclusions**: Bypasses Chroma's generic MAIN-world interceptor/bridge on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs (`.gov`, `.mil`, `.edu`, `.int`). Broader network, cosmetic, and scriptlet behavior remains governed by user settings, subscriptions, and per-domain whitelisting.
 - **Security-Hardened Architecture**: Features closure-scoped session state, validated config update pipelines, pristine API caching, and a dead man's switch to prevent host-page interference and script hijacking.
 - **Recipe & Blog Optimization**: Provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll-locks.
@@ -176,7 +176,7 @@ Chrome Privacy Hardening is optional and off by default. When enabled, Chroma us
 
 Geolocation Protection is also optional and off by default. When enabled, Chroma uses Chrome's `contentSettings.location` API to block sites from accessing your real physical location. It does not spoof or synthesize fake coordinates; turning it off clears Chroma's rule so Chrome returns to the user's normal location setting.
 
-Fingerprint Randomization is also optional and off by default because some sites can be sensitive to fingerprint changes. When enabled, Chroma registers a MAIN-world script that randomizes/farbles supported fingerprint surfaces on a per-host basis, including canvas, audio, WebGL, navigator hardware fields, and normalized language APIs.
+Fingerprint Randomization is also optional and off by default because some sites can be sensitive to fingerprint changes. When enabled, Chroma registers a MAIN-world script that randomizes/farbles supported fingerprint surfaces per document with a fresh non-persisted salt, including canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. The full hostname is included only as domain separation, so two sites cannot share the same salt-derived surface by accident.
 
 ---
 
@@ -389,7 +389,7 @@ Chroma implements several advanced security measures to ensure extension integri
 | `globalProxyId` | Stores the selected global fallback proxy ID. | `null` |
 | `chromeServiceProxyBypass` | Lets Chrome-owned browser services connect directly while Global Proxy Fallback is enabled. | `true` |
 | `webRtcLeakProtection` | Controls Chrome's WebRTC IP handling policy: `off`, `auto`, `balanced`, or `strict`. | `auto` |
-| `fingerprintRandomization` | Enables optional per-host canvas, audio, WebGL, navigator, and language API farbling. | `false` |
+| `fingerprintRandomization` | Enables optional per-document canvas, audio, WebGL, navigator, and language API farbling with full-hostname domain separation. | `false` |
 | `browserPrivacyHardening` | Applies Chrome privacy settings for third-party cookies, Do Not Track, and Privacy Sandbox ad APIs. | `false` |
 | `geolocationProtection` | Blocks website access to real physical location through Chrome's native location content setting. | `false` |
 
