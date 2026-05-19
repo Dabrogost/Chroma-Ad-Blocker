@@ -480,6 +480,7 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy/);
   assert.match(proxyUiJsCode, /const proxyConfigState = await notifyBackground\(\{ type: MSG\.CONFIG_GET \}\) \|\| \{\};/);
   assert.match(proxyUiJsCode, /function renderPopupProxyCard\(pc, index, proxyConfigState, \{ saveAllConfigs, applyGlobalButtonState \}\)/);
+  assert.match(proxyUiJsCode, /appendPopupSummaryCard\(card, pc, index, \{ accepted, activeDomainCount, isGlobal, isEnabled \}\)/);
   assert.match(proxyUiJsCode, /card\.dataset\.proxyId = pc\.id/);
   assert.match(proxyUiJsCode, /applyGlobalButtonState\(\);/);
   assert.doesNotMatch(proxyUiJsCode, /async function renderPopupSummary[\s\S]*chrome\.storage\.local\.get\('config'\)/);

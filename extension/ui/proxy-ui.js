@@ -6,7 +6,7 @@
 'use strict';
 
 const ChromaProxyUI = (() => {
-  const { $, escapeHTML, isSettingsPage, openProxySettings } = globalThis.ChromaApp;
+  const { $, isSettingsPage, openProxySettings } = globalThis.ChromaApp;
   const SMART_LINK_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'];
 
   function routeSummary(activeDomainCount, isGlobal, isEnabled = true) {
@@ -33,14 +33,33 @@ const ChromaProxyUI = (() => {
     return element;
   }
 
-  function renderStatusLineHtml(statusText = 'Checking...', controlsHtml = '') {
-    return `
-      <div class="proxy-status-line">
-        <span class="proxy-status-dot proxy-status-dot--muted"></span>
-        <span class="proxy-status-text">${escapeHTML(statusText)}</span>
-        ${controlsHtml}
-      </div>
-    `;
+  function clearElement(element) {
+    while (element?.firstChild) {
+      element.removeChild(element.firstChild);
+    }
+  }
+
+  function appendProxyButton(parent, className, textContent, title = '') {
+    const button = appendElement(parent, 'button', className, textContent);
+    if (title) button.title = title;
+    return button;
+  }
+
+  function appendSwitch(parent, inputClassName, title = '') {
+    const label = appendElement(parent, 'label', 'switch switch-sm');
+    if (title) label.title = title;
+    const input = appendElement(label, 'input', inputClassName);
+    input.type = 'checkbox';
+    appendElement(label, 'span', 'slider');
+    return input;
+  }
+
+  function appendStatusLine(parent, statusText = 'Checking...', controlsBuilder = null) {
+    const line = appendElement(parent, 'div', 'proxy-status-line');
+    appendElement(line, 'span', 'proxy-status-dot proxy-status-dot--muted');
+    appendElement(line, 'span', 'proxy-status-text', statusText);
+    if (controlsBuilder) controlsBuilder(line);
+    return line;
   }
 
   function updateProxyCardStatusLine(card, pc, isGlobal, ip = null) {
@@ -170,83 +189,104 @@ const ChromaProxyUI = (() => {
     });
   }
 
-  function renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal, isEnabled }) {
-    return `
-      <div class="proxy-card-body">
-        <div class="proxy-main">
-          <div class="proxy-title">${escapeHTML(pc.name || 'Server ' + (index + 1))}</div>
-          <div class="proxy-endpoint">${accepted ? `${escapeHTML(pc.host)}:${escapeHTML(pc.port)}` : 'Not configured'}</div>
-          <div class="proxy-meta-text">${escapeHTML(pc.type || 'PROXY')} &middot; ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} &middot; ${routeSummary(activeDomainCount, isGlobal, isEnabled)}</div>
-          ${renderStatusLineHtml(accepted ? 'Checking...' : 'Open settings to configure')}
-        </div>
-        <div class="proxy-actions">
-          ${accepted ? `
-            <button class="reset-btn proxy-refresh-btn compact-action-btn" title="Refresh Connection">&#x21bb;</button>
-            <button class="reset-btn proxy-global-btn compact-action-btn" title="Use as Global Fallback">GLOBAL</button>
-            <label class="switch switch-sm" title="Enable Proxy Routing">
-              <input type="checkbox" class="proxy-enabled-toggle" />
-              <span class="slider"></span>
-            </label>
-          ` : ''}
-        </div>
-      </div>
-    `;
+  function appendPopupSummaryCard(card, pc, index, { accepted, activeDomainCount, isGlobal, isEnabled }) {
+    const body = appendElement(card, 'div', 'proxy-card-body');
+    const main = appendElement(body, 'div', 'proxy-main');
+    appendElement(main, 'div', 'proxy-title', pc.name || 'Server ' + (index + 1));
+    appendElement(main, 'div', 'proxy-endpoint', accepted ? `${pc.host}:${pc.port}` : 'Not configured');
+    appendElement(
+      main,
+      'div',
+      'proxy-meta-text',
+      `${pc.type || 'PROXY'} \u00b7 ${pc.hasCredentials ? 'credentials saved' : 'no credentials'} \u00b7 ${routeSummary(activeDomainCount, isGlobal, isEnabled)}`
+    );
+    appendStatusLine(main, accepted ? 'Checking...' : 'Open settings to configure');
+
+    const actions = appendElement(body, 'div', 'proxy-actions');
+    if (accepted) {
+      appendProxyButton(actions, 'reset-btn proxy-refresh-btn compact-action-btn', '\u21bb', 'Refresh Connection');
+      appendProxyButton(actions, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback');
+      appendSwitch(actions, 'proxy-enabled-toggle', 'Enable Proxy Routing');
+    }
   }
 
-  function renderEditorCardHtml(pc, index, inputGroupId, activeGroupId) {
+  function appendInput(parent, type, className, value, placeholder = '') {
+    const input = appendElement(parent, 'input', className);
+    input.type = type;
+    input.value = String(value ?? '');
+    if (placeholder) input.placeholder = placeholder;
+    return input;
+  }
+
+  function appendProxyTypeSelect(parent, type) {
+    const select = appendElement(parent, 'select', 'chroma-input proxy-type proxy-grid-wide proxy-type-select');
+    for (const [value, label] of [
+      ['PROXY', 'HTTP (Default)'],
+      ['HTTPS', 'HTTPS'],
+      ['SOCKS4', 'SOCKS4'],
+      ['SOCKS5', 'SOCKS5']
+    ]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    select.value = ['PROXY', 'HTTPS', 'SOCKS4', 'SOCKS5'].includes(type) ? type : 'PROXY';
+    return select;
+  }
+
+  function appendEditorCard(card, pc, index, inputGroupId, activeGroupId) {
     const isAccepted = pc.accepted && pc.host && pc.port;
-    return `
-      <div id="${inputGroupId}" class="proxy-grid proxy-input-group ${isAccepted ? 'is-hidden' : ''}">
-        <select class="chroma-input proxy-type proxy-grid-wide proxy-type-select">
-          <option value="PROXY" ${(pc.type === 'PROXY' || !pc.type) ? 'selected' : ''}>HTTP (Default)</option>
-          <option value="HTTPS" ${pc.type === 'HTTPS' ? 'selected' : ''}>HTTPS</option>
-          <option value="SOCKS4" ${pc.type === 'SOCKS4' ? 'selected' : ''}>SOCKS4</option>
-          <option value="SOCKS5" ${pc.type === 'SOCKS5' ? 'selected' : ''}>SOCKS5</option>
-        </select>
-        <input type="text" class="chroma-input proxy-name proxy-grid-wide" value="${escapeHTML(pc.name || '')}" placeholder="Display name (optional)" />
-        <input type="text" class="chroma-input proxy-host" value="${escapeHTML(pc.host)}" placeholder="Proxy Host (e.g. 1.2.3.4)" />
-        <input type="text" class="chroma-input proxy-port" value="${escapeHTML(pc.port)}" placeholder="Port (e.g. 80)" />
-        <input type="text" class="chroma-input proxy-user" value="" placeholder="Username" />
-        <input type="password" class="chroma-input proxy-pass" value="" placeholder="${pc.hasCredentials ? 'Password saved' : 'Password'}" />
-        <div class="proxy-credential-row">
-          <span class="proxy-credential-help">${pc.hasCredentials ? 'Credentials saved locally. Leave fields blank to keep them.' : 'Credentials are locally obfuscated in extension storage and used only for proxy authentication.'}</span>
-          <button class="reset-btn proxy-clear-credentials-btn inline-danger-btn ${pc.hasCredentials ? '' : 'is-hidden'}">Clear credentials</button>
-        </div>
-        <div class="proxy-auth-note proxy-grid-wide is-hidden">SOCKS auth isn't supported by Chrome - use IP whitelisting on your provider.</div>
-        <div class="proxy-error proxy-grid-wide is-hidden"></div>
-        <div class="proxy-form-actions">
-          <button class="reset-btn proxy-accept-btn form-submit-btn">Accept Settings</button>
-          <button class="reset-btn proxy-del-server-btn inline-danger-btn compact-action-btn" title="Delete Server">Delete</button>
-        </div>
-      </div>
 
-      <div id="${activeGroupId}" class="proxy-active-group ${isAccepted ? '' : 'is-hidden'}">
-        <div class="proxy-main">
-          <div class="proxy-title">Active: ${escapeHTML(pc.name || 'Server ' + (index + 1))}</div>
-          <div class="proxy-endpoint">${escapeHTML(pc.host)}:${escapeHTML(pc.port)}</div>
-          ${renderStatusLineHtml('Checking...', `
-            <button class="reset-btn proxy-edit-btn compact-action-btn" title="Edit Server">Edit</button>
-            <button class="reset-btn proxy-refresh-btn compact-action-btn" title="Refresh Connection">&#x21bb;</button>
-            <button class="reset-btn proxy-global-btn compact-action-btn" title="Use as Global Fallback">GLOBAL</button>
-            <button class="reset-btn proxy-clear-settings-btn inline-danger-btn compact-action-btn" title="Clear Settings">Clear</button>
-          `)}
-        </div>
-        <div class="proxy-enabled-control">
-          <label class="switch switch-sm" title="Enable Proxy Routing">
-            <input type="checkbox" class="proxy-enabled-toggle" />
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>
+    const inputGroup = appendElement(card, 'div', `proxy-grid proxy-input-group ${isAccepted ? 'is-hidden' : ''}`);
+    inputGroup.id = inputGroupId;
+    appendProxyTypeSelect(inputGroup, pc.type);
+    appendInput(inputGroup, 'text', 'chroma-input proxy-name proxy-grid-wide', pc.name || '', 'Display name (optional)');
+    appendInput(inputGroup, 'text', 'chroma-input proxy-host', pc.host, 'Proxy Host (e.g. 1.2.3.4)');
+    appendInput(inputGroup, 'text', 'chroma-input proxy-port', pc.port, 'Port (e.g. 80)');
+    appendInput(inputGroup, 'text', 'chroma-input proxy-user', '', 'Username');
+    appendInput(inputGroup, 'password', 'chroma-input proxy-pass', '', pc.hasCredentials ? 'Password saved' : 'Password');
 
-      <div class="proxy-grid-full proxy-domain-tools">
-        <input type="text" class="chroma-input chroma-input--compact proxy-domain-input" placeholder="Domain (e.g. youtube.com)" />
-        <button class="reset-btn proxy-add-domain-btn compact-action-btn">ADD</button>
-      </div>
-      <div class="proxy-domain-list">
-        <!-- Domains will be injected here -->
-      </div>
-    `;
+    const credentialRow = appendElement(inputGroup, 'div', 'proxy-credential-row');
+    appendElement(
+      credentialRow,
+      'span',
+      'proxy-credential-help',
+      pc.hasCredentials
+        ? 'Credentials saved locally. Leave fields blank to keep them.'
+        : 'Credentials are locally obfuscated in extension storage and used only for proxy authentication.'
+    );
+    appendProxyButton(
+      credentialRow,
+      `reset-btn proxy-clear-credentials-btn inline-danger-btn ${pc.hasCredentials ? '' : 'is-hidden'}`,
+      'Clear credentials'
+    );
+    appendElement(inputGroup, 'div', 'proxy-auth-note proxy-grid-wide is-hidden', "SOCKS auth isn't supported by Chrome - use IP whitelisting on your provider.");
+    appendElement(inputGroup, 'div', 'proxy-error proxy-grid-wide is-hidden');
+
+    const formActions = appendElement(inputGroup, 'div', 'proxy-form-actions');
+    appendProxyButton(formActions, 'reset-btn proxy-accept-btn form-submit-btn', 'Accept Settings');
+    appendProxyButton(formActions, 'reset-btn proxy-del-server-btn inline-danger-btn compact-action-btn', 'Delete', 'Delete Server');
+
+    const activeGroup = appendElement(card, 'div', `proxy-active-group ${isAccepted ? '' : 'is-hidden'}`);
+    activeGroup.id = activeGroupId;
+    const main = appendElement(activeGroup, 'div', 'proxy-main');
+    appendElement(main, 'div', 'proxy-title', `Active: ${pc.name || 'Server ' + (index + 1)}`);
+    appendElement(main, 'div', 'proxy-endpoint', `${pc.host}:${pc.port}`);
+    appendStatusLine(main, 'Checking...', line => {
+      appendProxyButton(line, 'reset-btn proxy-edit-btn compact-action-btn', 'Edit', 'Edit Server');
+      appendProxyButton(line, 'reset-btn proxy-refresh-btn compact-action-btn', '\u21bb', 'Refresh Connection');
+      appendProxyButton(line, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback');
+      appendProxyButton(line, 'reset-btn proxy-clear-settings-btn inline-danger-btn compact-action-btn', 'Clear', 'Clear Settings');
+    });
+
+    const enabledControl = appendElement(activeGroup, 'div', 'proxy-enabled-control');
+    appendSwitch(enabledControl, 'proxy-enabled-toggle', 'Enable Proxy Routing');
+
+    const domainTools = appendElement(card, 'div', 'proxy-grid-full proxy-domain-tools');
+    appendInput(domainTools, 'text', 'chroma-input chroma-input--compact proxy-domain-input', '', 'Domain (e.g. youtube.com)');
+    appendProxyButton(domainTools, 'reset-btn proxy-add-domain-btn compact-action-btn', 'ADD');
+    appendElement(card, 'div', 'proxy-domain-list');
   }
 
   function isSmartLinkedDomain(host) {
@@ -311,7 +351,7 @@ const ChromaProxyUI = (() => {
     const card = document.createElement('div');
     card.className = 'protection-list proxy-card';
     card.dataset.proxyId = pc.id;
-    card.innerHTML = renderPopupSummaryCardHtml(pc, index, { accepted, activeDomainCount, isGlobal, isEnabled });
+    appendPopupSummaryCard(card, pc, index, { accepted, activeDomainCount, isGlobal, isEnabled });
 
     const txt = card.querySelector('.proxy-status-text');
     const dot = card.querySelector('.proxy-status-dot');
@@ -442,9 +482,9 @@ const ChromaProxyUI = (() => {
       });
     };
 
-    container.innerHTML = '';
+    clearElement(container);
     if (proxyConfigs.length === 0) {
-      container.innerHTML = '<div class="protection-list proxy-empty">No proxy servers configured.</div>';
+      appendElement(container, 'div', 'protection-list proxy-empty', 'No proxy servers configured.');
     } else {
       proxyConfigs.forEach((pc, i) => {
         const card = renderPopupProxyCard(pc, i, proxyConfigState, { saveAllConfigs, applyGlobalButtonState });
@@ -517,7 +557,7 @@ const ChromaProxyUI = (() => {
       const inputGroupId = `proxyInputGroup_${index}`;
       const activeGroupId = `proxyActiveGroup_${index}`;
 
-      card.innerHTML = renderEditorCardHtml(pc, index, inputGroupId, activeGroupId);
+      appendEditorCard(card, pc, index, inputGroupId, activeGroupId);
 
       const typeSelect = card.querySelector('.proxy-type');
       const nameInput = card.querySelector('.proxy-name');
@@ -667,9 +707,10 @@ const ChromaProxyUI = (() => {
       };
 
       const renderDomains = () => {
-        domainList.innerHTML = '';
+        clearElement(domainList);
         if (!pc.domains || pc.domains.length === 0) {
-          domainList.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No domains.</span></div>';
+          const emptyRow = appendElement(domainList, 'div', 'toggle-row loading-row');
+          appendElement(emptyRow, 'span', 'loading-text', 'No domains.');
           return;
         }
 
@@ -846,7 +887,7 @@ const ChromaProxyUI = (() => {
     };
 
     const renderAll = async () => {
-      container.innerHTML = '';
+      clearElement(container);
       if (proxyConfigs.length === 0) {
         appendElement(container, 'div', 'protection-list proxy-empty', 'No proxy servers configured. Click + to add one.');
       } else {
@@ -891,7 +932,7 @@ const ChromaProxyUI = (() => {
       proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
     } catch (error) {
       console.error('Chroma proxy config failed to load:', error);
-      container.innerHTML = '';
+      clearElement(container);
       appendElement(container, 'div', settingsMode ? 'protection-list proxy-empty hydration-error' : 'protection-list proxy-empty', 'Proxy router unavailable.');
       return;
     }
@@ -912,7 +953,7 @@ const ChromaProxyUI = (() => {
       await renderSettingsEditor(container, addBtn, proxyConfigs);
     } catch (error) {
       console.error('Chroma proxy editor failed to render:', error);
-      container.innerHTML = '';
+      clearElement(container);
       appendElement(container, 'div', 'protection-list proxy-empty hydration-error', 'Proxy router unavailable.');
     }
   }

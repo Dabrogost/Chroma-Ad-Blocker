@@ -160,12 +160,47 @@ function createSettingsHarness({
 
 test('settings page proxy and zapper management safety', async (t) => {
   await t.test('proxy credential UI never hydrates password fields from stored config', () => {
-    assert.match(proxyUiJs, /<input type="password" class="chroma-input proxy-pass" value=""/);
+    assert.match(proxyUiJs, /appendInput\(inputGroup, 'password', 'chroma-input proxy-pass', '', pc\.hasCredentials \? 'Password saved' : 'Password'\)/);
     assert.doesNotMatch(proxyUiJs, /value="\$\{[^}]*password/i);
     assert.match(proxyUiJs, /delete pc\.username;/);
     assert.match(proxyUiJs, /delete pc\.password;/);
     assert.match(proxyUiJs, /delete pc\.authIv;/);
     assert.match(proxyUiJs, /delete pc\.authCipher;/);
+  });
+
+  await t.test('proxy config values render as DOM text and input values, never HTML', async () => {
+    const maliciousName = '"><img src=x onerror=alert(1)>';
+    const maliciousHost = 'proxy.example"><svg onload=alert(2)>';
+    const maliciousPort = '8080"><iframe src=javascript:alert(3)>';
+    const maliciousDomain = 'video.example"><img src=x onerror=alert(4)>';
+    const harness = createSettingsHarness({
+      responses: {
+        PROXY_CONFIG_GET: [{
+          id: 1,
+          name: maliciousName,
+          host: maliciousHost,
+          port: maliciousPort,
+          type: 'PROXY',
+          accepted: true,
+          enabled: true,
+          domains: [{ host: maliciousDomain, enabled: true }],
+          hasCredentials: true
+        }]
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const container = harness.dom.window.document.querySelector('#proxyRouterContainer');
+    const card = container.querySelector('.proxy-card');
+    assert.strictEqual(container.querySelectorAll('img, svg, iframe').length, 0);
+    assert.strictEqual(card.querySelector('.proxy-name').value, maliciousName);
+    assert.strictEqual(card.querySelector('.proxy-host').value, maliciousHost);
+    assert.strictEqual(card.querySelector('.proxy-port').value, maliciousPort);
+    assert.strictEqual(card.querySelector('.proxy-title').textContent, `Active: ${maliciousName}`);
+    assert.strictEqual(card.querySelector('.proxy-endpoint').textContent, `${maliciousHost}:${maliciousPort}`);
+    assert.strictEqual(card.querySelector('.proxy-domain-name').textContent, maliciousDomain);
   });
 
   await t.test('preserve, replace, and clear credential actions are encoded intentionally', () => {
@@ -402,7 +437,7 @@ test('settings page proxy and zapper management safety', async (t) => {
   });
 
   await t.test('active proxy global button has a distinct highlighted style', () => {
-    assert.match(proxyUiJs, /proxy-global-btn compact-action-btn" title="Use as Global Fallback">GLOBAL/);
+    assert.match(proxyUiJs, /appendProxyButton\(line, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback'\)/);
     assert.match(proxyUiJs, /proxy-enabled-toggle/);
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{/);
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{[\s\S]*box-shadow:/);
