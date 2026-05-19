@@ -39,10 +39,10 @@ const SKIP_OPTIONS = new Set([
 
 const DEFAULT_PARSE_BUDGET = Object.freeze({
   maxLines: 250000,
-  maxLineLength: 4096,
-  maxNetworkRules: 100000,
-  maxCosmeticRules: 25000,
-  maxScriptletRules: 10000
+  maxLineLength: 32768,
+  maxNetworkRules: 200000,
+  maxCosmeticRules: 200000,
+  maxScriptletRules: 50000
 });
 
 function parseBudget(overrides = {}) {
@@ -392,10 +392,11 @@ function parseScriptletRule(line) {
 /**
  * Parses a complete filter list text into categorized rule buckets.
  * @param {string} text
+ * @param {Object} [budgetOverrides]
  * @returns {{ networkRules: Object[], cosmeticRules: Object[], scriptletRules: Object[], skipped: Object }}
  */
-export function parseList(text) {
-  const budget = parseBudget();
+export function parseList(text, budgetOverrides = {}) {
+  const budget = parseBudget(budgetOverrides);
   const networkRules  = [];
   const cosmeticRules = [];
   const scriptletRules = [];
@@ -404,7 +405,11 @@ export function parseList(text) {
     extendedCss:  0,
     skipOption:   0,
     regex:        0,
-    malformed:    0
+    malformed:    0,
+    overlong:     0,
+    networkLimit: 0,
+    cosmeticLimit: 0,
+    scriptletLimit: 0
   };
 
   let lineCount = 0;
@@ -418,7 +423,10 @@ export function parseList(text) {
 
     const rawLine = text.slice(start, i);
     start = i + 1;
-    assertWithinBudget(rawLine.length <= budget.maxLineLength, `Subscription filter line too long; limit is ${budget.maxLineLength} characters`);
+    if (rawLine.length > budget.maxLineLength) {
+      skipped.overlong++;
+      continue;
+    }
 
     const line = rawLine.trim();
     if (!line) continue;
@@ -437,8 +445,8 @@ export function parseList(text) {
       case 'network': {
         const rule = parseNetworkRule(line, false);
         if (rule) {
-          assertWithinBudget(networkRules.length < budget.maxNetworkRules, `Subscription has too many network rules; limit is ${budget.maxNetworkRules}`);
-          networkRules.push(rule);
+          if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
+          else skipped.networkLimit++;
         }
         else skipped.malformed++;
         break;
@@ -447,8 +455,8 @@ export function parseList(text) {
       case 'exception': {
         const rule = parseNetworkRule(line, true);
         if (rule) {
-          assertWithinBudget(networkRules.length < budget.maxNetworkRules, `Subscription has too many network rules; limit is ${budget.maxNetworkRules}`);
-          networkRules.push(rule);
+          if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
+          else skipped.networkLimit++;
         }
         else skipped.malformed++;
         break;
@@ -457,8 +465,8 @@ export function parseList(text) {
       case 'cosmetic': {
         const rule = parseCosmeticRule(line, false);
         if (rule) {
-          assertWithinBudget(cosmeticRules.length < budget.maxCosmeticRules, `Subscription has too many cosmetic rules; limit is ${budget.maxCosmeticRules}`);
-          cosmeticRules.push(rule);
+          if (cosmeticRules.length < budget.maxCosmeticRules) cosmeticRules.push(rule);
+          else skipped.cosmeticLimit++;
         }
         else skipped.malformed++;
         break;
@@ -467,8 +475,8 @@ export function parseList(text) {
       case 'cosmetic-exception': {
         const rule = parseCosmeticRule(line, true);
         if (rule) {
-          assertWithinBudget(cosmeticRules.length < budget.maxCosmeticRules, `Subscription has too many cosmetic rules; limit is ${budget.maxCosmeticRules}`);
-          cosmeticRules.push(rule);
+          if (cosmeticRules.length < budget.maxCosmeticRules) cosmeticRules.push(rule);
+          else skipped.cosmeticLimit++;
         }
         else skipped.malformed++;
         break;
@@ -477,8 +485,8 @@ export function parseList(text) {
       case 'scriptlet': {
         const rule = parseScriptletRule(line);
         if (rule) {
-          assertWithinBudget(scriptletRules.length < budget.maxScriptletRules, `Subscription has too many scriptlet rules; limit is ${budget.maxScriptletRules}`);
-          scriptletRules.push(rule);
+          if (scriptletRules.length < budget.maxScriptletRules) scriptletRules.push(rule);
+          else skipped.scriptletLimit++;
         }
         else skipped.malformed++;
         break;

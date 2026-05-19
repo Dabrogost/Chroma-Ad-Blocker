@@ -69,10 +69,10 @@ const youtubeJsCode = fs.readFileSync(scriptPath, 'utf8');
 // ─── AD FIELD STRIPPING ─────
 test('Ad field stripping', async (t) => {
   // Minimal sandbox — stripping functions run synchronously, no DOM needed.
-  const createStrippingSandbox = (configOverrides = {}, nativeFetch) => {
+  const createStrippingSandbox = (configOverrides = {}, nativeFetch, hostname = 'www.youtube.com') => {
     const sandbox = {
       window: {
-        location: { hostname: 'www.youtube.com' },
+        location: { hostname },
         fetch: nativeFetch || (async () => ({ clone: () => ({ json: async () => ({}) }), status: 200, statusText: 'OK', headers: {} })),
         addEventListener: () => {},
         removeEventListener: () => {},
@@ -82,7 +82,7 @@ test('Ad field stripping', async (t) => {
         clearInterval: () => {},
         MutationObserver: class { observe() {} disconnect() {} },
       },
-      location: { hostname: 'www.youtube.com' },
+      location: { hostname },
       document: {
         readyState: 'complete',
         createElement: () => ({ style: {}, appendChild: () => {}, attachShadow: () => ({ appendChild: () => {}, querySelector: () => null, childrenArray: [] }) }),
@@ -120,6 +120,8 @@ test('Ad field stripping', async (t) => {
       JSON: { parse: JSON.parse, stringify: JSON.stringify },
       __CHROMA_INTERNAL_TEST_STRICT__: true,
     };
+    sandbox._nativeJSONParse = sandbox.JSON.parse;
+    sandbox._nativeFetch = sandbox.window.fetch;
     sandbox.globalThis = sandbox;
     sandbox.window.__CHROMA_INTERNAL__ = {
       api: {
@@ -413,6 +415,16 @@ test('Ad field stripping', async (t) => {
     assert.strictEqual('adPlacements' in result.playerResponse, false);
     assert.strictEqual('playerAds'    in result.playerResponse, false);
     assert.ok(result.playerResponse.streamingData, 'non-ad fields inside playerResponse preserved');
+  });
+
+  await t.test('non-YouTube host exits before installing broad page hooks', (st) => {
+    const sandbox = createStrippingSandbox({ stripping: true }, undefined, 'example.com');
+    const result = sandbox.JSON.parse(JSON.stringify({ adPlacements: [{}], videoDetails: { title: 'Test' } }));
+
+    assert.strictEqual(sandbox.JSON.parse, sandbox._nativeJSONParse);
+    assert.strictEqual(sandbox.window.fetch, sandbox._nativeFetch);
+    assert.ok('adPlacements' in result, 'non-YouTube pages should not get YouTube payload pruning');
+    assert.strictEqual(sandbox.CONFIG, undefined, 'test-only exports should not be installed after scope guard exit');
   });
 });
 

@@ -310,6 +310,42 @@ test('Subscription lifecycle manager', async (t) => {
     }
   });
 
+  await t.test('refreshSubscription reuses static url filter cache across refreshes', async () => {
+    const storage = {
+      subscriptions: [
+        { id: 'sub-a', name: 'Sub A', url: 'https://lists.example/sub-a.txt', enabled: true },
+        { id: 'sub-b', name: 'Sub B', url: 'https://lists.example/sub-b.txt', enabled: true }
+      ]
+    };
+    let staticFetchCount = 0;
+    const manager = loadManager({
+      storage,
+      fetch: async (url) => {
+        if (String(url).startsWith('chrome-extension://')) {
+          staticFetchCount++;
+          return { ok: true, json: async () => [networkRule('||already-static.example^')] };
+        }
+        return { ok: true, text: async () => 'subscription body' };
+      },
+      parseList: () => ({
+        networkRules: [
+          networkRule('||already-static.example^'),
+          networkRule('||fresh.example^')
+        ],
+        cosmeticRules: [],
+        scriptletRules: [],
+        skipped: {}
+      })
+    });
+
+    assert.deepStrictEqual(plain(await manager.refreshSubscription('sub-a')), { ok: true });
+    assert.deepStrictEqual(plain(await manager.refreshSubscription('sub-b')), { ok: true });
+
+    assert.strictEqual(staticFetchCount, 1);
+    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a'].map(r => r.condition.urlFilter)), ['||fresh.example^']);
+    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-b'].map(r => r.condition.urlFilter)), ['||fresh.example^']);
+  });
+
   await t.test('setSubscriptionEnabled rebuilds combined stores and clears DNR when all subscriptions are disabled', async () => {
     const storage = {
       subscriptions: [

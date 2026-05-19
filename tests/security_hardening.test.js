@@ -706,12 +706,16 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.deepStrictEqual(plain(parsed.scriptletRules[3].args), ['script', '/foo,bar/g', '']);
   });
 
-  await t.test('rejects absurdly long filter lines', () => {
+  await t.test('skips absurdly long filter lines without rejecting the whole list', () => {
     const { parseList } = loadParser();
-    assert.throws(
-      () => parseList(`||${'a'.repeat(4096)}.example^`),
-      /filter line too long/
-    );
+    const parsed = parseList([
+      `||${'a'.repeat(32768)}.example^`,
+      '||ads.example^'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.skipped.overlong, 1);
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
   });
 
   await t.test('rejects lists that exceed parser line budget', () => {
@@ -723,26 +727,23 @@ test('Security Hardening - subscription parser', async (t) => {
     );
   });
 
-  await t.test('rejects excessive stored network, cosmetic, and scriptlet rules', () => {
+  await t.test('truncates excessive stored network, cosmetic, and scriptlet rules without failing refresh', () => {
     const { parseList } = loadParser();
 
-    const networkList = Array.from({ length: 100001 }, (_, index) => `||ads-${index}.example^`).join('\n');
-    assert.throws(
-      () => parseList(networkList),
-      /too many network rules/
-    );
+    const networkList = Array.from({ length: 3 }, (_, index) => `||ads-${index}.example^`).join('\n');
+    const parsedNetwork = parseList(networkList, { maxNetworkRules: 2 });
+    assert.strictEqual(parsedNetwork.networkRules.length, 2);
+    assert.strictEqual(parsedNetwork.skipped.networkLimit, 1);
 
-    const cosmeticList = Array.from({ length: 25001 }, (_, index) => `example.com##.ad-${index}`).join('\n');
-    assert.throws(
-      () => parseList(cosmeticList),
-      /too many cosmetic rules/
-    );
+    const cosmeticList = Array.from({ length: 3 }, (_, index) => `example.com##.ad-${index}`).join('\n');
+    const parsedCosmetic = parseList(cosmeticList, { maxCosmeticRules: 2 });
+    assert.strictEqual(parsedCosmetic.cosmeticRules.length, 2);
+    assert.strictEqual(parsedCosmetic.skipped.cosmeticLimit, 1);
 
-    const scriptletList = Array.from({ length: 10001 }, (_, index) => `example.com##+js(set-constant, foo${index}, true)`).join('\n');
-    assert.throws(
-      () => parseList(scriptletList),
-      /too many scriptlet rules/
-    );
+    const scriptletList = Array.from({ length: 3 }, (_, index) => `example.com##+js(set-constant, foo${index}, true)`).join('\n');
+    const parsedScriptlet = parseList(scriptletList, { maxScriptletRules: 2 });
+    assert.strictEqual(parsedScriptlet.scriptletRules.length, 2);
+    assert.strictEqual(parsedScriptlet.skipped.scriptletLimit, 1);
   });
 
   await t.test('malformed subscription content is counted without crashing', () => {

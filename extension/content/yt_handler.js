@@ -12,6 +12,18 @@
 
   const DEBUG = false;
 
+  function isYouTubeHost(hostname) {
+    const normalized = String(hostname || '').toLowerCase().replace(/\.$/, '');
+    return normalized === 'youtube.com' ||
+      normalized.endsWith('.youtube.com') ||
+      normalized === 'youtube-nocookie.com' ||
+      normalized.endsWith('.youtube-nocookie.com');
+  }
+
+  if (!isYouTubeHost(window.location && window.location.hostname)) {
+    return;
+  }
+
   // ─── CONFIG ─────
   // Use Object.create(null) to protect against Prototype Pollution
   const CONFIG = Object.create(null);

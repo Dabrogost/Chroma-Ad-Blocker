@@ -24,6 +24,7 @@ const DEBUG = false;
 const ALARM_NAME     = 'chroma-subscription-check';
 const FETCH_TIMEOUT  = 30000; // 30s per-fetch timeout
 const MAX_LIST_BYTES = 10 * 1024 * 1024; // 10 MiB per subscription response
+let _staticUrlFilterSetPromise = null;
 
 function getHeader(res, name) {
   if (!res.headers || typeof res.headers.get !== 'function') return null;
@@ -121,33 +122,40 @@ function deduplicateCosmeticRules(rules) {
 /**
  * Builds a Set of urlFilter strings from all bundled static rule files.
  * Used to exclude subscription rules that are already covered statically.
- * Called once per refreshSubscription invocation — cost is paid at fetch time.
+ * Cached for the service-worker lifetime; bundled rule resources do not change
+ * until the extension is reloaded or updated.
  * @returns {Promise<Set<string>>}
  */
 async function buildStaticUrlFilterSet() {
-  const files = chrome.runtime
-    .getManifest()
-    .declarative_net_request
-    .rule_resources
-    .map(resource => resource.path);
+  if (_staticUrlFilterSetPromise) return _staticUrlFilterSetPromise;
 
-  const set = new Set();
-  await Promise.all(files.map(async (file) => {
-    try {
-      const res = await fetch(chrome.runtime.getURL(file));
-      if (!res.ok) return;
-      const rules = await res.json();
-      for (const rule of rules) {
-        if (rule.condition && rule.condition.urlFilter) {
-          set.add(rule.condition.urlFilter);
+  _staticUrlFilterSetPromise = (async () => {
+    const files = chrome.runtime
+      .getManifest()
+      .declarative_net_request
+      .rule_resources
+      .map(resource => resource.path);
+
+    const set = new Set();
+    await Promise.all(files.map(async (file) => {
+      try {
+        const res = await fetch(chrome.runtime.getURL(file));
+        if (!res.ok) return;
+        const rules = await res.json();
+        for (const rule of rules) {
+          if (rule.condition && rule.condition.urlFilter) {
+            set.add(rule.condition.urlFilter);
+          }
         }
+      } catch {
+        // Static resource failures are non-fatal; deduplication is best-effort.
       }
-    } catch {
-      // Individual file failure is non-fatal — deduplication is best-effort
-    }
-  }));
+    }));
 
-  return set;
+    return set;
+  })();
+
+  return _staticUrlFilterSetPromise;
 }
 
 // ─── REBUILD HELPERS ─────
