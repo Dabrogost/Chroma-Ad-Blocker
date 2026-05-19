@@ -24,7 +24,24 @@ const DEBUG = false;
 const ALARM_NAME     = 'chroma-subscription-check';
 const FETCH_TIMEOUT  = 30000; // 30s per-fetch timeout
 const MAX_LIST_BYTES = 10 * 1024 * 1024; // 10 MiB per subscription response
-let _staticUrlFilterSetPromise = null;
+let _staticRuleKeySetPromise = null;
+
+function sortedArray(value) {
+  return Array.isArray(value) ? value.slice().sort() : [];
+}
+
+function networkRuleDedupeKey(rule) {
+  const condition = rule?.condition || {};
+  return JSON.stringify({
+    actionType: rule?.action?.type || '',
+    urlFilter: condition.urlFilter || '',
+    resourceTypes: sortedArray(condition.resourceTypes),
+    domainType: condition.domainType || '',
+    initiatorDomains: sortedArray(condition.initiatorDomains),
+    excludedInitiatorDomains: sortedArray(condition.excludedInitiatorDomains),
+    priority: Number(rule?.priority) || 0
+  });
+}
 
 function getHeader(res, name) {
   if (!res.headers || typeof res.headers.get !== 'function') return null;
@@ -120,16 +137,16 @@ function deduplicateCosmeticRules(rules) {
 
 // ─── STATIC RULE DEDUPLICATION ─────
 /**
- * Builds a Set of urlFilter strings from all bundled static rule files.
+ * Builds a Set of semantic rule keys from all bundled static rule files.
  * Used to exclude subscription rules that are already covered statically.
  * Cached for the service-worker lifetime; bundled rule resources do not change
  * until the extension is reloaded or updated.
  * @returns {Promise<Set<string>>}
  */
-async function buildStaticUrlFilterSet() {
-  if (_staticUrlFilterSetPromise) return _staticUrlFilterSetPromise;
+async function buildStaticRuleKeySet() {
+  if (_staticRuleKeySetPromise) return _staticRuleKeySetPromise;
 
-  _staticUrlFilterSetPromise = (async () => {
+  _staticRuleKeySetPromise = (async () => {
     const files = chrome.runtime
       .getManifest()
       .declarative_net_request
@@ -144,7 +161,7 @@ async function buildStaticUrlFilterSet() {
         const rules = await res.json();
         for (const rule of rules) {
           if (rule.condition && rule.condition.urlFilter) {
-            set.add(rule.condition.urlFilter);
+            set.add(networkRuleDedupeKey(rule));
           }
         }
       } catch {
@@ -155,7 +172,7 @@ async function buildStaticUrlFilterSet() {
     return set;
   })();
 
-  return _staticUrlFilterSetPromise;
+  return _staticRuleKeySetPromise;
 }
 
 // ─── REBUILD HELPERS ─────
@@ -173,7 +190,7 @@ async function rebuildNetworkRules(subscriptions) {
     if (sub.cosmeticOnly) continue;
     if (sub.enabled && perSubRules[sub.id]) {
       for (const rule of perSubRules[sub.id]) {
-        if (rule.action && rule.action.type === 'block') {
+        if (rule.action && (rule.action.type === 'block' || rule.action.type === 'allow')) {
           // Tag with sub id so we can count per-sub survivors after allocate().
           // Stripped before passing to DNR.
           allRules.push({ ...rule, _subId: sub.id });
@@ -302,9 +319,9 @@ export async function refreshSubscription(id) {
     if (DEBUG) console.log(`[Chroma Subscriptions] Fetching: ${sub.name}`);
     const text = await fetchList(sub.url);
     const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(text);
-    const staticFilters = await buildStaticUrlFilterSet();
+    const staticRuleKeys = await buildStaticRuleKeySet();
     const networkRules = parsedNetworkRules
-      .filter(r => !r.condition.urlFilter || !staticFilters.has(r.condition.urlFilter))
+      .filter(r => !r.condition.urlFilter || !staticRuleKeys.has(networkRuleDedupeKey(r)))
       .map((rule, index) => ({ ...rule, _listPosition: index }));
 
     // Store parsed rules per subscription ID

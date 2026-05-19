@@ -10,11 +10,11 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function networkRule(urlFilter, actionType = 'block') {
+function networkRule(urlFilter, actionType = 'block', overrides = {}) {
   return {
-    priority: actionType === 'allow' ? 2 : 1,
+    priority: overrides.priority || (actionType === 'allow' ? 2 : 1),
     action: { type: actionType },
-    condition: { urlFilter }
+    condition: { urlFilter, ...(overrides.condition || {}) }
   };
 }
 
@@ -145,12 +145,15 @@ test('Subscription lifecycle manager', async (t) => {
     };
     const manager = loadManager({
       storage,
-      staticRules: [networkRule('||already-static.example^')],
+      staticRules: [
+        networkRule('||already-static.example^'),
+        networkRule('||static-blocked-but-allowed.example^')
+      ],
       parseList: () => ({
         networkRules: [
           networkRule('||already-static.example^'),
           networkRule('||fresh.example^'),
-          networkRule('||allow.example^', 'allow')
+          networkRule('||static-blocked-but-allowed.example^', 'allow')
         ],
         cosmeticRules: [{ domains: ['example.com'], selector: '.ad', isException: false }],
         scriptletRules: [
@@ -164,10 +167,16 @@ test('Subscription lifecycle manager', async (t) => {
     const result = await manager.refreshSubscription('sub-a');
 
     assert.deepStrictEqual(plain(result), { ok: true });
-    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a'].map(r => r.condition.urlFilter)), ['||fresh.example^', '||allow.example^']);
+    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a'].map(r => r.condition.urlFilter)), ['||fresh.example^', '||static-blocked-but-allowed.example^']);
     assert.deepStrictEqual(plain(storage.sub_cosmetic_rules['sub-a']), [{ domains: ['example.com'], selector: '.ad', isException: false }]);
     assert.deepStrictEqual(plain(storage.sub_scriptlet_rules['sub-a'].map(r => r.scriptlet)), ['set-constant']);
-    assert.deepStrictEqual(manager.appliedRules[0].map(r => r.condition.urlFilter), ['||fresh.example^']);
+    assert.deepStrictEqual(manager.appliedRules[0].map(r => ({
+      urlFilter: r.condition.urlFilter,
+      actionType: r.action.type
+    })), [
+      { urlFilter: '||fresh.example^', actionType: 'block' },
+      { urlFilter: '||static-blocked-but-allowed.example^', actionType: 'allow' }
+    ]);
     assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), [{ domains: ['example.com'], selector: '.ad', isException: false }]);
     assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => ({
       scriptlet: r.scriptlet,
@@ -177,6 +186,52 @@ test('Subscription lifecycle manager', async (t) => {
     assert.strictEqual(storage.subscriptions[0].lastError, null);
     assert.ok(storage.subscriptions[0].lastUpdated > 0);
     assert.ok(/^\d+$/.test(storage.subscriptions[0].version));
+  });
+
+  await t.test('static dedupe keeps semantically distinct subscription rules with the same urlFilter', async () => {
+    const storage = {
+      subscriptions: [{
+        id: 'sub-a',
+        name: 'Sub A',
+        url: 'https://lists.example/sub-a.txt',
+        enabled: true
+      }]
+    };
+    const manager = loadManager({
+      storage,
+      staticRules: [
+        networkRule('||same.example^'),
+        networkRule('||resource.example^', 'block', { condition: { resourceTypes: ['script'] } }),
+        networkRule('||domain.example^', 'block', { condition: { domainType: 'thirdParty' } }),
+        networkRule('||initiator.example^', 'block', { condition: { initiatorDomains: ['example.com'] } }),
+        networkRule('||excluded.example^', 'block', { condition: { excludedInitiatorDomains: ['example.com'] } }),
+        networkRule('||priority.example^', 'block', { priority: 3 })
+      ],
+      parseList: () => ({
+        networkRules: [
+          networkRule('||same.example^'),
+          networkRule('||resource.example^', 'block', { condition: { resourceTypes: ['image'] } }),
+          networkRule('||domain.example^', 'block', { condition: { domainType: 'firstParty' } }),
+          networkRule('||initiator.example^', 'block', { condition: { initiatorDomains: ['news.example'] } }),
+          networkRule('||excluded.example^', 'block', { condition: { excludedInitiatorDomains: ['news.example'] } }),
+          networkRule('||priority.example^', 'block', { priority: 1 })
+        ],
+        cosmeticRules: [],
+        scriptletRules: [],
+        skipped: {}
+      })
+    });
+
+    const result = await manager.refreshSubscription('sub-a');
+
+    assert.deepStrictEqual(plain(result), { ok: true });
+    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a'].map(r => r.condition.urlFilter)), [
+      '||resource.example^',
+      '||domain.example^',
+      '||initiator.example^',
+      '||excluded.example^',
+      '||priority.example^'
+    ]);
   });
 
   await t.test('refreshSubscription reports missing and disabled subscriptions without fetch side effects', async () => {

@@ -688,6 +688,24 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.strictEqual(parsed.networkRules.length, 1);
     assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||img.example^');
     assert.deepStrictEqual(plain(parsed.networkRules[0].condition.resourceTypes), ['image']);
+    assert.strictEqual(parsed.skipped.skipOption, 1);
+    assert.strictEqual(parsed.skipped.malformed, 0);
+  });
+
+  await t.test('counts unsupported network skip reasons precisely', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '/adserver\\d+/$script',
+      '||redirect.example^$redirect=noopjs',
+      '@@/allow-regex/$image',
+      '||ads.example^'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
+    assert.strictEqual(parsed.skipped.regex, 2);
+    assert.strictEqual(parsed.skipped.skipOption, 1);
+    assert.strictEqual(parsed.skipped.malformed, 0);
   });
 
   await t.test('keeps commas inside quoted and regex-like scriptlet arguments', () => {

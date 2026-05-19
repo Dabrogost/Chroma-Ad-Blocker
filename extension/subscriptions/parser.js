@@ -91,9 +91,10 @@ function parseOptions(optionsStr) {
   for (const opt of optionsStr.split(',')) {
     const trimmed = opt.trim();
     if (!trimmed) continue;
+    const optionName = trimmed.replace(/^~/, '').split('=')[0];
 
     // Check skip options first (strip negation prefix before checking)
-    if (SKIP_OPTIONS.has(trimmed.replace(/^~/, ''))) {
+    if (SKIP_OPTIONS.has(optionName)) {
       result.hasSkipOption = true;
       return result; // Early exit — entire rule is dropped
     }
@@ -146,34 +147,38 @@ function parseOptions(optionsStr) {
   return result;
 }
 
+function networkParseResult(rule, skipReason = null) {
+  return { rule, skipReason };
+}
+
 // ─── NETWORK RULE PARSER ─────
 /**
  * Parses a network or exception rule line into a partial DNR rule object (no id assigned).
  * @param {string} line
  * @param {boolean} [isException=false]
- * @returns {Object|null}
+ * @returns {{ rule: Object|null, skipReason: string|null }}
  */
 function parseNetworkRule(line, isException = false) {
   try {
     const stripped = isException ? line.slice(2) : line;
 
-    if (!stripped) return null;
+    if (!stripped) return networkParseResult(null);
 
     // Pure wildcards — useless rules
-    if (stripped === '*' || stripped === '*$*') return null;
+    if (stripped === '*' || stripped === '*$*') return networkParseResult(null);
 
     // Regex rules — Phase 1 skip
-    if (stripped.startsWith('/') && stripped.slice(1).lastIndexOf('/') > 0) return null;
+    if (stripped.startsWith('/') && stripped.slice(1).lastIndexOf('/') > 0) return networkParseResult(null, 'regex');
 
     // Split pattern from options on first '$'
     const dollarIdx = stripped.indexOf('$');
     const pattern    = dollarIdx === -1 ? stripped : stripped.slice(0, dollarIdx);
     const optionsStr = dollarIdx === -1 ? ''        : stripped.slice(dollarIdx + 1);
 
-    if (!pattern) return null;
+    if (!pattern) return networkParseResult(null);
 
     const opts = parseOptions(optionsStr);
-    if (opts.hasSkipOption) return null;
+    if (opts.hasSkipOption) return networkParseResult(null, 'skipOption');
 
     const condition = { urlFilter: pattern };
     if (opts.resourceTypes)              condition.resourceTypes              = opts.resourceTypes;
@@ -188,13 +193,13 @@ function parseNetworkRule(line, isException = false) {
     // Whitelist rules remain at 999999 (unchanged in background.js)
     const priority = isException ? 2 : (opts.isImportant ? 3 : 1);
 
-    return {
+    return networkParseResult({
       priority,
       action: { type: isException ? 'allow' : 'block' },
       condition
-    };
+    });
   } catch {
-    return null;
+    return networkParseResult(null);
   }
 }
 
@@ -443,21 +448,23 @@ export function parseList(text, budgetOverrides = {}) {
         break;
 
       case 'network': {
-        const rule = parseNetworkRule(line, false);
+        const { rule, skipReason } = parseNetworkRule(line, false);
         if (rule) {
           if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
           else skipped.networkLimit++;
         }
+        else if (skipReason && Object.prototype.hasOwnProperty.call(skipped, skipReason)) skipped[skipReason]++;
         else skipped.malformed++;
         break;
       }
 
       case 'exception': {
-        const rule = parseNetworkRule(line, true);
+        const { rule, skipReason } = parseNetworkRule(line, true);
         if (rule) {
           if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
           else skipped.networkLimit++;
         }
+        else if (skipReason && Object.prototype.hasOwnProperty.call(skipped, skipReason)) skipped[skipReason]++;
         else skipped.malformed++;
         break;
       }
