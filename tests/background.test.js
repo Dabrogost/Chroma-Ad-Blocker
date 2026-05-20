@@ -28,10 +28,21 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection || (async () => ({}));")
   .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening || (async () => ({})); var syncGeolocationProtection = globalThis._mockSyncGeolocationProtection || (async () => ({}));")
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = globalThis._mockClearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._mockRecordHealthDiagnostic || (async () => {});")
+  .replace("import { updateDNRState, syncDynamicRules } from './dnrState.js';", "")
+  .replace("import { initRequestLogListener } from './requestLog.js';", "var initRequestLogListener = globalThis._mockInitRequestLogListener || (() => {});")
   .replace(/^export\s+/gm, "");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'defaultDynamicRules.js'), 'utf8');
 const defaultDynamicRulesCode = defaultDynamicRulesCodeRaw.replace('export function getDefaultDynamicRules', 'globalThis.getDefaultDynamicRules = function');
+
+const configStateCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'configState.js'), 'utf8')
+  .replace(/^export\s+/gm, '');
+
+const dnrStateCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'dnrState.js'), 'utf8')
+  .replace('const DEBUG = false;', 'var DEBUG = false;')
+  .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
+  .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = globalThis._mockClearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._mockRecordHealthDiagnostic || (async () => {});")
+  .replace(/^export\s+/gm, '');
 
 // ─── GETDEFAULTDYNAMICRULES ─────
 test('getDefaultDynamicRules', async (t) => {
@@ -104,6 +115,8 @@ test('getDefaultDynamicRules', async (t) => {
  
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
+  vm.runInContext(configStateCode, sandbox);
+  vm.runInContext(dnrStateCode, sandbox);
   vm.runInContext(backgroundJsCode, sandbox);
 
   await t.test('returns an array of rules', () => {
@@ -370,6 +383,8 @@ test('syncDynamicRules successful syncing', async (t) => {
 
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
+  vm.runInContext(configStateCode, sandbox);
+  vm.runInContext(dnrStateCode, sandbox);
   vm.runInContext(backgroundJsCode, sandbox);
 
   await t.test('uses stored rules and removes existing ones', async () => {
@@ -588,6 +603,8 @@ test('syncDynamicRules error handling', async (t) => {
 
   vm.createContext(sandbox);
   vm.runInContext(defaultDynamicRulesCode, sandbox);
+  vm.runInContext(configStateCode, sandbox);
+  vm.runInContext(dnrStateCode, sandbox);
   vm.runInContext(backgroundJsCode, sandbox);
 
   await t.test('catches and logs error when updateDynamicRules fails', async () => {

@@ -28,6 +28,8 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
   .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = async () => ({}); var syncGeolocationProtection = async () => ({});")
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = async () => {}; var recordHealthDiagnostic = async () => {};")
+  .replace("import { updateDNRState, syncDynamicRules } from './dnrState.js';", "var updateDNRState = async () => {}; var syncDynamicRules = async () => {};")
+  .replace("import { initRequestLogListener } from './requestLog.js';", "var initRequestLogListener = () => {};")
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -79,8 +81,20 @@ function loadHandlers(options = {}) {
     URL,
     Number,
     encryptAuth: options.encryptAuth || (async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })),
+    validateConfig: options.validateConfig || ((config) => config || {}),
+    updateDNRState: options.updateDNRState || (async () => {}),
     syncWhitelistRules: options.syncWhitelistRules || (async () => {}),
     syncDynamicRules: options.syncDynamicRules || (async () => {}),
+    checkForUpdate: options.checkForUpdate || (async () => ({ updateAvailable: false })),
+    resetRequestLog: options.resetRequestLog || (async () => {}),
+    getMergedLog: options.getMergedLog || (async () => []),
+    runProxyTest: options.runProxyTest || (async () => ({ ok: true })),
+    getHealthStatus: options.getHealthStatus || (async () => ({ ok: true })),
+    exportStats: options.exportStats || (async () => ({})),
+    getStatsSnapshot: options.getStatsSnapshot || (async () => ({})),
+    recordStatsEvents: options.recordStatsEvents || (async () => {}),
+    resetStats: options.resetStats || (async () => {}),
+    setStatsSettings: options.setStatsSettings || (async () => ({})),
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
     syncBrowserPrivacyHardening: options.syncBrowserPrivacyHardening || (async () => ({})),
     syncGeolocationProtection: options.syncGeolocationProtection || (async () => ({})),

@@ -16,15 +16,10 @@ import {
   addSubscription,
   removeSubscription
 } from '../subscriptions/manager.js';
-import {
-  validateConfig,
-  updateDNRState,
-  syncDynamicRules,
-  syncWhitelistRules,
-  checkForUpdate,
-  resetRequestLog,
-  getMergedLog
-} from './background.js';
+import { validateConfig } from './configState.js';
+import { updateDNRState, syncDynamicRules, syncWhitelistRules } from './dnrState.js';
+import { checkForUpdate } from './updateCheck.js';
+import { resetRequestLog, getMergedLog } from './requestLog.js';
 import { runProxyTest } from './proxy.js';
 import { getHealthStatus } from './health.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';

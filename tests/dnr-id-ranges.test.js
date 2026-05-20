@@ -4,30 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const backgroundJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'background.js'), 'utf8')
+const dnrStateCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'dnrState.js'), 'utf8')
   .replace('const DEBUG = false;', 'var DEBUG = false;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", 'var getDefaultDynamicRules = globalThis._getDefaultDynamicRules;')
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/subscriptions\/manager\.js['"];?/s, `
-    var initSubscriptions = async () => {};
-    var ensureAlarm = async () => {};
-    var refreshAllStale = async () => {};
-    var refreshSubscription = async () => ({ ok: true });
-    var getSubscriptions = async () => [];
-    var setSubscriptionEnabled = async () => ({ ok: true });
-    var addSubscription = async () => ({ ok: true });
-    var removeSubscription = async () => ({ ok: true });
-  `)
-  .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, 'var initScriptletEngine = async () => {}; var recoverUserScriptsIfNeeded = async () => false;')
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, 'var MSG = {};')
-  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, 'var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };')
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, 'var registerAll = () => {};')
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
-  .replace(/import\s*['"]\.\/proxy\.js['"];?/s, '')
-  .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
-  .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = async () => ({}); var syncGeolocationProtection = async () => ({});")
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = async () => {}; var recordHealthDiagnostic = async () => {};")
   .replace(/^export\s+/gm, '')
-  + '\nglobalThis.__backgroundExports = { updateDNRState, syncDynamicRules, syncWhitelistRules };\n';
+  + '\nglobalThis.__dnrStateExports = { updateDNRState, syncDynamicRules, syncWhitelistRules };\n';
 
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
 const staticRulesetIds = manifest.declarative_net_request.rule_resources.map(resource => resource.id);
@@ -40,7 +22,7 @@ const subscriptionDnrCode = fs.readFileSync(path.join(__dirname, '..', 'extensio
   .replace(/^export\s+/gm, '')
   + '\nglobalThis.__subscriptionDnrExports = { applySubscriptionRules, clearSubscriptionRules };\n';
 
-function loadBackground({ storage = {}, existingRules = [] } = {}) {
+function loadDnrState({ storage = {}, existingRules = [] } = {}) {
   const updateDynamicRulesCalls = [];
   const updateEnabledRulesetsCalls = [];
   const chrome = {
@@ -110,9 +92,9 @@ function loadBackground({ storage = {}, existingRules = [] } = {}) {
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(backgroundJsCode, sandbox);
+  vm.runInContext(dnrStateCode, sandbox);
   return {
-    ...sandbox.__backgroundExports,
+    ...sandbox.__dnrStateExports,
     updateDynamicRulesCalls,
     updateEnabledRulesetsCalls
   };
@@ -144,15 +126,15 @@ function loadSubscriptionDnr(existingRules = []) {
 
 test('DNR dynamic ID ranges stay isolated', async (t) => {
   await t.test('default dynamic sync removes only default IDs', async () => {
-    const bg = loadBackground({
+    const dnrState = loadDnrState({
       storage: { config: { acceleration: true } },
       existingRules: [{ id: 999 }, { id: 1000 }, { id: 99999 }, { id: 100000 }, { id: 9000000 }]
     });
 
-    await bg.syncDynamicRules();
+    await dnrState.syncDynamicRules();
 
-    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].removeRuleIds), [1000, 99999]);
-    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id)), [1000, 1001]);
+    assert.deepStrictEqual(plain(dnrState.updateDynamicRulesCalls[0].removeRuleIds), [1000, 99999]);
+    assert.deepStrictEqual(plain(dnrState.updateDynamicRulesCalls[0].addRules.map(r => r.id)), [1000, 1001]);
   });
 
   await t.test('subscription apply removes only subscription IDs and assigns non-overlapping IDs', async () => {
@@ -169,16 +151,16 @@ test('DNR dynamic ID ranges stay isolated', async (t) => {
   });
 
   await t.test('whitelist sync removes only whitelist IDs and never overlaps subscription IDs', async () => {
-    const bg = loadBackground({
+    const dnrState = loadDnrState({
       storage: { whitelist: ['example.com', 'news.example'] },
       existingRules: [{ id: 1000 }, { id: 100000 }, { id: 8999999 }, { id: 9000000 }, { id: 9000003 }]
     });
 
-    await bg.syncWhitelistRules();
+    await dnrState.syncWhitelistRules();
 
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].removeRuleIds, [9000000, 9000003]);
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id), [9000000, 9000001]);
-    assert.ok(bg.updateDynamicRulesCalls[0].addRules.every(r => r.id >= 9000000));
+    assert.deepStrictEqual(dnrState.updateDynamicRulesCalls[0].removeRuleIds, [9000000, 9000003]);
+    assert.deepStrictEqual(dnrState.updateDynamicRulesCalls[0].addRules.map(r => r.id), [9000000, 9000001]);
+    assert.ok(dnrState.updateDynamicRulesCalls[0].addRules.every(r => r.id >= 9000000));
   });
 
   await t.test('clearing subscription rules leaves default and whitelist ranges alone', async () => {
@@ -190,30 +172,30 @@ test('DNR dynamic ID ranges stay isolated', async (t) => {
   });
 
   await t.test('disabling network blocking removes all dynamic rules', async () => {
-    const bg = loadBackground({
+    const dnrState = loadDnrState({
       existingRules: [{ id: 1000 }, { id: 100000 }, { id: 9000000 }]
     });
 
-    await bg.updateDNRState(false);
+    await dnrState.updateDNRState(false);
 
-    assert.deepStrictEqual(plain(bg.updateEnabledRulesetsCalls[0].disableRulesetIds), [
+    assert.deepStrictEqual(plain(dnrState.updateEnabledRulesetsCalls[0].disableRulesetIds), [
       ...staticRulesetIds
     ]);
-    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].removeRuleIds), [1000, 100000, 9000000]);
+    assert.deepStrictEqual(plain(dnrState.updateDynamicRulesCalls[0].removeRuleIds), [1000, 100000, 9000000]);
   });
 
   await t.test('re-enabling restores default and whitelist rules without removing subscription range', async () => {
-    const bg = loadBackground({
+    const dnrState = loadDnrState({
       storage: { config: { acceleration: true }, whitelist: ['example.com'] },
       existingRules: [{ id: 1000 }, { id: 100000 }, { id: 9000000 }]
     });
 
-    await bg.updateDNRState(true);
+    await dnrState.updateDNRState(true);
 
-    assert.deepStrictEqual(plain(bg.updateEnabledRulesetsCalls[0].enableRulesetIds), staticRulesetIds);
-    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].removeRuleIds), [1000]);
-    assert.deepStrictEqual(plain(bg.updateDynamicRulesCalls[0].addRules.map(r => r.id)), [1000, 1001]);
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[1].removeRuleIds, [9000000]);
-    assert.deepStrictEqual(bg.updateDynamicRulesCalls[1].addRules.map(r => r.id), [9000000]);
+    assert.deepStrictEqual(plain(dnrState.updateEnabledRulesetsCalls[0].enableRulesetIds), staticRulesetIds);
+    assert.deepStrictEqual(plain(dnrState.updateDynamicRulesCalls[0].removeRuleIds), [1000]);
+    assert.deepStrictEqual(plain(dnrState.updateDynamicRulesCalls[0].addRules.map(r => r.id)), [1000, 1001]);
+    assert.deepStrictEqual(dnrState.updateDynamicRulesCalls[1].removeRuleIds, [9000000]);
+    assert.deepStrictEqual(dnrState.updateDynamicRulesCalls[1].addRules.map(r => r.id), [9000000]);
   });
 });

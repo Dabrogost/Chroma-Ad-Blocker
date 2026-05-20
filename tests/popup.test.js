@@ -449,10 +449,11 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(componentsJsCode, /Ads Blocked/);
   assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
   assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.doesNotMatch(popupHtmlCode, /health-ui\.js/);
   assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<div id="appShell"><\/div>/);
-  assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="health-ui\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
   assert.doesNotMatch(popupHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);

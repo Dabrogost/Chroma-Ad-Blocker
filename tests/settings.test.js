@@ -6,6 +6,7 @@ const vm = require('vm');
 const { JSDOM } = require('jsdom');
 
 const componentsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
+const healthUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'health-ui.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const uiCss = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
@@ -154,7 +155,7 @@ function createSettingsHarness({
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext([componentsJs, appJs, proxyUiJs].join('\n'), sandbox);
+  vm.runInContext([componentsJs, healthUiJs, appJs, proxyUiJs].join('\n'), sandbox);
   return { dom, sandbox, messages, pending };
 }
 
