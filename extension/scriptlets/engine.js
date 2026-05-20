@@ -155,16 +155,12 @@ async function _syncUserScriptsImpl() {
       }
 
       const argsStr = JSON.stringify(rule.args || []);
-      const statsDetail = JSON.stringify({
-        scriptlet: rule.scriptlet,
-        source: rule.sourceId || 'subscription'
-      });
       const code = `
         try {
           (${fn.toString()})(${argsStr});
-          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit', ...${statsDetail} } }));
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit' } }));
         } catch (err) {
-          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error', error: err && (err.message || err.name || String(err)), ...${statsDetail} } }));
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error' } }));
           throw err;
         }
       `;

@@ -546,6 +546,32 @@ test('scriptlet engine whitelist hardening', async (t) => {
     ]);
   });
 
+  await t.test('registered telemetry does not expose scriptlet metadata to the page', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{
+        scriptlet: 'set-constant',
+        sourceId: 'private-list-id',
+        args: ['foo', 'true'],
+        domains: ['example.org']
+      }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registered.length, 1);
+    const code = registered[0].js[0].code;
+    assert.match(code, /__CHROMA_SCRIPTLET_STATS__/);
+    assert.match(code, /detail:\s*\{\s*type:\s*'hit'\s*\}/);
+    assert.match(code, /detail:\s*\{\s*type:\s*'error'\s*\}/);
+    assert.doesNotMatch(code, /private-list-id/);
+    assert.doesNotMatch(code, /sourceId|source:/);
+    assert.doesNotMatch(code, /scriptlet:/);
+    assert.doesNotMatch(code, /err\.message|err\.name|String\(err\)/);
+  });
+
   await t.test('whitelist changes re-sync subscription userScripts', async () => {
     const storageState = {
       subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],

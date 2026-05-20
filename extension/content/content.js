@@ -656,10 +656,7 @@
     if (!detail || typeof detail !== 'object') return;
     queueStatsEvent({
       layer: 'scriptlet',
-      type: detail.type === 'error' ? 'error' : 'hit',
-      scriptlet: detail.scriptlet,
-      ruleSource: detail.source,
-      error: detail.error
+      type: detail.type === 'error' ? 'error' : 'hit'
     });
   }, true);
 

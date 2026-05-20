@@ -47,6 +47,7 @@ const contentJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'c
 test('Content script generic functionality', async (t) => {
   const createSandbox = (setupDoc, options = {}) => {
     const sentMessages = [];
+    const documentListeners = {};
     const location = options.location || { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' };
     const sandbox = {
       chrome: {
@@ -81,7 +82,15 @@ test('Content script generic functionality', async (t) => {
         head: createMockElement('head'),
         body: createMockElement('body'),
         documentElement: createMockElement('html'),
-        addEventListener: () => {},
+        addEventListener: (type, fn) => {
+          if (!documentListeners[type]) documentListeners[type] = [];
+          documentListeners[type].push(fn);
+        },
+        dispatchEvent: (event) => {
+          const listeners = documentListeners[event?.type] || [];
+          listeners.forEach(fn => fn(event));
+          return true;
+        },
         getElementsByClassName: () => [],
         _adoptedStyleSheets: [],
         get adoptedStyleSheets() { return this._adoptedStyleSheets; },
@@ -300,6 +309,33 @@ test('Content script generic functionality', async (t) => {
     assert.ok(events.some(event => event.layer === 'zapper'));
     assert.ok(events.every(event => event.domain === 'www.youtube.com'));
     assert.ok(events.every(event => event.ts !== 1));
+  });
+
+  await t.test('scriptlet telemetry bridge records only aggregate event type', async (st) => {
+    const sandbox = createSandbox();
+
+    sandbox.document.dispatchEvent({
+      type: '__CHROMA_SCRIPTLET_STATS__',
+      detail: {
+        type: 'error',
+        scriptlet: 'set-constant',
+        source: 'private-list-id',
+        error: 'secret error detail'
+      }
+    });
+    sandbox.flushStatsQueue();
+
+    const event = sandbox.__sentMessages
+      .filter(msg => msg.type === 'STATS_EVENT_BATCH')
+      .flatMap(msg => msg.events)
+      .find(item => item.layer === 'scriptlet');
+
+    assert.ok(event, 'expected scriptlet stats event');
+    assert.strictEqual(event.type, 'error');
+    assert.strictEqual(event.domain, 'www.youtube.com');
+    assert.strictEqual('scriptlet' in event, false);
+    assert.strictEqual('ruleSource' in event, false);
+    assert.strictEqual('error' in event, false);
   });
 
   await t.test('disabled cosmetic mode does not record cleanup events', async (st) => {
