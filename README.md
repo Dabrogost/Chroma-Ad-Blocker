@@ -329,15 +329,16 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired in supported install contexts. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
-| `tabs` | Required to read the active tab's URL for whitelist matching in the popup and to reload the tab when the whitelist is toggled. |
+| `tabs` | Required to read the active tab's URL for whitelist matching in the popup, open extension pages from UI controls, and reload the tab when the whitelist is toggled. |
 | `alarms` | Powers periodic subscription refresh checks. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
 | `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
-| `scripting` | Used for supplemental on-demand script injection and legacy compatibility. |
+| `scripting` | Used for extension-controlled script work, including Element Zapper injection and optional Fingerprint Randomization content-script registration. |
 | `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
 | `privacy` | Allows Chroma to apply optional browser-level privacy controls, including WebRTC leak protection and Chrome Privacy Hardening. |
 | `contentSettings` | Allows Chroma to provide an optional Geolocation Protection toggle that blocks website location access through Chrome's native site setting. |
 | `webRequest` | Used to intercept authentication challenges from proxy servers. |
 | `webRequestAuthProvider` | Required to provide credentials to proxy servers via the `onAuthRequired` listener. |
+| Host permission: `<all_urls>` | Allows the always-on isolated content script, cosmetic filtering, DNR rules, subscription scriptlets, and optional proxy/site controls to operate across visited websites. This broad scope is why Chroma keeps sensitive settings, stats, proxy credentials, and health diagnostics local and validates privileged messages at the extension boundary. |
 
 ---
 
@@ -449,15 +450,19 @@ Chroma utilizes logic and patterns derived from the following open-source projec
 
 ## Filter List Subscriptions
 
-Chroma subscribes to the following lists to ensure real-time protection:
+Chroma ships with a mix of bundled and remote filter sources. Enabled remote lists are fetched directly by your browser on their configured schedule, parsed locally, cached in `chrome.storage.local`, and then applied through the network, cosmetic, or scriptlet layer that matches each supported rule.
 
-- **Chroma Hotfix** — Maintainer-controlled list for platform-specific overrides.
-- **Chroma Scriptlet Library** — Bundled Chroma-maintained scriptlet rules for targeted anti-adblock, recipe/blog, and platform compatibility fixes.
-- **Hagezi Pro Mini** — High-performance DNS and ad-blocking rules.
-- **EasyList** — The primary filter for cosmetic ad-blocking and element hiding.
-- **Fanboy Annoyance** — Blocks social widgets, popups, and other non-ad annoyances through cosmetic rules and supported scriptlets.
+| List | Source | Default refresh | What it can affect |
+|---|---|---:|---|
+| **Chroma Scriptlet Library** | Bundled inside the extension package | Local bundled file | Chroma-maintained scriptlet compatibility rules. Updates only when the extension package changes. |
+| **Chroma Hotfix** | Maintainer-controlled GitHub raw file | 6 hours | Emergency network, cosmetic, and supported scriptlet fixes between extension releases. |
+| **Hagezi Pro Mini** | Hagezi remote list | 24 hours | Network DNR subscription rules after parsing, static deduplication, and dynamic-rule allocation. |
+| **EasyList** | EasyList remote list | 24 hours | Cosmetic rules and supported scriptlets only; not allocated to network DNR. |
+| **Fanboy Annoyance** | Fanboy remote list | 24 hours | Cosmetic annoyance rules and supported scriptlets only; not allocated to network DNR. |
 
-The **Chroma Hotfix** list is intentionally quiet when it has no active rules. It may be enabled internally, but the Filter Lists UI and Health panel hide it from user-facing subscription totals until a maintainer-published hotfix actually contains rules. This keeps normal installs from showing a confusing extra enabled list when there is nothing for users to manage.
+The **Chroma Hotfix** list is the main remote trust boundary. It lets the maintainer ship narrow compatibility fixes without waiting for a full extension release, but it also means enabled installs can receive behavior changes from the Chroma GitHub repository between packaged releases. Hotfix content still goes through Chroma's normal parser, HTTPS fetch path, rule budgets, static deduplication, and supported-scriptlet allowlist; it is not arbitrary remote JavaScript execution.
+
+The **Chroma Hotfix** list is intentionally quiet when it has no active rules. It may be enabled internally, but the Filter Lists UI and Health panel hide it from user-facing subscription totals until a maintainer-published hotfix actually contains rules. This keeps normal installs from showing a confusing extra enabled list when there is nothing for users to manage. You can disable any visible subscription list from settings if you do not want it contributing rules.
 
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.

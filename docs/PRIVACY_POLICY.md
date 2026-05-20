@@ -22,6 +22,7 @@ The Extension uses your browser's local storage (`chrome.storage.local`) to save
 - **Filter List Data**: Subscription metadata and cached parsed rules from enabled filter lists.
 - **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are stored locally in an obfuscated form with a bundled extension key and used only for proxy authentication. This is not strong encryption; protect your browser profile and operating-system account accordingly.
 - **Local Statistics and Request Log**: Local blocked-request counts and a bounded request log used for the popup display. The log can include blocked request URLs, request types, timestamps, and matched rule IDs. This data is stored locally and can be reset from the extension UI.
+- **Health Diagnostics**: Coarse local status entries for material background failures, such as DNR sync, UserScripts registration, or proxy PAC write failures. These entries are sanitized and are not designed to store request URLs, proxy hosts, credentials, or raw filter rules.
 
 ### No Tracking and Cookies
 We do not use cookies, tracking pixels, or web beacons. There is no Chroma server-side tracking of your browsing habits or your use of the Extension.
@@ -32,24 +33,27 @@ The Extension requires specific permissions to function effectively. Below is a 
 - **`declarativeNetRequest`**: Enables static, dynamic, subscription, and whitelist rules for network-level blocking.
 - **`declarativeNetRequestFeedback`**: Allows local matched-rule feedback for blocked-request statistics and the local request log.
 - **`storage` and `unlimitedStorage`**: Save settings, whitelists, proxy configuration, subscription metadata, cached rules, statistics, and request-log data locally.
-- **`tabs`**: Reads the active tab URL for whitelist controls and opens extension pages or links from the popup/settings UI.
+- **`tabs`**: Reads the active tab URL for whitelist controls, opens extension pages or links from the popup/settings UI, and reloads tabs after site-level whitelist changes.
 - **`alarms`**: Schedules recurring subscription refresh checks in the MV3 service worker.
 - **`userScripts`**: Registers subscription scriptlets in the page context using Chrome's native userScripts API. In Chrome 138 and newer, this API also requires the user to enable Chrome's per-extension **Allow User Scripts** toggle.
-- **`scripting`**: Supports supplemental extension-controlled script registration, including fingerprint-randomization logic when enabled.
+- **`scripting`**: Supports extension-controlled script work, including Element Zapper injection and fingerprint-randomization logic when enabled.
 - **`proxy`**: Applies browser-level PAC scripts for split-tunnel and global fallback proxy routing.
 - **`webRequest` and `webRequestAuthProvider`**: Responds to proxy authentication challenges when an HTTP/HTTPS proxy requires credentials.
-- **Host Permissions (`<all_urls>` and listed site patterns)**: Allow content scripts, cosmetic filtering, DNR rule matching, subscription scriptlets, and supported platform handlers to operate on visited pages.
+- **Host Permissions (`<all_urls>` and listed site patterns)**: Allow content scripts, cosmetic filtering, DNR rule matching, subscription scriptlets, supported platform handlers, and site-level controls to operate on visited pages. This is broad by design and is why sensitive state remains local.
 
 ## 3. Data Sharing
 We do not sell, share, or transmit your browsing data to Chroma-controlled servers. There are no analytics, tracking, or telemetry scripts included in the Extension.
 
 Some features make network requests as part of their normal function:
-- **Filter List Updates**: Enabled subscriptions are fetched from their configured list URLs, such as GitHub-hosted Chroma/Hagezi lists or EasyList/Fanboy endpoints.
+- **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, Fanboy Annoyance, and the maintainer-controlled Chroma Hotfix list. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
 - **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available.
 - **Proxy Testing**: When you test a proxy, Chroma requests a public IP-check endpoint through the selected proxy to verify connectivity.
 - **Configured Proxy Routing**: If you enable a proxy route or global fallback, matching browser traffic is routed through the proxy server you configured.
 
 These requests are not telemetry to Chroma, but the remote services or proxy providers involved may receive normal network metadata such as your IP address, user agent, and request time.
+
+### Remote List Trust Boundary
+Remote filter lists can change extension behavior after installation. Depending on the rule type and Chroma support, a refreshed list can affect network blocking or allow rules, cosmetic hiding, and supported scriptlet registration. Chroma applies guardrails: remote lists are fetched over HTTPS, parsed locally, capped by size and rule budgets, deduplicated where appropriate, and scriptlets are limited to Chroma's shipped scriptlet implementations. The Chroma Hotfix list is maintained by the Chroma developer for rapid compatibility fixes between extension releases.
 
 ## 4. Selective Network Permissions
 To maintain compatibility with certain websites, Chroma's ruleset permits a limited set of standard network requests to reach their intended destinations. These are called Allow Rules and apply only on specific domains where full blocking would impair page functionality.
