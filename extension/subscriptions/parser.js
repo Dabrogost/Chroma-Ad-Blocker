@@ -190,7 +190,7 @@ function parseNetworkRule(line, isException = false) {
     //   1 = standard block
     //   2 = exception (allow)
     //   3 = $important block
-    // Whitelist rules remain at 999999 (unchanged in background.js)
+    // Whitelist rules remain at 999999 in background DNR state.
     const priority = isException ? 2 : (opts.isImportant ? 3 : 1);
 
     return networkParseResult({

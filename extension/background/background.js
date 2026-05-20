@@ -1,6 +1,6 @@
 /**
  * Chroma Ad-Blocker - Service Worker (MV3 Background)
- * Handles: dynamic rule updates, stat tracking, config persistence
+ * Coordinates lifecycle startup, alarms, and message routing.
  *
  * MV3 NOTE: This service worker is ephemeral and may restart at any time. 
  * All persistent state must be stored in chrome.storage.

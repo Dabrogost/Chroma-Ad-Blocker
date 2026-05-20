@@ -95,7 +95,7 @@ graph TD
     classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
     UI["Popup / Settings UI"]:::actor
-    SW["Service Worker<br/>background.js + handlers.js"]:::sw
+    SW["Service Worker<br/>background.js + handlers.js<br/>focused background modules"]:::sw
     STORE[("chrome.storage.local")]:::storage
     SUBS["subscriptions/manager.js<br/>fetch, parse, dedupe, allocate"]:::sw
     SCRIPTS["scriptlets/engine.js<br/>register userScripts + optional FPR"]:::sw
@@ -126,7 +126,7 @@ graph TD
 
 ## System Layers
 
-### Layer 1: Network-Level Blocking (extension/rules/, extension/background/background.js, extension/subscriptions/)
+### Layer 1: Network-Level Blocking (extension/rules/, extension/background/dnrState.js, extension/subscriptions/)
 The primary engine of Chroma, powered by the Declarative Net Request (DNR) API. Chroma partitions its blocking logic into source-owned static rulesets: generated OISD Big rules, a protected custom static layer, and a specialized recipe layer.
 
 #### How Chroma Keeps Large Static Rulesets Practical
