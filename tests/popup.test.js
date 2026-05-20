@@ -455,6 +455,13 @@ test('UI hardening copy', () => {
   assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
+  assert.doesNotMatch(popupHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
+  assert.doesNotMatch(settingsHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
+  assert.doesNotMatch(popupHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
+  assert.doesNotMatch(settingsHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
+  assert.match(uiCssCode, /--font-sans:\s+system-ui/);
+  assert.match(uiCssCode, /--font-mono:\s+"Cascadia Mono"/);
+  assert.doesNotMatch(uiCssCode, /Inter|Outfit|JetBrains Mono/);
   assert.doesNotMatch(popupHtmlCode, /<header>|Protection Layers|Filter Lists|Request Log/);
   assert.doesNotMatch(settingsHtmlCode, /<header>|Protection Layers|Filter Lists|Request Log|Local Zapper Rules/);
   assert.doesNotMatch(popupHtmlCode, /style="/);
