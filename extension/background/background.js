@@ -22,6 +22,7 @@ import { createDefaultStatsV2, recordStatsEvent } from './stats.js';
 import './proxy.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';
 import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';
+import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';
 
 const DEBUG = false;
 
@@ -262,7 +263,15 @@ export async function updateDNRState(isEnabled) {
       const removeIds = existing.map(r => r.id);
       await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
     }
+    await clearHealthDiagnostic('dnrState');
   } catch (err) {
+    await recordHealthDiagnostic('dnrState', {
+      area: 'dnr',
+      severity: 'error',
+      message: 'Core DNR state could not be synchronized.',
+      action: 'Reload the extension, then turn Network Blocking off and on.',
+      error: err?.message || err
+    });
     if (DEBUG) console.error('[Chroma Ad-Blocker] Error updating DNR state:', err);
   }
 }
@@ -327,6 +336,13 @@ export async function syncDynamicRules() {
         removeRuleIds: removeIds,
         addRules: appliedRules,
       });
+      await recordHealthDiagnostic('trackingUrlCleanupSync', {
+        area: 'trackingUrlCleanup',
+        severity: 'warning',
+        message: 'Tracking URL Cleanup could not register its DNR redirect rule.',
+        action: 'Reload the extension, or turn Tracking URL Cleanup off and on.',
+        error: err?.message || err
+      });
       if (DEBUG) console.warn('[Chroma Ad-Blocker] Tracking URL cleanup rule was not accepted by Chrome DNR:', err);
     }
 
@@ -338,8 +354,19 @@ export async function syncDynamicRules() {
       });
     }
 
+    await clearHealthDiagnostic('dnrDynamicRules');
+    if (appliedRules.some(isTrackingCleanupRule) || !isTrackingUrlCleanupEnabled) {
+      await clearHealthDiagnostic('trackingUrlCleanupSync');
+    }
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${appliedRules.length} dynamic rules (${isAccelerationEnabled ? 'ALLOW' : 'BLOCK'}).`);
   } catch (err) {
+    await recordHealthDiagnostic('dnrDynamicRules', {
+      area: 'dnr',
+      severity: 'error',
+      message: 'Dynamic DNR rules could not be synchronized.',
+      action: 'Reload the extension, then turn Network Blocking off and on.',
+      error: err?.message || err
+    });
     if (DEBUG) console.error('[Chroma Ad-Blocker] Dynamic rule sync failed:', err);
   }
 }
@@ -381,8 +408,16 @@ export async function syncWhitelistRules() {
       });
     }
 
+    await clearHealthDiagnostic('whitelistSync');
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Synced ${whitelist.length} whitelist domains to DNR.`);
   } catch (err) {
+    await recordHealthDiagnostic('whitelistSync', {
+      area: 'whitelist',
+      severity: 'warning',
+      message: 'Whitelist allow rules could not be synchronized to DNR.',
+      action: 'Reload the extension, or remove and re-add the affected whitelist entry.',
+      error: err?.message || err
+    });
     if (DEBUG) console.error('[Chroma Ad-Blocker] Whitelist sync failed:', err);
   }
 }
@@ -487,7 +522,16 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
 // ─── SUBSCRIPTION ALARM ─────
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'chroma-subscription-check') {
-    refreshAllStale().catch(err => {
+    refreshAllStale().then(() => {
+      clearHealthDiagnostic('subscriptionAlarmRefresh');
+    }).catch(err => {
+      recordHealthDiagnostic('subscriptionAlarmRefresh', {
+        area: 'subscriptions',
+        severity: 'warning',
+        message: 'Scheduled subscription refresh did not complete.',
+        action: 'Open settings and refresh the affected subscription lists.',
+        error: err?.message || err
+      });
       if (DEBUG) console.error('[Chroma Subscriptions] Alarm refresh failed:', err);
     });
   }
@@ -508,5 +552,12 @@ router.attachListener();
 // enables Chrome's Allow User Scripts toggle after install, a normal worker
 // wake should be enough to register already-parsed subscription scriptlets.
 recoverUserScriptsIfNeeded().catch(err => {
+  recordHealthDiagnostic('userScriptsRecovery', {
+    area: 'scriptlets',
+    severity: 'warning',
+    message: 'Stored scriptlets could not be recovered after service-worker wake.',
+    action: 'Open Chrome extension details and confirm Allow User Scripts is enabled.',
+    error: err?.message || err
+  });
   if (DEBUG) console.error('[Chroma Scriptlets] Wake sync failed:', err);
 });

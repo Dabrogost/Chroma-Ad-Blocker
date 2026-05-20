@@ -7,6 +7,7 @@ const vm = require('vm');
 const proxyJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'proxy.js'), 'utf8')
   .replace("import { decryptAuth } from '../core/crypto.js';", 'var decryptAuth = globalThis._mockDecryptAuth;')
   .replace("import { recordStatsEvent } from './stats.js';", 'var recordStatsEvent = globalThis._mockRecordStatsEvent || (() => {});')
+  .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", 'var clearHealthDiagnostic = globalThis._mockClearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._mockRecordHealthDiagnostic || (async () => {});')
   .replace(/^export\s+/gm, '')
   + '\nglobalThis.__proxyExports = { syncProxyState, runProxyTest, findAuthProxyConfig, getProxyString, buildPacDomainConditions, fetchProxyIp, isLikelyIp, PROXY_TEST_DOMAINS, CHROME_SERVICE_BYPASS_DOMAINS };\n';
 
@@ -28,6 +29,8 @@ function createProxySandbox({
   const storageSetCalls = [];
   const storageRemoveCalls = [];
   const statsEvents = [];
+  const healthDiagnostics = [];
+  const clearedHealthDiagnostics = [];
   const fetchCalls = [];
   const timeoutCallbacks = [];
   const storage = {
@@ -112,7 +115,9 @@ function createProxySandbox({
       return { ok: true, text: async () => '203.0.113.7\n' };
     },
     _mockDecryptAuth: async (iv, cipher) => ({ username: `user:${iv}`, password: `pass:${cipher}` }),
-    _mockRecordStatsEvent: event => { statsEvents.push(event); }
+    _mockRecordStatsEvent: event => { statsEvents.push(event); },
+    _mockRecordHealthDiagnostic: (id, entry) => { healthDiagnostics.push({ id, entry }); },
+    _mockClearHealthDiagnostic: id => { clearedHealthDiagnostics.push(id); }
   };
 
   sandbox.globalThis = sandbox;
@@ -120,12 +125,15 @@ function createProxySandbox({
   vm.runInContext(proxyJsCode, sandbox);
 
   return {
+    chrome,
     storage,
     proxySetCalls,
     proxyClearCalls,
     storageSetCalls,
     storageRemoveCalls,
     statsEvents,
+    healthDiagnostics,
+    clearedHealthDiagnostics,
     fetchCalls,
     runPendingTimers: () => {
       const callbacks = timeoutCallbacks.splice(0);
@@ -482,6 +490,25 @@ test('Proxy PAC hardening', async (t) => {
     assert.deepStrictEqual(harness.storageRemoveCalls, ['proxyConfig']);
     assert.strictEqual(harness.storage.proxyConfig, undefined);
     assert.strictEqual(harness.storageSetCalls.length, 0);
+  });
+
+  await t.test('records a health diagnostic when PAC settings fail', async () => {
+    const harness = createProxySandbox();
+    harness.storage.config = {};
+    harness.proxySetCalls.length = 0;
+    harness.proxyClearCalls.length = 0;
+    harness.chrome.proxy.settings.set = async () => {
+      throw new Error('PAC write failed for proxy.example.com');
+    };
+
+    await harness.syncProxyState([
+      baseProxy()
+    ]);
+
+    assert.strictEqual(harness.healthDiagnostics.length, 1);
+    assert.strictEqual(harness.healthDiagnostics[0].id, 'proxyPacSync');
+    assert.strictEqual(harness.healthDiagnostics[0].entry.area, 'proxy');
+    assert.match(harness.healthDiagnostics[0].entry.message, /PAC settings/i);
   });
 });
 

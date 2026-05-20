@@ -10,6 +10,7 @@
 
 import { SCRIPTLET_MAP } from './lib.js';
 import { recordStatsEvent } from '../background/stats.js';
+import { clearHealthDiagnostic, recordHealthDiagnostic } from '../background/diagnostics.js';
 
 const DEBUG = false;
 
@@ -107,6 +108,20 @@ const CHUNK_SIZE = 100;
 async function _syncUserScriptsImpl() {
   try {
     if (!hasUserScriptsApi()) {
+      const { subscriptionScriptletRules = [] } = await chrome.storage.local.get(['subscriptionScriptletRules']);
+      if (Array.isArray(subscriptionScriptletRules) && subscriptionScriptletRules.length > 0) {
+        if (typeof recordHealthDiagnostic === 'function') {
+          await recordHealthDiagnostic('scriptletRegistration', {
+            area: 'scriptlets',
+            severity: 'warning',
+            message: 'Subscription scriptlets could not be registered because the UserScripts API is unavailable.',
+            action: 'Open Chrome extension details and enable Allow User Scripts.',
+            error: 'UserScripts API unavailable'
+          });
+        }
+      } else if (typeof clearHealthDiagnostic === 'function') {
+        await clearHealthDiagnostic('scriptletRegistration');
+      }
       if (DEBUG) {
         console.warn('[Chroma Scriptlets] userScripts API unavailable. Enable Allow User Scripts in Chrome extension details.');
       }
@@ -125,7 +140,12 @@ async function _syncUserScriptsImpl() {
       await chrome.userScripts.unregister({ ids: existing.map(s => s.id) });
     }
 
-    if (subscriptionScriptletRules.length === 0) return;
+    if (subscriptionScriptletRules.length === 0) {
+      if (typeof clearHealthDiagnostic === 'function') {
+        await clearHealthDiagnostic('scriptletRegistration');
+      }
+      return;
+    }
 
     const userScripts = [];
     let scriptCounter = 0;
@@ -202,6 +222,20 @@ async function _syncUserScriptsImpl() {
       }
     }
 
+    if (registered < userScripts.length) {
+      if (typeof recordHealthDiagnostic === 'function') {
+        await recordHealthDiagnostic('scriptletRegistration', {
+          area: 'scriptlets',
+          severity: 'warning',
+          message: `Registered ${registered}/${userScripts.length} subscription scriptlets.`,
+          action: 'Open Chrome extension details and confirm Allow User Scripts is enabled.',
+          error: `${userScripts.length - registered} scriptlet registration(s) failed`
+        });
+      }
+    } else if (typeof clearHealthDiagnostic === 'function') {
+      await clearHealthDiagnostic('scriptletRegistration');
+    }
+
     if (DEBUG) {
       console.log(
         `[Chroma Scriptlets] Registered ${registered}/${userScripts.length} scriptlets ` +
@@ -209,6 +243,15 @@ async function _syncUserScriptsImpl() {
       );
     }
   } catch (err) {
+    if (typeof recordHealthDiagnostic === 'function') {
+      await recordHealthDiagnostic('scriptletRegistration', {
+        area: 'scriptlets',
+        severity: 'warning',
+        message: 'Subscription scriptlets could not be synchronized.',
+        action: 'Open Chrome extension details and confirm Allow User Scripts is enabled.',
+        error: err?.message || err
+      });
+    }
     if (DEBUG) console.error('[Chroma Scriptlets] Failed to sync userScripts:', err);
   }
 }
@@ -268,6 +311,9 @@ async function _syncFprImpl() {
           if (DEBUG) console.warn('[Chroma FPR] Unregister failed:', e);
         }
       }
+      if (typeof clearHealthDiagnostic === 'function') {
+        await clearHealthDiagnostic('fingerprintSync');
+      }
       return;
     }
 
@@ -298,10 +344,31 @@ async function _syncFprImpl() {
       if (typeof recordStatsEvent === 'function') {
         recordStatsEvent({ layer: 'fingerprint', type: 'activation' });
       }
+      if (typeof clearHealthDiagnostic === 'function') {
+        await clearHealthDiagnostic('fingerprintSync');
+      }
     } catch (e) {
+      if (typeof recordHealthDiagnostic === 'function') {
+        await recordHealthDiagnostic('fingerprintSync', {
+          area: 'fingerprint',
+          severity: 'warning',
+          message: 'Fingerprint Randomization script could not be registered.',
+          action: 'Turn Fingerprint Randomization off and on, or reload the extension.',
+          error: e?.message || e
+        });
+      }
       if (DEBUG) console.error('[Chroma FPR] Register/update failed:', e);
     }
   } catch (err) {
+    if (typeof recordHealthDiagnostic === 'function') {
+      await recordHealthDiagnostic('fingerprintSync', {
+        area: 'fingerprint',
+        severity: 'warning',
+        message: 'Fingerprint Randomization sync could not complete.',
+        action: 'Turn Fingerprint Randomization off and on, or reload the extension.',
+        error: err?.message || err
+      });
+    }
     if (DEBUG) console.error('[Chroma FPR] Sync failed:', err);
   }
 }

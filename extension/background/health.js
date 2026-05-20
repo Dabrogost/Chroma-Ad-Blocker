@@ -56,6 +56,7 @@ function countByRange(rules, start, end = Number.MAX_SAFE_INTEGER) {
 function sanitizeText(value, maxLength = 160) {
   return String(value ?? '')
     .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi, '[host]')
     .replace(/[^\S\r\n]+/g, ' ')
     .trim()
     .slice(0, maxLength);
@@ -142,6 +143,24 @@ function countEnabledProxyDomains(proxyConfigs) {
 
 function makeIssue(severity, area, message, action = null) {
   return { severity, area, message, action };
+}
+
+function normalizeHealthDiagnostics(raw) {
+  const entries = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? Object.entries(raw)
+    : [];
+  return entries
+    .map(([id, entry]) => ({
+      id: sanitizeText(id, 80),
+      area: sanitizeText(entry?.area || 'system', 40) || 'system',
+      severity: ['info', 'warning', 'error'].includes(entry?.severity) ? entry.severity : 'warning',
+      message: sanitizeText(entry?.message || 'Background health diagnostic recorded.'),
+      action: entry?.action ? sanitizeText(entry.action, 220) : null,
+      error: entry?.error ? sanitizeText(entry.error) : null,
+      ts: Number.isSafeInteger(entry?.ts) ? entry.ts : null
+    }))
+    .filter(entry => entry.message)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
 }
 
 function getExpectedStaticRulesets(manifest) {
@@ -269,7 +288,8 @@ function computeOverall({
   globalProxyConfigured,
   fpr,
   browserPrivacy,
-  geolocation
+  geolocation,
+  diagnostics
 }) {
   const issues = [];
 
@@ -404,15 +424,25 @@ function computeOverall({
     ));
   }
 
+  for (const diagnostic of diagnostics) {
+    issues.push(makeIssue(
+      diagnostic.severity,
+      diagnostic.area,
+      diagnostic.message,
+      diagnostic.action
+    ));
+  }
+
   if (!masterEnabled || !networkBlocking) {
     return { status: 'disabled', issues };
   }
-  if (!dnrAvailable || dnrError || !staticRulesetsOk) {
+  if (!dnrAvailable || dnrError || !staticRulesetsOk || diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
     return { status: 'error', issues };
   }
   if (
     (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) ||
     subscriptionErrors.length > 0 ||
+    diagnostics.some(diagnostic => diagnostic.severity === 'warning') ||
     issues.some(issue => issue.severity === 'warning')
   ) {
     return { status: 'degraded', issues };
@@ -433,7 +463,8 @@ export async function getHealthStatus() {
     'fprWhitelist',
     'statsV2',
     'requestLog',
-    'appliedNetworkRuleCount'
+    'appliedNetworkRuleCount',
+    'healthDiagnostics'
   ]);
 
   const config = storage.config || {};
@@ -474,6 +505,7 @@ export async function getHealthStatus() {
     scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
   }
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
+  const diagnostics = normalizeHealthDiagnostics(storage.healthDiagnostics);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
   await syncWebRtcLeakProtection(config, proxyConfigs);
   await syncBrowserPrivacyHardening(config);
@@ -568,6 +600,7 @@ export async function getHealthStatus() {
         ? 'Debug match logging is available in this install context.'
         : 'DNR match logging is unavailable in this install context; blocking can still work.'
     },
+    diagnostics,
     overall: null
   };
 
@@ -590,7 +623,8 @@ export async function getHealthStatus() {
     globalProxyConfigured,
     fpr,
     browserPrivacy,
-    geolocation
+    geolocation,
+    diagnostics
   });
 
   return health;
