@@ -69,6 +69,7 @@ class CdpConnection {
   constructor(wsUrl) {
     this.nextId = 1;
     this.pending = new Map();
+    this.listeners = new Map();
     this.ws = new WebSocket(wsUrl);
   }
 
@@ -79,7 +80,10 @@ class CdpConnection {
       this.ws.addEventListener('error', reject, { once: true });
       this.ws.addEventListener('message', event => {
         const msg = JSON.parse(event.data);
-        if (!msg.id) return;
+        if (!msg.id) {
+          this.emit(msg.method, msg.params || {}, msg.sessionId, msg);
+          return;
+        }
         const pending = this.pending.get(msg.id);
         if (!pending) return;
         this.pending.delete(msg.id);
@@ -98,6 +102,31 @@ class CdpConnection {
     });
     this.ws.send(JSON.stringify(payload));
     return promise;
+  }
+
+  on(method, handler, sessionId = null) {
+    const key = sessionId ? `${sessionId}:${method}` : method;
+    if (!this.listeners.has(key)) this.listeners.set(key, new Set());
+    this.listeners.get(key).add(handler);
+    return () => {
+      const handlers = this.listeners.get(key);
+      if (!handlers) return;
+      handlers.delete(handler);
+      if (handlers.size === 0) this.listeners.delete(key);
+    };
+  }
+
+  emit(method, params, sessionId, msg) {
+    const keys = sessionId ? [`${sessionId}:${method}`, method] : [method];
+    for (const key of keys) {
+      const handlers = this.listeners.get(key);
+      if (!handlers) continue;
+      for (const handler of Array.from(handlers)) {
+        try {
+          handler(params, sessionId, msg);
+        } catch {}
+      }
+    }
   }
 
   close() {
