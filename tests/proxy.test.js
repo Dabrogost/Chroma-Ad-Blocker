@@ -382,6 +382,39 @@ test('Proxy PAC hardening', async (t) => {
     assert.match(pac, /host === "googlevideo\.com"/);
   });
 
+  await t.test('stress-tests PAC generation for large proxy domain lists', async () => {
+    const harness = createProxySandbox({ config: { chromeServiceProxyBypass: false } });
+    const largeDomains = Array.from({ length: 2500 }, (_, index) => ({
+      host: `media-${String(index).padStart(4, '0')}.large.example`,
+      enabled: true
+    }));
+
+    await harness.syncProxyState([
+      baseProxy({
+        host: 'bulk.example.com',
+        domains: largeDomains
+      })
+    ]);
+
+    const firstPac = pacData(harness);
+    assert.match(firstPac, /function FindProxyForURL\(url, host\)/);
+    assert.match(firstPac, /host === "media-0000\.large\.example"/);
+    assert.match(firstPac, /host === "media-2499\.large\.example"/);
+    assert.doesNotMatch(firstPac, /undefined|\[object Object\]/);
+    assert.strictEqual(evaluatePac(firstPac, 'media-0000.large.example'), 'PROXY bulk.example.com:8080');
+    assert.strictEqual(evaluatePac(firstPac, 'cdn.media-2499.large.example'), 'PROXY bulk.example.com:8080');
+    assert.strictEqual(evaluatePac(firstPac, 'unrelated.example'), 'DIRECT');
+
+    await harness.syncProxyState([
+      baseProxy({
+        host: 'bulk.example.com',
+        domains: largeDomains
+      })
+    ]);
+
+    assert.strictEqual(pacData(harness), firstPac);
+  });
+
   await t.test('domain-specific routes stay before and override global fallback', async () => {
     const harness = createProxySandbox({ config: { globalProxyEnabled: true, globalProxyId: 1 } });
 
