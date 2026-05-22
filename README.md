@@ -16,6 +16,7 @@
   - [How This Differs From FoxyProxy](#how-this-differs-from-foxyproxy)
 - [YouTube Ad Stripping](#youtube-ad-stripping)
 - [Quick Start](#quick-start)
+- [Troubleshooting Quick Reference](#troubleshooting-quick-reference)
 - [Configuration](#configuration)
 - [Statistics & Event Tracker](#statistics--event-tracker)
 - [Filter List Subscriptions](#filter-list-subscriptions)
@@ -328,7 +329,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `declarativeNetRequest` | Enables and manages the static and dynamic DNR rulesets that perform network-level ad and tracker blocking at the browser engine level. |
 | `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired in supported install contexts. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
-| `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), the static deduplication index, blocking statistics, and user configuration. No storage is used to collect or transmit user data. |
+| `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB — insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets (Hagezi Pro Mini alone can approach this limit), blocking statistics, user configuration, and local diagnostics/debug data when enabled. Static rule deduplication is computed by the service worker at runtime rather than stored as user data. No storage is used to collect or transmit user data. |
 | `tabs` | Required to read the active tab's URL for whitelist matching in the popup, open extension pages from UI controls, and reload the tab when the whitelist is toggled. |
 | `alarms` | Powers periodic subscription refresh checks. Chrome MV3 service workers are ephemeral and cannot use `setInterval` — `chrome.alarms` is the only reliable timer mechanism available. |
 | `userScripts` | The primary API for the scriptlet engine. Allows registered scriptlets to execute in the page's MAIN world context with optimal performance and native lifecycle management. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
@@ -367,6 +368,17 @@ Chroma implements several advanced security measures to ensure extension integri
    - **Chrome 138+**: On the Chroma extension card, click **Details**, then enable **Allow User Scripts**.
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
 6. Done — Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
+
+## Troubleshooting Quick Reference
+
+| Symptom | Check |
+|---------|-------|
+| Scriptlets or fingerprint randomization show unavailable in Health. | On Chrome 138+, open `chrome://extensions`, select Chroma **Details**, and enable **Allow User Scripts**. On Chrome 122-137, confirm **Developer Mode** is enabled. |
+| Loaded-extension E2E tests fail with `--load-extension` errors. | Use Chrome for Testing or Chromium for automated extension tests. Modern official Google Chrome builds reject this automation path. |
+| Authenticated SOCKS proxy credentials do not work. | Chromium extension proxy APIs do not expose SOCKS username/password auth to extensions. Use provider-side IP allowlisting or an HTTP/HTTPS proxy endpoint. |
+| Subscription refresh fails. | Confirm the list URL is HTTPS, reachable, not credential-bearing, under the response-size limit, and returns filter-list text rather than an HTML error page. |
+| Chroma Hotfix changes behavior after install. | Chroma Hotfix is a trusted remote list enabled by default for fast fixes. Disable it in subscriptions if you want only static release-bundled behavior. |
+| Request Log is empty. | DNR debug match logging is only available in compatible debug/unpacked contexts. Blocking can still work normally when the request log is unavailable. |
 
 ## Configuration
 
