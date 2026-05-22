@@ -41,7 +41,9 @@ const ChromaProxyUI = (() => {
 
   function appendProxyButton(parent, className, textContent, title = '') {
     const button = appendElement(parent, 'button', className, textContent);
+    button.type = 'button';
     if (title) button.title = title;
+    button.setAttribute('aria-label', title || textContent);
     return button;
   }
 
@@ -50,6 +52,7 @@ const ChromaProxyUI = (() => {
     if (title) label.title = title;
     const input = appendElement(label, 'input', inputClassName);
     input.type = 'checkbox';
+    if (title) input.setAttribute('aria-label', title);
     appendElement(label, 'span', 'slider');
     return input;
   }
@@ -120,6 +123,7 @@ const ChromaProxyUI = (() => {
     appendElement(info, 'div', 'desc', 'Controls Chrome WebRTC IP handling for browser-level proxy fallback');
 
     const select = appendElement(row, 'select', 'chroma-input chroma-input--compact proxy-webrtc-select');
+    select.setAttribute('aria-label', 'WebRTC Leak Protection');
     for (const [value, label] of [
       ['off', 'Off'],
       ['auto', 'Auto (Recommended)'],
@@ -169,6 +173,7 @@ const ChromaProxyUI = (() => {
     const toggle = appendElement(toggleLabel, 'input', 'proxy-chrome-service-bypass-toggle');
     toggle.type = 'checkbox';
     toggle.checked = config.chromeServiceProxyBypass !== false;
+    toggle.setAttribute('aria-label', 'Bypass Chrome Browser Services');
     appendElement(toggleLabel, 'span', 'slider');
 
     container.appendChild(row);
@@ -285,7 +290,7 @@ const ChromaProxyUI = (() => {
 
     const domainTools = appendElement(card, 'div', 'proxy-grid-full proxy-domain-tools');
     appendInput(domainTools, 'text', 'chroma-input chroma-input--compact proxy-domain-input', '', 'Domain (e.g. youtube.com)');
-    appendProxyButton(domainTools, 'reset-btn proxy-add-domain-btn compact-action-btn', 'ADD');
+    appendProxyButton(domainTools, 'reset-btn proxy-add-domain-btn compact-action-btn', 'ADD', 'Add routed domain');
     appendElement(card, 'div', 'proxy-domain-list');
   }
 
@@ -310,9 +315,11 @@ const ChromaProxyUI = (() => {
     appendElement(actions, 'span', 'inline-separator');
 
     const toggleLabel = appendElement(actions, 'label', 'switch switch-sm');
+    toggleLabel.title = `Enable ${domain.host}`;
     const toggleInput = appendElement(toggleLabel, 'input', 'd-toggle');
     toggleInput.type = 'checkbox';
     toggleInput.checked = !!domain.enabled;
+    toggleInput.setAttribute('aria-label', `Enable ${domain.host}`);
     appendElement(toggleLabel, 'span', 'slider');
 
     toggleInput.addEventListener('change', onToggle);

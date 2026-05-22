@@ -201,6 +201,20 @@ const ChromaApp = (() => {
     el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending && visual);
   }
 
+  function isActivationKey(event) {
+    return event?.key === 'Enter' || event?.key === ' ';
+  }
+
+  function addKeyboardActivation(element, handler) {
+    if (!element) return;
+    element.addEventListener('click', handler);
+    element.addEventListener('keydown', (event) => {
+      if (!isActivationKey(event)) return;
+      event.preventDefault();
+      handler(event);
+    });
+  }
+
   async function safeHydrateSection(name, fn) {
     try {
       return await fn();
@@ -801,7 +815,10 @@ const ChromaApp = (() => {
       if (cardNetwork && settingsIcon) {
         cardNetwork.classList.add('stat-card--clickable');
         cardNetwork.title = 'Open Settings';
-        cardNetwork.addEventListener('click', openSettingsPage);
+        cardNetwork.setAttribute('role', 'button');
+        cardNetwork.setAttribute('tabindex', '0');
+        cardNetwork.setAttribute('aria-label', 'Open Settings');
+        addKeyboardActivation(cardNetwork, openSettingsPage);
       }
     }
 
@@ -974,18 +991,21 @@ const ChromaApp = (() => {
             const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn', '\u00d7');
             deleteBtn.dataset.id = sub.id;
             deleteBtn.title = 'Remove List';
+            deleteBtn.setAttribute('aria-label', `Remove ${sub.name || 'filter list'}`);
             appendElement(actions, 'span', 'inline-separator');
           }
 
           const refreshBtn = appendElement(actions, 'button', 'sub-refresh-btn reset-btn compact-action-btn', '\u21bb');
           refreshBtn.dataset.id = sub.id;
           refreshBtn.title = 'Force refresh';
+          refreshBtn.setAttribute('aria-label', `Refresh ${sub.name || 'filter list'}`);
 
           const toggleLabel = appendElement(actions, 'label', 'switch');
           const toggleInput = appendElement(toggleLabel, 'input', 'sub-toggle');
           toggleInput.type = 'checkbox';
           toggleInput.dataset.id = sub.id;
           toggleInput.checked = !!sub.enabled;
+          toggleInput.setAttribute('aria-label', `Enable ${sub.name || 'filter list'}`);
           appendElement(toggleLabel, 'span', 'slider');
           list.appendChild(row);
         }
@@ -1184,11 +1204,13 @@ const ChromaApp = (() => {
           toggleInput.type = 'checkbox';
           toggleInput.dataset.id = rule.id;
           toggleInput.checked = !!rule.enabled;
+          toggleInput.setAttribute('aria-label', `${rule.enabled ? 'Disable' : 'Enable'} zapper rule for ${domain}`);
           appendElement(toggleLabel, 'span', 'slider');
 
           const deleteBtn = appendElement(actions, 'button', 'reset-btn zapper-rule-delete inline-danger-btn compact-action-btn', 'Delete');
           deleteBtn.dataset.id = rule.id;
           deleteBtn.title = 'Delete rule';
+          deleteBtn.setAttribute('aria-label', `Delete zapper rule for ${domain}`);
           list.appendChild(row);
         }
       }
@@ -1228,6 +1250,10 @@ const ChromaApp = (() => {
       const toggleBtn = $('logToggleBtn');
       const entries = $('logEntries');
       if (!toggleRow || !entries) return;
+      toggleRow.setAttribute('role', 'button');
+      toggleRow.setAttribute('tabindex', '0');
+      toggleRow.setAttribute('aria-expanded', 'false');
+      toggleRow.setAttribute('aria-controls', 'logEntries');
 
       const RT_BADGE = {
         script: { label: 'JS', className: 'script' },
@@ -1280,12 +1306,16 @@ const ChromaApp = (() => {
         }
       }
 
-      toggleRow.addEventListener('click', async () => {
+      async function toggleRequestLog() {
         isOpen = !isOpen;
+        toggleRow.setAttribute('aria-expanded', String(isOpen));
+        if (toggleBtn) toggleBtn.setAttribute('aria-label', isOpen ? 'Collapse request log' : 'Expand request log');
         toggleBtn?.classList.toggle('open', isOpen);
         entries.classList.toggle('visible', isOpen);
         if (isOpen) await renderLog();
-      });
+      }
+
+      addKeyboardActivation(toggleRow, toggleRequestLog);
     }
   }
 

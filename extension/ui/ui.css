@@ -181,18 +181,28 @@ header {
   transition: transform 0.2s;
   animation: border-cycle 16s linear infinite;
 }
-.stat-card:hover { transform: translateY(-2px); }
+.stat-card:hover,
+.stat-card:focus-visible { transform: translateY(-2px); }
 .stat-card--clickable { cursor: pointer; }
 
 .settings-icon {
   position: absolute;
   right: 8px;
   top: 8px;
+  padding: 0;
   width: 14px;
   height: 14px;
+  border: 0;
+  background: transparent;
   color: var(--c-purple);
   cursor: pointer;
   transition: all 0.2s;
+}
+
+.settings-icon__svg {
+  display: block;
+  width: 14px;
+  height: 14px;
 }
 
 .stat-value,
@@ -282,6 +292,15 @@ header {
 
 .icon-action-btn__icon {
   filter: drop-shadow(0 0 3px var(--c-cyan));
+}
+
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--c-cyan);
+  outline-offset: 3px;
 }
 
 .protection-list {
@@ -386,6 +405,12 @@ input:checked + .slider {
   box-shadow: 0 0 12px rgba(153, 0, 255, 0.35); /* Outer glow only. */
 }
 input:checked + .slider::before { transform: translateX(16px); background: #fff; }
+
+.switch input:focus-visible + .slider {
+  outline: 2px solid var(--c-cyan);
+  outline-offset: 3px;
+  box-shadow: 0 0 14px rgba(0, 255, 204, 0.35);
+}
 
 /* Shift the gradient on hover. */
 .switch:hover input:checked + .slider {

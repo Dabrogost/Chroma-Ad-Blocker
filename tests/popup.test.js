@@ -48,6 +48,7 @@ test('popup.js functionality', async (t) => {
           textContent: '',
           listeners: {},
           dataset: {},
+          attributes: {},
           classList: {
             add: (cls) => { if (!elements[id].classList.current.includes(cls)) elements[id].classList.current += ' ' + cls; },
             remove: (cls) => { elements[id].classList.current = elements[id].classList.current.replace(cls, '').trim(); },
@@ -64,6 +65,12 @@ test('popup.js functionality', async (t) => {
           appendChild: (child) => {},
           querySelector: (sel) => getElement('temp-child-' + Math.random()),
           querySelectorAll: (sel) => [],
+          setAttribute(name, value) {
+            this.attributes[name] = String(value);
+          },
+          getAttribute(name) {
+            return this.attributes[name] || null;
+          },
           title: '',
           addEventListener(event, fn) {
             if (!this.listeners[event]) this.listeners[event] = [];
@@ -72,7 +79,10 @@ test('popup.js functionality', async (t) => {
           async dispatchEvent(event) {
             const type = typeof event === 'string' ? event : event.type;
             if (this.listeners[type]) {
-              await Promise.all(this.listeners[type].map(fn => fn({ target: this })));
+              const eventObject = typeof event === 'string'
+                ? { target: this, type }
+                : { target: this, preventDefault: () => {}, ...event };
+              await Promise.all(this.listeners[type].map(fn => fn(eventObject)));
             }
           }
         };
@@ -481,6 +491,26 @@ test('popup.js functionality', async (t) => {
 
     assert.strictEqual(chromeMock.runtime.optionsOpened, 1);
     assert.match(elements['cardNetwork'].classList.current, /stat-card--clickable/);
+    assert.strictEqual(elements['cardNetwork'].getAttribute('role'), 'button');
+    assert.strictEqual(elements['cardNetwork'].getAttribute('tabindex'), '0');
+
+    await elements['cardNetwork'].dispatchEvent({ type: 'keydown', key: 'Enter' });
+    assert.strictEqual(chromeMock.runtime.optionsOpened, 2);
+  });
+
+  await t.test('request log row supports keyboard activation semantics', async () => {
+    const { sandbox, elements } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    assert.strictEqual(elements['logToggleRow'].getAttribute('role'), 'button');
+    assert.strictEqual(elements['logToggleRow'].getAttribute('tabindex'), '0');
+    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
+
+    await elements['logToggleRow'].dispatchEvent({ type: 'keydown', key: ' ' });
+    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'true');
+    assert.match(elements['logEntries'].classList.current, /visible/);
   });
 });
 
@@ -507,6 +537,13 @@ test('UI hardening copy', () => {
   assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);
   assert.match(componentsJsCode, /Protection Events/);
   assert.match(componentsJsCode, /Protection Intelligence/);
+  assert.match(componentsJsCode, /aria-label="Enable Chroma protection"/);
+  assert.match(componentsJsCode, /aria-label="\$\{label\}"/);
+  assert.match(componentsJsCode, /id="settingsIcon" class="settings-icon" type="button"/);
+  assert.match(componentsJsCode, /role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries"/);
+  assert.match(proxyUiJsCode, /input\.setAttribute\('aria-label', title\)/);
+  assert.match(appJsCode, /function addKeyboardActivation/);
+  assert.match(uiCssCode, /:focus-visible/);
   assert.doesNotMatch(componentsJsCode, /Ads Blocked/);
   assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
   assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);

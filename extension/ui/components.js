@@ -11,10 +11,12 @@ const ChromaComponents = (() => {
   `;
 
   const settingsIcon = `
-    <svg id="settingsIcon" class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" title="Open Settings">
+    <button id="settingsIcon" class="settings-icon" type="button" title="Open Settings" aria-label="Open Settings">
+    <svg class="settings-icon__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
       <circle cx="12" cy="12" r="3"></circle>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
     </svg>
+    </button>
   `;
 
   const plusIcon = `
@@ -80,7 +82,7 @@ const ChromaComponents = (() => {
           </div>
           <div class="status-group">
             <label class="switch header-switch">
-              <input type="checkbox" id="toggleEnabled" checked />
+              <input type="checkbox" id="toggleEnabled" checked aria-label="Enable Chroma protection" />
               <span class="slider"></span>
             </label>
             <div class="status-dot" id="statusDot"></div>
@@ -108,7 +110,7 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderToggleRow({ inputId, rowId = '', rowClass = '', name, desc, badge = '' }) {
+  function renderToggleRow({ inputId, rowId = '', rowClass = '', name, desc, badge = '', label = name }) {
     return `
       <div class="toggle-row${rowClass ? ` ${rowClass}` : ''}"${rowId ? ` id="${rowId}"` : ''}>
         <div class="toggle-info">
@@ -116,7 +118,7 @@ const ChromaComponents = (() => {
           <div class="desc">${desc}</div>
         </div>
         <label class="switch">
-          <input type="checkbox" id="${inputId}" />
+          <input type="checkbox" id="${inputId}" aria-label="${label}" />
           <span class="slider"></span>
         </label>
       </div>
@@ -159,10 +161,10 @@ const ChromaComponents = (() => {
             <div class="name speed-selector-title">Acceleration Speed</div>
           </div>
           <div id="speedButtons" class="speed-buttons">
-            <button class="speed-btn" data-speed="4">&times;4</button>
-            <button class="speed-btn" data-speed="8">&times;8</button>
-            <button class="speed-btn" data-speed="12">&times;12</button>
-            <button class="speed-btn" data-speed="16">&times;16</button>
+            <button class="speed-btn" data-speed="4" aria-label="Set acceleration speed to 4x">&times;4</button>
+            <button class="speed-btn" data-speed="8" aria-label="Set acceleration speed to 8x">&times;8</button>
+            <button class="speed-btn" data-speed="12" aria-label="Set acceleration speed to 12x">&times;12</button>
+            <button class="speed-btn" data-speed="16" aria-label="Set acceleration speed to 16x">&times;16</button>
           </div>
         </div>
         ${renderToggleRow({
@@ -237,7 +239,7 @@ const ChromaComponents = (() => {
     return `
       <div class="section-title section-title--inline">
         <span class="section-title-text">Filter Lists</span>
-        <button id="addSubscriptionBtn" class="reset-btn icon-action-btn" title="Add Filter List">
+        <button id="addSubscriptionBtn" class="reset-btn icon-action-btn" title="Add Filter List" aria-label="Add Filter List" type="button">
           ${plusIcon}
         </button>
       </div>
@@ -248,7 +250,7 @@ const ChromaComponents = (() => {
           <div id="newSubError" class="form-error"></div>
           <div class="form-actions">
             <button id="newSubAddBtn" class="reset-btn form-submit-btn">Add</button>
-            <button id="newSubCancelBtn" class="reset-btn inline-danger-btn" title="Cancel">&times;</button>
+            <button id="newSubCancelBtn" class="reset-btn inline-danger-btn" title="Cancel" aria-label="Cancel adding filter list" type="button">&times;</button>
           </div>
         </div>
       </div>
@@ -361,7 +363,7 @@ const ChromaComponents = (() => {
       <div class="section-title section-title--inline"${settingsMode ? ' id="proxySection"' : ''}>
         <span class="section-title-text">Media Proxy Router</span>
         ${settingsMode ? `
-          <button id="addProxyServerBtn" class="reset-btn icon-action-btn" title="Add Proxy Server">
+          <button id="addProxyServerBtn" class="reset-btn icon-action-btn" title="Add Proxy Server" aria-label="Add Proxy Server" type="button">
             ${plusIcon}
           </button>
         ` : ''}
@@ -385,12 +387,12 @@ const ChromaComponents = (() => {
     return `
       <div class="section-title section-title--spaced">Request Log</div>
       <div class="protection-list" id="requestLogPanel">
-        <div class="log-header" id="logToggleRow">
+        <div class="log-header" id="logToggleRow" role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries">
           <div class="toggle-info">
             <div class="name">Matched Requests</div>
             <div class="desc">Rules fired on this session</div>
           </div>
-          <button class="log-toggle-btn" id="logToggleBtn" title="Expand log">&#x25bc;</button>
+          <button class="log-toggle-btn" id="logToggleBtn" title="Expand log" aria-label="Expand request log" type="button">&#x25bc;</button>
         </div>
         <div class="log-entries" id="logEntries">
           <div class="log-empty">No entries yet.</div>
