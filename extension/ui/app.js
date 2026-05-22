@@ -6,24 +6,8 @@
 'use strict';
 
 const ChromaApp = (() => {
-  const $ = id => document.getElementById(id);
-
-  function escapeHTML(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function appendElement(parent, tagName, className = '', textContent = '') {
-    const element = document.createElement(tagName);
-    if (className) element.className = className;
-    if (textContent !== '') element.textContent = textContent;
-    parent.appendChild(element);
-    return element;
-  }
+  const { $, escapeHTML, appendElement, setText, addKeyboardActivation } = globalThis.ChromaDom;
+  const { getRegistrableDomain } = globalThis.ChromaDomain;
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
@@ -140,11 +124,6 @@ const ChromaApp = (() => {
     return (Number(totals?.proxyTests) || 0) + (Number(totals?.proxyAuthChallenges) || 0);
   }
 
-  function setText(id, value) {
-    const el = $(id);
-    if (el) el.textContent = value;
-  }
-
   function setSectionLoading(id) {
     const el = $(id);
     if (!el) return;
@@ -199,20 +178,6 @@ const ChromaApp = (() => {
     el.disabled = pending && disable;
     el.classList.toggle('control-pending', pending && visual);
     el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending && visual);
-  }
-
-  function isActivationKey(event) {
-    return event?.key === 'Enter' || event?.key === ' ';
-  }
-
-  function addKeyboardActivation(element, handler) {
-    if (!element) return;
-    element.addEventListener('click', handler);
-    element.addEventListener('keydown', (event) => {
-      if (!isActivationKey(event)) return;
-      event.preventDefault();
-      handler(event);
-    });
   }
 
   async function safeHydrateSection(name, fn) {
@@ -427,7 +392,8 @@ const ChromaApp = (() => {
         const row = addStatsRow(timelineList, day.day, '', formatCompactCount(day.protectionEvents));
         const bar = appendElement(row.firstChild, 'div', 'stats-bar');
         const fill = appendElement(bar, 'div', 'stats-bar__fill');
-        fill.style.setProperty('--bar-width', `${Math.max(2, ((day.protectionEvents || 0) / max) * 100)}%`);
+        const fillLevel = Math.max(1, Math.min(20, Math.ceil(((day.protectionEvents || 0) / max) * 20)));
+        fill.classList.add(`stats-bar__fill--${fillLevel}`);
       }
     }
 
@@ -853,8 +819,7 @@ const ChromaApp = (() => {
         return;
       }
 
-      const parts = currentDomain.split('.');
-      const baseDomain = parts.length > 2 ? parts.slice(-2).join('.') : currentDomain;
+      const baseDomain = getRegistrableDomain(currentDomain);
       const { whitelist = [] } = await notifyBackground({ type: MSG.WHITELIST_GET }) || { whitelist: [] };
       if ($('toggleWhitelist')) {
         $('toggleWhitelist').checked = whitelist.includes(baseDomain);
@@ -1075,14 +1040,14 @@ const ChromaApp = (() => {
       const showError = (message) => {
         if (!errEl) return;
         errEl.textContent = message;
-        errEl.style.display = 'block';
+        errEl.classList.remove('is-hidden');
       };
       const closeForm = () => {
-        form.style.display = 'none';
+        form.classList.add('is-hidden');
         if (nameInput) nameInput.value = '';
         if (urlInput) urlInput.value = '';
         if (errEl) {
-          errEl.style.display = 'none';
+          errEl.classList.add('is-hidden');
           errEl.textContent = '';
         }
         if (submitBtn) {
@@ -1092,8 +1057,8 @@ const ChromaApp = (() => {
       };
 
       addBtn.addEventListener('click', () => {
-        if (form.style.display === 'none' || form.style.display === '') {
-          form.style.display = 'block';
+        if (form.classList.contains('is-hidden')) {
+          form.classList.remove('is-hidden');
           urlInput?.focus?.();
         } else {
           closeForm();
@@ -1102,7 +1067,7 @@ const ChromaApp = (() => {
       cancelBtn?.addEventListener('click', closeForm);
 
       const submitAdd = async () => {
-        if (errEl) errEl.style.display = 'none';
+        if (errEl) errEl.classList.add('is-hidden');
         const url = urlInput?.value.trim() || '';
         if (!url) return showError('URL required.');
         let parsed;

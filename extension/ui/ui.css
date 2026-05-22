@@ -960,9 +960,30 @@ input.control-pending + .slider {
 
 .stats-bar__fill {
   height: 100%;
-  width: var(--bar-width, 0%);
+  width: 0%;
   background: var(--grad-chroma);
 }
+
+.stats-bar__fill--1 { width: 5%; }
+.stats-bar__fill--2 { width: 10%; }
+.stats-bar__fill--3 { width: 15%; }
+.stats-bar__fill--4 { width: 20%; }
+.stats-bar__fill--5 { width: 25%; }
+.stats-bar__fill--6 { width: 30%; }
+.stats-bar__fill--7 { width: 35%; }
+.stats-bar__fill--8 { width: 40%; }
+.stats-bar__fill--9 { width: 45%; }
+.stats-bar__fill--10 { width: 50%; }
+.stats-bar__fill--11 { width: 55%; }
+.stats-bar__fill--12 { width: 60%; }
+.stats-bar__fill--13 { width: 65%; }
+.stats-bar__fill--14 { width: 70%; }
+.stats-bar__fill--15 { width: 75%; }
+.stats-bar__fill--16 { width: 80%; }
+.stats-bar__fill--17 { width: 85%; }
+.stats-bar__fill--18 { width: 90%; }
+.stats-bar__fill--19 { width: 95%; }
+.stats-bar__fill--20 { width: 100%; }
 
 .stats-controls-grid {
   display: grid;
@@ -1122,7 +1143,6 @@ input.control-pending + .slider {
 }
 
 .add-subscription-form {
-  display: none;
   margin-bottom: 8px;
   padding: 12px 14px;
 }
@@ -1134,7 +1154,6 @@ input.control-pending + .slider {
 }
 
 .form-error {
-  display: none;
   font-size: 10px;
   color: var(--c-red);
 }

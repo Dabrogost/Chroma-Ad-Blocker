@@ -5,6 +5,8 @@ const path = require('path');
 const vm = require('vm');
 const { JSDOM } = require('jsdom');
 
+const domUtilsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'dom-utils.js'), 'utf8');
+const domainUtilsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'domain-utils.js'), 'utf8');
 const componentsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
 const healthUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'health-ui.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
@@ -155,7 +157,7 @@ function createSettingsHarness({
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext([componentsJs, healthUiJs, appJs, proxyUiJs].join('\n'), sandbox);
+  vm.runInContext([domUtilsJs, domainUtilsJs, componentsJs, healthUiJs, appJs, proxyUiJs].join('\n'), sandbox);
   return { dom, sandbox, messages, pending };
 }
 
@@ -318,7 +320,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
-    vm.runInContext(proxyUiJs, sandbox);
+    vm.runInContext([domUtilsJs, proxyUiJs].join('\n'), sandbox);
 
     await sandbox.ChromaProxyUI.loadProxyRouterUI();
     await settleDomAsyncWork();

@@ -7,6 +7,7 @@
 
 const ChromaProxyUI = (() => {
   const { $, isSettingsPage, openProxySettings } = globalThis.ChromaApp;
+  const { appendElement, clearElement, setHidden } = globalThis.ChromaDom;
   const SMART_LINK_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'];
 
   function routeSummary(activeDomainCount, isGlobal, isEnabled = true) {
@@ -14,29 +15,11 @@ const ChromaProxyUI = (() => {
     return isGlobal ? 'global fallback' : `${activeDomainCount} routed`;
   }
 
-  function setHidden(element, hidden) {
-    element?.classList.toggle('is-hidden', hidden);
-  }
-
   function setStatusDotState(dot, state) {
     if (!dot) return;
     ['proxy-status-dot--online', 'proxy-status-dot--offline', 'proxy-status-dot--muted']
       .forEach(cls => dot.classList.remove(cls));
     dot.classList.add(`proxy-status-dot--${state}`);
-  }
-
-  function appendElement(parent, tagName, className = '', textContent = '') {
-    const element = document.createElement(tagName);
-    if (className) element.className = className;
-    if (textContent !== '') element.textContent = textContent;
-    parent.appendChild(element);
-    return element;
-  }
-
-  function clearElement(element) {
-    while (element?.firstChild) {
-      element.removeChild(element.firstChild);
-    }
   }
 
   function appendProxyButton(parent, className, textContent, title = '') {

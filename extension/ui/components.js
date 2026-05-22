@@ -243,11 +243,11 @@ const ChromaComponents = (() => {
           ${plusIcon}
         </button>
       </div>
-      <div id="addSubscriptionForm" class="protection-list add-subscription-form">
+      <div id="addSubscriptionForm" class="protection-list add-subscription-form is-hidden">
         <div class="add-subscription-grid">
           <input type="text" id="newSubName" class="chroma-input chroma-input--compact" placeholder="Name (optional)" />
           <input type="text" id="newSubUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/list.txt" />
-          <div id="newSubError" class="form-error"></div>
+          <div id="newSubError" class="form-error is-hidden"></div>
           <div class="form-actions">
             <button id="newSubAddBtn" class="reset-btn form-submit-btn">Add</button>
             <button id="newSubCancelBtn" class="reset-btn inline-danger-btn" title="Cancel" aria-label="Cancel adding filter list" type="button">&times;</button>

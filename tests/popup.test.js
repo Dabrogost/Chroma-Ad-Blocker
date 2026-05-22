@@ -4,12 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const domUtilsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'dom-utils.js'), 'utf8');
+const domainUtilsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'domain-utils.js'), 'utf8');
 const componentsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
 const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.js'), 'utf8');
 const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.js'), 'utf8');
-const uiScriptsCode = [componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
+const uiScriptsCode = [domUtilsJsCode, domainUtilsJsCode, componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 const uiCssCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
@@ -31,6 +33,19 @@ async function settlePopupAsyncWork(turns = 20) {
 }
 
 // ─── POPUP.JS FUNCTIONALITY ─────
+test('domain utility uses public-suffix-aware registrable domains', () => {
+  const sandbox = { document: { getElementById: () => null } };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(domainUtilsJsCode, sandbox);
+
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('shop.example.co.uk'), 'example.co.uk');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('user.github.io'), 'user.github.io');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('cdn.user.github.io'), 'user.github.io');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('www.example.com.'), 'example.com');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('192.168.1.10'), '192.168.1.10');
+});
+
 test('popup.js functionality', async (t) => {
   function createSandbox() {
     const elements = {};
@@ -542,22 +557,25 @@ test('UI hardening copy', () => {
   assert.match(componentsJsCode, /id="settingsIcon" class="settings-icon" type="button"/);
   assert.match(componentsJsCode, /role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries"/);
   assert.match(proxyUiJsCode, /input\.setAttribute\('aria-label', title\)/);
-  assert.match(appJsCode, /function addKeyboardActivation/);
+  assert.match(domUtilsJsCode, /function addKeyboardActivation/);
   assert.match(uiCssCode, /:focus-visible/);
   assert.doesNotMatch(componentsJsCode, /Ads Blocked/);
   assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
-  assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.doesNotMatch(popupHtmlCode, /health-ui\.js/);
   assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<div id="appShell"><\/div>/);
-  assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="health-ui\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="health-ui\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
   assert.doesNotMatch(popupHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
   assert.doesNotMatch(settingsHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
   assert.doesNotMatch(popupHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
   assert.doesNotMatch(settingsHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
+  assert.doesNotMatch(popupHtmlCode, /unsafe-inline/i);
+  assert.doesNotMatch(settingsHtmlCode, /unsafe-inline/i);
+  assert.doesNotMatch(appJsCode, /\.style\./);
   assert.match(uiCssCode, /--font-sans:\s+system-ui/);
   assert.match(uiCssCode, /--font-mono:\s+"Cascadia Mono"/);
   assert.doesNotMatch(uiCssCode, /Inter|Outfit|JetBrains Mono/);
@@ -569,6 +587,8 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(appJsCode, /style="/);
   assert.doesNotMatch(proxyUiJsCode, /style="/);
   assert.doesNotMatch(proxyUiJsCode, /style\.cssText/);
+  assert.match(appJsCode, /getRegistrableDomain\(currentDomain\)/);
+  assert.match(domainUtilsJsCode, /github\.io/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
   assert.match(appJsCode, /function openProxySettings\(\)/);
   assert.match(appJsCode, /ui\/settings\.html#proxySection/);
