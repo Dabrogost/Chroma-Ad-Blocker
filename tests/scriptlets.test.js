@@ -348,6 +348,15 @@ test('scriptlet native wrapper camouflage', async (t) => {
     assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().open.name', sandbox), 'open');
   });
 
+  await t.test('m3u-prune rejects invalid URL regex without broadening playlist matching', () => {
+    const win = makeWindow();
+    const originalFetch = win.fetch;
+
+    const sandbox = runScriptlet('m3uPrune', ['ad-segment', '/playlist[/'], win);
+
+    assert.strictEqual(sandbox.window.fetch, originalFetch);
+  });
+
   await t.test('preserves patched prototype method names', () => {
     function EventTarget() {}
     EventTarget.prototype.addEventListener = function addEventListener() {};
@@ -379,6 +388,52 @@ test('scriptlet native wrapper camouflage', async (t) => {
   await t.test('preserves JSON.parse wrapper name', () => {
     const sandbox = runScriptlet('jsonPrune', ['adSlots']);
     assert.strictEqual(vm.runInContext('JSON.parse.name', sandbox), 'parse');
+  });
+});
+
+test('persistent observer scriptlets', async (t) => {
+  await t.test('coalesce mutation bursts into one scheduled DOM sweep', () => {
+    let observerCallback = null;
+    const rafCallbacks = [];
+    let queryCount = 0;
+    const target = {
+      style: {
+        display: '',
+        setProperty(name, value) {
+          if (name === 'display') this.display = value;
+        }
+      }
+    };
+    const win = makeWindow();
+    win.requestAnimationFrame = (cb) => {
+      rafCallbacks.push(cb);
+      return rafCallbacks.length;
+    };
+    win.MutationObserver = class {
+      constructor(cb) {
+        observerCallback = cb;
+      }
+      observe() {}
+    };
+    win.document = {
+      documentElement: {},
+      querySelectorAll: () => {
+        queryCount++;
+        return [target];
+      }
+    };
+
+    runScriptlet('hideElement', ['.ad-slot'], win);
+
+    assert.strictEqual(queryCount, 1);
+    observerCallback();
+    observerCallback();
+    observerCallback();
+    assert.strictEqual(queryCount, 1, 'mutation burst should not run repeated synchronous sweeps');
+    assert.strictEqual(rafCallbacks.length, 1);
+
+    rafCallbacks.shift()();
+    assert.strictEqual(queryCount, 2);
   });
 });
 

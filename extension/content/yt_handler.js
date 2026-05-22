@@ -144,6 +144,23 @@
     'sequenceItemInPlayerAdLayoutRenderer',
   ];
 
+  const JSON_PARSE_AD_SIGNAL_NEEDLES = [
+    ...AD_FIELDS,
+    ...SHORTS_AD_RENDERER_FIELDS,
+    'promotedSparklesTextSearchRenderer',
+    'searchPyvRenderer',
+    'adSlotRenderer',
+    'adClientParams',
+  ];
+
+  function mightContainYoutubeAdPayloadSignal(text) {
+    if (typeof text !== 'string') return true;
+    for (let i = 0; i < JSON_PARSE_AD_SIGNAL_NEEDLES.length; i++) {
+      if (text.includes(JSON_PARSE_AD_SIGNAL_NEEDLES[i])) return true;
+    }
+    return false;
+  }
+
   function hasOwn(value, key) {
     return !!value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key);
   }
@@ -370,6 +387,7 @@
   JSON.parse = function(text, reviver) {
     const result = _nativeJSONParse.call(this, text, reviver);
     if (!(CONFIG.enabled && CONFIG.stripping)) return result;
+    if (!mightContainYoutubeAdPayloadSignal(text)) return result;
     try {
       if (result && typeof result === 'object') {
         cleanYoutubePayload(result, 'json_parse');
@@ -1138,6 +1156,7 @@
     globalThis.CONFIG = CONFIG;
     globalThis.stripAdFields = stripAdFields;
     globalThis.stripResponseAds = stripResponseAds;
+    globalThis.mightContainYoutubeAdPayloadSignal = mightContainYoutubeAdPayloadSignal;
     globalThis.shouldAccelerate = shouldAccelerate;
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;

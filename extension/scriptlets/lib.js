@@ -260,7 +260,20 @@ export function hideElement(args) {
 
   hide();
 
-  new MutationObserver(hide).observe(document.documentElement, {
+  let pending = false;
+  const scheduleHide = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      hide();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
+  new MutationObserver(scheduleHide).observe(document.documentElement, {
     childList: true,
     subtree: true
   });
@@ -288,7 +301,20 @@ export function releaseScrollLock() {
   };
 
   release();
-  new MutationObserver(release).observe(document.documentElement, {
+  let pending = false;
+  const scheduleRelease = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      release();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
+  new MutationObserver(scheduleRelease).observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['style', 'class'],
     subtree: true
@@ -404,7 +430,20 @@ export function hideUpward(args) {
 
   hide();
 
-  new MutationObserver(hide).observe(document.documentElement, {
+  let pending = false;
+  const scheduleHide = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      hide();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
+  new MutationObserver(scheduleHide).observe(document.documentElement, {
     childList: true,
     subtree: true
   });
@@ -496,7 +535,20 @@ export function removeClass(args) {
 
   remove();
 
-  new MutationObserver(remove).observe(document.documentElement, {
+  let pending = false;
+  const scheduleRemove = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      remove();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
+  new MutationObserver(scheduleRemove).observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -532,7 +584,20 @@ export function removeAttr(args) {
 
   remove();
 
-  new MutationObserver(remove).observe(document.documentElement, {
+  let pending = false;
+  const scheduleRemove = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      remove();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
+  new MutationObserver(scheduleRemove).observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -572,7 +637,20 @@ export function removeNodeText(args) {
 
   sweep();
 
-  new MutationObserver(sweep).observe(document.documentElement, {
+  let pending = false;
+  const scheduleSweep = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      sweep();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
+  new MutationObserver(scheduleSweep).observe(document.documentElement, {
     childList: true,
     subtree: true
   });
@@ -757,7 +835,20 @@ export function replaceNodeText(args) {
 
   sweep();
 
-  new MutationObserver(sweep).observe(document.documentElement, {
+  let pending = false;
+  const scheduleSweep = () => {
+    if (pending) return;
+    pending = true;
+    const run = () => {
+      pending = false;
+      sweep();
+    };
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
+    else setTimeout(run, 50);
+  };
+
+  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
+  new MutationObserver(scheduleSweep).observe(document.documentElement, {
     childList: true,
     subtree: true,
     characterData: true
@@ -975,8 +1066,8 @@ export function m3uPrune(args) {
     return new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   };
   const needleRe = compile(needle);
-  const urlRe = compile(urlPattern);
-  if (!needleRe) return;
+  const urlRe = urlPattern ? compile(urlPattern) : null;
+  if (!needleRe || (urlPattern && !urlRe)) return;
 
   const isPlaylistUrl = (url) => {
     const u = String(url || '');

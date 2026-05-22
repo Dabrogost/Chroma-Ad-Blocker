@@ -254,7 +254,7 @@ function translateScriptletRegex(pattern) {
   if (!pattern) return pattern;
   if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) return pattern;
 
-  let regexStr = pattern
+  const regexStr = pattern
     .replace(/[.+?${}()|[\]\\]/g, '\\$&') // Escape regex special chars
     .replace(/\\\*/g, '.*')               // Wildcards *
     .replace(/^\\\|\\\|/, '^(?:https?:\\/\\/)?(?:[a-z0-9-]+\\.)*') // || prefix
@@ -263,6 +263,81 @@ function translateScriptletRegex(pattern) {
     .replace(/\\\|$/, '$'); // | exact end
 
   return `/${regexStr}/`;
+}
+
+const SCRIPTLET_TRANSLATABLE_PATTERN_ARGS = new Set([
+  'no-setTimeout-if',
+  'nostif',
+  'prevent-setTimeout',
+  'no-setInterval-if',
+  'nosiif',
+  'prevent-fetch',
+  'no-fetch-if',
+  'prevent-xhr',
+  'no-xhr-if',
+  'no-eval-if'
+]);
+
+const SCRIPTLET_REGEX_ARG_INDEXES = new Map([
+  ['no-setTimeout-if', [0]],
+  ['nostif', [0]],
+  ['prevent-setTimeout', [0]],
+  ['no-setInterval-if', [0]],
+  ['nosiif', [0]],
+  ['prevent-fetch', [0]],
+  ['no-fetch-if', [0]],
+  ['prevent-xhr', [0]],
+  ['no-xhr-if', [0]],
+  ['remove-node-text', [1]],
+  ['rmnt', [1]],
+  ['prevent-addEventListener', [0, 1]],
+  ['aeld', [0, 1]],
+  ['no-addEventListener-if', [0, 1]],
+  ['replace-node-text', [1]],
+  ['rpnt', [1]],
+  ['prevent-requestAnimationFrame', [0]],
+  ['no-raf-if', [0]],
+  ['norafif', [0]],
+  ['abort-current-script', [1]],
+  ['acs', [1]],
+  ['abort-current-inline-script', [1]],
+  ['acis', [1]],
+  ['prevent-element-src-loading', [1]],
+  ['m3u-prune', [0, 1]],
+  ['cookie-remover', [0]],
+  ['cookie-remover.js', [0]],
+  ['remove-cookie', [0]],
+  ['prevent-window-open', [0]],
+  ['nowoif', [0]],
+  ['no-window-open-if', [0]],
+  ['no-eval-if', [0]]
+]);
+
+function isRegexLiteral(arg) {
+  return typeof arg === 'string' && arg.startsWith('/') && arg.lastIndexOf('/') > 0;
+}
+
+function isSafeRegexLiteral(arg) {
+  const lastSlash = arg.lastIndexOf('/');
+  const pattern = arg.slice(1, lastSlash);
+  const flags = arg.slice(lastSlash + 1);
+  if (!/^[dgimsuvy]*$/.test(flags)) return false;
+  try {
+    new RegExp(pattern, flags);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasSafeScriptletRegexArgs(scriptletName, args) {
+  const indexes = SCRIPTLET_REGEX_ARG_INDEXES.get(scriptletName);
+  if (!indexes) return true;
+  for (const index of indexes) {
+    const arg = args[index];
+    if (isRegexLiteral(arg) && !isSafeRegexLiteral(arg)) return false;
+  }
+  return true;
 }
 
 function splitScriptletArgs(inner) {
@@ -371,12 +446,12 @@ function parseScriptletRule(line) {
       }
     }
 
-    const regexOpts = new Set(['no-setTimeout-if', 'nostif', 'no-setInterval-if', 'nosiif', 'prevent-fetch', 'no-fetch-if', 'prevent-xhr', 'no-xhr-if', 'no-eval-if']);
-    if (regexOpts.has(scriptletName) && args.length > 0) {
+    if (SCRIPTLET_TRANSLATABLE_PATTERN_ARGS.has(scriptletName) && args.length > 0) {
       if (args[0].includes('||') || args[0].includes('^') || args[0].includes('*')) {
         args[0] = translateScriptletRegex(args[0]);
       }
     }
+    if (!hasSafeScriptletRegexArgs(scriptletName, args)) return null;
 
     const domains = domainPart
       ? domainPart.split(',').map(d => d.trim()).filter(Boolean)

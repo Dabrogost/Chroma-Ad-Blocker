@@ -368,6 +368,23 @@ test('Ad field stripping', async (t) => {
     });
   });
 
+  await t.test('JSON.parse payload prefilter recognizes ad signals cheaply', (st) => {
+    const sandbox = createStrippingSandbox({ stripping: true });
+
+    assert.strictEqual(
+      sandbox.mightContainYoutubeAdPayloadSignal(JSON.stringify({ videoDetails: { title: 'Clean Video' } })),
+      false
+    );
+    assert.strictEqual(
+      sandbox.mightContainYoutubeAdPayloadSignal(JSON.stringify({ playerResponse: { adPlacements: [{}] } })),
+      true
+    );
+    assert.strictEqual(
+      sandbox.mightContainYoutubeAdPayloadSignal(JSON.stringify({ contents: [{ adSlotRenderer: {} }] })),
+      true
+    );
+  });
+
   // ── shouldAccelerate ──
   await t.test('shouldAccelerate — false when acceleration is off', (st) => {
     const sandbox = createStrippingSandbox({ acceleration: false, stripping: false });

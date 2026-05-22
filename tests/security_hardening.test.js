@@ -742,6 +742,21 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.deepStrictEqual(plain(parsed.scriptletRules[3].args), ['script', '/foo,bar/g', '']);
   });
 
+  await t.test('drops scriptlet rules with malformed regex arguments', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      'example.com##+js(m3u-prune, /ad[segment/, /playlist\\.m3u8/)',
+      'example.com##+js(m3u-prune, ad-segment, /playlist\\.m3u8/zz)',
+      'example.com##+js(replace-node-text, script, "/foo[/", "")',
+      'example.com##+js(no-fetch-if, /adserver,tracking/)',
+      'example.com##+js(m3u-prune, ad-segment, /playlist\\.m3u8/)'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.scriptletRules.length, 2);
+    assert.strictEqual(parsed.skipped.malformed, 3);
+    assert.deepStrictEqual(plain(parsed.scriptletRules.map(rule => rule.scriptlet)), ['no-fetch-if', 'm3u-prune']);
+  });
+
   await t.test('skips absurdly long filter lines without rejecting the whole list', () => {
     const { parseList } = loadParser();
     const parsed = parseList([
