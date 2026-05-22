@@ -64,6 +64,40 @@ function utf8ByteLength(text) {
   return bytes;
 }
 
+function cloneSubscriptionMetadata(sub) {
+  return {
+    ...sub,
+    ruleCount: sub?.ruleCount ? { ...sub.ruleCount } : sub?.ruleCount
+  };
+}
+
+function mergeDefaultSubscriptions(existing) {
+  if (!Array.isArray(existing)) return DEFAULT_SUBSCRIPTIONS.map(cloneSubscriptionMetadata);
+
+  const byId = new Map(existing.map(sub => [sub?.id, sub]));
+  const merged = existing.map(sub => {
+    const defaults = DEFAULT_SUBSCRIPTIONS.find(defaultSub => defaultSub.id === sub?.id);
+    if (!defaults || sub?.isCustom) return sub;
+    const next = {
+      ...sub,
+      name: defaults.name,
+      url: defaults.url,
+      intervalHours: defaults.intervalHours
+    };
+    if (defaults.cosmeticOnly === true) next.cosmeticOnly = true;
+    else delete next.cosmeticOnly;
+    return next;
+  });
+
+  for (const defaults of DEFAULT_SUBSCRIPTIONS) {
+    if (!byId.has(defaults.id)) {
+      merged.push(cloneSubscriptionMetadata(defaults));
+    }
+  }
+
+  return merged;
+}
+
 async function readResponseTextWithLimit(res, maxBytes) {
   const contentLength = Number(getHeader(res, 'content-length'));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
@@ -104,16 +138,33 @@ async function readResponseTextWithLimit(res, maxBytes) {
 // ─── FETCH ─────
 /**
  * Fetches raw filter list text with a hard timeout.
- * @param {string} url
- * @returns {Promise<string>}
+ * @param {Object} sub
+ * @returns {Promise<{ text?: string, notModified?: boolean, etag: string|null, lastModified: string|null }>}
  */
-async function fetchList(url) {
+async function fetchList(sub) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+  const headers = {};
+  if (sub.etag) headers['If-None-Match'] = sub.etag;
+  if (sub.lastModified) headers['If-Modified-Since'] = sub.lastModified;
+
   try {
-    const res = await fetch(url, { signal: controller.signal, cache: 'no-cache' });
+    const res = await fetch(sub.url, { signal: controller.signal, cache: 'no-cache', headers });
+    const etag = getHeader(res, 'etag');
+    const lastModified = getHeader(res, 'last-modified');
+    if (res.status === 304) {
+      return {
+        notModified: true,
+        etag: etag || sub.etag || null,
+        lastModified: lastModified || sub.lastModified || null
+      };
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await readResponseTextWithLimit(res, MAX_LIST_BYTES);
+    return {
+      text: await readResponseTextWithLimit(res, MAX_LIST_BYTES),
+      etag: etag || null,
+      lastModified: lastModified || null
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -182,9 +233,7 @@ async function buildStaticRuleKeySet() {
  * @param {Object[]} subscriptions
  * @returns {Promise<void>}
  */
-async function rebuildNetworkRules(subscriptions) {
-  const { sub_network_rules: perSubRules = {} } = await chrome.storage.local.get('sub_network_rules');
-
+function buildNetworkRuleApplication(subscriptions, perSubRules = {}) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.cosmeticOnly) continue;
@@ -210,10 +259,20 @@ async function rebuildNetworkRules(subscriptions) {
     return rule;
   });
 
-  await applySubscriptionRules(stripped);
-  await chrome.storage.local.set({
+  return {
+    networkRules: stripped,
     appliedNetworkRuleCount: stripped.length,
     appliedNetworkRulesPerSub: perSubApplied
+  };
+}
+
+async function rebuildNetworkRules(subscriptions) {
+  const { sub_network_rules: perSubRules = {} } = await chrome.storage.local.get('sub_network_rules');
+  const application = buildNetworkRuleApplication(subscriptions, perSubRules);
+  await applySubscriptionRules(application.networkRules);
+  await chrome.storage.local.set({
+    appliedNetworkRuleCount: application.appliedNetworkRuleCount,
+    appliedNetworkRulesPerSub: application.appliedNetworkRulesPerSub
   });
 }
 
@@ -223,9 +282,7 @@ async function rebuildNetworkRules(subscriptions) {
  * @param {Object[]} subscriptions
  * @returns {Promise<void>}
  */
-async function rebuildCosmeticRules(subscriptions) {
-  const { sub_cosmetic_rules: perSubRules = {} } = await chrome.storage.local.get('sub_cosmetic_rules');
-
+function buildCombinedCosmeticRules(subscriptions, perSubRules = {}) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.enabled && perSubRules[sub.id]) {
@@ -235,8 +292,12 @@ async function rebuildCosmeticRules(subscriptions) {
     }
   }
 
-  const deduped = deduplicateCosmeticRules(allRules);
-  await chrome.storage.local.set({ subscriptionCosmeticRules: deduped });
+  return deduplicateCosmeticRules(allRules);
+}
+
+async function rebuildCosmeticRules(subscriptions) {
+  const { sub_cosmetic_rules: perSubRules = {} } = await chrome.storage.local.get('sub_cosmetic_rules');
+  await chrome.storage.local.set({ subscriptionCosmeticRules: buildCombinedCosmeticRules(subscriptions, perSubRules) });
 }
 
 /**
@@ -245,9 +306,7 @@ async function rebuildCosmeticRules(subscriptions) {
  * @param {Object[]} subscriptions
  * @returns {Promise<void>}
  */
-async function rebuildScriptletRules(subscriptions) {
-  const { sub_scriptlet_rules: perSubRules = {} } = await chrome.storage.local.get('sub_scriptlet_rules');
-
+function buildCombinedScriptletRules(subscriptions, perSubRules = {}) {
   const allRules = [];
   for (const sub of subscriptions) {
     if (sub.enabled && perSubRules[sub.id]) {
@@ -257,7 +316,12 @@ async function rebuildScriptletRules(subscriptions) {
     }
   }
 
-  await chrome.storage.local.set({ subscriptionScriptletRules: allRules });
+  return allRules;
+}
+
+async function rebuildScriptletRules(subscriptions) {
+  const { sub_scriptlet_rules: perSubRules = {} } = await chrome.storage.local.get('sub_scriptlet_rules');
+  await chrome.storage.local.set({ subscriptionScriptletRules: buildCombinedScriptletRules(subscriptions, perSubRules) });
 }
 
 // ─── PUBLIC API ─────
@@ -268,8 +332,9 @@ async function rebuildScriptletRules(subscriptions) {
  */
 export async function initSubscriptions() {
   const { subscriptions } = await chrome.storage.local.get('subscriptions');
-  if (!subscriptions) {
-    await chrome.storage.local.set({ subscriptions: DEFAULT_SUBSCRIPTIONS });
+  const merged = mergeDefaultSubscriptions(subscriptions);
+  if (JSON.stringify(merged) !== JSON.stringify(subscriptions)) {
+    await chrome.storage.local.set({ subscriptions: merged });
   }
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: 60 });
   if (DEBUG) console.log('[Chroma Subscriptions] Initialized.');
@@ -317,8 +382,25 @@ export async function refreshSubscription(id) {
 
   try {
     if (DEBUG) console.log(`[Chroma Subscriptions] Fetching: ${sub.name}`);
-    const text = await fetchList(sub.url);
-    const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(text);
+    const fetched = await fetchList(sub);
+    const now = Date.now();
+
+    if (fetched.notModified) {
+      const nextSubscriptions = subscriptions.map(item => item.id === id
+        ? {
+            ...item,
+            lastUpdated: now,
+            lastError: null,
+            etag: fetched.etag,
+            lastModified: fetched.lastModified
+          }
+        : item
+      );
+      await chrome.storage.local.set({ subscriptions: nextSubscriptions });
+      return { ok: true, notModified: true };
+    }
+
+    const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(fetched.text || '');
     const staticRuleKeys = await buildStaticRuleKeySet();
     const networkRules = parsedNetworkRules
       .filter(r => !r.condition.urlFilter || !staticRuleKeys.has(networkRuleDedupeKey(r)))
@@ -331,9 +413,9 @@ export async function refreshSubscription(id) {
       chrome.storage.local.get('sub_scriptlet_rules')
     ]);
 
-    const netPerSub = netStore.sub_network_rules || {};
-    const cosPerSub = cosStore.sub_cosmetic_rules || {};
-    const scrPerSub = scrStore.sub_scriptlet_rules || {};
+    const netPerSub = { ...(netStore.sub_network_rules || {}) };
+    const cosPerSub = { ...(cosStore.sub_cosmetic_rules || {}) };
+    const scrPerSub = { ...(scrStore.sub_scriptlet_rules || {}) };
 
     netPerSub[id] = sub.cosmeticOnly ? [] : networkRules;
     cosPerSub[id] = cosmeticRules;
@@ -343,23 +425,35 @@ export async function refreshSubscription(id) {
     const usableScriptlets = scriptletRules.filter(r => SCRIPTLET_MAP.has(r.scriptlet));
     scrPerSub[id] = usableScriptlets;
 
+    const nextSubscriptions = subscriptions.map(item => item.id === id
+      ? {
+          ...item,
+          ruleCount: { network: item.cosmeticOnly ? 0 : networkRules.length, cosmetic: cosmeticRules.length, scriptlet: usableScriptlets.length },
+          lastUpdated: now,
+          version: String(now),
+          lastError: null,
+          etag: fetched.etag,
+          lastModified: fetched.lastModified
+        }
+      : item
+    );
+
+    const networkApplication = buildNetworkRuleApplication(nextSubscriptions, netPerSub);
+    const subscriptionCosmeticRules = buildCombinedCosmeticRules(nextSubscriptions, cosPerSub);
+    const subscriptionScriptletRules = buildCombinedScriptletRules(nextSubscriptions, scrPerSub);
+
+    await applySubscriptionRules(networkApplication.networkRules);
+
     await chrome.storage.local.set({
-      sub_network_rules:  netPerSub,
+      subscriptions: nextSubscriptions,
+      sub_network_rules: netPerSub,
       sub_cosmetic_rules: cosPerSub,
-      sub_scriptlet_rules: scrPerSub
+      sub_scriptlet_rules: scrPerSub,
+      subscriptionCosmeticRules,
+      subscriptionScriptletRules,
+      appliedNetworkRuleCount: networkApplication.appliedNetworkRuleCount,
+      appliedNetworkRulesPerSub: networkApplication.appliedNetworkRulesPerSub
     });
-
-    // Update subscription metadata
-    sub.ruleCount   = { network: sub.cosmeticOnly ? 0 : networkRules.length, cosmetic: cosmeticRules.length, scriptlet: usableScriptlets.length };
-    sub.lastUpdated = Date.now();
-    sub.version     = String(Date.now());
-    sub.lastError   = null;
-    await chrome.storage.local.set({ subscriptions });
-
-    // Rebuild combined rule sets and apply
-    await rebuildNetworkRules(subscriptions);
-    await rebuildCosmeticRules(subscriptions);
-    await rebuildScriptletRules(subscriptions);
 
     if (DEBUG) {
       console.log(`[Chroma Subscriptions] ${sub.name} — Network: ${networkRules.length}, Cosmetic: ${cosmeticRules.length}, Scriptlet: ${scriptletRules.length}, Skipped:`, skipped);

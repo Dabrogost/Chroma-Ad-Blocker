@@ -150,6 +150,34 @@ test('DNR dynamic ID ranges stay isolated', async (t) => {
     assert.ok(dnr.updateDynamicRulesCalls[0].addRules.every(r => r.id > 99999 && r.id < 9000000));
   });
 
+  await t.test('subscription apply rejects invalid rules before updateDynamicRules', async () => {
+    const dnr = loadSubscriptionDnr([{ id: 100000 }]);
+
+    await assert.rejects(
+      () => dnr.applySubscriptionRules([
+        { priority: 1, action: { type: 'redirect' }, condition: { urlFilter: '||bad.example^' } }
+      ]),
+      /unsupported action/
+    );
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+
+    await assert.rejects(
+      () => dnr.applySubscriptionRules([
+        { priority: 1, action: { type: 'block' }, condition: { resourceTypes: ['made_up_type'], urlFilter: '||bad.example^' } }
+      ]),
+      /unsupported value/
+    );
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+
+    await assert.rejects(
+      () => dnr.applySubscriptionRules([
+        { priority: 1, action: { type: 'block' }, condition: { regexFilter: '[' } }
+      ]),
+      /does not compile/
+    );
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+  });
+
   await t.test('whitelist sync removes only whitelist IDs and never overlaps subscription IDs', async () => {
     const dnrState = loadDnrState({
       storage: { whitelist: ['example.com', 'news.example'] },
