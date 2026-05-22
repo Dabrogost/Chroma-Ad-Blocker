@@ -191,12 +191,14 @@ const ChromaApp = (() => {
     });
   }
 
-  function setControlPending(id, pending) {
+  function setControlPending(id, pending, options = {}) {
     const el = $(id);
     if (!el) return;
-    el.disabled = pending;
-    el.classList.toggle('control-pending', pending);
-    el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending);
+    const disable = options.disable ?? true;
+    const visual = options.visual ?? true;
+    el.disabled = pending && disable;
+    el.classList.toggle('control-pending', pending && visual);
+    el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending && visual);
   }
 
   async function safeHydrateSection(name, fn) {
@@ -579,6 +581,10 @@ const ChromaApp = (() => {
     setControlsPending(true);
     setStatsControlsPending(true);
 
+    function setProtectionTogglePending(id, pending) {
+      setControlPending(id, pending, { disable: settingsMode, visual: settingsMode });
+    }
+
     let config = {};
     try {
       const configResponse = await notifyBackground({ type: MSG.CONFIG_GET });
@@ -635,7 +641,7 @@ const ChromaApp = (() => {
         const isChecked = e.target.checked;
         const previous = captureProtectionState();
         previous.toggles[elId] = !isChecked;
-        setControlPending(elId, true);
+        setProtectionTogglePending(elId, true);
         const nextConfig = { [key]: isChecked };
         let nextEnabled = $('toggleEnabled')?.checked;
         if (isChecked && !$('toggleEnabled')?.checked) {
@@ -656,12 +662,12 @@ const ChromaApp = (() => {
         const result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig });
         if (!result) {
           restoreProtectionState(previous);
-          setControlPending(elId, false);
+          setProtectionTogglePending(elId, false);
           return;
         }
         config[key] = isChecked;
         if (typeof nextEnabled === 'boolean') config.enabled = nextEnabled;
-        setControlPending(elId, false);
+        setProtectionTogglePending(elId, false);
       });
     }
 
@@ -675,11 +681,12 @@ const ChromaApp = (() => {
       const previous = captureProtectionState();
       previous.enabled = !active;
       updateStatusDot(active);
-      setControlPending('toggleEnabled', true);
+      if (!settingsMode) syncUI(config, active);
+      setProtectionTogglePending('toggleEnabled', true);
       const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } });
       if (!result) {
         restoreProtectionState(previous);
-        setControlPending('toggleEnabled', false);
+        setProtectionTogglePending('toggleEnabled', false);
         return;
       }
       config.enabled = active;
@@ -695,7 +702,7 @@ const ChromaApp = (() => {
           syncUI(config, true);
         }
       }
-      setControlPending('toggleEnabled', false);
+      setProtectionTogglePending('toggleEnabled', false);
     });
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);

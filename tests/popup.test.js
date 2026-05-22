@@ -14,6 +14,16 @@ const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'u
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 const uiCssCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 async function settlePopupAsyncWork(turns = 20) {
   for (let i = 0; i < turns; i++) {
     await Promise.resolve();
@@ -306,6 +316,57 @@ test('popup.js functionality', async (t) => {
     await elements['toggleAcceleration'].dispatchEvent('change');
 
     assert.ok(messages.some(m => m.type === 'CONFIG_SET' && m.config.acceleration === true));
+  });
+
+  await t.test('popup protection toggles stay visually responsive while saves are pending', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const pendingSet = deferred();
+    const originalSendMessage = chromeMock.runtime.sendMessage;
+    chromeMock.runtime.sendMessage = async (msg) => {
+      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
+      return originalSendMessage(msg);
+    };
+
+    elements['toggleAcceleration'].checked = true;
+    const changePromise = elements['toggleAcceleration'].dispatchEvent('change');
+    await settlePopupAsyncWork(1);
+
+    assert.strictEqual(elements['toggleAcceleration'].disabled, false);
+    assert.doesNotMatch(elements['toggleAcceleration'].classList.current, /control-pending/);
+    assert.strictEqual(elements['toggleAcceleration'].checked, true);
+
+    pendingSet.resolve({ ok: true });
+    await changePromise;
+  });
+
+  await t.test('popup master toggle updates child toggles before background save resolves', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const pendingSet = deferred();
+    const originalSendMessage = chromeMock.runtime.sendMessage;
+    chromeMock.runtime.sendMessage = async (msg) => {
+      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
+      return originalSendMessage(msg);
+    };
+
+    elements['toggleEnabled'].checked = false;
+    const changePromise = elements['toggleEnabled'].dispatchEvent('change');
+    await settlePopupAsyncWork(1);
+
+    assert.strictEqual(elements['toggleEnabled'].disabled, false);
+    assert.doesNotMatch(elements['toggleEnabled'].classList.current, /control-pending/);
+    assert.strictEqual(elements['toggleNetwork'].checked, false);
+    assert.strictEqual(elements['toggleCosmetic'].checked, false);
+
+    pendingSet.resolve({ ok: true });
+    await changePromise;
   });
 
   await t.test('reset stats button triggers scoped stats reset and reloads UI', async () => {
