@@ -21,8 +21,13 @@
     deAmpLinks: false,
   };
 
-  const isYouTube = window.location.hostname.includes('youtube.com');
-  const isTwitch  = window.location.hostname.includes('twitch.tv');
+  function isHostOrSubdomain(hostname, domain) {
+    return hostname === domain || hostname.endsWith('.' + domain);
+  }
+
+  const currentHostname = String(window.location.hostname || '').toLowerCase();
+  const isYouTube = isHostOrSubdomain(currentHostname, 'youtube.com');
+  const isTwitch  = isHostOrSubdomain(currentHostname, 'twitch.tv');
 
   // ─── STATE ─────
   let observer = null;

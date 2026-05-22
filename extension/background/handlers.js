@@ -818,8 +818,10 @@ export function registerAll(router) {
   router.markSensitive(MSG.STATS_SETTINGS_SET);
   router.markSensitive(MSG.LOG_GET);
   router.markSensitive(MSG.HEALTH_GET);
+  router.markSensitive(MSG.WHITELIST_GET);
   router.markSensitive(MSG.WHITELIST_ADD);
   router.markSensitive(MSG.WHITELIST_REMOVE);
+  router.markSensitive(MSG.FPR_WHITELIST_GET);
   router.markSensitive(MSG.FPR_WHITELIST_ADD);
   router.markSensitive(MSG.FPR_WHITELIST_REMOVE);
   router.markSensitive(MSG.PROXY_CONFIG_GET);
@@ -829,6 +831,7 @@ export function registerAll(router) {
   router.markSensitive(MSG.ZAPPER_RULES_GET);
   router.markSensitive(MSG.ZAPPER_RULE_REMOVE);
   router.markSensitive(MSG.ZAPPER_RULE_SET);
+  router.markSensitive(MSG.SUBSCRIPTION_GET);
   router.markSensitive(MSG.SUBSCRIPTION_SET);
   router.markSensitive(MSG.SUBSCRIPTION_REFRESH);
   router.markSensitive(MSG.SUBSCRIPTION_ADD);

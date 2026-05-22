@@ -255,6 +255,7 @@ test('Security Hardening - handlers.js', async (t) => {
       MSG.STATS_SETTINGS_SET,
       MSG.LOG_GET,
       MSG.HEALTH_GET,
+      MSG.WHITELIST_GET,
       MSG.PROXY_CONFIG_GET,
       MSG.PROXY_CONFIG_SET,
       MSG.PROXY_TEST,
@@ -262,12 +263,14 @@ test('Security Hardening - handlers.js', async (t) => {
       MSG.ZAPPER_RULES_GET,
       MSG.ZAPPER_RULE_REMOVE,
       MSG.ZAPPER_RULE_SET,
+      MSG.SUBSCRIPTION_GET,
       MSG.SUBSCRIPTION_SET,
       MSG.SUBSCRIPTION_REFRESH,
       MSG.SUBSCRIPTION_ADD,
       MSG.SUBSCRIPTION_REMOVE,
       MSG.WHITELIST_ADD,
       MSG.WHITELIST_REMOVE,
+      MSG.FPR_WHITELIST_GET,
       MSG.FPR_WHITELIST_ADD,
       MSG.FPR_WHITELIST_REMOVE
     ]) {
