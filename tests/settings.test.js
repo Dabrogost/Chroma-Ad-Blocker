@@ -943,5 +943,9 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(uiCss, /@keyframes skeleton-shimmer/);
     assert.match(uiCss, /prefers-reduced-motion: reduce/);
     assert.match(uiCss, /\.hydration-fade-in/);
+    assert.match(
+      uiCss,
+      /\.protection-list\.hydration-fade-in\s*{[\s\S]*?animation:\s*border-cycle 16s linear infinite,\s*hydration-fade-in 0\.18s ease-out;[\s\S]*?}/
+    );
   });
 });
