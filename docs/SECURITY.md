@@ -19,6 +19,34 @@ Remote list content is not treated as arbitrary code. Lists are fetched over HTT
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings.
 
+## Isolated-To-MAIN Handshake
+
+Chroma uses an isolated-world content script to read extension state and a MAIN-world interceptor to preserve page-native APIs before host scripts can tamper with them. The two worlds exchange configuration over a short-lived, per-load `MessageChannel` transfer instead of leaving a predictable page-visible channel open.
+
+```mermaid
+sequenceDiagram
+  participant ISO as Isolated world<br/>protection.js
+  participant DOM as Page DOM events
+  participant MAIN as MAIN world<br/>interceptor.js
+  participant PORT as MessageChannel
+
+  MAIN->>DOM: Repeatedly dispatch __CHROMA_MAIN_READY__
+  ISO->>DOM: Capture __CHROMA_MAIN_READY__
+  ISO->>ISO: Generate per-session portNonce
+  ISO->>DOM: Dispatch __CHROMA_CONFIG_DELIVERY__ { portNonce }
+  MAIN->>DOM: Capture __CHROMA_CONFIG_DELIVERY__
+  MAIN->>MAIN: Register capture listener for portNonce
+  ISO->>PORT: Create MessageChannel
+  ISO->>DOM: Dispatch portNonce MessageEvent with port2
+  MAIN->>PORT: Capture port2 and attach onmessage
+  ISO->>PORT: Send INIT_CHROMA with config selectors
+  MAIN->>MAIN: Initialize bridge and freeze __CHROMA_INTERNAL__
+  ISO->>PORT: Forward later CONFIG_UPDATE messages
+  MAIN->>MAIN: Apply config updates from inner channel
+```
+
+The nonce makes the transfer event name unpredictable for each page load, while capture-phase listeners stop the setup events from continuing through page listeners. If the MAIN-world environment looks compromised before the transfer, the secure relay is not provisioned.
+
 ## Disclosure Process
 
 We value the work of developers and security researchers. Once a report is received:
