@@ -45,7 +45,7 @@ The Extension requires specific permissions to function effectively. Below is a 
 We do not sell, share, or transmit your browsing data to Chroma-controlled servers. There are no analytics, tracking, or telemetry scripts included in the Extension.
 
 Some features make network requests as part of their normal function:
-- **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, Fanboy Annoyance, and the maintainer-controlled Chroma Hotfix list. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
+- **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, and Fanboy Annoyance. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
 - **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available.
 - **Proxy Testing**: When you test a proxy, Chroma requests a public IP-check endpoint through the selected proxy to verify connectivity.
 - **Configured Proxy Routing**: If you enable a proxy route or global fallback, matching browser traffic is routed through the proxy server you configured.
@@ -53,7 +53,7 @@ Some features make network requests as part of their normal function:
 These requests are not telemetry to Chroma, but the remote services or proxy providers involved may receive normal network metadata such as your IP address, user agent, and request time.
 
 ### Remote List Trust Boundary
-Remote filter lists can change extension behavior after installation. Depending on the rule type and Chroma support, a refreshed list can affect network blocking or allow rules, cosmetic hiding, and supported scriptlet registration. Chroma applies guardrails: remote lists are fetched over HTTPS, parsed locally, capped by size and rule budgets, deduplicated where appropriate, and scriptlets are limited to Chroma's shipped scriptlet implementations. The Chroma Hotfix list is maintained by the Chroma developer for rapid compatibility fixes between extension releases.
+Remote filter lists can change extension behavior after installation. Depending on the rule type and Chroma support, a refreshed list can affect network blocking or allow rules, cosmetic hiding, and supported scriptlet registration. Chroma applies guardrails: remote lists are fetched over HTTPS, parsed locally, capped by size and rule budgets, deduplicated where appropriate, and scriptlets are limited to Chroma's shipped scriptlet implementations. Chroma does not ship a maintainer-controlled hotfix subscription; project fixes are delivered through GitHub release packages.
 
 ## 4. Selective Network Permissions
 To maintain compatibility with certain websites, Chroma's ruleset permits a limited set of standard network requests to reach their intended destinations. These are called Allow Rules and apply only on specific domains where full blocking would impair page functionality.

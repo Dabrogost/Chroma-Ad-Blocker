@@ -82,9 +82,9 @@ test('README documents broad host permission and remote list trust boundary', ()
 
   assert.ok(manifest.host_permissions.includes('<all_urls>'));
   assert.match(readme, /\|\s*Host permission:\s*`<all_urls>`\s*\|[^|]*sensitive settings[^|]*local/i);
-  assert.match(readme, /Chroma Hotfix[\s\S]*maintainer-controlled GitHub raw file[\s\S]*6 hours/i);
-  assert.match(readme, /main remote trust boundary/i);
-  assert.match(readme, /not arbitrary remote JavaScript execution/i);
+  assert.match(readme, /does not ship a maintainer-controlled hotfix subscription/i);
+  assert.match(readme, /GitHub release packages/i);
+  assert.match(readme, /custom subscription/i);
 });
 
 test('privacy and security docs document remote list behavior', () => {
@@ -92,8 +92,9 @@ test('privacy and security docs document remote list behavior', () => {
   const security = fs.readFileSync(path.join(__dirname, '..', 'docs', 'SECURITY.md'), 'utf8');
 
   assert.match(privacy, /Remote List Trust Boundary/i);
-  assert.match(privacy, /Chroma Hotfix list/i);
+  assert.match(privacy, /does not ship a maintainer-controlled hotfix subscription/i);
   assert.match(privacy, /scriptlets are limited to Chroma's shipped scriptlet implementations/i);
   assert.match(security, /Remote List Trust Boundary/i);
+  assert.match(security, /not through a default maintainer-controlled hotfix subscription/i);
   assert.match(security, /Scriptlet rules can only call implementations already shipped/i);
 });

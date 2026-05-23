@@ -13,11 +13,11 @@ Chroma Ad-Blocker supports responsible security research. We will not pursue leg
 
 ## Remote List Trust Boundary
 
-Chroma uses remote filter list subscriptions as part of normal operation. The maintainer-controlled Chroma Hotfix list exists so narrow platform fixes can ship between extension releases, while third-party lists such as Hagezi Pro Mini, EasyList, and Fanboy Annoyance provide broader blocking and cosmetic coverage.
+Chroma uses remote filter list subscriptions as part of normal operation. Default remote subscriptions are third-party filter lists such as Hagezi Pro Mini, EasyList, and Fanboy Annoyance. Chroma project fixes are delivered through GitHub release packages, not through a default maintainer-controlled hotfix subscription.
 
 Remote list content is not treated as arbitrary code. Lists are fetched over HTTPS, parsed locally, bounded by response-size and rule-budget limits, deduplicated against bundled static rules where applicable, and unsupported syntax is dropped. Scriptlet rules can only call implementations already shipped in Chroma's bundled scriptlet library.
 
-Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings.
+Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
 
 ## Isolated-To-MAIN Handshake
 

@@ -28,7 +28,7 @@
 - **Split-Tunnel Proxy Router**: Allows selected media domains to route through a custom HTTP, HTTPS, SOCKS4, or SOCKS5 proxy server directly in the browser while keeping unrelated traffic direct. This is designed for routing media sites through proxy regions that reduce ad serving or match country-specific media delivery. Includes a **Global Fallback** mode for unmatched browser traffic, domain-specific proxy overrides, Smart-Link Auto-Expansion for supported media/CDN domains, real-time connectivity verification, and local-only proxy credential handling for HTTP/HTTPS proxy authentication.
 - **Source-Generated DNR Network Blocking**: Uses a generated OISD Big static Declarative Net Request (DNR) ruleset, a protected custom static layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **Tracking URL & AMP Cleanup**: Removes known tracking query parameters from top-level navigation URLs with DNR redirect rules, and optionally redirects supported AMP viewer pages to publisher URLs.
-- **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, Chroma Hotfix, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
+- **Live Filter List Subscriptions**: Subscribes to Hagezi Pro Mini, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library, with refresh intervals tuned per list. Subscription rules are deduplicated against the static ruleset before allocation to maximize coverage within the dynamic rule budget.
 - **Scriptlet Injection Engine**: A high-performance surgical layer powered by the `userScripts` API. It translates uBlock Origin/AdGuard syntax into native JavaScript and injects matched scriptlets at specific navigation milestones (`document_start`, `document_idle`, `document_end`) to neutralize anti-adblock scripts, prune dynamic JSON payloads, and intercept API calls.
 - **Cosmetic Filtering Layer**: Removes ad slots, placeholders, and unwanted UI elements (Shorts, Merch, Offers) via high-speed CSS injection and DOM mutation monitoring. Optimized for YouTube and Twitch (where server-side ad insertion prevents network blocking).
 - **Element Zapper**: Lets you point-and-click any stubborn page element to hide it with a locally saved cosmetic rule. Rules can be toggled or deleted from settings without editing filter lists.
@@ -377,7 +377,7 @@ Chroma implements several advanced security measures to ensure extension integri
 | Loaded-extension E2E tests fail with `--load-extension` errors. | Use Chrome for Testing or Chromium for automated extension tests. Modern official Google Chrome builds reject this automation path. |
 | Authenticated SOCKS proxy credentials do not work. | Chromium extension proxy APIs do not expose SOCKS username/password auth to extensions. Use provider-side IP allowlisting or an HTTP/HTTPS proxy endpoint. |
 | Subscription refresh fails. | Confirm the list URL is HTTPS, reachable, not credential-bearing, under the response-size limit, and returns filter-list text rather than an HTML error page. |
-| Chroma Hotfix changes behavior after install. | Chroma Hotfix is a trusted remote list enabled by default for fast fixes. Disable it in subscriptions if you want only static release-bundled behavior. |
+| A site fix requires extension changes. | Chroma checks GitHub releases and notifies you when an update is available. Install the reviewed release package for bundled rule and code updates. |
 | Request Log is empty. | DNR debug match logging is only available in compatible debug/unpacked contexts. Blocking can still work normally when the request log is unavailable. |
 
 ## Configuration
@@ -467,14 +467,11 @@ Chroma ships with a mix of bundled and remote filter sources. Enabled remote lis
 | List | Source | Default refresh | What it can affect |
 |---|---|---:|---|
 | **Chroma Scriptlet Library** | Bundled inside the extension package | Local bundled file | Chroma-maintained scriptlet compatibility rules. Updates only when the extension package changes. |
-| **Chroma Hotfix** | Maintainer-controlled GitHub raw file | 6 hours | Emergency network, cosmetic, and supported scriptlet fixes between extension releases. |
 | **Hagezi Pro Mini** | Hagezi remote list | 24 hours | Network DNR subscription rules after parsing, static deduplication, and dynamic-rule allocation. |
 | **EasyList** | EasyList remote list | 24 hours | Cosmetic rules and supported scriptlets only; not allocated to network DNR. |
 | **Fanboy Annoyance** | Fanboy remote list | 24 hours | Cosmetic annoyance rules and supported scriptlets only; not allocated to network DNR. |
 
-The **Chroma Hotfix** list is the main remote trust boundary. It lets the maintainer ship narrow compatibility fixes without waiting for a full extension release, but it also means enabled installs can receive behavior changes from the Chroma GitHub repository between packaged releases. Hotfix content still goes through Chroma's normal parser, HTTPS fetch path, rule budgets, static deduplication, and supported-scriptlet allowlist; it is not arbitrary remote JavaScript execution.
-
-The **Chroma Hotfix** list is intentionally quiet when it has no active rules. It may be enabled internally, but the Filter Lists UI and Health panel hide it from user-facing subscription totals until a maintainer-published hotfix actually contains rules. This keeps normal installs from showing a confusing extra enabled list when there is nothing for users to manage. You can disable any visible subscription list from settings if you do not want it contributing rules.
+Chroma does not ship a maintainer-controlled hotfix subscription. Project fixes are delivered through GitHub release packages, and the popup can notify you when a newer release is available. If you want to trust an additional remote list, add it explicitly as a custom subscription.
 
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
@@ -519,7 +516,7 @@ Most Chrome ad blockers break often because the ground underneath them changed. 
 
 Chromium has other browser vendors, but Google still drives the upstream platform that Chrome and most Chromium-based browsers inherit. Brave, Edge, Vivaldi, and others can patch or work around parts of that stack, but they do not make MV2-style Chrome extension blocking the durable default for Chrome users.
 
-Chroma exists because I wanted a blocker designed for that reality instead of fighting yesterday's API forever. It leans into MV3-native tools like Declarative Net Request, `userScripts`, local rule subscriptions, targeted scriptlets, and platform-specific handlers. The goal is not to be the biggest blocker or the loudest blocker. The goal is to be more robust when sites change, more transparent about what it does, and easier to hotfix without waiting on a store review.
+Chroma exists because I wanted a blocker designed for that reality instead of fighting yesterday's API forever. It leans into MV3-native tools like Declarative Net Request, `userScripts`, local rule subscriptions, targeted scriptlets, and platform-specific handlers. The goal is not to be the biggest blocker or the loudest blocker. The goal is to be more robust when sites change, transparent about what it does, and auditable through release packages.
 
 Chroma is my answer to a simple problem: if Chrome ad blocking is going to live inside MV3, then the blocker should be built like it knows that.
 
@@ -557,8 +554,8 @@ Web Store extensions often arrive as "black boxes" with bundled or obfuscated co
 ### 3. Unrestricted API Power
 Chroma utilizes advanced MV3 APIs such as the `userScripts` engine and high-volume `declarativeNetRequest` rule-sets. Bypassing the store keeps those capabilities transparent and source-auditable without waiting on store review cycles.
 
-### 4. Zero-Day Hotfixes
-When YouTube or other platforms update their ad-delivery algorithms, Chroma can ship a hotfix through GitHub quickly. Web Store reviews can take days or even weeks. In the world of ad-blocking, a three-day delay is an eternity. Staying off the store helps keep the engine responsive to platform changes.
+### 4. Fast GitHub Releases
+When YouTube or other platforms update their ad-delivery algorithms, Chroma can ship a reviewed GitHub release package quickly. Web Store reviews can take days or even weeks. In the world of ad-blocking, a three-day delay is an eternity. Staying off the store helps keep the engine responsive to platform changes while keeping maintainer changes tied to inspectable releases.
 
 > [!IMPORTANT]
 > Sideloading an extension requires a higher level of trust. Review the [Permissions](#permissions) and [Security Hardening](#security-hardening) sections to understand exactly how Chroma protects your session.
