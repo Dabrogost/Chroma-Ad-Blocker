@@ -6,7 +6,7 @@
 'use strict';
 
 const ChromaApp = (() => {
-  const { $, escapeHTML, appendElement, setText, addKeyboardActivation } = globalThis.ChromaDom;
+  const { $, escapeHTML, appendElement, clearElement, setText, addKeyboardActivation } = globalThis.ChromaDom;
   const { getRegistrableDomain } = globalThis.ChromaDomain;
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
@@ -141,9 +141,15 @@ const ChromaApp = (() => {
   function setSectionError(id, message) {
     const el = $(id);
     if (!el) return;
-    el.innerHTML = '';
+    clearElement(el);
     appendElement(el, 'div', 'hydration-error', message);
     setSectionReady(id);
+  }
+
+  function appendLoadingRow(parent, text) {
+    const row = appendElement(parent, 'div', 'toggle-row loading-row');
+    appendElement(row, 'span', 'loading-text', text);
+    return row;
   }
 
   function setStatsControlsPending(pending) {
@@ -336,7 +342,7 @@ const ChromaApp = (() => {
     if (!topCards) return;
     const emptyText = unavailable ? 'No stats available.' : null;
 
-    topCards.innerHTML = '';
+    clearElement(topCards);
     addStatsMiniCard(topCards, 'Total Protection Events', formatCompactCount(totals.protectionEvents));
     addStatsMiniCard(topCards, 'Network Blocks', formatCompactCount(totals.networkBlocks));
     addStatsMiniCard(topCards, 'Ad Cleanups', formatCompactCount(getCleanupTotal(totals)));
@@ -347,7 +353,7 @@ const ChromaApp = (() => {
     addStatsMiniCard(topCards, 'Time Saved (est.)', formatDuration(stats?.timeSavedSeconds));
 
     if (rangeSummary) {
-      rangeSummary.innerHTML = '';
+      clearElement(rangeSummary);
       addStatsMiniCard(rangeSummary, 'Today', formatCompactCount(stats?.ranges?.today?.protectionEvents));
       addStatsMiniCard(rangeSummary, '7 Days', formatCompactCount(stats?.ranges?.last7Days?.protectionEvents));
       addStatsMiniCard(rangeSummary, '30 Days', formatCompactCount(stats?.ranges?.last30Days?.protectionEvents));
@@ -355,7 +361,7 @@ const ChromaApp = (() => {
     }
 
     if (sitesList) {
-      sitesList.innerHTML = '';
+      clearElement(sitesList);
       const sites = Object.values(stats?.bySite || {})
         .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
         .slice(0, 10);
@@ -368,7 +374,7 @@ const ChromaApp = (() => {
     }
 
     if (rulesList) {
-      rulesList.innerHTML = '';
+      clearElement(rulesList);
       const rules = Object.values(stats?.byRule || {})
         .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
         .slice(0, 10);
@@ -382,7 +388,7 @@ const ChromaApp = (() => {
     }
 
     if (timelineList) {
-      timelineList.innerHTML = '';
+      clearElement(timelineList);
       const days = Object.values(stats?.byDay || {})
         .sort((a, b) => String(a.day).localeCompare(String(b.day)))
         .slice(-14);
@@ -398,7 +404,7 @@ const ChromaApp = (() => {
     }
 
     if (eventsList) {
-      eventsList.innerHTML = '';
+      clearElement(eventsList);
       const events = Array.isArray(stats?.recentEvents) ? stats.recentEvents.slice(0, 12) : [];
       if (events.length === 0) renderEmptyStatsList(eventsList, emptyText || 'No recent events yet.');
       for (const event of events) {
@@ -755,6 +761,67 @@ const ChromaApp = (() => {
         } catch (_) {}
       });
 
+      $('exportConfigJson')?.addEventListener('click', async () => {
+        const exported = await notifyBackground({ type: MSG.CONFIG_EXPORT });
+        if (!exported) return;
+        const text = JSON.stringify(exported, null, 2);
+        try {
+          const blob = new Blob([text], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `chroma-settings-${new Date().toISOString().slice(0, 10)}.json`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          setText('settingsBackupStatus', 'Settings exported.');
+        } catch (_) {
+          setText('settingsBackupStatus', 'Settings export failed.');
+        }
+      });
+
+      const importFile = $('importConfigFile');
+      $('importConfigJson')?.addEventListener('click', () => importFile?.click());
+      importFile?.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        setText('settingsBackupStatus', 'Importing settings...');
+        let parsed;
+        try {
+          parsed = JSON.parse(await file.text());
+        } catch {
+          setText('settingsBackupStatus', 'Invalid settings JSON.');
+          return;
+        }
+
+        const result = await notifyBackground({ type: MSG.CONFIG_IMPORT, settings: parsed });
+        if (!result?.ok) {
+          setText('settingsBackupStatus', result?.error || 'Settings import failed.');
+          return;
+        }
+        setText('settingsBackupStatus', 'Settings imported. Refreshing UI...');
+        try {
+          const nextConfig = await notifyBackground({ type: MSG.CONFIG_GET });
+          if (nextConfig) {
+            config = nextConfig;
+            const enabled = config.enabled !== false;
+            const masterToggle = $('toggleEnabled');
+            if (masterToggle) masterToggle.checked = enabled;
+            updateStatusDot(enabled);
+            syncUI(config, enabled);
+            syncSpeedUI(config.accelerationSpeed ?? 8, enabled && (config.acceleration !== false));
+          }
+          await Promise.all([
+            loadSubscriptionUI(),
+            loadProxyRouterSection(),
+            loadHealthPanel()
+          ]);
+          setText('settingsBackupStatus', 'Settings imported.');
+        } catch {
+          setText('settingsBackupStatus', 'Settings imported. Reopen settings to refresh.');
+        }
+      });
+
       $('resetStats')?.addEventListener('click', async () => {
         await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
         await loadStatsUI();
@@ -913,7 +980,8 @@ const ChromaApp = (() => {
         const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
         if (subscriptions.length === 0) {
-          list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No subscriptions configured.</span></div>';
+          clearElement(list);
+          appendLoadingRow(list, 'No subscriptions configured.');
           setSectionReady('subscriptionList');
           return;
         }
@@ -924,7 +992,7 @@ const ChromaApp = (() => {
         const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
         summaryBar.textContent = `${totalParsed.toLocaleString()} parsed \u00b7 ${appliedNetworkRuleCount.toLocaleString()} applied \u00b7 ${totalCosmetic.toLocaleString()} cosmetic \u00b7 ${totalScriptlet.toLocaleString()} scriptlets`;
 
-        list.innerHTML = '';
+        clearElement(list);
         list.appendChild(summaryBar);
 
         for (const sub of subscriptions) {
@@ -1134,9 +1202,9 @@ const ChromaApp = (() => {
         return;
       }
 
-      list.innerHTML = '';
+      clearElement(list);
       if (rules.length === 0) {
-        list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No local zapper rules saved.</span></div>';
+        appendLoadingRow(list, 'No local zapper rules saved.');
         setSectionReady('localZapperRules');
         return;
       }
@@ -1213,6 +1281,7 @@ const ChromaApp = (() => {
     function wireRequestLog() {
       const toggleRow = $('logToggleRow');
       const toggleBtn = $('logToggleBtn');
+      const freezeBtn = $('logFreezeBtn');
       const entries = $('logEntries');
       if (!toggleRow || !entries) return;
       toggleRow.setAttribute('role', 'button');
@@ -1251,11 +1320,13 @@ const ChromaApp = (() => {
       };
 
       let isOpen = false;
+      let isFrozen = false;
       async function renderLog() {
+        if (isFrozen) return;
         const log = await notifyBackground({ type: MSG.LOG_GET }) || [];
-        entries.innerHTML = '';
+        clearElement(entries);
         if (log.length === 0) {
-          entries.innerHTML = '<div class="log-empty">No entries yet.</div>';
+          appendElement(entries, 'div', 'log-empty', 'No entries yet.');
           return;
         }
 
@@ -1280,6 +1351,14 @@ const ChromaApp = (() => {
         if (isOpen) await renderLog();
       }
 
+      freezeBtn?.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        isFrozen = !isFrozen;
+        freezeBtn.classList.toggle('is-active', isFrozen);
+        freezeBtn.textContent = isFrozen ? 'Frozen' : 'Freeze';
+        freezeBtn.setAttribute('aria-label', isFrozen ? 'Unfreeze request log' : 'Freeze request log');
+        if (!isFrozen && isOpen) await renderLog();
+      });
       addKeyboardActivation(toggleRow, toggleRequestLog);
     }
   }

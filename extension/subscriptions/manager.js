@@ -536,6 +536,87 @@ export async function addSubscription(sub) {
 }
 
 /**
+ * Imports custom subscription metadata from a settings backup.
+ * Imported lists start empty and are fetched on the next manual/stale refresh,
+ * so any previous per-subscription rule caches for replaced custom IDs are
+ * cleared before rebuilding the combined runtime stores.
+ * @param {Object[]} importedCustomSubs
+ * @returns {Promise<{ ok: boolean, importedCount: number }>}
+ */
+export async function importCustomSubscriptions(importedCustomSubs = []) {
+  if (!Array.isArray(importedCustomSubs) || importedCustomSubs.length === 0) {
+    return { ok: true, importedCount: 0 };
+  }
+
+  const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
+  const baseSubscriptions = mergeDefaultSubscriptions(subscriptions);
+  const defaultIds = new Set(baseSubscriptions.filter(sub => sub?.isCustom !== true).map(sub => sub.id));
+  const candidatesById = new Map();
+
+  for (const sub of importedCustomSubs) {
+    if (!sub?.id || defaultIds.has(sub.id) || candidatesById.has(sub.id)) continue;
+    candidatesById.set(sub.id, sub);
+  }
+
+  const candidateIds = new Set(candidatesById.keys());
+  const keptBeforeUrlCheck = baseSubscriptions.filter(sub =>
+    sub?.isCustom !== true || !candidateIds.has(sub.id)
+  );
+  const usedUrls = new Set(keptBeforeUrlCheck.map(sub => sub?.url).filter(Boolean));
+  const acceptedImports = [];
+
+  for (const sub of candidatesById.values()) {
+    if (usedUrls.has(sub.url)) continue;
+    usedUrls.add(sub.url);
+    acceptedImports.push(sub);
+  }
+
+  if (acceptedImports.length === 0) {
+    return { ok: true, importedCount: 0 };
+  }
+
+  const acceptedIds = new Set(acceptedImports.map(sub => sub.id));
+  const nextSubscriptions = baseSubscriptions
+    .filter(sub => sub?.isCustom !== true || !acceptedIds.has(sub.id))
+    .concat(acceptedImports);
+
+  const {
+    sub_network_rules: storedNetworkRules = {},
+    sub_cosmetic_rules: storedCosmeticRules = {},
+    sub_scriptlet_rules: storedScriptletRules = {}
+  } = await chrome.storage.local.get(['sub_network_rules', 'sub_cosmetic_rules', 'sub_scriptlet_rules']);
+
+  const netPerSub = { ...storedNetworkRules };
+  const cosPerSub = { ...storedCosmeticRules };
+  const scrPerSub = { ...storedScriptletRules };
+
+  for (const id of acceptedIds) {
+    delete netPerSub[id];
+    delete cosPerSub[id];
+    delete scrPerSub[id];
+  }
+
+  const networkApplication = buildNetworkRuleApplication(nextSubscriptions, netPerSub);
+  const subscriptionCosmeticRules = buildCombinedCosmeticRules(nextSubscriptions, cosPerSub);
+  const subscriptionScriptletRules = buildCombinedScriptletRules(nextSubscriptions, scrPerSub);
+
+  await applySubscriptionRules(networkApplication.networkRules);
+
+  await chrome.storage.local.set({
+    subscriptions: nextSubscriptions,
+    sub_network_rules: netPerSub,
+    sub_cosmetic_rules: cosPerSub,
+    sub_scriptlet_rules: scrPerSub,
+    subscriptionCosmeticRules,
+    subscriptionScriptletRules,
+    appliedNetworkRuleCount: networkApplication.appliedNetworkRuleCount,
+    appliedNetworkRulesPerSub: networkApplication.appliedNetworkRulesPerSub
+  });
+
+  return { ok: true, importedCount: acceptedImports.length };
+}
+
+/**
  * Removes a subscription and its stored rules. Rebuilds combined sets.
  * @param {string} id
  * @returns {Promise<{ ok: boolean }>}

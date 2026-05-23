@@ -998,6 +998,12 @@ input.control-pending + .slider {
   margin-top: 10px;
 }
 
+.settings-backup-status {
+  min-height: 14px;
+  margin-top: 7px;
+  color: var(--text-muted);
+}
+
 .stats-empty {
   color: var(--text-muted);
   font-size: 11px;
@@ -1012,6 +1018,16 @@ input.control-pending + .slider {
   border-bottom: 1px solid rgba(255,255,255,0.03);
 }
 .log-header:hover { background: rgba(108, 92, 231, 0.08); }
+.log-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.log-freeze-btn.is-active {
+  color: var(--c-cyan);
+  border-color: rgba(0,255,204,0.28);
+}
 .log-toggle-btn {
   background: none; border: none; color: var(--text-muted);
   font-size: 10px; cursor: pointer; padding: 0; line-height: 1;
@@ -1187,6 +1203,18 @@ input.control-pending + .slider {
   background: rgba(108, 92, 231, 0.12);
   color: var(--text-dim);
   opacity: 1;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
 .inline-separator {

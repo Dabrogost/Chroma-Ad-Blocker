@@ -512,6 +512,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
     assert.strictEqual(dom.window.document.querySelector('#statsModeSelect').disabled, true);
+    assert.ok(dom.window.document.querySelector('#exportConfigJson'));
+    assert.ok(dom.window.document.querySelector('#importConfigFile'));
   });
 
   await t.test('popup shell does not render settings-only skeleton sections', () => {
@@ -531,6 +533,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#localZapperRules'), null);
     assert.strictEqual(dom.window.document.querySelector('#subscriptionList .skeleton-row'), null);
     assert.strictEqual(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'), null);
+    assert.strictEqual(dom.window.document.querySelector('#exportConfigJson'), null);
+    assert.strictEqual(dom.window.document.querySelector('#importConfigFile'), null);
   });
 
   await t.test('health skeleton is replaced on success and on unavailable response', async () => {

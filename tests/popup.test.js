@@ -95,8 +95,8 @@ test('popup.js functionality', async (t) => {
             const type = typeof event === 'string' ? event : event.type;
             if (this.listeners[type]) {
               const eventObject = typeof event === 'string'
-                ? { target: this, type }
-                : { target: this, preventDefault: () => {}, ...event };
+                ? { target: this, type, stopPropagation: () => {} }
+                : { target: this, preventDefault: () => {}, stopPropagation: () => {}, ...event };
               await Promise.all(this.listeners[type].map(fn => fn(eventObject)));
             }
           }
@@ -126,6 +126,12 @@ test('popup.js functionality', async (t) => {
           }
           if (msg.type === 'CONFIG_SET') {
             return { ok: true };
+          }
+          if (msg.type === 'CONFIG_EXPORT') {
+            return { schema: 'chroma-settings', version: 1, config: { enabled: true } };
+          }
+          if (msg.type === 'CONFIG_IMPORT') {
+            return { ok: true, imported: { configKeys: 1 } };
           }
           if (msg.type === 'STATS_RESET') {
             return { ok: true };
@@ -240,6 +246,8 @@ test('popup.js functionality', async (t) => {
       MSG: {
         CONFIG_GET: 'CONFIG_GET',
         CONFIG_SET: 'CONFIG_SET',
+        CONFIG_EXPORT: 'CONFIG_EXPORT',
+        CONFIG_IMPORT: 'CONFIG_IMPORT',
         CONFIG_UPDATE: 'CONFIG_UPDATE',
         STATS_GET: 'STATS_GET',
         STATS_EVENT_BATCH: 'STATS_EVENT_BATCH',
@@ -304,6 +312,7 @@ test('popup.js functionality', async (t) => {
     getElement('proxyDomainList');
     getElement('logToggleRow');
     getElement('logToggleBtn');
+    getElement('logFreezeBtn');
     getElement('logEntries');
 
     return { sandbox, elements, messages, chromeMock };
@@ -527,6 +536,19 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'true');
     assert.match(elements['logEntries'].classList.current, /visible/);
   });
+
+  await t.test('request log freeze toggles without collapsing the row', async () => {
+    const { sandbox, elements } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    await elements['logFreezeBtn'].dispatchEvent('click');
+
+    assert.strictEqual(elements['logFreezeBtn'].textContent, 'Frozen');
+    assert.match(elements['logFreezeBtn'].classList.current, /is-active/);
+    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
+  });
 });
 
 test('UI hardening copy', () => {
@@ -556,6 +578,9 @@ test('UI hardening copy', () => {
   assert.match(componentsJsCode, /aria-label="\$\{label\}"/);
   assert.match(componentsJsCode, /id="settingsIcon" class="settings-icon" type="button"/);
   assert.match(componentsJsCode, /role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries"/);
+  assert.match(componentsJsCode, /id="logFreezeBtn"[\s\S]*Freeze/);
+  assert.match(componentsJsCode, /id="exportConfigJson"/);
+  assert.match(componentsJsCode, /id="importConfigFile"/);
   assert.match(proxyUiJsCode, /input\.setAttribute\('aria-label', title\)/);
   assert.match(domUtilsJsCode, /function addKeyboardActivation/);
   assert.match(uiCssCode, /:focus-visible/);
@@ -587,6 +612,10 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(appJsCode, /style="/);
   assert.doesNotMatch(proxyUiJsCode, /style="/);
   assert.doesNotMatch(proxyUiJsCode, /style\.cssText/);
+  assert.doesNotMatch(appJsCode, /innerHTML/);
+  assert.match(appJsCode, /type: MSG\.CONFIG_EXPORT/);
+  assert.match(appJsCode, /type: MSG\.CONFIG_IMPORT/);
+  assert.match(appJsCode, /isFrozen = !isFrozen/);
   assert.match(appJsCode, /getRegistrableDomain\(currentDomain\)/);
   assert.match(domainUtilsJsCode, /github\.io/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);

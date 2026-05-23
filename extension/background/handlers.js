@@ -14,7 +14,8 @@ import {
   setSubscriptionEnabled,
   refreshSubscription,
   addSubscription,
-  removeSubscription
+  removeSubscription,
+  importCustomSubscriptions
 } from '../subscriptions/manager.js';
 import { validateConfig } from './configState.js';
 import { updateDNRState, syncDynamicRules, syncWhitelistRules } from './dnrState.js';
@@ -46,6 +47,7 @@ const ZAPPER_SESSION_TTL_MS = 2 * 60 * 1000;
 const ZAPPER_MAX_RULES = 500;
 const ZAPPER_MAX_SELECTOR_LEN = 512;
 const ZAPPER_MAX_MATCHES = 5;
+const SETTINGS_IMPORT_VERSION = 1;
 const zapperSessions = new Map();
 
 function isValidHostname(host) {
@@ -520,6 +522,148 @@ async function handleWhitelistAdd(msg) {
   return { ok: true };
 }
 
+function sanitizeDomainList(value) {
+  const out = [];
+  const seen = new Set();
+  const source = Array.isArray(value) ? value.slice(0, 1000) : [];
+  for (const item of source) {
+    const domain = normalizeDomain(item);
+    if (!domain || seen.has(domain)) continue;
+    seen.add(domain);
+    out.push(domain);
+  }
+  return out;
+}
+
+function exportProxyConfig(pc) {
+  return {
+    id: pc.id,
+    name: pc.name,
+    host: pc.host,
+    port: pc.port,
+    type: pc.type,
+    accepted: pc.accepted,
+    enabled: pc.enabled !== false,
+    domains: Array.isArray(pc.domains) ? pc.domains : []
+  };
+}
+
+function exportSubscription(sub) {
+  return {
+    id: sub.id,
+    name: sub.name,
+    url: sub.url,
+    enabled: sub.enabled !== false,
+    isCustom: sub.isCustom === true,
+    intervalHours: sub.intervalHours
+  };
+}
+
+function sanitizeImportedSubscription(sub, index) {
+  const validation = validateCustomSubscriptionInput({
+    ...sub,
+    id: sub?.id || `custom_import_${index}_${Date.now()}`
+  });
+  if (!validation.ok) return null;
+  return {
+    ...validation.subscription,
+    enabled: sub.enabled !== false,
+    isCustom: true,
+    lastUpdated: 0,
+    version: null,
+    lastError: null,
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+  };
+}
+
+async function notifyConfigChanged(config) {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.map(t =>
+    chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config }).catch(() => {})
+  ));
+}
+
+async function handleConfigExport() {
+  const {
+    config = {},
+    whitelist = [],
+    fprWhitelist = [],
+    proxyConfigs = []
+  } = await chrome.storage.local.get(['config', 'whitelist', 'fprWhitelist', 'proxyConfigs']);
+  const subscriptions = await getSubscriptions();
+  return {
+    schema: 'chroma-settings',
+    version: SETTINGS_IMPORT_VERSION,
+    exportedAt: Date.now(),
+    config: validateConfig(config),
+    whitelist: sanitizeDomainList(whitelist),
+    fprWhitelist: sanitizeDomainList(fprWhitelist),
+    proxyConfigs: Array.isArray(proxyConfigs) ? proxyConfigs.map(exportProxyConfig) : [],
+    subscriptions: subscriptions
+      .filter(sub => sub?.isCustom === true)
+      .map(exportSubscription)
+  };
+}
+
+async function handleConfigImport(msg) {
+  const payload = msg?.settings;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { ok: false, error: 'Invalid settings backup' };
+  }
+  if (payload.schema !== 'chroma-settings') {
+    return { ok: false, error: 'Unsupported settings backup' };
+  }
+
+  const config = validateConfig(payload.config || {});
+  const whitelist = sanitizeDomainList(payload.whitelist);
+  const fprWhitelist = sanitizeDomainList(payload.fprWhitelist);
+  const existing = await chrome.storage.local.get(['config', 'proxyConfigs']);
+  const proxyValidation = await validateProxyConfigsForStorage(
+    Array.isArray(payload.proxyConfigs)
+      ? payload.proxyConfigs.slice(0, 100).map(pc => ({ ...pc, credentialAction: 'clear' }))
+      : [],
+    existing.proxyConfigs || []
+  );
+  if (!proxyValidation.ok) return { ok: false, error: proxyValidation.errors[0] };
+
+  const importedCustomSubs = Array.isArray(payload.subscriptions)
+    ? payload.subscriptions.slice(0, 50).map(sanitizeImportedSubscription).filter(Boolean)
+    : [];
+  const subscriptionImport = await importCustomSubscriptions(importedCustomSubs);
+
+  await chrome.storage.local.set({
+    config,
+    whitelist,
+    fprWhitelist,
+    proxyConfigs: proxyValidation.configs
+  });
+  const wasDNRActive = existing.config?.enabled !== false && existing.config?.networkBlocking !== false;
+  const isDNRActive = config.enabled !== false && config.networkBlocking !== false;
+  if (isDNRActive !== wasDNRActive) {
+    await updateDNRState(isDNRActive);
+  } else if (isDNRActive) {
+    await syncWhitelistRules();
+    await syncDynamicRules();
+  }
+  await syncWebRtcLeakProtection(config, proxyValidation.configs);
+  await syncBrowserPrivacyHardening(config);
+  await syncGeolocationProtection(config);
+  await notifyConfigChanged(config);
+
+  return {
+    ok: true,
+    imported: {
+      configKeys: Object.keys(config).length,
+      whitelist: whitelist.length,
+      fprWhitelist: fprWhitelist.length,
+      proxyConfigs: proxyValidation.configs.length,
+      subscriptions: subscriptionImport.importedCount || 0
+    },
+    droppedProxyCount: proxyValidation.droppedCount,
+    proxyErrors: proxyValidation.errors
+  };
+}
+
 async function handleWhitelistRemove(msg) {
   const { whitelist = [] } = await chrome.storage.local.get('whitelist');
   const domain = normalizeDomain(msg.domain);
@@ -811,6 +955,8 @@ export function registerAll(router) {
   // Sensitive types are rejected when sent from outside the extension origin.
   router.markSensitive(MSG.CONFIG_GET);
   router.markSensitive(MSG.CONFIG_SET);
+  router.markSensitive(MSG.CONFIG_EXPORT);
+  router.markSensitive(MSG.CONFIG_IMPORT);
   router.markSensitive(MSG.STATS_GET);
   router.markSensitive(MSG.STATS_EVENT_BATCH);
   router.markSensitive(MSG.STATS_RESET);
@@ -839,6 +985,8 @@ export function registerAll(router) {
 
   router.registerHandler(MSG.CONFIG_GET,           handleConfigGet);
   router.registerHandler(MSG.CONFIG_SET,           handleConfigSet);
+  router.registerHandler(MSG.CONFIG_EXPORT,        handleConfigExport);
+  router.registerHandler(MSG.CONFIG_IMPORT,        handleConfigImport);
   router.registerHandler(MSG.STATS_GET,            handleStatsGet);
   router.registerHandler(MSG.STATS_EVENT_BATCH,    handleStatsEventBatch);
   router.registerHandler(MSG.WHITELIST_GET,        handleWhitelistGet);

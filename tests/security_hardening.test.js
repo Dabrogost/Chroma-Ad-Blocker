@@ -18,6 +18,7 @@ const backgroundJsCode = backgroundJsCodeRaw
     var setSubscriptionEnabled  = async () => ({ ok: true });
     var addSubscription         = async () => ({ ok: true });
     var removeSubscription      = async () => ({ ok: true });
+    var importCustomSubscriptions = async () => ({ ok: true, importedCount: 0 });
   `)
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
@@ -44,6 +45,8 @@ const parserJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'su
 const MSG = {
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',
+  CONFIG_EXPORT: 'CONFIG_EXPORT',
+  CONFIG_IMPORT: 'CONFIG_IMPORT',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
   STATS_GET: 'STATS_GET',
   STATS_EVENT_BATCH: 'STATS_EVENT_BATCH',
@@ -91,6 +94,11 @@ function loadHandlers(options = {}) {
     runProxyTest: options.runProxyTest || (async () => ({ ok: true })),
     getHealthStatus: options.getHealthStatus || (async () => ({ ok: true })),
     exportStats: options.exportStats || (async () => ({})),
+    getSubscriptions: options.getSubscriptions || (async () => []),
+    importCustomSubscriptions: options.importCustomSubscriptions || (async (subscriptions) => {
+      storage.subscriptions = subscriptions;
+      return { ok: true, importedCount: subscriptions.length };
+    }),
     getStatsSnapshot: options.getStatsSnapshot || (async () => ({})),
     recordStatsEvents: options.recordStatsEvents || (async () => {}),
     resetStats: options.resetStats || (async () => {}),
@@ -103,6 +111,7 @@ function loadHandlers(options = {}) {
         local: {
           get: options.storageGet || (async (key) => {
             if (typeof key === 'string') return { [key]: storage[key] };
+            if (Array.isArray(key)) return Object.fromEntries(key.map(name => [name, storage[name]]));
             return {};
           }),
           set: options.storageSet || (async (values) => Object.assign(storage, values))
@@ -248,6 +257,8 @@ test('Security Hardening - handlers.js', async (t) => {
     for (const type of [
       MSG.CONFIG_GET,
       MSG.CONFIG_SET,
+      MSG.CONFIG_EXPORT,
+      MSG.CONFIG_IMPORT,
       MSG.STATS_GET,
       MSG.STATS_EVENT_BATCH,
       MSG.STATS_RESET,
@@ -496,6 +507,87 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual(result[0].hasCredentials, true);
     assert.strictEqual('authIv' in result[0], false);
     assert.strictEqual('authCipher' in result[0], false);
+  });
+
+  await t.test('settings export omits proxy credentials and import clears credential blobs', async () => {
+    const storage = {
+      config: { enabled: true, acceleration: true },
+      whitelist: ['HTTPS://Example.COM/path', 'bad..example.com'],
+      fprWhitelist: ['*.Login.Example.COM'],
+      proxyConfigs: [{
+        id: 3,
+        name: 'Secure',
+        type: 'PROXY',
+        host: 'proxy.example.com',
+        port: 8080,
+        accepted: true,
+        enabled: true,
+        domains: [{ host: 'youtube.com', enabled: true }],
+        authIv: 'iv-secret',
+        authCipher: 'cipher-secret'
+      }]
+    };
+    const handlers = {};
+    const dnrUpdates = [];
+    const sandbox = loadHandlers({
+      storage,
+      updateDNRState: async (enabled) => { dnrUpdates.push(enabled); },
+      getSubscriptions: async () => [{
+        id: 'custom_news',
+        name: 'News',
+        url: 'https://lists.example.com/news.txt',
+        enabled: true,
+        isCustom: true,
+        intervalHours: 24
+      }]
+    });
+    sandbox.registerAll({
+      markSensitive: () => {},
+      registerHandler: (type, fn) => { handlers[type] = fn; }
+    });
+
+    const exported = await handlers.CONFIG_EXPORT();
+    assert.strictEqual(exported.schema, 'chroma-settings');
+    assert.strictEqual(exported.proxyConfigs[0].authIv, undefined);
+    assert.strictEqual(exported.proxyConfigs[0].authCipher, undefined);
+    assert.deepStrictEqual(plain(exported.whitelist), ['example.com']);
+    assert.deepStrictEqual(plain(exported.fprWhitelist), ['login.example.com']);
+    assert.strictEqual(exported.subscriptions[0].id, 'custom_news');
+
+    const imported = await handlers.CONFIG_IMPORT({
+      settings: {
+        schema: 'chroma-settings',
+        config: { enabled: false, accelerationSpeed: 12, unknown: true },
+        whitelist: ['example.org'],
+        fprWhitelist: ['login.example.org'],
+        proxyConfigs: [{
+          id: 4,
+          name: 'Imported',
+          type: 'PROXY',
+          host: 'imported.example.com',
+          port: 8081,
+          accepted: true,
+          enabled: true,
+          domains: [{ host: 'twitch.tv', enabled: true }],
+          authIv: 'must-drop',
+          authCipher: 'must-drop'
+        }],
+        subscriptions: [{
+          id: 'custom_import',
+          name: 'Import',
+          url: 'https://lists.example.com/import.txt',
+          enabled: false,
+          isCustom: true
+        }]
+      }
+    });
+
+    assert.strictEqual(imported.ok, true);
+    assert.strictEqual(storage.proxyConfigs[0].authIv, undefined);
+    assert.strictEqual(storage.proxyConfigs[0].authCipher, undefined);
+    assert.deepStrictEqual(plain(storage.whitelist), ['example.org']);
+    assert.strictEqual(storage.subscriptions.some(sub => sub.id === 'custom_import'), true);
+    assert.deepStrictEqual(dnrUpdates, [false]);
   });
 
   await t.test('proxy credential preserve keeps stored byte-array auth', async () => {

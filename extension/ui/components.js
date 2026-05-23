@@ -282,7 +282,7 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderStatisticsShell() {
+  function renderStatisticsShell({ settingsMode = false } = {}) {
     return `
       <div class="section-title section-title--spaced">Protection Intelligence</div>
       <div class="protection-list stats-panel" id="statisticsPanel">
@@ -354,6 +354,18 @@ const ChromaComponents = (() => {
             <button class="reset-btn compact-action-btn" id="exportStatsJson">Export JSON</button>
           </div>
         </div>
+
+        ${settingsMode ? `
+          <div class="stats-subsection settings-backup">
+            <div class="stats-subsection-title">Settings Backup</div>
+            <div class="stats-actions">
+              <button class="reset-btn compact-action-btn" id="exportConfigJson">Export settings</button>
+              <button class="reset-btn compact-action-btn" id="importConfigJson">Import settings</button>
+              <input type="file" id="importConfigFile" class="visually-hidden" accept="application/json,.json" />
+            </div>
+            <div class="desc settings-backup-status" id="settingsBackupStatus"></div>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -392,7 +404,10 @@ const ChromaComponents = (() => {
             <div class="name">Matched Requests</div>
             <div class="desc">Rules fired on this session</div>
           </div>
-          <button class="log-toggle-btn" id="logToggleBtn" title="Expand log" aria-label="Expand request log" type="button">&#x25bc;</button>
+          <div class="log-actions">
+            <button class="reset-btn compact-action-btn log-freeze-btn" id="logFreezeBtn" title="Freeze request log" aria-label="Freeze request log" type="button">Freeze</button>
+            <button class="log-toggle-btn" id="logToggleBtn" title="Expand log" aria-label="Expand request log" type="button">&#x25bc;</button>
+          </div>
         </div>
         <div class="log-entries" id="logEntries">
           <div class="log-empty">No entries yet.</div>
@@ -423,7 +438,7 @@ const ChromaComponents = (() => {
       ${renderHeader()}
       ${renderStats({ showSettingsIcon: !settingsMode })}
       ${settingsMode ? renderHealthPanelShell() : ''}
-      ${settingsMode ? renderStatisticsShell() : ''}
+      ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
       ${renderProtectionControls({ showZapper: !settingsMode })}
       ${renderFilterListShell({ settingsMode })}
       ${renderProxyShell({ settingsMode })}

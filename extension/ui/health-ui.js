@@ -198,7 +198,11 @@ const ChromaHealthUI = (() => {
         console.error('Chroma health failed to load:', error);
       }
       if (loadId !== healthLoadSerial) return;
-      body.innerHTML = '';
+      if (globalThis.ChromaDom?.clearElement) {
+        globalThis.ChromaDom.clearElement(body);
+      } else {
+        body.textContent = '';
+      }
 
       if (!health) {
         if (overallLabel) {

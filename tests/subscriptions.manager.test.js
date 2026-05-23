@@ -49,6 +49,7 @@ function loadManager(options = {}) {
         getSubscriptions,
         setSubscriptionEnabled,
         addSubscription,
+        importCustomSubscriptions,
         removeSubscription
       };
     `;
@@ -586,6 +587,64 @@ test('Subscription lifecycle manager', async (t) => {
       scriptlet: r.scriptlet,
       sourceId: r.sourceId
     }))), [{ scriptlet: 'json-prune', sourceId: 'sub-b' }]);
+  });
+
+  await t.test('importCustomSubscriptions replaces metadata, clears stale per-sub stores, and rebuilds rules', async () => {
+    const storage = {
+      subscriptions: [
+        { id: 'default-a', enabled: true, url: 'https://defaults.example/a.txt' },
+        { id: 'custom-old', enabled: true, isCustom: true, url: 'https://custom.example/old.txt' },
+        { id: 'custom-keep', enabled: true, isCustom: true, url: 'https://custom.example/keep.txt' }
+      ],
+      sub_network_rules: {
+        'custom-old': [networkRule('||old.example^')],
+        'custom-keep': [networkRule('||keep.example^')]
+      },
+      sub_cosmetic_rules: {
+        'custom-old': [{ domains: null, selector: '.old', isException: false }],
+        'custom-keep': [{ domains: null, selector: '.keep', isException: false }]
+      },
+      sub_scriptlet_rules: {
+        'custom-old': [{ scriptlet: 'set-constant', args: [], runAt: 'document_start' }],
+        'custom-keep': [{ scriptlet: 'json-prune', args: [], runAt: 'document_start' }]
+      }
+    };
+    const manager = loadManager({
+      storage,
+      defaultSubscriptions: [{ id: 'default-a', enabled: true, url: 'https://defaults.example/a.txt' }]
+    });
+
+    const result = await manager.importCustomSubscriptions([{
+      id: 'custom-old',
+      name: 'Imported Old',
+      url: 'https://custom.example/imported.txt',
+      enabled: true,
+      isCustom: true,
+      intervalHours: 24,
+      lastUpdated: 0,
+      version: null,
+      lastError: null,
+      ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    }, {
+      id: 'default-a',
+      name: 'Should Skip Default ID',
+      url: 'https://custom.example/default-collision.txt',
+      enabled: true,
+      isCustom: true
+    }]);
+
+    assert.deepStrictEqual(plain(result), { ok: true, importedCount: 1 });
+    assert.deepStrictEqual(plain(storage.subscriptions.map(sub => sub.id)), ['default-a', 'custom-keep', 'custom-old']);
+    assert.strictEqual(storage.subscriptions[2].name, 'Imported Old');
+    assert.strictEqual('custom-old' in storage.sub_network_rules, false);
+    assert.strictEqual('custom-old' in storage.sub_cosmetic_rules, false);
+    assert.strictEqual('custom-old' in storage.sub_scriptlet_rules, false);
+    assert.deepStrictEqual(manager.appliedRules[0].map(r => r.condition.urlFilter), ['||keep.example^']);
+    assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), [{ domains: null, selector: '.keep', isException: false }]);
+    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules.map(r => ({
+      scriptlet: r.scriptlet,
+      sourceId: r.sourceId
+    }))), [{ scriptlet: 'json-prune', sourceId: 'custom-keep' }]);
   });
 
   await t.test('initSubscriptions and ensureAlarm preserve restart-safe subscription alarm', async () => {
