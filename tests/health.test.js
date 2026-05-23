@@ -204,7 +204,40 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.overall.status, 'degraded');
     assert.strictEqual(health.scriptlets.apiAvailable, false);
     assert.strictEqual(health.scriptlets.storedRuleCount, 1);
-    assert.ok(health.overall.issues.some(issue => issue.area === 'scriptlets' && issue.severity === 'warning'));
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'scriptlets' &&
+      issue.severity === 'warning' &&
+      /1 subscription scriptlet rule cannot be registered/i.test(issue.message)
+    ));
+  });
+
+  await t.test('userScripts unavailable consolidates scriptlet registration diagnostics', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [
+          { scriptlet: 'set-constant', args: ['x', 'true'] },
+          { scriptlet: 'json-prune', args: ['adPlacements'] }
+        ],
+        healthDiagnostics: {
+          scriptletRegistration: {
+            area: 'scriptlets',
+            severity: 'warning',
+            message: 'Subscription scriptlets could not be registered because the UserScripts API is unavailable.',
+            action: 'Open Chrome extension details and enable Allow User Scripts.',
+            error: 'UserScripts API unavailable',
+            ts: 1234
+          }
+        }
+      },
+      userScripts: undefined
+    });
+
+    const health = await sandbox.getHealthStatus();
+    const scriptletIssues = health.overall.issues.filter(issue => issue.area === 'scriptlets');
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(scriptletIssues.length, 1);
+    assert.match(scriptletIssues[0].message, /2 subscription scriptlet rules cannot be registered/i);
   });
 
   await t.test('userScripts unavailable is visible without degrading when no scriptlet rules are stored', async () => {

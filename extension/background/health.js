@@ -239,6 +239,12 @@ function shouldRetryScriptletRegistration(scriptlets, storedRuleCount) {
   );
 }
 
+function scriptletUnavailableMessage(storedRuleCount) {
+  const count = Number(storedRuleCount) || 0;
+  const label = count === 1 ? 'rule' : 'rules';
+  return `Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details; ${count.toLocaleString()} subscription scriptlet ${label} cannot be registered until then.`;
+}
+
 async function getFprStatus(fprEnabled) {
   const status = {
     enabled: fprEnabled,
@@ -292,6 +298,7 @@ function computeOverall({
   diagnostics
 }) {
   const issues = [];
+  const userScriptsUnavailableWithRules = !scriptlets.apiAvailable && storedScriptletRuleCount > 0;
 
   if (!masterEnabled) {
     issues.push(makeIssue('info', 'master', 'Chroma protection is disabled.', 'Turn on the main protection switch to re-enable layers.'));
@@ -324,11 +331,11 @@ function computeOverall({
     ));
   }
 
-  if (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) {
+  if (userScriptsUnavailableWithRules) {
     issues.push(makeIssue(
       'warning',
       'scriptlets',
-      'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
+      scriptletUnavailableMessage(storedScriptletRuleCount),
       USER_SCRIPTS_ACTION
     ));
   } else if (shouldRetryScriptletRegistration(scriptlets, storedScriptletRuleCount)) {
@@ -425,6 +432,7 @@ function computeOverall({
   }
 
   for (const diagnostic of diagnostics) {
+    if (userScriptsUnavailableWithRules && diagnostic.area === 'scriptlets') continue;
     issues.push(makeIssue(
       diagnostic.severity,
       diagnostic.area,

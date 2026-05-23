@@ -567,7 +567,7 @@ test('settings page proxy and zapper management safety', async (t) => {
             issues: [{
               severity: 'warning',
               area: 'scriptlets',
-              message: 'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
+              message: 'Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details; 1 subscription scriptlet rule cannot be registered until then.',
               action: 'Open Chrome extension details and enable Allow User Scripts.'
             }]
           },
