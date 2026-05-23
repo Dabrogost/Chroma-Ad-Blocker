@@ -27,3 +27,7 @@ Thanks for your interest. Here's what you need to know.
 ## Reporting Security Issues
 
 Do **not** open a public issue for security vulnerabilities. Email the developer directly at dabrogost@gmail.com.
+
+---
+
+Next: [Terms of Service](ToS.md)

@@ -5,7 +5,7 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | Permission | Reason |
 |---|---|
 | `declarativeNetRequest` | Enables and manages the static and dynamic DNR rulesets that perform network-level ad and tracker blocking at the browser engine level. |
-| `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired in supported install contexts. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
+| `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired when Chrome exposes DNR feedback events to the unpacked extension. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB, which is insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets, blocking statistics, user configuration, and local diagnostics/debug data when enabled. Static rule deduplication is computed by the service worker at runtime rather than stored as user data. No storage is used to collect or transmit user data. |
 | `tabs` | Required to read the active tab's URL for whitelist matching in the popup, open extension pages from UI controls, and reload the tab when the whitelist is toggled. |
@@ -31,3 +31,6 @@ Related docs:
 - [Security Policy](SECURITY.md)
 - [Architecture Deep Dive](ARCHITECTURE.md)
 
+---
+
+Next: [Statistics & Health](STATISTICS.md)

@@ -60,3 +60,7 @@ Chrome's **Load unpacked** flow needs an extracted folder, not the zip itself. T
 3. Enable Developer mode.
 4. Choose **Load unpacked**.
 5. Select the extracted folder that contains `manifest.json`.
+
+---
+
+Next: [Contributing](CONTRIBUTING.md)

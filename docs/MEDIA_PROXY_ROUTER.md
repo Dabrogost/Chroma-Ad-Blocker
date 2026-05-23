@@ -119,3 +119,7 @@ Supported services include:
 - **Hulu**: `hulumail.com`, `huluim.com`, `hulu.hbomax.com`
 - **Max (HBO)**: `hbomax.com`, `hbo.com`, `hbonow.com`, `hbogo.com`
 - **Spotify**: `scdn.co`, `spotify.net`, `audio-ak-spotify-com.akamaized.net`
+
+---
+
+Next: [YouTube Protection](YOUTUBE.md)

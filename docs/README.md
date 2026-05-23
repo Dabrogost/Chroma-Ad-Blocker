@@ -14,16 +14,16 @@ This directory is the long-form home for Chroma Ad-Blocker. The root [README](..
 ## Trust, Privacy, And Security
 
 - [Permissions](PERMISSIONS.md) - each requested extension permission and why it exists.
+- [Statistics & Health](STATISTICS.md) - local Protection Intelligence, privacy modes, retention, reset/export behavior, and diagnostics.
 - [Privacy Policy](PRIVACY_POLICY.md) - local storage, no Chroma telemetry, optional network requests, and third-party service boundaries.
 - [Security Policy](SECURITY.md) - disclosure process, remote list trust boundary, isolated-to-MAIN handshake, and security hardening notes.
-- [Statistics & Health](STATISTICS.md) - local Protection Intelligence, privacy modes, retention, reset/export behavior, and diagnostics.
-- [Terms of Service](ToS.md) - use terms and legal disclaimers.
 
 ## Development And Releases
 
-- [Contributing](CONTRIBUTING.md) - contribution ground rules and local PR expectations.
 - [Testing](TEST_GUIDE.md) - Node tests, policy tests, and Chrome for Testing / Chromium E2E guidance.
 - [Distribution](DISTRIBUTION.md) - packaging the extension ZIP and release checks.
+- [Contributing](CONTRIBUTING.md) - contribution ground rules and local PR expectations.
+- [Terms of Service](ToS.md) - use terms and legal disclaimers.
 
 ## Project Context
 

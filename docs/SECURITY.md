@@ -71,3 +71,7 @@ We value the work of developers and security researchers. Once a report is recei
 > [!IMPORTANT]
 > Please do not open public issues for security vulnerabilities. We ask that you follow 
 > responsible disclosure practices to protect all users of the extension.
+
+---
+
+Next: [Testing Guide](TEST_GUIDE.md)

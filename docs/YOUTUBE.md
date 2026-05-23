@@ -41,3 +41,6 @@ Payload cleanup details may appear in the local Event Tracker for transparency, 
 
 Twitch uses server-side ad insertion, which prevents Chroma from applying the same kind of client-side ad acceleration path used for YouTube and Amazon Prime Video. Chroma can still apply cosmetic and scriptlet-related cleanup where supported, but it does not claim Twitch ad acceleration.
 
+---
+
+Next: [Filter List Subscriptions](FILTER_LISTS.md)

@@ -115,3 +115,7 @@ npx @puppeteer/browsers install chrome@stable
 ```
 
 Then set `CHROME_FOR_TESTING_PATH` to the downloaded `chrome.exe`.
+
+---
+
+Next: [Distribution Notes](DISTRIBUTION.md)

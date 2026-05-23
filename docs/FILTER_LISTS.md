@@ -81,3 +81,6 @@ Chroma utilizes logic and patterns derived from the following open-source projec
 - **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists): [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE).
 - **OISD Big** by [oisd](https://oisd.nl): [License](https://github.com/sjhgvr/oisd/blob/main/LICENSE).
 
+---
+
+Next: [Permissions](PERMISSIONS.md)

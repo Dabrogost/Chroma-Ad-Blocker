@@ -312,7 +312,7 @@ function computeOverall({
     issues.push(makeIssue(
       'info',
       'requestLog',
-      'DNR match logging is unavailable in this install context; blocking can still work.',
+      'DNR match logging is unavailable in this browser session; blocking can still work.',
       null
     ));
   }
@@ -605,8 +605,8 @@ export async function getHealthStatus() {
       entryCount: asArray(storage.requestLog).length,
       maxEntries: REQUEST_LOG_MAX_ENTRIES,
       note: requestLogAvailable
-        ? 'Debug match logging is available in this install context.'
-        : 'DNR match logging is unavailable in this install context; blocking can still work.'
+        ? 'DNR match logging is available in this browser session.'
+        : 'DNR match logging is unavailable in this browser session; blocking can still work.'
     },
     diagnostics,
     overall: null

@@ -6,7 +6,7 @@ Chroma's statistics and diagnostics are local-only. They are designed to explain
 
 The settings page includes **Protection Intelligence**, a local analytics dashboard backed by the versioned `statsV2` storage record. It upgrades the old single counter into a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.
 
-The popup headline shows **Protection Events**, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than "ads blocked": DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or debug-only matches, so Chroma classifies events before counting them.
+The popup headline shows **Protection Events**, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than "ads blocked": DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or feedback-only matches, so Chroma classifies events before counting them.
 
 ## Event Tracker
 
@@ -60,5 +60,8 @@ The settings page includes a **Health** panel for diagnostics. It shows whether 
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.
 
-DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts. When that logging is unavailable, blocking can still work normally.
+DNR match logging is shown separately because it depends on Chrome exposing `chrome.declarativeNetRequest.onRuleMatchedDebug` to the unpacked extension. When that feedback API is unavailable, blocking can still work normally.
 
+---
+
+Next: [Privacy Policy](PRIVACY_POLICY.md)

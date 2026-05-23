@@ -48,7 +48,7 @@ This guide covers installing Chroma, enabling required browser features, trouble
 | Authenticated SOCKS proxy credentials do not work. | Chromium extension proxy APIs do not expose SOCKS username/password auth to extensions. Use provider-side IP allowlisting or an HTTP/HTTPS proxy endpoint. |
 | Subscription refresh fails. | Confirm the list URL is HTTPS, reachable, not credential-bearing, under the response-size limit, and returns filter-list text rather than an HTML error page. |
 | A site fix requires extension changes. | Chroma checks GitHub releases and notifies you when an update is available. Install the reviewed release package for bundled rule and code updates. |
-| Request Log is empty. | DNR debug match logging is only available in compatible debug/unpacked contexts. Blocking can still work normally when the request log is unavailable. |
+| Request Log is empty. | Chroma is installed unpacked, so DNR match logging should normally be available when Chrome exposes `chrome.declarativeNetRequest.onRuleMatchedDebug`. If the browser does not expose that feedback API, blocking can still work normally. |
 
 ## Health Panel
 
@@ -58,7 +58,10 @@ It covers static DNR rulesets, dynamic rules, tracking URL cleanup, De-AMP redir
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.
 
-DNR match logging is shown separately because `chrome.declarativeNetRequest.onRuleMatchedDebug` is only available in debug/unpacked-style install contexts. When that logging is unavailable, blocking can still work normally.
+DNR match logging is shown separately because it depends on Chrome exposing `chrome.declarativeNetRequest.onRuleMatchedDebug` to the unpacked extension. When that feedback API is unavailable, blocking can still work normally.
 
 For deeper local analytics behavior, see [Statistics & Health](STATISTICS.md).
 
+---
+
+Next: [Feature Guide](FEATURES.md)

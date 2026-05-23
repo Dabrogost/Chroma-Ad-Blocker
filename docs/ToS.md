@@ -48,3 +48,7 @@ We reserve the right to modify these Terms of Service at any time. Changes will 
 
 ## 9. Contact
 For questions regarding these Terms, please contact the developer at dabrogost@gmail.com.
+
+---
+
+Next: [Project Philosophy](PROJECT_PHILOSOPHY.md)

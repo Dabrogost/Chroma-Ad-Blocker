@@ -127,3 +127,6 @@ Chroma is designed for Windows, macOS, and Linux versions of Google Chrome 122+ 
 
 Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. Chrome 122-137 uses Developer Mode to enable the `userScripts` API.
 
+---
+
+Next: [Architecture Deep Dive](ARCHITECTURE.md)

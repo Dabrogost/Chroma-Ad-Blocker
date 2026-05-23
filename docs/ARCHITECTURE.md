@@ -170,3 +170,6 @@ Chroma is not trying to recreate MV2 request interception in MV3. It leans into 
 - Keep proxy routing separate from network blocking: DNR decides policy, PAC chooses transport.
 - Make diagnostics transparent without turning local debug data into telemetry.
 
+---
+
+Next: [Media Proxy Router](MEDIA_PROXY_ROUTER.md)
