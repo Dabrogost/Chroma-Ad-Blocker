@@ -19,6 +19,19 @@ Remote list content is not treated as arbitrary code. Lists are fetched over HTT
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
 
+## Security Hardening
+
+Chroma implements several security measures to preserve extension integrity and reduce the amount of page-visible state:
+
+- **Closure-Scoped Session State**: Session tracking variables in the acceleration handlers are private to the IIFE closure. Host-page scripts cannot read or modify acceleration state, session flags, or ad counters.
+- **Config Update Validation**: Incoming configuration updates, whether from the popup or a `__CHROMA_CONFIG_UPDATE__` CustomEvent, are validated against a strict key allowlist with type and range checks. Invalid values are rejected before reaching the internal config object.
+- **Immutable API Bridge**: Internal utilities are exposed through a locked `__CHROMA_INTERNAL__` object protected with `Object.defineProperty`, `writable: false`, and `configurable: false`, preventing host pages from replacing extension logic.
+- **Pristine API Caching**: `interceptor.js` captures and freezes native browser APIs, such as `querySelector`, `setTimeout`, and `Function.prototype.toString`, at `document_start`. This lets the extension use trusted original functions even if a site later attempts prototype pollution.
+- **Dead Man's Switch**: If core native APIs fail integrity checks at startup, the interceptor severs its secure port and falls back to safe defaults instead of operating in a potentially compromised environment.
+- **Sentinel Hardening**: Internal activation state is managed through private closure state and `WeakMap`-style markers so host-page scripts cannot observe or tamper with lifecycle markers after initialization.
+- **Secure Config Handshake**: A short-lived, per-load `MessageChannel` moves verified configuration and selector sets from the isolated world to the MAIN world through a randomized transfer nonce.
+- **Origin Authentication**: The background service worker validates origin and sender context for privileged messages, rejecting sensitive data or configuration requests from outside the verified extension context.
+
 ## Isolated-To-MAIN Handshake
 
 Chroma uses an isolated-world content script to read extension state and a MAIN-world interceptor to preserve page-native APIs before host scripts can tamper with them. The two worlds exchange configuration over a short-lived, per-load `MessageChannel` transfer instead of leaving a predictable page-visible channel open.

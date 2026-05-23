@@ -142,13 +142,13 @@ const ChromaProxyUI = (() => {
       info,
       'div',
       'desc',
-      'Recommended. Lets Chrome-owned services connect directly while Global Proxy is enabled, helping updates, sign-in, Gemini, and model downloads work. Turning this off is more secure/strict, but may break Chrome AI / Gemini Nano.'
+      'Recommended. Lets Chrome-owned services connect directly while Global Proxy is enabled, helping browser-managed features such as updates, sign-in, and optional browser services keep working. Turning this off is stricter, but may break Chrome-owned features.'
     );
     const warning = appendElement(
       info,
       'div',
       'proxy-chrome-service-bypass-warning',
-      'Most Chrome browser services, including built-in AI/model downloads, may stop working while this is disabled and Global Proxy is active.'
+      'Some Chrome-owned browser services may stop working while this is disabled and Global Proxy is active.'
     );
 
     const toggleLabel = appendElement(row, 'label', 'switch switch-sm');

@@ -331,7 +331,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(chromeBypassToggle.checked, true);
     assert.match(
       dom.window.document.querySelector('.proxy-chrome-service-bypass-control .desc').textContent,
-      /Chrome AI \/ Gemini Nano/
+      /browser-managed features/
     );
     assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), true);
 

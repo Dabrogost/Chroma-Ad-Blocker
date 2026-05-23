@@ -8,11 +8,30 @@ const extensionRoot = path.join(repoRoot, 'extension');
 const manifestPath = path.join(extensionRoot, 'manifest.json');
 const distDir = path.join(repoRoot, 'dist');
 
+const RELEASE_DOC_FILES = [
+  'docs/README.md',
+  'docs/INSTALL.md',
+  'docs/FEATURES.md',
+  'docs/ARCHITECTURE.md',
+  'docs/MEDIA_PROXY_ROUTER.md',
+  'docs/YOUTUBE.md',
+  'docs/FILTER_LISTS.md',
+  'docs/PERMISSIONS.md',
+  'docs/STATISTICS.md',
+  'docs/PRIVACY_POLICY.md',
+  'docs/SECURITY.md',
+  'docs/CONTRIBUTING.md',
+  'docs/TEST_GUIDE.md',
+  'docs/DISTRIBUTION.md',
+  'docs/ToS.md',
+  'docs/PROJECT_PHILOSOPHY.md'
+];
+
 const REQUIRED_RELEASE_FILES = [
   'manifest.json',
   'README.md',
   'LICENSE.md',
-  'docs/PRIVACY_POLICY.md'
+  ...RELEASE_DOC_FILES
 ];
 
 const FORBIDDEN_RELEASE_PATH_PATTERNS = [
@@ -89,7 +108,7 @@ function releaseFiles() {
   const files = listExtensionFiles(extensionRoot);
   addRepoFile(files, 'README.md');
   addRepoFile(files, 'LICENSE.md');
-  addRepoFile(files, path.join('docs', 'PRIVACY_POLICY.md'));
+  for (const docPath of RELEASE_DOC_FILES) addRepoFile(files, docPath);
   return files.sort((a, b) => a.zipName.localeCompare(b.zipName));
 }
 
@@ -270,6 +289,7 @@ if (require.main === module) {
 
 module.exports = {
   FORBIDDEN_RELEASE_PATH_PATTERNS,
+  RELEASE_DOC_FILES,
   REQUIRED_RELEASE_FILES,
   readZipEntries,
   verifyReleaseEntries,

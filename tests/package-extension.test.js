@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   REQUIRED_RELEASE_FILES,
+  RELEASE_DOC_FILES,
   FORBIDDEN_RELEASE_PATH_PATTERNS,
   verifyReleaseEntries
 } = require('../scripts/package-extension');
@@ -12,13 +13,17 @@ const validReleaseEntries = [
   'manifest.json',
   'README.md',
   'LICENSE.md',
-  'docs/PRIVACY_POLICY.md',
+  ...RELEASE_DOC_FILES,
   'background/background.js',
   'rules/rules_oisd_1.json'
 ];
 
 test('package verification accepts the expected release contents', () => {
   assert.ok(Array.isArray(REQUIRED_RELEASE_FILES));
+  assert.ok(RELEASE_DOC_FILES.includes('docs/TEST_GUIDE.md'));
+  assert.ok(RELEASE_DOC_FILES.includes('docs/DISTRIBUTION.md'));
+  assert.ok(!RELEASE_DOC_FILES.includes('docs/testing.md'));
+  assert.ok(!RELEASE_DOC_FILES.includes('docs/dist.md'));
   assert.ok(Array.isArray(FORBIDDEN_RELEASE_PATH_PATTERNS));
   assert.deepStrictEqual(verifyReleaseEntries(validReleaseEntries), []);
 });
@@ -31,6 +36,7 @@ test('package verification rejects missing required release files', () => {
   ]);
 
   assert.ok(errors.some(error => error.includes('LICENSE.md')));
+  assert.ok(errors.some(error => error.includes('docs/README.md')));
   assert.ok(errors.some(error => error.includes('docs/PRIVACY_POLICY.md')));
 });
 
@@ -66,25 +72,28 @@ test('package verification rejects duplicate release entries', () => {
   );
 });
 
-test('manifest and README document browser privacy permissions', () => {
+test('manifest and permissions doc document browser privacy permissions', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
-  const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
+  const permissions = fs.readFileSync(path.join(__dirname, '..', 'docs', 'PERMISSIONS.md'), 'utf8');
 
   assert.ok(manifest.permissions.includes('privacy'));
   assert.ok(manifest.permissions.includes('contentSettings'));
-  assert.match(readme, /\|\s*`privacy`\s*\|[^|]*WebRTC leak protection/i);
-  assert.match(readme, /\|\s*`contentSettings`\s*\|[^|]*Geolocation Protection/i);
+  assert.match(permissions, /\|\s*`privacy`\s*\|[^|]*WebRTC leak protection/i);
+  assert.match(permissions, /\|\s*`contentSettings`\s*\|[^|]*Geolocation Protection/i);
 });
 
-test('README documents broad host permission and remote list trust boundary', () => {
+test('docs document broad host permission and remote list trust boundary', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
+  const permissions = fs.readFileSync(path.join(__dirname, '..', 'docs', 'PERMISSIONS.md'), 'utf8');
+  const filterLists = fs.readFileSync(path.join(__dirname, '..', 'docs', 'FILTER_LISTS.md'), 'utf8');
   const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 
   assert.ok(manifest.host_permissions.includes('<all_urls>'));
-  assert.match(readme, /\|\s*Host permission:\s*`<all_urls>`\s*\|[^|]*sensitive settings[^|]*local/i);
-  assert.match(readme, /does not ship a maintainer-controlled hotfix subscription/i);
-  assert.match(readme, /GitHub release packages/i);
-  assert.match(readme, /custom subscription/i);
+  assert.match(permissions, /\|\s*Host permission:\s*`<all_urls>`\s*\|[^|]*sensitive settings[^|]*local/i);
+  assert.match(filterLists, /does not ship a maintainer-controlled hotfix subscription/i);
+  assert.match(filterLists, /GitHub release packages/i);
+  assert.match(filterLists, /custom subscription/i);
+  assert.match(readme, /\[Permissions\]\(docs\/PERMISSIONS\.md\)/);
 });
 
 test('privacy and security docs document remote list behavior', () => {
