@@ -6,10 +6,12 @@
  * which gives the same ordering guarantee as a manifest content_script — i.e.
  * the patches install BEFORE any page script runs and snapshots prototypes.
  *
- * Strategy: Brave-style farbling. Per-document × per-host deterministic seed
+ * Strategy: Brave-style farbling. Per-document, host-separated seed
  * adds sub-perceptual noise to canvas/audio/WebGL reads and clamps a small set
- * of navigator fields. Goal is to randomize the fingerprint hash per host/per
- * page load so cross-site correlation breaks — NOT to reduce uniqueness scores
+ * of navigator fields. Goal is to randomize the fingerprint hash on each page
+ * load while keeping reads deterministic inside that document, so repeated
+ * reads cannot average the noise out and cross-site correlation breaks - NOT
+ * to reduce uniqueness scores
  * on tests like amiunique. Wrappers are Proxy-based so .name/.length/typeof
  * and Function.prototype.toString all match native, defeating standard probes.
  *
@@ -44,9 +46,11 @@
     const AudioBuf = self.AudioBuffer;
     const _Navigator = self.Navigator;
 
-    // ─── Seed derivation: per-document × full hostname ─────
-    // Avoid rough eTLD+1 guessing. Without the public suffix list, collapsing
-    // hostnames can accidentally link unrelated sites such as *.co.uk.
+    // Seed derivation: fresh per-document salt plus full-hostname domain
+    // separation. The salt is intentionally not persisted, so revisiting the
+    // same site later gets a different fingerprint surface. Avoid rough eTLD+1
+    // guessing; without the public suffix list, collapsing hostnames can
+    // accidentally link unrelated sites such as *.co.uk.
     let host = '';
     try { host = String(self.location.hostname || '').toLowerCase(); } catch (e) {}
     const seedScope = host;

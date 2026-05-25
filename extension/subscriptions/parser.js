@@ -37,6 +37,22 @@ const SKIP_OPTIONS = new Set([
   'webrtc', 'mp4', 'empty', 'elemhide'
 ]);
 
+const DEFAULT_PARSE_BUDGET = Object.freeze({
+  maxLines: 250000,
+  maxLineLength: 32768,
+  maxNetworkRules: 200000,
+  maxCosmeticRules: 200000,
+  maxScriptletRules: 50000
+});
+
+function parseBudget(overrides = {}) {
+  return { ...DEFAULT_PARSE_BUDGET, ...overrides };
+}
+
+function assertWithinBudget(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
 // ─── LINE CLASSIFIER ─────
 /**
  * Classifies a single filter list line into a rule type.
@@ -75,9 +91,10 @@ function parseOptions(optionsStr) {
   for (const opt of optionsStr.split(',')) {
     const trimmed = opt.trim();
     if (!trimmed) continue;
+    const optionName = trimmed.replace(/^~/, '').split('=')[0];
 
     // Check skip options first (strip negation prefix before checking)
-    if (SKIP_OPTIONS.has(trimmed.replace(/^~/, ''))) {
+    if (SKIP_OPTIONS.has(optionName)) {
       result.hasSkipOption = true;
       return result; // Early exit — entire rule is dropped
     }
@@ -130,34 +147,38 @@ function parseOptions(optionsStr) {
   return result;
 }
 
+function networkParseResult(rule, skipReason = null) {
+  return { rule, skipReason };
+}
+
 // ─── NETWORK RULE PARSER ─────
 /**
  * Parses a network or exception rule line into a partial DNR rule object (no id assigned).
  * @param {string} line
  * @param {boolean} [isException=false]
- * @returns {Object|null}
+ * @returns {{ rule: Object|null, skipReason: string|null }}
  */
 function parseNetworkRule(line, isException = false) {
   try {
     const stripped = isException ? line.slice(2) : line;
 
-    if (!stripped) return null;
+    if (!stripped) return networkParseResult(null);
 
     // Pure wildcards — useless rules
-    if (stripped === '*' || stripped === '*$*') return null;
+    if (stripped === '*' || stripped === '*$*') return networkParseResult(null);
 
     // Regex rules — Phase 1 skip
-    if (stripped.startsWith('/') && stripped.slice(1).lastIndexOf('/') > 0) return null;
+    if (stripped.startsWith('/') && stripped.slice(1).lastIndexOf('/') > 0) return networkParseResult(null, 'regex');
 
     // Split pattern from options on first '$'
     const dollarIdx = stripped.indexOf('$');
     const pattern    = dollarIdx === -1 ? stripped : stripped.slice(0, dollarIdx);
     const optionsStr = dollarIdx === -1 ? ''        : stripped.slice(dollarIdx + 1);
 
-    if (!pattern) return null;
+    if (!pattern) return networkParseResult(null);
 
     const opts = parseOptions(optionsStr);
-    if (opts.hasSkipOption) return null;
+    if (opts.hasSkipOption) return networkParseResult(null, 'skipOption');
 
     const condition = { urlFilter: pattern };
     if (opts.resourceTypes)              condition.resourceTypes              = opts.resourceTypes;
@@ -169,16 +190,16 @@ function parseNetworkRule(line, isException = false) {
     //   1 = standard block
     //   2 = exception (allow)
     //   3 = $important block
-    // Whitelist rules remain at 999999 (unchanged in background.js)
+    // Whitelist rules remain at 999999 in background DNR state.
     const priority = isException ? 2 : (opts.isImportant ? 3 : 1);
 
-    return {
+    return networkParseResult({
       priority,
       action: { type: isException ? 'allow' : 'block' },
       condition
-    };
+    });
   } catch {
-    return null;
+    return networkParseResult(null);
   }
 }
 
@@ -233,7 +254,7 @@ function translateScriptletRegex(pattern) {
   if (!pattern) return pattern;
   if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) return pattern;
 
-  let regexStr = pattern
+  const regexStr = pattern
     .replace(/[.+?${}()|[\]\\]/g, '\\$&') // Escape regex special chars
     .replace(/\\\*/g, '.*')               // Wildcards *
     .replace(/^\\\|\\\|/, '^(?:https?:\\/\\/)?(?:[a-z0-9-]+\\.)*') // || prefix
@@ -242,6 +263,81 @@ function translateScriptletRegex(pattern) {
     .replace(/\\\|$/, '$'); // | exact end
 
   return `/${regexStr}/`;
+}
+
+const SCRIPTLET_TRANSLATABLE_PATTERN_ARGS = new Set([
+  'no-setTimeout-if',
+  'nostif',
+  'prevent-setTimeout',
+  'no-setInterval-if',
+  'nosiif',
+  'prevent-fetch',
+  'no-fetch-if',
+  'prevent-xhr',
+  'no-xhr-if',
+  'no-eval-if'
+]);
+
+const SCRIPTLET_REGEX_ARG_INDEXES = new Map([
+  ['no-setTimeout-if', [0]],
+  ['nostif', [0]],
+  ['prevent-setTimeout', [0]],
+  ['no-setInterval-if', [0]],
+  ['nosiif', [0]],
+  ['prevent-fetch', [0]],
+  ['no-fetch-if', [0]],
+  ['prevent-xhr', [0]],
+  ['no-xhr-if', [0]],
+  ['remove-node-text', [1]],
+  ['rmnt', [1]],
+  ['prevent-addEventListener', [0, 1]],
+  ['aeld', [0, 1]],
+  ['no-addEventListener-if', [0, 1]],
+  ['replace-node-text', [1]],
+  ['rpnt', [1]],
+  ['prevent-requestAnimationFrame', [0]],
+  ['no-raf-if', [0]],
+  ['norafif', [0]],
+  ['abort-current-script', [1]],
+  ['acs', [1]],
+  ['abort-current-inline-script', [1]],
+  ['acis', [1]],
+  ['prevent-element-src-loading', [1]],
+  ['m3u-prune', [0, 1]],
+  ['cookie-remover', [0]],
+  ['cookie-remover.js', [0]],
+  ['remove-cookie', [0]],
+  ['prevent-window-open', [0]],
+  ['nowoif', [0]],
+  ['no-window-open-if', [0]],
+  ['no-eval-if', [0]]
+]);
+
+function isRegexLiteral(arg) {
+  return typeof arg === 'string' && arg.startsWith('/') && arg.lastIndexOf('/') > 0;
+}
+
+function isSafeRegexLiteral(arg) {
+  const lastSlash = arg.lastIndexOf('/');
+  const pattern = arg.slice(1, lastSlash);
+  const flags = arg.slice(lastSlash + 1);
+  if (!/^[dgimsuvy]*$/.test(flags)) return false;
+  try {
+    new RegExp(pattern, flags);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function hasSafeScriptletRegexArgs(scriptletName, args) {
+  const indexes = SCRIPTLET_REGEX_ARG_INDEXES.get(scriptletName);
+  if (!indexes) return true;
+  for (const index of indexes) {
+    const arg = args[index];
+    if (isRegexLiteral(arg) && !isSafeRegexLiteral(arg)) return false;
+  }
+  return true;
 }
 
 function splitScriptletArgs(inner) {
@@ -350,12 +446,12 @@ function parseScriptletRule(line) {
       }
     }
 
-    const regexOpts = new Set(['no-setTimeout-if', 'nostif', 'no-setInterval-if', 'nosiif', 'prevent-fetch', 'no-fetch-if', 'prevent-xhr', 'no-xhr-if', 'no-eval-if']);
-    if (regexOpts.has(scriptletName) && args.length > 0) {
+    if (SCRIPTLET_TRANSLATABLE_PATTERN_ARGS.has(scriptletName) && args.length > 0) {
       if (args[0].includes('||') || args[0].includes('^') || args[0].includes('*')) {
         args[0] = translateScriptletRegex(args[0]);
       }
     }
+    if (!hasSafeScriptletRegexArgs(scriptletName, args)) return null;
 
     const domains = domainPart
       ? domainPart.split(',').map(d => d.trim()).filter(Boolean)
@@ -376,9 +472,11 @@ function parseScriptletRule(line) {
 /**
  * Parses a complete filter list text into categorized rule buckets.
  * @param {string} text
+ * @param {Object} [budgetOverrides]
  * @returns {{ networkRules: Object[], cosmeticRules: Object[], scriptletRules: Object[], skipped: Object }}
  */
-export function parseList(text) {
+export function parseList(text, budgetOverrides = {}) {
+  const budget = parseBudget(budgetOverrides);
   const networkRules  = [];
   const cosmeticRules = [];
   const scriptletRules = [];
@@ -387,10 +485,29 @@ export function parseList(text) {
     extendedCss:  0,
     skipOption:   0,
     regex:        0,
-    malformed:    0
+    malformed:    0,
+    overlong:     0,
+    networkLimit: 0,
+    cosmeticLimit: 0,
+    scriptletLimit: 0
   };
 
-  for (const rawLine of text.split('\n')) {
+  let lineCount = 0;
+  let start = 0;
+
+  for (let i = 0; i <= text.length; i++) {
+    if (i < text.length && text[i] !== '\n') continue;
+
+    lineCount++;
+    assertWithinBudget(lineCount <= budget.maxLines, `Subscription list has too many lines; limit is ${budget.maxLines}`);
+
+    const rawLine = text.slice(start, i);
+    start = i + 1;
+    if (rawLine.length > budget.maxLineLength) {
+      skipped.overlong++;
+      continue;
+    }
+
     const line = rawLine.trim();
     if (!line) continue;
 
@@ -406,36 +523,53 @@ export function parseList(text) {
         break;
 
       case 'network': {
-        const rule = parseNetworkRule(line, false);
-        if (rule) networkRules.push(rule);
+        const { rule, skipReason } = parseNetworkRule(line, false);
+        if (rule) {
+          if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
+          else skipped.networkLimit++;
+        }
+        else if (skipReason && Object.prototype.hasOwnProperty.call(skipped, skipReason)) skipped[skipReason]++;
         else skipped.malformed++;
         break;
       }
 
       case 'exception': {
-        const rule = parseNetworkRule(line, true);
-        if (rule) networkRules.push(rule);
+        const { rule, skipReason } = parseNetworkRule(line, true);
+        if (rule) {
+          if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
+          else skipped.networkLimit++;
+        }
+        else if (skipReason && Object.prototype.hasOwnProperty.call(skipped, skipReason)) skipped[skipReason]++;
         else skipped.malformed++;
         break;
       }
 
       case 'cosmetic': {
         const rule = parseCosmeticRule(line, false);
-        if (rule) cosmeticRules.push(rule);
+        if (rule) {
+          if (cosmeticRules.length < budget.maxCosmeticRules) cosmeticRules.push(rule);
+          else skipped.cosmeticLimit++;
+        }
         else skipped.malformed++;
         break;
       }
 
       case 'cosmetic-exception': {
         const rule = parseCosmeticRule(line, true);
-        if (rule) cosmeticRules.push(rule);
+        if (rule) {
+          if (cosmeticRules.length < budget.maxCosmeticRules) cosmeticRules.push(rule);
+          else skipped.cosmeticLimit++;
+        }
         else skipped.malformed++;
         break;
       }
 
       case 'scriptlet': {
         const rule = parseScriptletRule(line);
-        if (rule) scriptletRules.push(rule);
+        if (rule) {
+          if (scriptletRules.length < budget.maxScriptletRules) scriptletRules.push(rule);
+          else skipped.scriptletLimit++;
+        }
         else skipped.malformed++;
         break;
       }

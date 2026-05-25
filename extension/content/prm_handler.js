@@ -41,42 +41,72 @@
 
   // ─── PRISTINE API BRIDGE ─────
   // Integrity Layer: Utilizing pre-cached native APIs from the secure bridge to bypass host-page prototype pollution.
-  const API = (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api) ? 
-              window.__CHROMA_INTERNAL__.api : 
-              {
-                querySelector: document.querySelector.bind(document),
-                createElement: document.createElement.bind(document),
-                addEventListener: window.addEventListener.bind(window),
-                setInterval: window.setInterval.bind(window),
-                clearInterval: window.clearInterval.bind(window),
-                addDocEventListener: document.addEventListener.bind(document)
-              };
+  const FALLBACK_API = {
+    querySelector: (s) => document.querySelector(s),
+    querySelectorAll: (s) => document.querySelectorAll(s),
+    createElement: (t) => document.createElement(t),
+    addEventListener: typeof window.addEventListener === 'function'
+      ? window.addEventListener.bind(window)
+      : () => {},
+    removeEventListener: typeof window.removeEventListener === 'function'
+      ? window.removeEventListener.bind(window)
+      : () => {},
+    setInterval: (fn, delay) => window.setInterval(fn, delay),
+    clearInterval: (id) => window.clearInterval(id),
+    addDocEventListener: (evt, cb, opts) => document.addEventListener(evt, cb, opts),
+    createCssStyleSheet: () => new CSSStyleSheet(),
+    getAdoptedStyleSheets: () => document.adoptedStyleSheets,
+    setAdoptedStyleSheets: (sheets) => { document.adoptedStyleSheets = sheets; }
+  };
+
+  const getBridgeApi = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api;
+  const getBridgeConfig = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config;
+  const API = new Proxy(FALLBACK_API, {
+    get(target, key) {
+      const bridgeApi = getBridgeApi();
+      return (bridgeApi && bridgeApi[key]) || target[key];
+    }
+  });
 
   const safeQuery = (s) => API.querySelector(s);
+  const safeQueryAll = (s) => API.querySelectorAll(s);
   const safeCreate = (t) => API.createElement(t);
-  const safeSetInterval = (f, t) => API.setInterval(f, t);
-  const safeClearInterval = (i) => API.clearInterval(i);
+  const safeSetInterval = (f, t) => {
+    const api = getBridgeApi() || FALLBACK_API;
+    return { api, id: api.setInterval(f, t) };
+  };
+  const safeClearInterval = (timer) => {
+    if (!timer) return;
+    const api = timer.api || getBridgeApi() || FALLBACK_API;
+    api.clearInterval(Object.prototype.hasOwnProperty.call(timer, 'id') ? timer.id : timer);
+  };
+  const safeCreateStyleSheet = () => API.createCssStyleSheet();
+  const safeGetAdoptedStyleSheets = () => API.getAdoptedStyleSheets();
+  const safeSetAdoptedStyleSheets = (sheets) => API.setAdoptedStyleSheets(sheets);
 
   let _chromaExtInitActive = true;
   let _extInitFired = false;
   API.addDocEventListener('__EXT_INIT__', (e) => {
     _extInitFired = true;
-    if (e && e.detail && e.detail.active === false) {
+    const bridgeConfig = getBridgeConfig();
+    if (bridgeConfig) applyConfig(bridgeConfig);
+    if (bridgeConfig) {
+      _chromaExtInitActive = CONFIG.enabled !== false;
+    } else if (e && e.detail && e.detail.active === false) {
       _chromaExtInitActive = false;
       CONFIG.enabled = false;
     } else {
       CONFIG.enabled = true;
     }
-    if (e && e.detail && e.detail.acceleration !== undefined) {
+    if (!bridgeConfig && e && e.detail && e.detail.acceleration !== undefined) {
       CONFIG.acceleration = e.detail.acceleration;
     }
 
     // Late-arrival activation: If the init polling loop already timed out
     // (cold browser start where chrome.storage was slow), activate now.
     if (!pollingInterval && _chromaExtInitActive) {
-      if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-        applyConfig(window.__CHROMA_INTERNAL__.config);
-      }
+      const config = getBridgeConfig();
+      if (config) applyConfig(config);
       if (CONFIG.enabled && CONFIG.acceleration) {
         ensurePrimeSessionSheet();
         startPolling();
@@ -132,7 +162,7 @@
 
   function ensurePrimeSessionSheet() {
     if (primeSessionSheet) return;
-    primeSessionSheet = new CSSStyleSheet();
+    primeSessionSheet = safeCreateStyleSheet();
     primeSessionSheet.replaceSync(`
       .atvwebplayersdk-ad-skip-button,
       .adSkipButton,
@@ -147,17 +177,17 @@
 
   function activatePrimeSessionSheet() {
     ensurePrimeSessionSheet();
-    const sheets = document.adoptedStyleSheets;
+    const sheets = safeGetAdoptedStyleSheets();
     if (!sheets.includes(primeSessionSheet)) {
-      document.adoptedStyleSheets = [...sheets, primeSessionSheet];
+      safeSetAdoptedStyleSheets([...sheets, primeSessionSheet]);
     }
   }
 
   function deactivatePrimeSessionSheet() {
     if (!primeSessionSheet) return;
-    const sheets = document.adoptedStyleSheets;
+    const sheets = safeGetAdoptedStyleSheets();
     if (sheets.includes(primeSessionSheet)) {
-      document.adoptedStyleSheets = sheets.filter(s => s !== primeSessionSheet);
+      safeSetAdoptedStyleSheets(sheets.filter(s => s !== primeSessionSheet));
     }
   }
 
@@ -490,7 +520,7 @@
    * Finds the most likely active video element.
    */
   function findActiveVideo() {
-    const videos = Array.from(document.querySelectorAll('video'));
+    const videos = Array.from(safeQueryAll('video'));
     if (videos.length === 0) return null;
   
     // 1. Prefer videos that are actually playing or ready and are large enough
@@ -647,9 +677,8 @@
 
   function init() {
     // 1. Initial check (might be ready if handshake was fast)
-    if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-      applyConfig(window.__CHROMA_INTERNAL__.config);
-    }
+    const initialConfig = getBridgeConfig();
+    if (initialConfig) applyConfig(initialConfig);
 
     // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
 
@@ -666,14 +695,13 @@
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = safeSetInterval(() => {
-        const initDone = !!window.__CHROMA_INTERNAL__ || _extInitFired;
+        const initDone = !!getBridgeConfig() || _extInitFired;
         _pollCount++;
 
         if (initDone) {
           safeClearInterval(_pollId);
-          if (window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config) {
-            applyConfig(window.__CHROMA_INTERNAL__.config);
-          }
+          const config = getBridgeConfig();
+          if (config) applyConfig(config);
           if (!_chromaExtInitActive) return;
           if (CONFIG.enabled && CONFIG.acceleration) {
             ensurePrimeSessionSheet();
@@ -694,7 +722,7 @@
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
     if (e.detail) {
       // SECURITY: Validating update keys against a strict allowlist.
-      applyConfig(e.detail);
+      applyConfig(getBridgeConfig() || e.detail);
 
       if (DEBUG) console.log('[Chroma] Prime handler updated config:', CONFIG);
     

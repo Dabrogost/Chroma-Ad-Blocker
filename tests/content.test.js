@@ -47,6 +47,7 @@ const contentJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'c
 test('Content script generic functionality', async (t) => {
   const createSandbox = (setupDoc, options = {}) => {
     const sentMessages = [];
+    const documentListeners = {};
     const location = options.location || { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' };
     const sandbox = {
       chrome: {
@@ -81,7 +82,15 @@ test('Content script generic functionality', async (t) => {
         head: createMockElement('head'),
         body: createMockElement('body'),
         documentElement: createMockElement('html'),
-        addEventListener: () => {},
+        addEventListener: (type, fn) => {
+          if (!documentListeners[type]) documentListeners[type] = [];
+          documentListeners[type].push(fn);
+        },
+        dispatchEvent: (event) => {
+          const listeners = documentListeners[event?.type] || [];
+          listeners.forEach(fn => fn(event));
+          return true;
+        },
         getElementsByClassName: () => [],
         _adoptedStyleSheets: [],
         get adoptedStyleSheets() { return this._adoptedStyleSheets; },
@@ -302,6 +311,33 @@ test('Content script generic functionality', async (t) => {
     assert.ok(events.every(event => event.ts !== 1));
   });
 
+  await t.test('scriptlet telemetry bridge records only aggregate event type', async (st) => {
+    const sandbox = createSandbox();
+
+    sandbox.document.dispatchEvent({
+      type: '__CHROMA_SCRIPTLET_STATS__',
+      detail: {
+        type: 'error',
+        scriptlet: 'set-constant',
+        source: 'private-list-id',
+        error: 'secret error detail'
+      }
+    });
+    sandbox.flushStatsQueue();
+
+    const event = sandbox.__sentMessages
+      .filter(msg => msg.type === 'STATS_EVENT_BATCH')
+      .flatMap(msg => msg.events)
+      .find(item => item.layer === 'scriptlet');
+
+    assert.ok(event, 'expected scriptlet stats event');
+    assert.strictEqual(event.type, 'error');
+    assert.strictEqual(event.domain, 'www.youtube.com');
+    assert.strictEqual('scriptlet' in event, false);
+    assert.strictEqual('ruleSource' in event, false);
+    assert.strictEqual('error' in event, false);
+  });
+
   await t.test('disabled cosmetic mode does not record cleanup events', async (st) => {
     const adNode = createMockElement();
     adNode.nodeType = 1;
@@ -339,6 +375,39 @@ test('Content script generic functionality', async (t) => {
     assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
     const batch = sandbox.__sentMessages.find(msg => msg.type === 'STATS_EVENT_BATCH');
     assert.strictEqual(batch, undefined);
+  });
+
+  await t.test('YouTube and Twitch host checks require exact host or subdomain', async (st) => {
+    const fakeYoutube = createSandbox(null, {
+      location: { hostname: 'notyoutube.com', href: 'https://notyoutube.com/' }
+    });
+    fakeYoutube.CONFIG.enabled = true;
+    fakeYoutube.CONFIG.cosmetic = true;
+    fakeYoutube.CONFIG.suppressWarnings = true;
+    fakeYoutube.injectAllCSS();
+
+    const fakeYoutubeCss = fakeYoutube.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    assert.doesNotMatch(fakeYoutubeCss, /ytd-enforcement-dialog-view-model/);
+
+    const fakeTwitch = createSandbox(null, {
+      location: { hostname: 'not-twitch.tv', href: 'https://not-twitch.tv/' }
+    });
+    fakeTwitch.CONFIG.enabled = true;
+    fakeTwitch.CONFIG.cosmetic = true;
+    fakeTwitch.injectAllCSS();
+
+    const fakeTwitchCss = fakeTwitch.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    assert.doesNotMatch(fakeTwitchCss, /data-a-target="video-ad-label"/);
+
+    const realTwitch = createSandbox(null, {
+      location: { hostname: 'clips.twitch.tv', href: 'https://clips.twitch.tv/' }
+    });
+    realTwitch.CONFIG.enabled = true;
+    realTwitch.CONFIG.cosmetic = true;
+    realTwitch.injectAllCSS();
+
+    const realTwitchCss = realTwitch.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    assert.match(realTwitchCss, /data-a-target="video-ad-label"/);
   });
 
   await t.test('De-AMP URL transforms only supported AMP viewer URLs', () => {

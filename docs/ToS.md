@@ -41,10 +41,14 @@ THE EXTENSION IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPL
 IN NO EVENT SHALL THE DEVELOPER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF THE USE OF OR INABILITY TO USE THE EXTENSION, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## 7. Privacy
-Your use of the Extension is also governed by our [Privacy Policy]({{ '/PRIVACY_POLICY/' | relative_url }}), which explains that Chroma does not operate telemetry or analytics servers and that extension data is stored locally unless you choose features that contact external list, update-check, proxy-test, or proxy-routing endpoints.
+Your use of the Extension is also governed by our [Privacy Policy](PRIVACY_POLICY.md), which explains that Chroma does not operate telemetry or analytics servers and that extension data is stored locally unless you choose features that contact external list, update-check, proxy-test, or proxy-routing endpoints.
 
 ## 8. Changes to Terms
 We reserve the right to modify these Terms of Service at any time. Changes will be effective upon posting to the Extension's repository. Continued use of the Extension following any update constitutes acceptance of the revised Terms.
 
 ## 9. Contact
 For questions regarding these Terms, please contact the developer at dabrogost@gmail.com.
+
+---
+
+Next: [Project Philosophy](PROJECT_PHILOSOPHY.md)

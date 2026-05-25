@@ -430,7 +430,6 @@ function buildCounterPatch(event) {
     }
   } else if (layer === 'fingerprint') {
     add('fprActivations');
-    add('protectionEvents');
   }
 
   return patch;

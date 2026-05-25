@@ -4,15 +4,27 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+const domUtilsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'dom-utils.js'), 'utf8');
+const domainUtilsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'domain-utils.js'), 'utf8');
 const componentsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
 const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.js'), 'utf8');
 const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.js'), 'utf8');
-const uiScriptsCode = [componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
+const uiScriptsCode = [domUtilsJsCode, domainUtilsJsCode, componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 const uiCssCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 async function settlePopupAsyncWork(turns = 20) {
   for (let i = 0; i < turns; i++) {
@@ -21,6 +33,19 @@ async function settlePopupAsyncWork(turns = 20) {
 }
 
 // ─── POPUP.JS FUNCTIONALITY ─────
+test('domain utility uses public-suffix-aware registrable domains', () => {
+  const sandbox = { document: { getElementById: () => null } };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(domainUtilsJsCode, sandbox);
+
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('shop.example.co.uk'), 'example.co.uk');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('user.github.io'), 'user.github.io');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('cdn.user.github.io'), 'user.github.io');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('www.example.com.'), 'example.com');
+  assert.strictEqual(sandbox.ChromaDomain.getRegistrableDomain('192.168.1.10'), '192.168.1.10');
+});
+
 test('popup.js functionality', async (t) => {
   function createSandbox() {
     const elements = {};
@@ -38,6 +63,7 @@ test('popup.js functionality', async (t) => {
           textContent: '',
           listeners: {},
           dataset: {},
+          attributes: {},
           classList: {
             add: (cls) => { if (!elements[id].classList.current.includes(cls)) elements[id].classList.current += ' ' + cls; },
             remove: (cls) => { elements[id].classList.current = elements[id].classList.current.replace(cls, '').trim(); },
@@ -54,6 +80,12 @@ test('popup.js functionality', async (t) => {
           appendChild: (child) => {},
           querySelector: (sel) => getElement('temp-child-' + Math.random()),
           querySelectorAll: (sel) => [],
+          setAttribute(name, value) {
+            this.attributes[name] = String(value);
+          },
+          getAttribute(name) {
+            return this.attributes[name] || null;
+          },
           title: '',
           addEventListener(event, fn) {
             if (!this.listeners[event]) this.listeners[event] = [];
@@ -62,7 +94,10 @@ test('popup.js functionality', async (t) => {
           async dispatchEvent(event) {
             const type = typeof event === 'string' ? event : event.type;
             if (this.listeners[type]) {
-              await Promise.all(this.listeners[type].map(fn => fn({ target: this })));
+              const eventObject = typeof event === 'string'
+                ? { target: this, type, stopPropagation: () => {} }
+                : { target: this, preventDefault: () => {}, stopPropagation: () => {}, ...event };
+              await Promise.all(this.listeners[type].map(fn => fn(eventObject)));
             }
           }
         };
@@ -91,6 +126,12 @@ test('popup.js functionality', async (t) => {
           }
           if (msg.type === 'CONFIG_SET') {
             return { ok: true };
+          }
+          if (msg.type === 'CONFIG_EXPORT') {
+            return { schema: 'chroma-settings', version: 1, config: { enabled: true } };
+          }
+          if (msg.type === 'CONFIG_IMPORT') {
+            return { ok: true, imported: { configKeys: 1 } };
           }
           if (msg.type === 'STATS_RESET') {
             return { ok: true };
@@ -205,6 +246,8 @@ test('popup.js functionality', async (t) => {
       MSG: {
         CONFIG_GET: 'CONFIG_GET',
         CONFIG_SET: 'CONFIG_SET',
+        CONFIG_EXPORT: 'CONFIG_EXPORT',
+        CONFIG_IMPORT: 'CONFIG_IMPORT',
         CONFIG_UPDATE: 'CONFIG_UPDATE',
         STATS_GET: 'STATS_GET',
         STATS_EVENT_BATCH: 'STATS_EVENT_BATCH',
@@ -269,6 +312,7 @@ test('popup.js functionality', async (t) => {
     getElement('proxyDomainList');
     getElement('logToggleRow');
     getElement('logToggleBtn');
+    getElement('logFreezeBtn');
     getElement('logEntries');
 
     return { sandbox, elements, messages, chromeMock };
@@ -306,6 +350,57 @@ test('popup.js functionality', async (t) => {
     await elements['toggleAcceleration'].dispatchEvent('change');
 
     assert.ok(messages.some(m => m.type === 'CONFIG_SET' && m.config.acceleration === true));
+  });
+
+  await t.test('popup protection toggles stay visually responsive while saves are pending', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const pendingSet = deferred();
+    const originalSendMessage = chromeMock.runtime.sendMessage;
+    chromeMock.runtime.sendMessage = async (msg) => {
+      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
+      return originalSendMessage(msg);
+    };
+
+    elements['toggleAcceleration'].checked = true;
+    const changePromise = elements['toggleAcceleration'].dispatchEvent('change');
+    await settlePopupAsyncWork(1);
+
+    assert.strictEqual(elements['toggleAcceleration'].disabled, false);
+    assert.doesNotMatch(elements['toggleAcceleration'].classList.current, /control-pending/);
+    assert.strictEqual(elements['toggleAcceleration'].checked, true);
+
+    pendingSet.resolve({ ok: true });
+    await changePromise;
+  });
+
+  await t.test('popup master toggle updates child toggles before background save resolves', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const pendingSet = deferred();
+    const originalSendMessage = chromeMock.runtime.sendMessage;
+    chromeMock.runtime.sendMessage = async (msg) => {
+      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
+      return originalSendMessage(msg);
+    };
+
+    elements['toggleEnabled'].checked = false;
+    const changePromise = elements['toggleEnabled'].dispatchEvent('change');
+    await settlePopupAsyncWork(1);
+
+    assert.strictEqual(elements['toggleEnabled'].disabled, false);
+    assert.doesNotMatch(elements['toggleEnabled'].classList.current, /control-pending/);
+    assert.strictEqual(elements['toggleNetwork'].checked, false);
+    assert.strictEqual(elements['toggleCosmetic'].checked, false);
+
+    pendingSet.resolve({ ok: true });
+    await changePromise;
   });
 
   await t.test('reset stats button triggers scoped stats reset and reloads UI', async () => {
@@ -420,6 +515,39 @@ test('popup.js functionality', async (t) => {
 
     assert.strictEqual(chromeMock.runtime.optionsOpened, 1);
     assert.match(elements['cardNetwork'].classList.current, /stat-card--clickable/);
+    assert.strictEqual(elements['cardNetwork'].getAttribute('role'), 'button');
+    assert.strictEqual(elements['cardNetwork'].getAttribute('tabindex'), '0');
+
+    await elements['cardNetwork'].dispatchEvent({ type: 'keydown', key: 'Enter' });
+    assert.strictEqual(chromeMock.runtime.optionsOpened, 2);
+  });
+
+  await t.test('request log row supports keyboard activation semantics', async () => {
+    const { sandbox, elements } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    assert.strictEqual(elements['logToggleRow'].getAttribute('role'), 'button');
+    assert.strictEqual(elements['logToggleRow'].getAttribute('tabindex'), '0');
+    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
+
+    await elements['logToggleRow'].dispatchEvent({ type: 'keydown', key: ' ' });
+    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'true');
+    assert.match(elements['logEntries'].classList.current, /visible/);
+  });
+
+  await t.test('request log freeze toggles without collapsing the row', async () => {
+    const { sandbox, elements } = createSandbox();
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    await elements['logFreezeBtn'].dispatchEvent('click');
+
+    assert.strictEqual(elements['logFreezeBtn'].textContent, 'Frozen');
+    assert.match(elements['logFreezeBtn'].classList.current, /is-active/);
+    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
   });
 });
 
@@ -446,15 +574,36 @@ test('UI hardening copy', () => {
   assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);
   assert.match(componentsJsCode, /Protection Events/);
   assert.match(componentsJsCode, /Protection Intelligence/);
+  assert.match(componentsJsCode, /aria-label="Enable Chroma protection"/);
+  assert.match(componentsJsCode, /aria-label="\$\{label\}"/);
+  assert.match(componentsJsCode, /id="settingsIcon" class="settings-icon" type="button"/);
+  assert.match(componentsJsCode, /role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries"/);
+  assert.match(componentsJsCode, /id="logFreezeBtn"[\s\S]*Freeze/);
+  assert.match(componentsJsCode, /id="exportConfigJson"/);
+  assert.match(componentsJsCode, /id="importConfigFile"/);
+  assert.match(proxyUiJsCode, /input\.setAttribute\('aria-label', title\)/);
+  assert.match(domUtilsJsCode, /function addKeyboardActivation/);
+  assert.match(uiCssCode, /:focus-visible/);
   assert.doesNotMatch(componentsJsCode, /Ads Blocked/);
   assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
-  assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.doesNotMatch(popupHtmlCode, /health-ui\.js/);
   assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<div id="appShell"><\/div>/);
-  assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="health-ui\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
+  assert.doesNotMatch(popupHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
+  assert.doesNotMatch(settingsHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
+  assert.doesNotMatch(popupHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
+  assert.doesNotMatch(settingsHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
+  assert.doesNotMatch(popupHtmlCode, /unsafe-inline/i);
+  assert.doesNotMatch(settingsHtmlCode, /unsafe-inline/i);
+  assert.doesNotMatch(appJsCode, /\.style\./);
+  assert.match(uiCssCode, /--font-sans:\s+system-ui/);
+  assert.match(uiCssCode, /--font-mono:\s+"Cascadia Mono"/);
+  assert.doesNotMatch(uiCssCode, /Inter|Outfit|JetBrains Mono/);
   assert.doesNotMatch(popupHtmlCode, /<header>|Protection Layers|Filter Lists|Request Log/);
   assert.doesNotMatch(settingsHtmlCode, /<header>|Protection Layers|Filter Lists|Request Log|Local Zapper Rules/);
   assert.doesNotMatch(popupHtmlCode, /style="/);
@@ -463,6 +612,12 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(appJsCode, /style="/);
   assert.doesNotMatch(proxyUiJsCode, /style="/);
   assert.doesNotMatch(proxyUiJsCode, /style\.cssText/);
+  assert.doesNotMatch(appJsCode, /innerHTML/);
+  assert.match(appJsCode, /type: MSG\.CONFIG_EXPORT/);
+  assert.match(appJsCode, /type: MSG\.CONFIG_IMPORT/);
+  assert.match(appJsCode, /isFrozen = !isFrozen/);
+  assert.match(appJsCode, /getRegistrableDomain\(currentDomain\)/);
+  assert.match(domainUtilsJsCode, /github\.io/);
   assert.doesNotMatch(popupHtmlCode, /proxyUser|proxyPass|proxyHost|proxyPort/);
   assert.match(appJsCode, /function openProxySettings\(\)/);
   assert.match(appJsCode, /ui\/settings\.html#proxySection/);
@@ -480,6 +635,7 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /WebRTC Leak Protection in Auto mode to prevent WebRTC from bypassing the proxy/);
   assert.match(proxyUiJsCode, /const proxyConfigState = await notifyBackground\(\{ type: MSG\.CONFIG_GET \}\) \|\| \{\};/);
   assert.match(proxyUiJsCode, /function renderPopupProxyCard\(pc, index, proxyConfigState, \{ saveAllConfigs, applyGlobalButtonState \}\)/);
+  assert.match(proxyUiJsCode, /appendPopupSummaryCard\(card, pc, index, \{ accepted, activeDomainCount, isGlobal, isEnabled \}\)/);
   assert.match(proxyUiJsCode, /card\.dataset\.proxyId = pc\.id/);
   assert.match(proxyUiJsCode, /applyGlobalButtonState\(\);/);
   assert.doesNotMatch(proxyUiJsCode, /async function renderPopupSummary[\s\S]*chrome\.storage\.local\.get\('config'\)/);

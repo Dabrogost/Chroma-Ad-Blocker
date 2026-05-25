@@ -67,6 +67,7 @@ function loadHealthSandbox(options = {}) {
     statsV2: { version: 1, totals: { protectionEvents: 0 } },
     requestLog: [],
     appliedNetworkRuleCount: 0,
+    healthDiagnostics: {},
     ...(options.storage || {})
   };
   const webrtcStatus = options.webrtcStatus || {
@@ -203,7 +204,40 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.overall.status, 'degraded');
     assert.strictEqual(health.scriptlets.apiAvailable, false);
     assert.strictEqual(health.scriptlets.storedRuleCount, 1);
-    assert.ok(health.overall.issues.some(issue => issue.area === 'scriptlets' && issue.severity === 'warning'));
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'scriptlets' &&
+      issue.severity === 'warning' &&
+      /1 subscription scriptlet rule cannot be registered/i.test(issue.message)
+    ));
+  });
+
+  await t.test('userScripts unavailable consolidates scriptlet registration diagnostics', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptionScriptletRules: [
+          { scriptlet: 'set-constant', args: ['x', 'true'] },
+          { scriptlet: 'json-prune', args: ['adPlacements'] }
+        ],
+        healthDiagnostics: {
+          scriptletRegistration: {
+            area: 'scriptlets',
+            severity: 'warning',
+            message: 'Subscription scriptlets could not be registered because the UserScripts API is unavailable.',
+            action: 'Open Chrome extension details and enable Allow User Scripts.',
+            error: 'UserScripts API unavailable',
+            ts: 1234
+          }
+        }
+      },
+      userScripts: undefined
+    });
+
+    const health = await sandbox.getHealthStatus();
+    const scriptletIssues = health.overall.issues.filter(issue => issue.area === 'scriptlets');
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(scriptletIssues.length, 1);
+    assert.match(scriptletIssues[0].message, /2 subscription scriptlet rules cannot be registered/i);
   });
 
   await t.test('userScripts unavailable is visible without degrading when no scriptlet rules are stored', async () => {
@@ -468,6 +502,62 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.requestLog.available, false);
     assert.match(health.requestLog.note, /blocking can still work/i);
     assert.ok(health.overall.issues.some(issue => issue.area === 'requestLog' && issue.severity === 'info'));
+  });
+
+  await t.test('persisted background diagnostics are surfaced without raw hosts', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        healthDiagnostics: {
+          proxyPacSync: {
+            area: 'proxy',
+            severity: 'warning',
+            message: 'Proxy PAC settings could not be applied.',
+            action: 'Check proxy settings.',
+            error: 'Failed to proxy proxy.example.com via https://proxy.example.com/pac',
+            ts: 1234
+          }
+        }
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+    const serialized = JSON.stringify(plain(health));
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.diagnostics.length, 1);
+    assert.strictEqual(health.diagnostics[0].area, 'proxy');
+    assert.match(health.diagnostics[0].error, /\[host\]|\[url\]/);
+    assert.strictEqual(serialized.includes('proxy.example.com'), false);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'proxy' &&
+      /PAC settings/i.test(issue.message)
+    ));
+  });
+
+  await t.test('persisted error diagnostics move health to error', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        healthDiagnostics: {
+          dnrDynamicRules: {
+            area: 'dnr',
+            severity: 'error',
+            message: 'Dynamic DNR rules could not be synchronized.',
+            action: 'Reload the extension.',
+            error: 'updateDynamicRules failed',
+            ts: 1234
+          }
+        }
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'error');
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'dnr' &&
+      issue.severity === 'error' &&
+      /Dynamic DNR/i.test(issue.message)
+    ));
   });
 
   await t.test('De-AMP status is reported as an opt-in master protection', async () => {

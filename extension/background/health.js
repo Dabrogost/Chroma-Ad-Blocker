@@ -56,6 +56,7 @@ function countByRange(rules, start, end = Number.MAX_SAFE_INTEGER) {
 function sanitizeText(value, maxLength = 160) {
   return String(value ?? '')
     .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/gi, '[host]')
     .replace(/[^\S\r\n]+/g, ' ')
     .trim()
     .slice(0, maxLength);
@@ -144,6 +145,24 @@ function makeIssue(severity, area, message, action = null) {
   return { severity, area, message, action };
 }
 
+function normalizeHealthDiagnostics(raw) {
+  const entries = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? Object.entries(raw)
+    : [];
+  return entries
+    .map(([id, entry]) => ({
+      id: sanitizeText(id, 80),
+      area: sanitizeText(entry?.area || 'system', 40) || 'system',
+      severity: ['info', 'warning', 'error'].includes(entry?.severity) ? entry.severity : 'warning',
+      message: sanitizeText(entry?.message || 'Background health diagnostic recorded.'),
+      action: entry?.action ? sanitizeText(entry.action, 220) : null,
+      error: entry?.error ? sanitizeText(entry.error) : null,
+      ts: Number.isSafeInteger(entry?.ts) ? entry.ts : null
+    }))
+    .filter(entry => entry.message)
+    .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+}
+
 function getExpectedStaticRulesets(manifest) {
   return asArray(manifest?.declarative_net_request?.rule_resources)
     .map(resource => resource?.id)
@@ -220,6 +239,12 @@ function shouldRetryScriptletRegistration(scriptlets, storedRuleCount) {
   );
 }
 
+function scriptletUnavailableMessage(storedRuleCount) {
+  const count = Number(storedRuleCount) || 0;
+  const label = count === 1 ? 'rule' : 'rules';
+  return `Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details; ${count.toLocaleString()} subscription scriptlet ${label} cannot be registered until then.`;
+}
+
 async function getFprStatus(fprEnabled) {
   const status = {
     enabled: fprEnabled,
@@ -269,9 +294,11 @@ function computeOverall({
   globalProxyConfigured,
   fpr,
   browserPrivacy,
-  geolocation
+  geolocation,
+  diagnostics
 }) {
   const issues = [];
+  const userScriptsUnavailableWithRules = !scriptlets.apiAvailable && storedScriptletRuleCount > 0;
 
   if (!masterEnabled) {
     issues.push(makeIssue('info', 'master', 'Chroma protection is disabled.', 'Turn on the main protection switch to re-enable layers.'));
@@ -285,7 +312,7 @@ function computeOverall({
     issues.push(makeIssue(
       'info',
       'requestLog',
-      'DNR match logging is unavailable in this install context; blocking can still work.',
+      'DNR match logging is unavailable in this browser session; blocking can still work.',
       null
     ));
   }
@@ -304,11 +331,11 @@ function computeOverall({
     ));
   }
 
-  if (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) {
+  if (userScriptsUnavailableWithRules) {
     issues.push(makeIssue(
       'warning',
       'scriptlets',
-      'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
+      scriptletUnavailableMessage(storedScriptletRuleCount),
       USER_SCRIPTS_ACTION
     ));
   } else if (shouldRetryScriptletRegistration(scriptlets, storedScriptletRuleCount)) {
@@ -404,15 +431,26 @@ function computeOverall({
     ));
   }
 
+  for (const diagnostic of diagnostics) {
+    if (userScriptsUnavailableWithRules && diagnostic.area === 'scriptlets') continue;
+    issues.push(makeIssue(
+      diagnostic.severity,
+      diagnostic.area,
+      diagnostic.message,
+      diagnostic.action
+    ));
+  }
+
   if (!masterEnabled || !networkBlocking) {
     return { status: 'disabled', issues };
   }
-  if (!dnrAvailable || dnrError || !staticRulesetsOk) {
+  if (!dnrAvailable || dnrError || !staticRulesetsOk || diagnostics.some(diagnostic => diagnostic.severity === 'error')) {
     return { status: 'error', issues };
   }
   if (
     (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) ||
     subscriptionErrors.length > 0 ||
+    diagnostics.some(diagnostic => diagnostic.severity === 'warning') ||
     issues.some(issue => issue.severity === 'warning')
   ) {
     return { status: 'degraded', issues };
@@ -433,7 +471,8 @@ export async function getHealthStatus() {
     'fprWhitelist',
     'statsV2',
     'requestLog',
-    'appliedNetworkRuleCount'
+    'appliedNetworkRuleCount',
+    'healthDiagnostics'
   ]);
 
   const config = storage.config || {};
@@ -474,6 +513,7 @@ export async function getHealthStatus() {
     scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
   }
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
+  const diagnostics = normalizeHealthDiagnostics(storage.healthDiagnostics);
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
   await syncWebRtcLeakProtection(config, proxyConfigs);
   await syncBrowserPrivacyHardening(config);
@@ -565,9 +605,10 @@ export async function getHealthStatus() {
       entryCount: asArray(storage.requestLog).length,
       maxEntries: REQUEST_LOG_MAX_ENTRIES,
       note: requestLogAvailable
-        ? 'Debug match logging is available in this install context.'
-        : 'DNR match logging is unavailable in this install context; blocking can still work.'
+        ? 'DNR match logging is available in this browser session.'
+        : 'DNR match logging is unavailable in this browser session; blocking can still work.'
     },
+    diagnostics,
     overall: null
   };
 
@@ -590,7 +631,8 @@ export async function getHealthStatus() {
     globalProxyConfigured,
     fpr,
     browserPrivacy,
-    geolocation
+    geolocation,
+    diagnostics
   });
 
   return health;

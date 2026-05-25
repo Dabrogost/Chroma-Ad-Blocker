@@ -6,24 +6,8 @@
 'use strict';
 
 const ChromaApp = (() => {
-  const $ = id => document.getElementById(id);
-
-  function escapeHTML(str) {
-    return String(str ?? '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function appendElement(parent, tagName, className = '', textContent = '') {
-    const element = document.createElement(tagName);
-    if (className) element.className = className;
-    if (textContent !== '') element.textContent = textContent;
-    parent.appendChild(element);
-    return element;
-  }
+  const { $, escapeHTML, appendElement, clearElement, setText, addKeyboardActivation } = globalThis.ChromaDom;
+  const { getRegistrableDomain } = globalThis.ChromaDomain;
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
@@ -39,8 +23,6 @@ const ChromaApp = (() => {
     'fprWhitelist',
     'statsV2'
   ];
-  const HEALTH_STATUS_CLASSES = new Set(['healthy', 'degraded', 'disabled', 'error']);
-  const HEALTH_ISSUE_CLASSES = new Set(['info', 'warning', 'error']);
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
     ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
@@ -56,7 +38,6 @@ const ChromaApp = (() => {
     ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
     ['toggleGeolocationProtection', 'geolocationProtection', false],
   ];
-  let healthLoadSerial = 0;
 
   function isSettingsPage() {
     const path = globalThis.location?.pathname || '';
@@ -131,143 +112,6 @@ const ChromaApp = (() => {
     return label.charAt(0).toUpperCase() + label.slice(1);
   }
 
-  function normalizeHealthStatus(value) {
-    const status = String(value || '').toLowerCase();
-    return HEALTH_STATUS_CLASSES.has(status) ? status : 'error';
-  }
-
-  function normalizeHealthIssueSeverity(value) {
-    const severity = String(value || '').toLowerCase();
-    return HEALTH_ISSUE_CLASSES.has(severity) ? severity : 'info';
-  }
-
-  function addHealthMetric(parent, label, value, state = '') {
-    const row = appendElement(parent, 'div', 'health-metric');
-    appendElement(row, 'span', 'health-metric__label', label);
-    appendElement(row, 'span', state ? `health-metric__value health-metric__value--${state}` : 'health-metric__value', value);
-    return row;
-  }
-
-  function addHealthSection(parent, title, metrics) {
-    const section = appendElement(parent, 'div', 'health-section');
-    appendElement(section, 'div', 'health-section__title', title);
-    for (const metric of metrics) {
-      addHealthMetric(section, metric[0], metric[1], metric[2] || '');
-    }
-    return section;
-  }
-
-  function getWebRtcHealthMetric(health) {
-    const webrtc = health.webrtc || {};
-    const globalProxyActive = health.proxy?.globalProxyEnabled && health.proxy?.globalProxyConfigured;
-    const mode = String(webrtc.mode || 'auto');
-    const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
-    if (!webrtc.available) {
-      return ['WebRTC leak protection', `${modeLabel} (Unavailable)`, globalProxyActive ? 'warning' : 'disabled'];
-    }
-    if (webrtc.levelOfControl && !webrtc.controllable) {
-      return ['WebRTC leak protection', `${modeLabel} (Controlled elsewhere)`, webrtc.recommended ? 'warning' : 'disabled'];
-    }
-    if (webrtc.protected) {
-      return ['WebRTC leak protection', mode === 'strict' ? 'Strict' : `${modeLabel} (Strict)`, 'ok'];
-    }
-    if (webrtc.partial) {
-      return ['WebRTC leak protection', mode === 'balanced' ? 'Balanced' : `${modeLabel} (Partial)`, globalProxyActive ? 'warning' : 'ok'];
-    }
-    return ['WebRTC leak protection', mode === 'off' ? 'Off' : `${modeLabel} (Off)`, globalProxyActive ? 'warning' : 'disabled'];
-  }
-
-  function getBrowserPrivacySetting(health, key) {
-    const settings = Array.isArray(health.browserPrivacy?.settings)
-      ? health.browserPrivacy.settings
-      : [];
-    return settings.find(setting => setting?.key === key) || null;
-  }
-
-  function getBrowserPrivacySettingLabel(health, key) {
-    const setting = getBrowserPrivacySetting(health, key);
-    if (!health.browserPrivacy?.enabled) return 'Disabled';
-    if (!setting?.available) return 'Unavailable';
-    if (setting.levelOfControl && !setting.controllable && !setting.hardened) return 'Controlled elsewhere';
-    return setting.hardened ? 'Hardened' : 'Not hardened';
-  }
-
-  function getBrowserPrivacySettingStatus(health, key) {
-    const setting = getBrowserPrivacySetting(health, key);
-    if (!health.browserPrivacy?.enabled) return 'disabled';
-    if (!setting?.available) return 'warning';
-    return setting.hardened ? 'ok' : 'warning';
-  }
-
-  function getPrivacySandboxSettings(health) {
-    return ['adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled']
-      .map(key => getBrowserPrivacySetting(health, key))
-      .filter(Boolean);
-  }
-
-  function getPrivacySandboxLabel(health) {
-    if (!health.browserPrivacy?.enabled) return 'Disabled';
-    const settings = getPrivacySandboxSettings(health);
-    if (settings.length === 0) return 'Unavailable';
-    const hardened = settings.filter(setting => setting.hardened).length;
-    return hardened === settings.length ? 'Hardened' : `${formatCount(hardened)} / ${formatCount(settings.length)} hardened`;
-  }
-
-  function getPrivacySandboxStatus(health) {
-    if (!health.browserPrivacy?.enabled) return 'disabled';
-    const settings = getPrivacySandboxSettings(health);
-    if (settings.length === 0) return 'warning';
-    return settings.every(setting => setting.hardened) ? 'ok' : 'warning';
-  }
-
-  function getGeolocationProtectionLabel(health) {
-    const geo = health.geolocation || {};
-    if (!geo.enabled) return 'Disabled';
-    if (!geo.available) return 'Unavailable';
-    return geo.active ? 'Blocked' : 'Not blocked';
-  }
-
-  function getGeolocationProtectionStatus(health) {
-    const geo = health.geolocation || {};
-    if (!geo.enabled) return 'disabled';
-    if (!geo.available) return 'warning';
-    return geo.active ? 'ok' : 'warning';
-  }
-
-  function getFprProtectedSurfaceLabel(health) {
-    const surfaces = Array.isArray(health.fpr?.protectedSurfaces)
-      ? health.fpr.protectedSurfaces
-      : [];
-    return surfaces.length ? surfaces.join(', ') : 'Unknown';
-  }
-
-  function getRegisteredScriptletLabel(health) {
-    const scriptlets = health.scriptlets || {};
-    if (scriptlets.apiAvailable === false) return 'Unavailable';
-    return scriptlets.registeredUserScriptCount === null
-      ? 'Unknown'
-      : formatCount(scriptlets.registeredUserScriptCount);
-  }
-
-  function getRegisteredScriptletStatus(health) {
-    const scriptlets = health.scriptlets || {};
-    if (scriptlets.apiAvailable === false) {
-      return scriptlets.storedRuleCount > 0 ? 'warning' : 'disabled';
-    }
-    if (scriptlets.storedRuleCount > 0 && scriptlets.registeredUserScriptCount === 0) return 'warning';
-    return '';
-  }
-
-  function getTrackingUrlCleanupLabel(health, networkBlockingActive) {
-    if (!health.master?.trackingUrlCleanup || !networkBlockingActive) return 'Disabled';
-    return health.dnr?.trackingUrlCleanupActive ? 'Active' : 'Not registered';
-  }
-
-  function getTrackingUrlCleanupStatus(health, networkBlockingActive) {
-    if (!health.master?.trackingUrlCleanup || !networkBlockingActive) return 'disabled';
-    return health.dnr?.trackingUrlCleanupActive ? 'ok' : 'warning';
-  }
-
   function getStatsTotals(stats) {
     return stats?.totals || {};
   }
@@ -278,11 +122,6 @@ const ChromaApp = (() => {
 
   function getProxyActivityTotal(totals) {
     return (Number(totals?.proxyTests) || 0) + (Number(totals?.proxyAuthChallenges) || 0);
-  }
-
-  function setText(id, value) {
-    const el = $(id);
-    if (el) el.textContent = value;
   }
 
   function setSectionLoading(id) {
@@ -302,9 +141,15 @@ const ChromaApp = (() => {
   function setSectionError(id, message) {
     const el = $(id);
     if (!el) return;
-    el.innerHTML = '';
+    clearElement(el);
     appendElement(el, 'div', 'hydration-error', message);
     setSectionReady(id);
+  }
+
+  function appendLoadingRow(parent, text) {
+    const row = appendElement(parent, 'div', 'toggle-row loading-row');
+    appendElement(row, 'span', 'loading-text', text);
+    return row;
   }
 
   function setStatsControlsPending(pending) {
@@ -331,12 +176,14 @@ const ChromaApp = (() => {
     });
   }
 
-  function setControlPending(id, pending) {
+  function setControlPending(id, pending, options = {}) {
     const el = $(id);
     if (!el) return;
-    el.disabled = pending;
-    el.classList.toggle('control-pending', pending);
-    el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending);
+    const disable = options.disable ?? true;
+    const visual = options.visual ?? true;
+    el.disabled = pending && disable;
+    el.classList.toggle('control-pending', pending && visual);
+    el.closest?.('.toggle-row')?.classList.toggle('control-pending', pending && visual);
   }
 
   async function safeHydrateSection(name, fn) {
@@ -344,6 +191,33 @@ const ChromaApp = (() => {
       return await fn();
     } catch (error) {
       console.error(`Chroma ${name} hydration failed:`, error);
+      return null;
+    }
+  }
+
+  const healthPanel = globalThis.ChromaHealthUI?.createController({
+    $,
+    appendElement,
+    formatCount,
+    formatStatusLabel,
+    setSectionLoading,
+    setSectionReady,
+    notifyBackground,
+    MSG,
+    isSettingsPage
+  }) || { loadHealthPanel: async () => {} };
+
+  function loadHealthPanel() {
+    return healthPanel.loadHealthPanel();
+  }
+
+  async function sendMutation(message) {
+    try {
+      const result = await notifyBackground(message);
+      if (!result || result.ok === false) return null;
+      return result;
+    } catch (error) {
+      console.error('Chroma mutation failed:', error);
       return null;
     }
   }
@@ -468,7 +342,7 @@ const ChromaApp = (() => {
     if (!topCards) return;
     const emptyText = unavailable ? 'No stats available.' : null;
 
-    topCards.innerHTML = '';
+    clearElement(topCards);
     addStatsMiniCard(topCards, 'Total Protection Events', formatCompactCount(totals.protectionEvents));
     addStatsMiniCard(topCards, 'Network Blocks', formatCompactCount(totals.networkBlocks));
     addStatsMiniCard(topCards, 'Ad Cleanups', formatCompactCount(getCleanupTotal(totals)));
@@ -479,7 +353,7 @@ const ChromaApp = (() => {
     addStatsMiniCard(topCards, 'Time Saved (est.)', formatDuration(stats?.timeSavedSeconds));
 
     if (rangeSummary) {
-      rangeSummary.innerHTML = '';
+      clearElement(rangeSummary);
       addStatsMiniCard(rangeSummary, 'Today', formatCompactCount(stats?.ranges?.today?.protectionEvents));
       addStatsMiniCard(rangeSummary, '7 Days', formatCompactCount(stats?.ranges?.last7Days?.protectionEvents));
       addStatsMiniCard(rangeSummary, '30 Days', formatCompactCount(stats?.ranges?.last30Days?.protectionEvents));
@@ -487,7 +361,7 @@ const ChromaApp = (() => {
     }
 
     if (sitesList) {
-      sitesList.innerHTML = '';
+      clearElement(sitesList);
       const sites = Object.values(stats?.bySite || {})
         .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
         .slice(0, 10);
@@ -500,7 +374,7 @@ const ChromaApp = (() => {
     }
 
     if (rulesList) {
-      rulesList.innerHTML = '';
+      clearElement(rulesList);
       const rules = Object.values(stats?.byRule || {})
         .sort((a, b) => getStatsBucketTotal(b) - getStatsBucketTotal(a))
         .slice(0, 10);
@@ -514,7 +388,7 @@ const ChromaApp = (() => {
     }
 
     if (timelineList) {
-      timelineList.innerHTML = '';
+      clearElement(timelineList);
       const days = Object.values(stats?.byDay || {})
         .sort((a, b) => String(a.day).localeCompare(String(b.day)))
         .slice(-14);
@@ -524,12 +398,13 @@ const ChromaApp = (() => {
         const row = addStatsRow(timelineList, day.day, '', formatCompactCount(day.protectionEvents));
         const bar = appendElement(row.firstChild, 'div', 'stats-bar');
         const fill = appendElement(bar, 'div', 'stats-bar__fill');
-        fill.style.setProperty('--bar-width', `${Math.max(2, ((day.protectionEvents || 0) / max) * 100)}%`);
+        const fillLevel = Math.max(1, Math.min(20, Math.ceil(((day.protectionEvents || 0) / max) * 20)));
+        fill.classList.add(`stats-bar__fill--${fillLevel}`);
       }
     }
 
     if (eventsList) {
-      eventsList.innerHTML = '';
+      clearElement(eventsList);
       const events = Array.isArray(stats?.recentEvents) ? stats.recentEvents.slice(0, 12) : [];
       if (events.length === 0) renderEmptyStatsList(eventsList, emptyText || 'No recent events yet.');
       for (const event of events) {
@@ -572,141 +447,6 @@ const ChromaApp = (() => {
     renderStatsPanel(available ? stats : getEmptyStats(), { unavailable: !available });
     setStatsControlsPending(!available);
     return stats;
-  }
-
-  function renderHealthIssues(parent, issues) {
-    const section = appendElement(parent, 'div', 'health-section health-section--wide');
-    appendElement(section, 'div', 'health-section__title', 'Issues');
-    const list = appendElement(section, 'div', 'health-issues');
-    if (!Array.isArray(issues) || issues.length === 0) {
-      appendElement(list, 'div', 'health-issue health-issue--healthy', 'No issues detected.');
-      return;
-    }
-
-    for (const issue of issues) {
-      const severity = normalizeHealthIssueSeverity(issue.severity);
-      const item = appendElement(list, 'div', `health-issue health-issue--${severity}`);
-      appendElement(item, 'div', 'health-issue__message', issue.message || 'Diagnostic issue');
-      if (issue.action) appendElement(item, 'div', 'health-issue__action', issue.action);
-    }
-  }
-
-  async function loadHealthPanel() {
-    if (!isSettingsPage()) return;
-    const panel = $('healthPanel');
-    const body = $('healthPanelBody');
-    const overallLabel = $('healthOverallLabel');
-    const versionText = $('healthVersionText');
-    const refreshBtn = $('refreshHealthBtn');
-    if (!panel || !body) return;
-
-    const loadId = ++healthLoadSerial;
-    setSectionLoading('healthPanelBody');
-    if (refreshBtn) {
-      refreshBtn.disabled = true;
-      refreshBtn.textContent = 'Refreshing...';
-    }
-
-    let health = null;
-    try {
-      health = await notifyBackground({ type: MSG.HEALTH_GET });
-    } catch (error) {
-      console.error('Chroma health failed to load:', error);
-    }
-    if (loadId !== healthLoadSerial) return;
-    body.innerHTML = '';
-
-    if (!health) {
-      if (overallLabel) {
-        overallLabel.className = 'health-status health-status--error';
-        overallLabel.textContent = 'Unavailable';
-      }
-      if (versionText) versionText.textContent = 'Health endpoint did not respond.';
-      appendElement(body, 'div', 'health-empty', 'Could not load health diagnostics.');
-      setSectionReady('healthPanelBody');
-      if (refreshBtn) {
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = 'Refresh Health';
-      }
-      return;
-    }
-
-    const overall = normalizeHealthStatus(health.overall?.status);
-    if (overallLabel) {
-      overallLabel.className = `health-status health-status--${overall}`;
-      overallLabel.textContent = formatStatusLabel(overall);
-    }
-    if (versionText) {
-      const version = health.manifest?.version ? `v${health.manifest.version}` : 'Version unknown';
-      const chromeMin = health.manifest?.minimumChromeVersion ? `Chrome ${health.manifest.minimumChromeVersion}+` : 'Chrome version unknown';
-      versionText.textContent = `${version} \u00b7 ${chromeMin}`;
-    }
-    const networkBlockingActive = health.master?.networkBlocking && health.master?.enabled;
-    const deAmpLinksActive = health.master?.deAmpLinks && health.master?.enabled;
-
-    addHealthSection(body, 'Core', [
-      ['Network blocking', networkBlockingActive ? 'Active' : 'Disabled', networkBlockingActive ? 'ok' : 'disabled'],
-      ['Tracking URL cleanup', getTrackingUrlCleanupLabel(health, networkBlockingActive), getTrackingUrlCleanupStatus(health, networkBlockingActive)],
-      ['De-AMP links', deAmpLinksActive ? 'Active' : 'Disabled', deAmpLinksActive ? 'ok' : 'disabled'],
-      ['Static rulesets', `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`, health.dnr?.staticRulesetsOk ? 'ok' : (health.master?.networkBlocking ? 'error' : 'disabled')],
-      ['Dynamic rules', `${formatCount(health.dnr?.appliedNetworkRuleCount)} active`, ''],
-      ['Whitelist rules', formatCount(health.dnr?.whitelistRuleCount), '']
-    ]);
-
-    addHealthSection(body, 'Subscriptions', [
-      ['Enabled lists', `${formatCount(health.subscriptions?.enabled)} / ${formatCount(health.subscriptions?.total)}`, health.subscriptions?.withErrors ? 'warning' : 'ok'],
-      ['Applied network rules', formatCount(health.subscriptions?.appliedNetwork), ''],
-      ['Cosmetic rules', formatCount(health.subscriptions?.cosmetic), ''],
-      ['Scriptlet rules', formatCount(health.subscriptions?.scriptlet), ''],
-      ['Errors', health.subscriptions?.withErrors ? formatCount(health.subscriptions.withErrors) : 'None', health.subscriptions?.withErrors ? 'warning' : 'ok']
-    ]);
-
-    addHealthSection(body, 'Scriptlets', [
-      ['UserScripts API', health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable', health.scriptlets?.apiAvailable ? 'ok' : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')],
-      ['Registered scripts', getRegisteredScriptletLabel(health), getRegisteredScriptletStatus(health)],
-      ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), '']
-    ]);
-
-    addHealthSection(body, 'Fingerprint', [
-      ['Fingerprint Randomization', health.fpr?.enabled ? (health.fpr?.active ? 'Active' : 'Not registered') : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
-      ['Protected surfaces', health.fpr?.enabled ? getFprProtectedSurfaceLabel(health) : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
-      ['FPR whitelist', `${formatCount(health.whitelist?.fprDomainCount)} domain(s)`, '']
-    ]);
-
-    addHealthSection(body, 'Cosmetic & Local', [
-      ['Subscription cosmetic rules', formatCount(health.cosmetic?.subscriptionCosmeticRuleCount), ''],
-      ['Local zapper rules', `${formatCount(health.cosmetic?.enabledLocalZapperRuleCount)} / ${formatCount(health.cosmetic?.localZapperRuleCount)}`, '']
-    ]);
-
-    addHealthSection(body, 'Proxy', [
-      ['Configured proxies', formatCount(health.proxy?.configuredCount), ''],
-      ['Accepted proxies', formatCount(health.proxy?.acceptedCount), ''],
-      ['Routed domains', formatCount(health.proxy?.routedDomainCount), ''],
-      ['Global proxy', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'Enabled' : 'Misconfigured') : 'Disabled', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'ok' : 'warning') : 'disabled'],
-      getWebRtcHealthMetric(health)
-    ]);
-
-    addHealthSection(body, 'Browser Privacy', [
-      ['Chrome Privacy Hardening', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'Active' : `${formatCount(health.browserPrivacy?.hardenedCount)} / ${formatCount(health.browserPrivacy?.totalCount)} active`) : 'Disabled', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'ok' : 'warning') : 'disabled'],
-      ['Geolocation Protection', getGeolocationProtectionLabel(health), getGeolocationProtectionStatus(health)],
-      ['Third-party cookies', getBrowserPrivacySettingLabel(health, 'thirdPartyCookiesAllowed'), getBrowserPrivacySettingStatus(health, 'thirdPartyCookiesAllowed')],
-      ['Do Not Track', getBrowserPrivacySettingLabel(health, 'doNotTrackEnabled'), getBrowserPrivacySettingStatus(health, 'doNotTrackEnabled')],
-      ['Privacy Sandbox ads', getPrivacySandboxLabel(health), getPrivacySandboxStatus(health)]
-    ]);
-
-    addHealthSection(body, 'Debug Logging', [
-      ['DNR match logging', health.requestLog?.available ? 'Available' : 'Unavailable', health.requestLog?.available ? 'ok' : 'disabled'],
-      ['Request log entries', `${formatCount(health.requestLog?.entryCount)} / ${formatCount(health.requestLog?.maxEntries)}`, ''],
-      ['Note', health.requestLog?.note || 'Blocking can still work when debug logging is unavailable.', '']
-    ]);
-
-    renderHealthIssues(body, health.overall?.issues || []);
-    setSectionReady('healthPanelBody');
-
-    if (refreshBtn) {
-      refreshBtn.disabled = false;
-      refreshBtn.textContent = 'Refresh Health';
-    }
   }
 
   async function initSharedUI() {
@@ -761,6 +501,30 @@ const ChromaApp = (() => {
       });
     }
 
+    function getActiveSpeed() {
+      return parseInt(document.querySelector('.speed-btn.active')?.dataset.speed ?? config.accelerationSpeed ?? 8);
+    }
+
+    function captureProtectionState() {
+      return {
+        enabled: $('toggleEnabled')?.checked ?? true,
+        speed: getActiveSpeed(),
+        toggles: Object.fromEntries(CONFIG_TOGGLES.map(([id]) => [id, $(id)?.checked ?? false]))
+      };
+    }
+
+    function restoreProtectionState(state) {
+      if (!state) return;
+      if ($('toggleEnabled')) $('toggleEnabled').checked = state.enabled;
+      updateStatusDot(state.enabled);
+      for (const [id, checked] of Object.entries(state.toggles || {})) {
+        if ($(id)) $(id).checked = checked;
+      }
+      syncSpeedUI(state.speed ?? 8, !!state.toggles?.toggleAcceleration && state.enabled);
+      const rowFpr = $('rowFprWhitelist');
+      if (rowFpr) rowFpr.classList.toggle('is-visible', !!($('toggleFingerprintRandomization')?.checked && $('toggleEnabled')?.checked));
+    }
+
     function updateStatusDot(active) {
       const dot = $('statusDot');
       if (!dot) return;
@@ -803,6 +567,10 @@ const ChromaApp = (() => {
     setControlsPending(true);
     setStatsControlsPending(true);
 
+    function setProtectionTogglePending(id, pending) {
+      setControlPending(id, pending, { disable: settingsMode, visual: settingsMode });
+    }
+
     let config = {};
     try {
       const configResponse = await notifyBackground({ type: MSG.CONFIG_GET });
@@ -834,29 +602,58 @@ const ChromaApp = (() => {
 
     document.querySelectorAll('.speed-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
+        const previous = captureProtectionState();
         const speed = parseInt(btn.dataset.speed);
         syncSpeedUI(speed, $('toggleAcceleration')?.checked);
-        await notifyBackground({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
+        document.querySelectorAll('.speed-btn').forEach(speedBtn => {
+          speedBtn.disabled = true;
+          speedBtn.classList.add('control-pending');
+        });
+        const result = await sendMutation({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
+        if (result) {
+          config.accelerationSpeed = speed;
+        } else {
+          restoreProtectionState(previous);
+        }
+        document.querySelectorAll('.speed-btn').forEach(speedBtn => {
+          speedBtn.disabled = false;
+          speedBtn.classList.remove('control-pending');
+        });
       });
     });
 
     for (const [elId, key] of CONFIG_TOGGLES) {
       $(elId)?.addEventListener('change', async (e) => {
         const isChecked = e.target.checked;
-        await notifyBackground({ type: MSG.CONFIG_SET, config: { [key]: isChecked } });
-
+        const previous = captureProtectionState();
+        previous.toggles[elId] = !isChecked;
+        setProtectionTogglePending(elId, true);
+        const nextConfig = { [key]: isChecked };
+        let nextEnabled = $('toggleEnabled')?.checked;
         if (isChecked && !$('toggleEnabled')?.checked) {
+          nextEnabled = true;
+          nextConfig.enabled = true;
           $('toggleEnabled').checked = true;
           updateStatusDot(true);
-          await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: true } });
         } else if (!isChecked) {
           const anyOn = CONFIG_TOGGLES.some(([id]) => $(id)?.checked);
           if (!anyOn && $('toggleEnabled')) {
+            nextEnabled = false;
+            nextConfig.enabled = false;
             $('toggleEnabled').checked = false;
             updateStatusDot(false);
-            await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: false } });
           }
         }
+
+        const result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig });
+        if (!result) {
+          restoreProtectionState(previous);
+          setProtectionTogglePending(elId, false);
+          return;
+        }
+        config[key] = isChecked;
+        if (typeof nextEnabled === 'boolean') config.enabled = nextEnabled;
+        setProtectionTogglePending(elId, false);
       });
     }
 
@@ -867,15 +664,31 @@ const ChromaApp = (() => {
 
     $('toggleEnabled')?.addEventListener('change', async (e) => {
       const active = e.target.checked;
+      const previous = captureProtectionState();
+      previous.enabled = !active;
       updateStatusDot(active);
-      await notifyBackground({ type: MSG.CONFIG_SET, config: { enabled: active } });
+      if (!settingsMode) syncUI(config, active);
+      setProtectionTogglePending('toggleEnabled', true);
+      const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } });
+      if (!result) {
+        restoreProtectionState(previous);
+        setProtectionTogglePending('toggleEnabled', false);
+        return;
+      }
+      config.enabled = active;
 
       if (!active) {
         syncUI({}, false);
       } else {
         const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
-        if (activeConfig) syncUI(activeConfig, true);
+        if (activeConfig) {
+          config = activeConfig;
+          syncUI(activeConfig, true);
+        } else {
+          syncUI(config, true);
+        }
       }
+      setProtectionTogglePending('toggleEnabled', false);
     });
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
@@ -948,6 +761,67 @@ const ChromaApp = (() => {
         } catch (_) {}
       });
 
+      $('exportConfigJson')?.addEventListener('click', async () => {
+        const exported = await notifyBackground({ type: MSG.CONFIG_EXPORT });
+        if (!exported) return;
+        const text = JSON.stringify(exported, null, 2);
+        try {
+          const blob = new Blob([text], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `chroma-settings-${new Date().toISOString().slice(0, 10)}.json`;
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+          setText('settingsBackupStatus', 'Settings exported.');
+        } catch (_) {
+          setText('settingsBackupStatus', 'Settings export failed.');
+        }
+      });
+
+      const importFile = $('importConfigFile');
+      $('importConfigJson')?.addEventListener('click', () => importFile?.click());
+      importFile?.addEventListener('change', async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        setText('settingsBackupStatus', 'Importing settings...');
+        let parsed;
+        try {
+          parsed = JSON.parse(await file.text());
+        } catch {
+          setText('settingsBackupStatus', 'Invalid settings JSON.');
+          return;
+        }
+
+        const result = await notifyBackground({ type: MSG.CONFIG_IMPORT, settings: parsed });
+        if (!result?.ok) {
+          setText('settingsBackupStatus', result?.error || 'Settings import failed.');
+          return;
+        }
+        setText('settingsBackupStatus', 'Settings imported. Refreshing UI...');
+        try {
+          const nextConfig = await notifyBackground({ type: MSG.CONFIG_GET });
+          if (nextConfig) {
+            config = nextConfig;
+            const enabled = config.enabled !== false;
+            const masterToggle = $('toggleEnabled');
+            if (masterToggle) masterToggle.checked = enabled;
+            updateStatusDot(enabled);
+            syncUI(config, enabled);
+            syncSpeedUI(config.accelerationSpeed ?? 8, enabled && (config.acceleration !== false));
+          }
+          await Promise.all([
+            loadSubscriptionUI(),
+            loadProxyRouterSection(),
+            loadHealthPanel()
+          ]);
+          setText('settingsBackupStatus', 'Settings imported.');
+        } catch {
+          setText('settingsBackupStatus', 'Settings imported. Reopen settings to refresh.');
+        }
+      });
+
       $('resetStats')?.addEventListener('click', async () => {
         await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
         await loadStatsUI();
@@ -974,7 +848,10 @@ const ChromaApp = (() => {
       if (cardNetwork && settingsIcon) {
         cardNetwork.classList.add('stat-card--clickable');
         cardNetwork.title = 'Open Settings';
-        cardNetwork.addEventListener('click', openSettingsPage);
+        cardNetwork.setAttribute('role', 'button');
+        cardNetwork.setAttribute('tabindex', '0');
+        cardNetwork.setAttribute('aria-label', 'Open Settings');
+        addKeyboardActivation(cardNetwork, openSettingsPage);
       }
     }
 
@@ -1009,16 +886,22 @@ const ChromaApp = (() => {
         return;
       }
 
-      const parts = currentDomain.split('.');
-      const baseDomain = parts.length > 2 ? parts.slice(-2).join('.') : currentDomain;
+      const baseDomain = getRegistrableDomain(currentDomain);
       const { whitelist = [] } = await notifyBackground({ type: MSG.WHITELIST_GET }) || { whitelist: [] };
       if ($('toggleWhitelist')) {
         $('toggleWhitelist').checked = whitelist.includes(baseDomain);
         setControlPending('toggleWhitelist', false);
         $('toggleWhitelist').addEventListener('change', async (e) => {
           const isChecked = e.target.checked;
-          await notifyBackground({ type: isChecked ? MSG.WHITELIST_ADD : MSG.WHITELIST_REMOVE, domain: baseDomain });
-          chrome.tabs.reload(activeTab.id);
+          const previous = !isChecked;
+          setControlPending('toggleWhitelist', true);
+          const result = await sendMutation({ type: isChecked ? MSG.WHITELIST_ADD : MSG.WHITELIST_REMOVE, domain: baseDomain });
+          if (result) {
+            chrome.tabs.reload(activeTab.id);
+          } else {
+            e.target.checked = previous;
+          }
+          setControlPending('toggleWhitelist', false);
         });
       }
 
@@ -1038,8 +921,16 @@ const ChromaApp = (() => {
         fprSiteToggle.checked = fprWhitelist.includes(baseDomain);
         setControlPending('toggleFprWhitelist', false);
         fprSiteToggle.addEventListener('change', async (e) => {
-          await notifyBackground({ type: e.target.checked ? MSG.FPR_WHITELIST_ADD : MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
-          chrome.tabs.reload(activeTab.id);
+          const isChecked = e.target.checked;
+          const previous = !isChecked;
+          setControlPending('toggleFprWhitelist', true);
+          const result = await sendMutation({ type: isChecked ? MSG.FPR_WHITELIST_ADD : MSG.FPR_WHITELIST_REMOVE, domain: baseDomain });
+          if (result) {
+            chrome.tabs.reload(activeTab.id);
+          } else {
+            e.target.checked = previous;
+          }
+          setControlPending('toggleFprWhitelist', false);
         });
       }
 
@@ -1089,7 +980,8 @@ const ChromaApp = (() => {
         const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
         if (subscriptions.length === 0) {
-          list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No subscriptions configured.</span></div>';
+          clearElement(list);
+          appendLoadingRow(list, 'No subscriptions configured.');
           setSectionReady('subscriptionList');
           return;
         }
@@ -1100,7 +992,7 @@ const ChromaApp = (() => {
         const totalScriptlet = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.scriptlet || 0), 0);
         summaryBar.textContent = `${totalParsed.toLocaleString()} parsed \u00b7 ${appliedNetworkRuleCount.toLocaleString()} applied \u00b7 ${totalCosmetic.toLocaleString()} cosmetic \u00b7 ${totalScriptlet.toLocaleString()} scriptlets`;
 
-        list.innerHTML = '';
+        clearElement(list);
         list.appendChild(summaryBar);
 
         for (const sub of subscriptions) {
@@ -1132,18 +1024,21 @@ const ChromaApp = (() => {
             const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn', '\u00d7');
             deleteBtn.dataset.id = sub.id;
             deleteBtn.title = 'Remove List';
+            deleteBtn.setAttribute('aria-label', `Remove ${sub.name || 'filter list'}`);
             appendElement(actions, 'span', 'inline-separator');
           }
 
           const refreshBtn = appendElement(actions, 'button', 'sub-refresh-btn reset-btn compact-action-btn', '\u21bb');
           refreshBtn.dataset.id = sub.id;
           refreshBtn.title = 'Force refresh';
+          refreshBtn.setAttribute('aria-label', `Refresh ${sub.name || 'filter list'}`);
 
           const toggleLabel = appendElement(actions, 'label', 'switch');
           const toggleInput = appendElement(toggleLabel, 'input', 'sub-toggle');
           toggleInput.type = 'checkbox';
           toggleInput.dataset.id = sub.id;
           toggleInput.checked = !!sub.enabled;
+          toggleInput.setAttribute('aria-label', `Enable ${sub.name || 'filter list'}`);
           appendElement(toggleLabel, 'span', 'slider');
           list.appendChild(row);
         }
@@ -1156,8 +1051,17 @@ const ChromaApp = (() => {
       setSectionReady('subscriptionList');
       list.querySelectorAll('.sub-toggle').forEach(input => {
         input.addEventListener('change', async (e) => {
-          await notifyBackground({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
-          await loadHealthPanel();
+          const previous = !e.target.checked;
+          e.target.disabled = true;
+          e.target.classList.add('control-pending');
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
+          if (result) {
+            await loadHealthPanel();
+          } else {
+            e.target.checked = previous;
+          }
+          e.target.disabled = false;
+          e.target.classList.remove('control-pending');
         });
       });
       list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
@@ -1165,7 +1069,7 @@ const ChromaApp = (() => {
           const id = e.target.dataset.id;
           e.target.textContent = '\u2026';
           e.target.disabled = true;
-          const result = await notifyBackground({ type: MSG.SUBSCRIPTION_REFRESH, id });
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REFRESH, id });
           e.target.textContent = result && result.ok ? '\u2713' : '\u2717';
           setTimeout(() => {
             e.target.textContent = '\u21bb';
@@ -1178,9 +1082,15 @@ const ChromaApp = (() => {
       list.querySelectorAll('.sub-delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           if (!confirm('Remove this filter list?')) return;
-          await notifyBackground({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id });
-          loadSubscriptionUI();
-          loadHealthPanel();
+          e.target.disabled = true;
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id });
+          if (result) {
+            loadSubscriptionUI();
+            loadHealthPanel();
+          } else {
+            e.target.disabled = false;
+            e.target.title = 'Remove failed';
+          }
         });
       });
     }
@@ -1198,14 +1108,14 @@ const ChromaApp = (() => {
       const showError = (message) => {
         if (!errEl) return;
         errEl.textContent = message;
-        errEl.style.display = 'block';
+        errEl.classList.remove('is-hidden');
       };
       const closeForm = () => {
-        form.style.display = 'none';
+        form.classList.add('is-hidden');
         if (nameInput) nameInput.value = '';
         if (urlInput) urlInput.value = '';
         if (errEl) {
-          errEl.style.display = 'none';
+          errEl.classList.add('is-hidden');
           errEl.textContent = '';
         }
         if (submitBtn) {
@@ -1215,8 +1125,8 @@ const ChromaApp = (() => {
       };
 
       addBtn.addEventListener('click', () => {
-        if (form.style.display === 'none' || form.style.display === '') {
-          form.style.display = 'block';
+        if (form.classList.contains('is-hidden')) {
+          form.classList.remove('is-hidden');
           urlInput?.focus?.();
         } else {
           closeForm();
@@ -1225,7 +1135,7 @@ const ChromaApp = (() => {
       cancelBtn?.addEventListener('click', closeForm);
 
       const submitAdd = async () => {
-        if (errEl) errEl.style.display = 'none';
+        if (errEl) errEl.classList.add('is-hidden');
         const url = urlInput?.value.trim() || '';
         if (!url) return showError('URL required.');
         let parsed;
@@ -1292,9 +1202,9 @@ const ChromaApp = (() => {
         return;
       }
 
-      list.innerHTML = '';
+      clearElement(list);
       if (rules.length === 0) {
-        list.innerHTML = '<div class="toggle-row loading-row"><span class="loading-text">No local zapper rules saved.</span></div>';
+        appendLoadingRow(list, 'No local zapper rules saved.');
         setSectionReady('localZapperRules');
         return;
       }
@@ -1327,11 +1237,13 @@ const ChromaApp = (() => {
           toggleInput.type = 'checkbox';
           toggleInput.dataset.id = rule.id;
           toggleInput.checked = !!rule.enabled;
+          toggleInput.setAttribute('aria-label', `${rule.enabled ? 'Disable' : 'Enable'} zapper rule for ${domain}`);
           appendElement(toggleLabel, 'span', 'slider');
 
           const deleteBtn = appendElement(actions, 'button', 'reset-btn zapper-rule-delete inline-danger-btn compact-action-btn', 'Delete');
           deleteBtn.dataset.id = rule.id;
           deleteBtn.title = 'Delete rule';
+          deleteBtn.setAttribute('aria-label', `Delete zapper rule for ${domain}`);
           list.appendChild(row);
         }
       }
@@ -1339,17 +1251,29 @@ const ChromaApp = (() => {
       setSectionReady('localZapperRules');
       list.querySelectorAll('.zapper-rule-toggle').forEach(input => {
         input.addEventListener('change', async (event) => {
-          await notifyBackground({
+          const previous = !event.target.checked;
+          event.target.disabled = true;
+          event.target.classList.add('control-pending');
+          const result = await sendMutation({
             type: MSG.ZAPPER_RULE_SET,
             id: event.target.dataset.id,
             enabled: event.target.checked
           });
+          if (!result) event.target.checked = previous;
+          event.target.disabled = false;
+          event.target.classList.remove('control-pending');
         });
       });
       list.querySelectorAll('.zapper-rule-delete').forEach(button => {
         button.addEventListener('click', async (event) => {
-          await notifyBackground({ type: MSG.ZAPPER_RULE_REMOVE, id: event.target.dataset.id });
-          await loadLocalZapperRulesUI();
+          event.target.disabled = true;
+          const result = await sendMutation({ type: MSG.ZAPPER_RULE_REMOVE, id: event.target.dataset.id });
+          if (result) {
+            await loadLocalZapperRulesUI();
+          } else {
+            event.target.disabled = false;
+            event.target.title = 'Delete failed';
+          }
         });
       });
     }
@@ -1357,8 +1281,13 @@ const ChromaApp = (() => {
     function wireRequestLog() {
       const toggleRow = $('logToggleRow');
       const toggleBtn = $('logToggleBtn');
+      const freezeBtn = $('logFreezeBtn');
       const entries = $('logEntries');
       if (!toggleRow || !entries) return;
+      toggleRow.setAttribute('role', 'button');
+      toggleRow.setAttribute('tabindex', '0');
+      toggleRow.setAttribute('aria-expanded', 'false');
+      toggleRow.setAttribute('aria-controls', 'logEntries');
 
       const RT_BADGE = {
         script: { label: 'JS', className: 'script' },
@@ -1391,11 +1320,13 @@ const ChromaApp = (() => {
       };
 
       let isOpen = false;
+      let isFrozen = false;
       async function renderLog() {
+        if (isFrozen) return;
         const log = await notifyBackground({ type: MSG.LOG_GET }) || [];
-        entries.innerHTML = '';
+        clearElement(entries);
         if (log.length === 0) {
-          entries.innerHTML = '<div class="log-empty">No entries yet.</div>';
+          appendElement(entries, 'div', 'log-empty', 'No entries yet.');
           return;
         }
 
@@ -1411,12 +1342,24 @@ const ChromaApp = (() => {
         }
       }
 
-      toggleRow.addEventListener('click', async () => {
+      async function toggleRequestLog() {
         isOpen = !isOpen;
+        toggleRow.setAttribute('aria-expanded', String(isOpen));
+        if (toggleBtn) toggleBtn.setAttribute('aria-label', isOpen ? 'Collapse request log' : 'Expand request log');
         toggleBtn?.classList.toggle('open', isOpen);
         entries.classList.toggle('visible', isOpen);
         if (isOpen) await renderLog();
+      }
+
+      freezeBtn?.addEventListener('click', async (event) => {
+        event.stopPropagation();
+        isFrozen = !isFrozen;
+        freezeBtn.classList.toggle('is-active', isFrozen);
+        freezeBtn.textContent = isFrozen ? 'Frozen' : 'Freeze';
+        freezeBtn.setAttribute('aria-label', isFrozen ? 'Unfreeze request log' : 'Freeze request log');
+        if (!isFrozen && isOpen) await renderLog();
       });
+      addKeyboardActivation(toggleRow, toggleRequestLog);
     }
   }
 

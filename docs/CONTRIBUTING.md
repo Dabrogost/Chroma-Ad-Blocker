@@ -5,7 +5,7 @@ Thanks for your interest. Here's what you need to know.
 ## Ways to Contribute
 
 - **Bug reports** - Open an issue. Include your Chrome version, extension version, and steps to reproduce.
-- **Rule updates** - If an ad domain, selector, or scriptlet has changed, useful PRs usually target `extension/rules/`, `subscriptions/hotfix.txt`, `extension/subscriptions/chroma-lib.txt`, `extension/content/content.js`, or `extension/content/recipes.js`.
+- **Rule updates** - If an ad domain, selector, or scriptlet has changed, useful PRs usually target `extension/rules/`, `extension/subscriptions/chroma-lib.txt`, `extension/content/content.js`, or `extension/content/recipes.js`.
 - **Platform handlers** - New or updated site-specific handlers, including stripping or ad-acceleration fallbacks, are highly valued but require rigorous testing to ensure compatibility and stability across target platforms.
 - **Code changes** - Open an issue first to discuss before writing anything significant. This avoids wasted effort.
 
@@ -27,3 +27,7 @@ Thanks for your interest. Here's what you need to know.
 ## Reporting Security Issues
 
 Do **not** open a public issue for security vulnerabilities. Email the developer directly at dabrogost@gmail.com.
+
+---
+
+Next: [Terms of Service](ToS.md)

@@ -12,6 +12,10 @@ const DEBUG = false;
 const handlers = new Map();
 const sensitive = new Set();
 
+function errorResponse(code, error) {
+  return { ok: false, code, error };
+}
+
 function getSenderOrigin(sender) {
   if (sender?.origin) return sender.origin;
   if (!sender?.url) return null;
@@ -41,16 +45,21 @@ export function attachListener() {
 
         if (sensitive.has(type) && !isFromExtensionPage && !isStatsBatchFromOwnContentScript) {
           if (DEBUG) console.error('[Chroma Security] Blocked unauthorized message from:', getSenderOrigin(sender), type);
+          sendResponse(errorResponse('unauthorized', 'Unauthorized message sender'));
           return;
         }
 
         const fn = handlers.get(type);
-        if (!fn) return;
+        if (!fn) {
+          sendResponse(errorResponse('unknown_message', 'Unknown message type'));
+          return;
+        }
 
         const response = await fn(msg, sender);
         sendResponse(response);
       } catch (err) {
         if (DEBUG) console.error('[Chroma] Error in message handler:', err);
+        sendResponse(errorResponse('handler_error', 'Message handler failed'));
       }
     };
 

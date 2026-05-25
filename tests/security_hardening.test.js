@@ -18,6 +18,7 @@ const backgroundJsCode = backgroundJsCodeRaw
     var setSubscriptionEnabled  = async () => ({ ok: true });
     var addSubscription         = async () => ({ ok: true });
     var removeSubscription      = async () => ({ ok: true });
+    var importCustomSubscriptions = async () => ({ ok: true, importedCount: 0 });
   `)
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
@@ -27,6 +28,9 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
   .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = async () => ({}); var syncGeolocationProtection = async () => ({});")
+  .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = async () => {}; var recordHealthDiagnostic = async () => {};")
+  .replace("import { updateDNRState, syncDynamicRules } from './dnrState.js';", "var updateDNRState = async () => {}; var syncDynamicRules = async () => {};")
+  .replace("import { initRequestLogListener } from './requestLog.js';", "var initRequestLogListener = () => {};")
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -41,6 +45,8 @@ const parserJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'su
 const MSG = {
   CONFIG_GET: 'CONFIG_GET',
   CONFIG_SET: 'CONFIG_SET',
+  CONFIG_EXPORT: 'CONFIG_EXPORT',
+  CONFIG_IMPORT: 'CONFIG_IMPORT',
   CONFIG_UPDATE: 'CONFIG_UPDATE',
   STATS_GET: 'STATS_GET',
   STATS_EVENT_BATCH: 'STATS_EVENT_BATCH',
@@ -78,8 +84,25 @@ function loadHandlers(options = {}) {
     URL,
     Number,
     encryptAuth: options.encryptAuth || (async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })),
+    validateConfig: options.validateConfig || ((config) => config || {}),
+    updateDNRState: options.updateDNRState || (async () => {}),
     syncWhitelistRules: options.syncWhitelistRules || (async () => {}),
     syncDynamicRules: options.syncDynamicRules || (async () => {}),
+    checkForUpdate: options.checkForUpdate || (async () => ({ updateAvailable: false })),
+    resetRequestLog: options.resetRequestLog || (async () => {}),
+    getMergedLog: options.getMergedLog || (async () => []),
+    runProxyTest: options.runProxyTest || (async () => ({ ok: true })),
+    getHealthStatus: options.getHealthStatus || (async () => ({ ok: true })),
+    exportStats: options.exportStats || (async () => ({})),
+    getSubscriptions: options.getSubscriptions || (async () => []),
+    importCustomSubscriptions: options.importCustomSubscriptions || (async (subscriptions) => {
+      storage.subscriptions = subscriptions;
+      return { ok: true, importedCount: subscriptions.length };
+    }),
+    getStatsSnapshot: options.getStatsSnapshot || (async () => ({})),
+    recordStatsEvents: options.recordStatsEvents || (async () => {}),
+    resetStats: options.resetStats || (async () => {}),
+    setStatsSettings: options.setStatsSettings || (async () => ({})),
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
     syncBrowserPrivacyHardening: options.syncBrowserPrivacyHardening || (async () => ({})),
     syncGeolocationProtection: options.syncGeolocationProtection || (async () => ({})),
@@ -88,6 +111,7 @@ function loadHandlers(options = {}) {
         local: {
           get: options.storageGet || (async (key) => {
             if (typeof key === 'string') return { [key]: storage[key] };
+            if (Array.isArray(key)) return Object.fromEntries(key.map(name => [name, storage[name]]));
             return {};
           }),
           set: options.storageSet || (async (values) => Object.assign(storage, values))
@@ -233,6 +257,8 @@ test('Security Hardening - handlers.js', async (t) => {
     for (const type of [
       MSG.CONFIG_GET,
       MSG.CONFIG_SET,
+      MSG.CONFIG_EXPORT,
+      MSG.CONFIG_IMPORT,
       MSG.STATS_GET,
       MSG.STATS_EVENT_BATCH,
       MSG.STATS_RESET,
@@ -240,6 +266,7 @@ test('Security Hardening - handlers.js', async (t) => {
       MSG.STATS_SETTINGS_SET,
       MSG.LOG_GET,
       MSG.HEALTH_GET,
+      MSG.WHITELIST_GET,
       MSG.PROXY_CONFIG_GET,
       MSG.PROXY_CONFIG_SET,
       MSG.PROXY_TEST,
@@ -247,12 +274,14 @@ test('Security Hardening - handlers.js', async (t) => {
       MSG.ZAPPER_RULES_GET,
       MSG.ZAPPER_RULE_REMOVE,
       MSG.ZAPPER_RULE_SET,
+      MSG.SUBSCRIPTION_GET,
       MSG.SUBSCRIPTION_SET,
       MSG.SUBSCRIPTION_REFRESH,
       MSG.SUBSCRIPTION_ADD,
       MSG.SUBSCRIPTION_REMOVE,
       MSG.WHITELIST_ADD,
       MSG.WHITELIST_REMOVE,
+      MSG.FPR_WHITELIST_GET,
       MSG.FPR_WHITELIST_ADD,
       MSG.FPR_WHITELIST_REMOVE
     ]) {
@@ -480,6 +509,87 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
+  await t.test('settings export omits proxy credentials and import clears credential blobs', async () => {
+    const storage = {
+      config: { enabled: true, acceleration: true },
+      whitelist: ['HTTPS://Example.COM/path', 'bad..example.com'],
+      fprWhitelist: ['*.Login.Example.COM'],
+      proxyConfigs: [{
+        id: 3,
+        name: 'Secure',
+        type: 'PROXY',
+        host: 'proxy.example.com',
+        port: 8080,
+        accepted: true,
+        enabled: true,
+        domains: [{ host: 'youtube.com', enabled: true }],
+        authIv: 'iv-secret',
+        authCipher: 'cipher-secret'
+      }]
+    };
+    const handlers = {};
+    const dnrUpdates = [];
+    const sandbox = loadHandlers({
+      storage,
+      updateDNRState: async (enabled) => { dnrUpdates.push(enabled); },
+      getSubscriptions: async () => [{
+        id: 'custom_news',
+        name: 'News',
+        url: 'https://lists.example.com/news.txt',
+        enabled: true,
+        isCustom: true,
+        intervalHours: 24
+      }]
+    });
+    sandbox.registerAll({
+      markSensitive: () => {},
+      registerHandler: (type, fn) => { handlers[type] = fn; }
+    });
+
+    const exported = await handlers.CONFIG_EXPORT();
+    assert.strictEqual(exported.schema, 'chroma-settings');
+    assert.strictEqual(exported.proxyConfigs[0].authIv, undefined);
+    assert.strictEqual(exported.proxyConfigs[0].authCipher, undefined);
+    assert.deepStrictEqual(plain(exported.whitelist), ['example.com']);
+    assert.deepStrictEqual(plain(exported.fprWhitelist), ['login.example.com']);
+    assert.strictEqual(exported.subscriptions[0].id, 'custom_news');
+
+    const imported = await handlers.CONFIG_IMPORT({
+      settings: {
+        schema: 'chroma-settings',
+        config: { enabled: false, accelerationSpeed: 12, unknown: true },
+        whitelist: ['example.org'],
+        fprWhitelist: ['login.example.org'],
+        proxyConfigs: [{
+          id: 4,
+          name: 'Imported',
+          type: 'PROXY',
+          host: 'imported.example.com',
+          port: 8081,
+          accepted: true,
+          enabled: true,
+          domains: [{ host: 'twitch.tv', enabled: true }],
+          authIv: 'must-drop',
+          authCipher: 'must-drop'
+        }],
+        subscriptions: [{
+          id: 'custom_import',
+          name: 'Import',
+          url: 'https://lists.example.com/import.txt',
+          enabled: false,
+          isCustom: true
+        }]
+      }
+    });
+
+    assert.strictEqual(imported.ok, true);
+    assert.strictEqual(storage.proxyConfigs[0].authIv, undefined);
+    assert.strictEqual(storage.proxyConfigs[0].authCipher, undefined);
+    assert.deepStrictEqual(plain(storage.whitelist), ['example.org']);
+    assert.strictEqual(storage.subscriptions.some(sub => sub.id === 'custom_import'), true);
+    assert.deepStrictEqual(dnrUpdates, [false]);
+  });
+
   await t.test('proxy credential preserve keeps stored byte-array auth', async () => {
     const existing = [{
       id: 15,
@@ -688,6 +798,24 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.strictEqual(parsed.networkRules.length, 1);
     assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||img.example^');
     assert.deepStrictEqual(plain(parsed.networkRules[0].condition.resourceTypes), ['image']);
+    assert.strictEqual(parsed.skipped.skipOption, 1);
+    assert.strictEqual(parsed.skipped.malformed, 0);
+  });
+
+  await t.test('counts unsupported network skip reasons precisely', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '/adserver\\d+/$script',
+      '||redirect.example^$redirect=noopjs',
+      '@@/allow-regex/$image',
+      '||ads.example^'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
+    assert.strictEqual(parsed.skipped.regex, 2);
+    assert.strictEqual(parsed.skipped.skipOption, 1);
+    assert.strictEqual(parsed.skipped.malformed, 0);
   });
 
   await t.test('keeps commas inside quoted and regex-like scriptlet arguments', () => {
@@ -704,5 +832,73 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.deepStrictEqual(plain(parsed.scriptletRules[1].args), ['/adserver,tracking/']);
     assert.deepStrictEqual(plain(parsed.scriptletRules[2].args), ['playerResponse.adPlacements playerAds']);
     assert.deepStrictEqual(plain(parsed.scriptletRules[3].args), ['script', '/foo,bar/g', '']);
+  });
+
+  await t.test('drops scriptlet rules with malformed regex arguments', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      'example.com##+js(m3u-prune, /ad[segment/, /playlist\\.m3u8/)',
+      'example.com##+js(m3u-prune, ad-segment, /playlist\\.m3u8/zz)',
+      'example.com##+js(replace-node-text, script, "/foo[/", "")',
+      'example.com##+js(no-fetch-if, /adserver,tracking/)',
+      'example.com##+js(m3u-prune, ad-segment, /playlist\\.m3u8/)'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.scriptletRules.length, 2);
+    assert.strictEqual(parsed.skipped.malformed, 3);
+    assert.deepStrictEqual(plain(parsed.scriptletRules.map(rule => rule.scriptlet)), ['no-fetch-if', 'm3u-prune']);
+  });
+
+  await t.test('skips absurdly long filter lines without rejecting the whole list', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      `||${'a'.repeat(32768)}.example^`,
+      '||ads.example^'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.skipped.overlong, 1);
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
+  });
+
+  await t.test('rejects lists that exceed parser line budget', () => {
+    const { parseList } = loadParser();
+    const list = Array.from({ length: 250001 }, () => '! comment').join('\n');
+    assert.throws(
+      () => parseList(list),
+      /too many lines/
+    );
+  });
+
+  await t.test('truncates excessive stored network, cosmetic, and scriptlet rules without failing refresh', () => {
+    const { parseList } = loadParser();
+
+    const networkList = Array.from({ length: 3 }, (_, index) => `||ads-${index}.example^`).join('\n');
+    const parsedNetwork = parseList(networkList, { maxNetworkRules: 2 });
+    assert.strictEqual(parsedNetwork.networkRules.length, 2);
+    assert.strictEqual(parsedNetwork.skipped.networkLimit, 1);
+
+    const cosmeticList = Array.from({ length: 3 }, (_, index) => `example.com##.ad-${index}`).join('\n');
+    const parsedCosmetic = parseList(cosmeticList, { maxCosmeticRules: 2 });
+    assert.strictEqual(parsedCosmetic.cosmeticRules.length, 2);
+    assert.strictEqual(parsedCosmetic.skipped.cosmeticLimit, 1);
+
+    const scriptletList = Array.from({ length: 3 }, (_, index) => `example.com##+js(set-constant, foo${index}, true)`).join('\n');
+    const parsedScriptlet = parseList(scriptletList, { maxScriptletRules: 2 });
+    assert.strictEqual(parsedScriptlet.scriptletRules.length, 2);
+    assert.strictEqual(parsedScriptlet.skipped.scriptletLimit, 1);
+  });
+
+  await t.test('malformed subscription content is counted without crashing', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      'example.com##+js(',
+      '##',
+      '||ads.example^'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.skipped.malformed, 2);
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
   });
 });

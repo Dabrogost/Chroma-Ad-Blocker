@@ -5,7 +5,10 @@ const path = require('path');
 const vm = require('vm');
 const { JSDOM } = require('jsdom');
 
+const domUtilsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'dom-utils.js'), 'utf8');
+const domainUtilsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'domain-utils.js'), 'utf8');
 const componentsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'components.js'), 'utf8');
+const healthUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'health-ui.js'), 'utf8');
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'app.js'), 'utf8');
 const proxyUiJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const uiCss = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
@@ -154,18 +157,53 @@ function createSettingsHarness({
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext([componentsJs, appJs, proxyUiJs].join('\n'), sandbox);
+  vm.runInContext([domUtilsJs, domainUtilsJs, componentsJs, healthUiJs, appJs, proxyUiJs].join('\n'), sandbox);
   return { dom, sandbox, messages, pending };
 }
 
 test('settings page proxy and zapper management safety', async (t) => {
   await t.test('proxy credential UI never hydrates password fields from stored config', () => {
-    assert.match(proxyUiJs, /<input type="password" class="chroma-input proxy-pass" value=""/);
+    assert.match(proxyUiJs, /appendInput\(inputGroup, 'password', 'chroma-input proxy-pass', '', pc\.hasCredentials \? 'Password saved' : 'Password'\)/);
     assert.doesNotMatch(proxyUiJs, /value="\$\{[^}]*password/i);
     assert.match(proxyUiJs, /delete pc\.username;/);
     assert.match(proxyUiJs, /delete pc\.password;/);
     assert.match(proxyUiJs, /delete pc\.authIv;/);
     assert.match(proxyUiJs, /delete pc\.authCipher;/);
+  });
+
+  await t.test('proxy config values render as DOM text and input values, never HTML', async () => {
+    const maliciousName = '"><img src=x onerror=alert(1)>';
+    const maliciousHost = 'proxy.example"><svg onload=alert(2)>';
+    const maliciousPort = '8080"><iframe src=javascript:alert(3)>';
+    const maliciousDomain = 'video.example"><img src=x onerror=alert(4)>';
+    const harness = createSettingsHarness({
+      responses: {
+        PROXY_CONFIG_GET: [{
+          id: 1,
+          name: maliciousName,
+          host: maliciousHost,
+          port: maliciousPort,
+          type: 'PROXY',
+          accepted: true,
+          enabled: true,
+          domains: [{ host: maliciousDomain, enabled: true }],
+          hasCredentials: true
+        }]
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const container = harness.dom.window.document.querySelector('#proxyRouterContainer');
+    const card = container.querySelector('.proxy-card');
+    assert.strictEqual(container.querySelectorAll('img, svg, iframe').length, 0);
+    assert.strictEqual(card.querySelector('.proxy-name').value, maliciousName);
+    assert.strictEqual(card.querySelector('.proxy-host').value, maliciousHost);
+    assert.strictEqual(card.querySelector('.proxy-port').value, maliciousPort);
+    assert.strictEqual(card.querySelector('.proxy-title').textContent, `Active: ${maliciousName}`);
+    assert.strictEqual(card.querySelector('.proxy-endpoint').textContent, `${maliciousHost}:${maliciousPort}`);
+    assert.strictEqual(card.querySelector('.proxy-domain-name').textContent, maliciousDomain);
   });
 
   await t.test('preserve, replace, and clear credential actions are encoded intentionally', () => {
@@ -282,7 +320,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
-    vm.runInContext(proxyUiJs, sandbox);
+    vm.runInContext([domUtilsJs, proxyUiJs].join('\n'), sandbox);
 
     await sandbox.ChromaProxyUI.loadProxyRouterUI();
     await settleDomAsyncWork();
@@ -293,7 +331,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(chromeBypassToggle.checked, true);
     assert.match(
       dom.window.document.querySelector('.proxy-chrome-service-bypass-control .desc').textContent,
-      /Chrome AI \/ Gemini Nano/
+      /browser-managed features/
     );
     assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), true);
 
@@ -402,7 +440,7 @@ test('settings page proxy and zapper management safety', async (t) => {
   });
 
   await t.test('active proxy global button has a distinct highlighted style', () => {
-    assert.match(proxyUiJs, /proxy-global-btn compact-action-btn" title="Use as Global Fallback">GLOBAL/);
+    assert.match(proxyUiJs, /appendProxyButton\(line, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback'\)/);
     assert.match(proxyUiJs, /proxy-enabled-toggle/);
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{/);
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{[\s\S]*box-shadow:/);
@@ -474,6 +512,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
     assert.strictEqual(dom.window.document.querySelector('#statsModeSelect').disabled, true);
+    assert.ok(dom.window.document.querySelector('#exportConfigJson'));
+    assert.ok(dom.window.document.querySelector('#importConfigFile'));
   });
 
   await t.test('popup shell does not render settings-only skeleton sections', () => {
@@ -493,6 +533,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#localZapperRules'), null);
     assert.strictEqual(dom.window.document.querySelector('#subscriptionList .skeleton-row'), null);
     assert.strictEqual(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'), null);
+    assert.strictEqual(dom.window.document.querySelector('#exportConfigJson'), null);
+    assert.strictEqual(dom.window.document.querySelector('#importConfigFile'), null);
   });
 
   await t.test('health skeleton is replaced on success and on unavailable response', async () => {
@@ -525,7 +567,7 @@ test('settings page proxy and zapper management safety', async (t) => {
             issues: [{
               severity: 'warning',
               area: 'scriptlets',
-              message: 'Scriptlet engine unavailable. Enable Allow User Scripts for this extension in Chrome extension details.',
+              message: 'Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details; 1 subscription scriptlet rule cannot be registered until then.',
               action: 'Open Chrome extension details and enable Allow User Scripts.'
             }]
           },
@@ -667,6 +709,132 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(harness.messages.some(message => message.type === 'STATS_GET'), false);
   });
 
+  await t.test('mutating toggles roll back when background writes fail', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: {
+          enabled: true,
+          networkBlocking: true,
+          acceleration: false,
+          cosmetic: true,
+          fingerprintRandomization: true
+        },
+        CONFIG_SET: { ok: false, error: 'write failed' },
+        WHITELIST_ADD: { ok: false, error: 'write failed' },
+        FPR_WHITELIST_ADD: { ok: false, error: 'write failed' }
+      }
+    });
+    const reloads = [];
+    harness.sandbox.chrome.tabs.reload = id => reloads.push(id);
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const acceleration = harness.dom.window.document.querySelector('#toggleAcceleration');
+    acceleration.checked = true;
+    acceleration.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(acceleration.checked, false);
+
+    const master = harness.dom.window.document.querySelector('#toggleEnabled');
+    master.checked = false;
+    master.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(master.checked, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').checked, true);
+
+    const whitelist = harness.dom.window.document.querySelector('#toggleWhitelist');
+    whitelist.checked = true;
+    whitelist.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(whitelist.checked, false);
+
+    const fprWhitelist = harness.dom.window.document.querySelector('#toggleFprWhitelist');
+    fprWhitelist.checked = true;
+    fprWhitelist.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(fprWhitelist.checked, false);
+    assert.deepStrictEqual(reloads, []);
+  });
+
+  await t.test('subscription controls roll back or stay visible when writes fail', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        SUBSCRIPTION_GET: [{
+          id: 'custom_test',
+          name: 'Custom Test',
+          url: 'https://lists.example/test.txt',
+          enabled: true,
+          isCustom: true,
+          lastUpdated: 0,
+          ruleCount: { network: 10, cosmetic: 0, scriptlet: 0 }
+        }],
+        SUBSCRIPTION_SET: { ok: false, error: 'write failed' },
+        SUBSCRIPTION_REMOVE: { ok: false, error: 'remove failed' }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const toggle = harness.dom.window.document.querySelector('.sub-toggle');
+    toggle.checked = false;
+    toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(toggle.checked, true);
+    assert.strictEqual(toggle.disabled, false);
+
+    const deleteBtn = harness.dom.window.document.querySelector('.sub-delete-btn');
+    deleteBtn.dispatchEvent(new harness.dom.window.Event('click', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(deleteBtn.disabled, false);
+    assert.match(deleteBtn.title, /failed/i);
+    assert.ok(harness.dom.window.document.querySelector('.sub-toggle'));
+  });
+
+  await t.test('local zapper controls roll back or stay visible when writes fail', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        ZAPPER_RULES_GET: {
+          rules: [{
+            id: 'zapper_abc',
+            domain: 'example.com',
+            selector: '.ad-slot',
+            enabled: true,
+            createdAt: Date.now()
+          }]
+        },
+        ZAPPER_RULE_SET: { ok: false, error: 'write failed' },
+        ZAPPER_RULE_REMOVE: { ok: false, error: 'delete failed' }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const toggle = harness.dom.window.document.querySelector('.zapper-rule-toggle');
+    toggle.checked = false;
+    toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(toggle.checked, true);
+    assert.strictEqual(toggle.disabled, false);
+
+    const deleteBtn = harness.dom.window.document.querySelector('.zapper-rule-delete');
+    deleteBtn.dispatchEvent(new harness.dom.window.Event('click', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(deleteBtn.disabled, false);
+    assert.match(deleteBtn.title, /failed/i);
+    assert.ok(harness.dom.window.document.querySelector('.zapper-rule-toggle'));
+  });
+
   await t.test('initSharedUI does not await slow settings section hydration', async () => {
     const slow = {
       STATS_GET: deferred(),
@@ -781,5 +949,9 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(uiCss, /@keyframes skeleton-shimmer/);
     assert.match(uiCss, /prefers-reduced-motion: reduce/);
     assert.match(uiCss, /\.hydration-fade-in/);
+    assert.match(
+      uiCss,
+      /\.protection-list\.hydration-fade-in\s*{[\s\S]*?animation:\s*border-cycle 16s linear infinite,\s*hydration-fade-in 0\.18s ease-out;[\s\S]*?}/
+    );
   });
 });

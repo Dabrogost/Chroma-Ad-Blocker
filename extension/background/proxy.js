@@ -10,6 +10,7 @@
 
 import { decryptAuth } from '../core/crypto.js';
 import { recordStatsEvent } from './stats.js';
+import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';
 
 const DEBUG = false;
 
@@ -378,6 +379,7 @@ async function _syncProxyStateImpl(proxyConfigs) {
     // DIRECT PAC — would bump them to "controlled_by_other_extensions".
     if (!hasSpecificRules && fallbackStr === "'DIRECT'") {
       await chrome.proxy.settings.clear({ scope: 'regular' });
+      await clearHealthDiagnostic('proxyPacSync');
       if (DEBUG) console.log('[Chroma Ad-Blocker] No active proxies; released proxy settings.');
       return;
     }
@@ -386,8 +388,16 @@ async function _syncProxyStateImpl(proxyConfigs) {
       value: { mode: 'pac_script', pacScript: { data: scriptData } },
       scope: 'regular'
     });
+    await clearHealthDiagnostic('proxyPacSync');
     if (DEBUG) console.log('[Chroma Ad-Blocker] Proxy PAC script synced. Total configs:', proxyConfigs.length);
   } catch (err) {
+    await recordHealthDiagnostic('proxyPacSync', {
+      area: 'proxy',
+      severity: 'warning',
+      message: 'Proxy PAC settings could not be applied.',
+      action: 'Check proxy settings, or disable and re-enable the selected proxy route.',
+      error: err?.message || err
+    });
     if (DEBUG) console.error('[Chroma Ad-Blocker] Failed to update proxy settings:', err);
   }
 }

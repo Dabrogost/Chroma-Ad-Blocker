@@ -186,6 +186,21 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(payloadEvent.adObjectsRemoved, 1);
   });
 
+  await t.test('fingerprint activation is diagnostic and not a protection event', async () => {
+    const stats = loadStatsSandbox();
+
+    stats.recordStatsEvent({ layer: 'fingerprint', type: 'activation', domain: 'example.com' });
+    await stats.flushStatsQueue();
+
+    const snapshot = await stats.getStatsSnapshot();
+
+    assert.strictEqual(snapshot.totals.fprActivations, 1);
+    assert.strictEqual(snapshot.totals.protectionEvents, 0);
+    assert.strictEqual(snapshot.byDay[new Date().toISOString().slice(0, 10)].fprActivations, 1);
+    assert.strictEqual(snapshot.bySite['example.com'].fprActivations, 1);
+    assert.strictEqual(snapshot.bySite['example.com'].protectionEvents || 0, 0);
+  });
+
   await t.test('estimates time saved with a tiny sub-second event weight', async () => {
     const stats = loadStatsSandbox();
 
