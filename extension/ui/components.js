@@ -424,7 +424,7 @@ const ChromaComponents = (() => {
           <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" target="_blank" class="github-link" title="View Source on GitHub">
             ${githubIcon}
           </a>
-          <span class="version" id="versionText">v1.2.0 &middot; MV3</span>
+          <span class="version" id="versionText">v1.3.0 &middot; MV3</span>
         </div>
       </footer>
     `;
