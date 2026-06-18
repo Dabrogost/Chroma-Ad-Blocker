@@ -29,6 +29,10 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+function countMessages(messages, type) {
+  return messages.filter(message => message.type === type).length;
+}
+
 function createSettingsHarness({
   url = 'chrome-extension://test/ui/settings.html',
   responses = {},
@@ -39,6 +43,7 @@ function createSettingsHarness({
     runScripts: 'outside-only'
   });
   const messages = [];
+  const storageChangeListeners = [];
   const storageState = {};
   const defaultStats = {
     settings: { mode: 'aggregated', retentionDays: 90 },
@@ -127,7 +132,11 @@ function createSettingsHarness({
           },
           set: async value => Object.assign(storageState, value)
         },
-        onChanged: { addListener: () => {} }
+        onChanged: {
+          addListener: listener => {
+            storageChangeListeners.push(listener);
+          }
+        }
       },
       tabs: {
         query: async () => [{ id: 7, url: 'https://www.example.com/watch' }],
@@ -158,7 +167,18 @@ function createSettingsHarness({
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext([domUtilsJs, domainUtilsJs, componentsJs, healthUiJs, appJs, proxyUiJs].join('\n'), sandbox);
-  return { dom, sandbox, messages, pending };
+  async function emitStorageChange(changes, area = 'local') {
+    storageChangeListeners.forEach(listener => listener(changes, area));
+    await settleDomAsyncWork();
+  }
+  return {
+    dom,
+    sandbox,
+    messages,
+    pending,
+    emitStorageChange,
+    getStorageChangeListenerCount: () => storageChangeListeners.length
+  };
 }
 
 test('settings page proxy and zapper management safety', async (t) => {
@@ -556,6 +576,63 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(failure.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
     assert.match(failure.dom.window.document.querySelector('#healthOverallLabel').textContent, /Unavailable/);
     assert.match(failure.dom.window.document.querySelector('#healthPanelBody').textContent, /Could not load health diagnostics/);
+  });
+
+  await t.test('health panel loads once on settings init and refresh button reloads it', async () => {
+    const harness = createSettingsHarness();
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(countMessages(harness.messages, 'HEALTH_GET'), 1);
+
+    const refreshButton = harness.dom.window.document.querySelector('#refreshHealthBtn');
+    assert.ok(refreshButton);
+    refreshButton.click();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(countMessages(harness.messages, 'HEALTH_GET'), 2);
+  });
+
+  await t.test('storage stats changes refresh stats without invoking health diagnostics', async () => {
+    const harness = createSettingsHarness();
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(harness.getStorageChangeListenerCount(), 1);
+    const healthBefore = countMessages(harness.messages, 'HEALTH_GET');
+    const statsBefore = countMessages(harness.messages, 'STATS_GET');
+
+    await harness.emitStorageChange({ statsV2: { oldValue: {}, newValue: {} } }, 'local');
+
+    assert.strictEqual(countMessages(harness.messages, 'STATS_GET'), statsBefore + 1);
+    assert.strictEqual(countMessages(harness.messages, 'HEALTH_GET'), healthBefore);
+  });
+
+  await t.test('storage settings changes do not invoke health diagnostics', async () => {
+    const harness = createSettingsHarness();
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const healthBefore = countMessages(harness.messages, 'HEALTH_GET');
+    const changes = {
+      config: { oldValue: {}, newValue: {} },
+      subscriptions: { oldValue: [], newValue: [] },
+      appliedNetworkRuleCount: { oldValue: 0, newValue: 1 },
+      localCosmeticRules: { oldValue: [], newValue: [] },
+      subscriptionCosmeticRules: { oldValue: [], newValue: [] },
+      subscriptionScriptletRules: { oldValue: [], newValue: [] },
+      proxyConfigs: { oldValue: [], newValue: [] },
+      whitelist: { oldValue: [], newValue: [] },
+      fprWhitelist: { oldValue: [], newValue: [] }
+    };
+
+    for (const [key, change] of Object.entries(changes)) {
+      await harness.emitStorageChange({ [key]: change }, 'local');
+      assert.strictEqual(countMessages(harness.messages, 'HEALTH_GET'), healthBefore, key);
+    }
   });
 
   await t.test('health panel surfaces Allow User Scripts diagnostic', async () => {
