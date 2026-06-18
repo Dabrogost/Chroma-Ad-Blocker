@@ -29,15 +29,15 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 
 ## Key Features
 
-- **YouTube Ad Stripping**: Removes ad-related metadata from YouTube JSON payloads before the player reads them, including sponsored Shorts overlay payloads. [Read more](docs/YOUTUBE.md)
-- **Split-Tunnel Proxy Router**: Routes selected media domains through HTTP, HTTPS, SOCKS4, or SOCKS5 proxies while keeping unrelated browser traffic direct. Includes Global Fallback, Smart-Link media/CDN expansion, connection verification, WebRTC leak protection, and local-only proxy credential handling. [Read more](docs/MEDIA_PROXY_ROUTER.md)
-- **Source-Generated DNR Network Blocking**: Uses generated OISD Big static rules, a protected custom static layer, recipe-specific rules, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level. [Read more](docs/ARCHITECTURE.md#layer-1-network-level-blocking-extensionrules-extensionbackgrounddnrstatejs-extensionsubscriptions)
-- **Live Filter List Subscriptions**: Supports Hagezi Pro Mini, EasyList, Fanboy Annoyance, the bundled Chroma Scriptlet Library, and user-added custom lists with local parsing and rule-budget allocation. [Read more](docs/FILTER_LISTS.md)
-- **Scriptlet Injection Engine**: Translates supported uBlock Origin and AdGuard-style scriptlets into native JavaScript and registers them through Chrome's `userScripts` API. [Read more](docs/ARCHITECTURE.md#layer-2-scriptlet-injection-scriptletsenginejs)
-- **Cosmetic Filtering & Element Zapper**: Removes ad slots, placeholders, unwanted UI, warnings, and user-selected page elements through CSS injection, DOM monitoring, and local cosmetic rules. [Read more](docs/FEATURES.md#element-zapper)
-- **Privacy Hardening & Fingerprint Randomization**: Optional controls for third-party cookies, Privacy Sandbox ad APIs, geolocation access, WebRTC routing behavior, and per-document fingerprint farbling. [Read more](docs/FEATURES.md#privacy-hardening-fingerprint-randomization)
-- **Local Event Tracker**: A local-only Protection Intelligence dashboard for network, cleanup, scriptlet, proxy, and payload-cleanup events. [Read more](docs/STATISTICS.md)
-- **Security-Hardened Architecture**: Uses closure-scoped state, validated config updates, origin checks, pristine API caching, and an isolated-to-MAIN `MessageChannel` handshake. [Read more](docs/SECURITY.md)
+- **[YouTube Ad Stripping](docs/YOUTUBE.md)**: Removes ad-related metadata from YouTube JSON payloads before the player reads them, including sponsored Shorts overlay payloads.
+- **[Split-Tunnel Proxy Router](docs/MEDIA_PROXY_ROUTER.md)**: Routes selected media domains through HTTP, HTTPS, SOCKS4, or SOCKS5 proxies while keeping unrelated browser traffic direct. Includes Global Fallback, Smart-Link media/CDN expansion, connection verification, WebRTC leak protection, and local-only proxy credential handling.
+- **[Source-Generated DNR Network Blocking](docs/ARCHITECTURE.md#layer-1-network-level-blocking-extensionrules-extensionbackgrounddnrstatejs-extensionsubscriptions)**: Uses generated OISD Big static rules, a protected custom static layer, recipe-specific rules, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
+- **[Live Filter List Subscriptions](docs/FILTER_LISTS.md)**: Supports Hagezi Pro Mini, EasyList, Fanboy Annoyance, the bundled Chroma Scriptlet Library, and user-added custom lists with local parsing and rule-budget allocation.
+- **[Scriptlet Injection Engine](docs/ARCHITECTURE.md#layer-2-scriptlet-injection-scriptletsenginejs)**: Translates supported uBlock Origin and AdGuard-style scriptlets into native JavaScript and registers them through Chrome's `userScripts` API.
+- **[Cosmetic Filtering & Element Zapper](docs/FEATURES.md#element-zapper)**: Removes ad slots, placeholders, unwanted UI, warnings, and user-selected page elements through CSS injection, DOM monitoring, and local cosmetic rules.
+- **[Privacy Hardening & Fingerprint Randomization](docs/FEATURES.md#privacy-hardening-fingerprint-randomization)**: Optional controls for third-party cookies, Privacy Sandbox ad APIs, geolocation access, WebRTC routing behavior, and per-document fingerprint farbling.
+- **[Local Event Tracker](docs/STATISTICS.md)**: A local-only Protection Intelligence dashboard for network, cleanup, scriptlet, proxy, and payload-cleanup events.
+- **[Security-Hardened Architecture](docs/SECURITY.md)**: Uses closure-scoped state, validated config updates, origin checks, pristine API caching, and an isolated-to-MAIN `MessageChannel` handshake.
 
 ## Quick Start
 
