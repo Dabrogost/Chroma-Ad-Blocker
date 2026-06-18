@@ -11,18 +11,6 @@ const ChromaApp = (() => {
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
-  const HEALTH_REFRESH_KEYS = [
-    'config',
-    'subscriptions',
-    'appliedNetworkRuleCount',
-    'localCosmeticRules',
-    'subscriptionCosmeticRules',
-    'subscriptionScriptletRules',
-    'proxyConfigs',
-    'whitelist',
-    'fprWhitelist',
-    'statsV2'
-  ];
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
     ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
@@ -695,9 +683,6 @@ const ChromaApp = (() => {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.statsV2) {
         safeHydrateSection('stats', loadStatsUI);
-      }
-      if (area === 'local' && settingsMode && HEALTH_REFRESH_KEYS.some(key => changes[key])) {
-        safeHydrateSection('health panel', loadHealthPanel);
       }
     });
 
