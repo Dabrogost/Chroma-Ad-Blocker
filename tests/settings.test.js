@@ -101,6 +101,11 @@ function createSettingsHarness({
       SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
       SUBSCRIPTION_REMOVE: 'SUBSCRIPTION_REMOVE',
       SUBSCRIPTION_ADD: 'SUBSCRIPTION_ADD',
+      USER_SCRIPTLETS_GET: 'USER_SCRIPTLETS_GET',
+      USER_SCRIPTLET_SOURCE_ADD: 'USER_SCRIPTLET_SOURCE_ADD',
+      USER_SCRIPTLET_SOURCE_REFRESH: 'USER_SCRIPTLET_SOURCE_REFRESH',
+      USER_SCRIPTLET_SOURCE_REMOVE: 'USER_SCRIPTLET_SOURCE_REMOVE',
+      USER_SCRIPTLET_RULES_SET: 'USER_SCRIPTLET_RULES_SET',
       ZAPPER_RULES_GET: 'ZAPPER_RULES_GET',
       ZAPPER_RULE_SET: 'ZAPPER_RULE_SET',
       ZAPPER_RULE_REMOVE: 'ZAPPER_RULE_REMOVE',
@@ -156,6 +161,12 @@ function createSettingsHarness({
       if (msg.type === 'STATS_GET') return Promise.resolve(defaultStats);
       if (msg.type === 'HEALTH_GET') return Promise.resolve(defaultHealth);
       if (msg.type === 'SUBSCRIPTION_GET') return Promise.resolve([]);
+      if (msg.type === 'USER_SCRIPTLETS_GET') return Promise.resolve({
+        sources: [],
+        ruleText: '',
+        parsedRuleCount: 0,
+        availableResourceNames: []
+      });
       if (msg.type === 'PROXY_CONFIG_GET') return Promise.resolve([]);
       if (msg.type === 'ZAPPER_RULES_GET') return Promise.resolve({ rules: [] });
       if (msg.type === 'WHITELIST_GET') return Promise.resolve({ whitelist: [] });
@@ -224,6 +235,69 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(card.querySelector('.proxy-title').textContent, `Active: ${maliciousName}`);
     assert.strictEqual(card.querySelector('.proxy-endpoint').textContent, `${maliciousHost}:${maliciousPort}`);
     assert.strictEqual(card.querySelector('.proxy-domain-name').textContent, maliciousDomain);
+  });
+
+  await t.test('user scriptlet resource values render as DOM text and textarea values, never HTML', async () => {
+    const maliciousName = '"><img src=x onerror=alert(1)>';
+    const maliciousUrl = 'https://cdn.example.com/resources.js?x="><iframe src=javascript:alert(2)>';
+    const maliciousError = 'Failed at https://evil.example/<img src=x onerror=alert(3)>';
+    const maliciousRuleText = 'example.com##+js(custom-scriptlet, "><img src=x onerror=alert(4)>)';
+    const harness = createSettingsHarness({
+      responses: {
+        USER_SCRIPTLETS_GET: {
+          sources: [{
+            id: 'usr_test',
+            name: maliciousName,
+            url: maliciousUrl,
+            lastUpdated: 0,
+            lastError: maliciousError,
+            resourceCount: 1,
+            resourceNames: ['custom-scriptlet.js"><img src=x onerror=alert(5)>']
+          }],
+          ruleText: maliciousRuleText,
+          parsedRuleCount: 1,
+          availableResourceNames: ['custom-scriptlet.js']
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const list = harness.dom.window.document.querySelector('#userScriptletSourceList');
+    assert.strictEqual(list.querySelectorAll('img, iframe').length, 0);
+    assert.strictEqual(list.querySelector('.name').textContent, maliciousName);
+    assert.strictEqual(list.querySelector('.user-scriptlet-source-url').textContent, maliciousUrl);
+    assert.strictEqual(list.querySelector('.subscription-error').textContent, `Error: ${maliciousError}`);
+    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletAvailableResourceList .user-scriptlet-chip').textContent, 'custom-scriptlet.js');
+    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletRulesText').value, maliciousRuleText);
+  });
+
+  await t.test('user scriptlet source add failures restore controls', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        USER_SCRIPTLET_SOURCE_ADD: new Error('background unavailable')
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      doc.querySelector('#addUserScriptletSourceBtn').click();
+      doc.querySelector('#newUserScriptletSourceUrl').value = 'https://cdn.example.com/resources.js';
+      doc.querySelector('#newUserScriptletSourceAddBtn').click();
+      await settleDomAsyncWork();
+    } finally {
+      console.error = originalError;
+    }
+
+    assert.strictEqual(doc.querySelector('#newUserScriptletSourceAddBtn').disabled, false);
+    assert.strictEqual(doc.querySelector('#newUserScriptletSourceAddBtn').textContent, 'Add');
+    assert.strictEqual(doc.querySelector('#newUserScriptletSourceError').textContent, 'Add failed.');
   });
 
   await t.test('preserve, replace, and clear credential actions are encoded intentionally', () => {
@@ -529,6 +603,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(dom.window.document.querySelector('#statisticsTopCards .skeleton-card'));
     assert.ok(dom.window.document.querySelector('#statsSitesList .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#subscriptionList .skeleton-row'));
+    assert.ok(dom.window.document.querySelector('#userScriptletSourceList .skeleton-row'));
+    assert.strictEqual(dom.window.document.querySelector('#addUserScriptletSourceBtn').textContent.trim(), 'Add URL');
     assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
     assert.strictEqual(dom.window.document.querySelector('#statsModeSelect').disabled, true);
@@ -552,6 +628,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#statisticsTopCards'), null);
     assert.strictEqual(dom.window.document.querySelector('#localZapperRules'), null);
     assert.strictEqual(dom.window.document.querySelector('#subscriptionList .skeleton-row'), null);
+    assert.strictEqual(dom.window.document.querySelector('#userScriptletSourceList'), null);
     assert.strictEqual(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'), null);
     assert.strictEqual(dom.window.document.querySelector('#exportConfigJson'), null);
     assert.strictEqual(dom.window.document.querySelector('#importConfigFile'), null);

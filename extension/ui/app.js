@@ -545,6 +545,7 @@ const ChromaApp = (() => {
         'statsTimelineList',
         'statsEventsList',
         'subscriptionList',
+        'userScriptletSourceList',
         'proxyRouterContainer',
         'localZapperRules'
       ].forEach(id => setSectionError(id, 'Unavailable until the extension background responds.'));
@@ -689,6 +690,7 @@ const ChromaApp = (() => {
     wireStatsControls();
     wireSharedLinks();
     wireAddSubscriptionForm();
+    wireUserScriptletControls();
     wireRequestLog();
 
     safeHydrateSection('site controls', hydrateSiteControls);
@@ -696,6 +698,7 @@ const ChromaApp = (() => {
     safeHydrateSection('subscriptions', loadSubscriptionUI);
     if (settingsMode) {
       safeHydrateSection('health panel', loadHealthPanel);
+      safeHydrateSection('user scriptlets', loadUserScriptletUI);
       safeHydrateSection('proxy router', loadProxyRouterSection);
       safeHydrateSection('local zapper rules', loadLocalZapperRulesUI);
     } else {
@@ -798,6 +801,7 @@ const ChromaApp = (() => {
           }
           await Promise.all([
             loadSubscriptionUI(),
+            loadUserScriptletUI(),
             loadProxyRouterSection(),
             loadHealthPanel()
           ]);
@@ -1162,6 +1166,244 @@ const ChromaApp = (() => {
       submitBtn?.addEventListener('click', submitAdd);
       urlInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
       nameInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
+    }
+
+    function formatUserScriptletSourceUpdated(source) {
+      if (source?.lastUpdated) return new Date(source.lastUpdated).toLocaleString();
+      return 'Never';
+    }
+
+    function setUserScriptletRulesStatus(message, isError = false) {
+      const status = $('userScriptletRulesStatus');
+      if (!status) return;
+      status.textContent = message || '';
+      status.classList.toggle('form-error', !!isError);
+    }
+
+    function renderUserScriptletResourceChips(names) {
+      const wrap = $('userScriptletAvailableResources');
+      const list = $('userScriptletAvailableResourceList');
+      if (!wrap || !list) return;
+      clearElement(list);
+      const resources = Array.isArray(names)
+        ? names.map(name => String(name || '').trim()).filter(Boolean)
+        : [];
+      wrap.classList.toggle('is-hidden', resources.length === 0);
+      resources.slice(0, 30).forEach(name => {
+        appendElement(list, 'span', 'user-scriptlet-chip', name);
+      });
+      if (resources.length > 30) {
+        appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--muted', `+${resources.length - 30}`);
+      }
+    }
+
+    async function loadUserScriptletUI() {
+      if (!settingsMode) return;
+      const list = $('userScriptletSourceList');
+      const textarea = $('userScriptletRulesText');
+      if (!list) return;
+      setSectionLoading('userScriptletSourceList');
+
+      let settings = null;
+      try {
+        settings = await notifyBackground({ type: MSG.USER_SCRIPTLETS_GET });
+      } catch (error) {
+        console.error('Chroma user scriptlets failed to load:', error);
+      }
+
+      if (!settings) {
+        setSectionError('userScriptletSourceList', 'User scriptlets unavailable.');
+        return;
+      }
+
+      const sources = Array.isArray(settings.sources) ? settings.sources : [];
+      clearElement(list);
+
+      const summary = document.createElement('div');
+      summary.className = 'subscription-summary';
+      summary.textContent = `${sources.length.toLocaleString()} resource URL(s) \u00b7 ${Number(settings.availableResourceNames?.length || 0).toLocaleString()} resource(s) \u00b7 ${Number(settings.parsedRuleCount || 0).toLocaleString()} rule(s)`;
+      list.appendChild(summary);
+
+      if (sources.length === 0) {
+        appendLoadingRow(list, 'No user scriptlet resources added.');
+      } else {
+        for (const source of sources) {
+          const row = document.createElement('div');
+          row.className = 'toggle-row user-scriptlet-source-row';
+          const info = appendElement(row, 'div', 'toggle-info');
+          appendElement(info, 'div', 'name', source.name || 'User scriptlet resource');
+          const urlLine = appendElement(info, 'div', 'desc user-scriptlet-source-url', source.url || '');
+          urlLine.title = source.url || '';
+          appendElement(info, 'div', 'desc', `Updated: ${formatUserScriptletSourceUpdated(source)}`);
+          const names = Array.isArray(source.resourceNames) ? source.resourceNames.filter(Boolean) : [];
+          if (names.length > 0) {
+            const shown = names.slice(0, 8).join(', ');
+            appendElement(info, 'div', 'desc user-scriptlet-resource-names', `${source.resourceCount || names.length} resource(s): ${shown}${names.length > 8 ? '...' : ''}`);
+          } else {
+            appendElement(info, 'div', 'desc user-scriptlet-resource-names', 'No parsed resources yet.');
+          }
+          if (source.lastError) {
+            const error = appendElement(info, 'div', 'subscription-error', `Error: ${source.lastError}`);
+            error.title = source.lastError;
+          }
+
+          const actions = appendElement(row, 'div', 'subscription-actions');
+          const refreshBtn = appendElement(actions, 'button', 'user-scriptlet-refresh-btn reset-btn compact-action-btn', 'Refresh');
+          refreshBtn.dataset.id = source.id;
+          refreshBtn.title = 'Refresh resource';
+          refreshBtn.setAttribute('aria-label', `Refresh ${source.name || 'user scriptlet resource'}`);
+          const deleteBtn = appendElement(actions, 'button', 'user-scriptlet-delete-btn reset-btn inline-danger-btn compact-action-btn', 'Remove');
+          deleteBtn.dataset.id = source.id;
+          deleteBtn.title = 'Remove resource';
+          deleteBtn.setAttribute('aria-label', `Remove ${source.name || 'user scriptlet resource'}`);
+          list.appendChild(row);
+        }
+      }
+
+      if (textarea && document.activeElement !== textarea) {
+        textarea.value = typeof settings.ruleText === 'string' ? settings.ruleText : '';
+      }
+      renderUserScriptletResourceChips(settings.availableResourceNames);
+      setUserScriptletRulesStatus(`${Number(settings.parsedRuleCount || 0).toLocaleString()} saved rule(s).`);
+      setSectionReady('userScriptletSourceList');
+
+      list.querySelectorAll('.user-scriptlet-refresh-btn').forEach(btn => {
+        btn.addEventListener('click', async (event) => {
+          const target = event.target;
+          target.disabled = true;
+          target.textContent = '...';
+          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REFRESH, id: target.dataset.id });
+          target.textContent = result?.ok ? 'Done' : 'Failed';
+          setTimeout(() => {
+            loadUserScriptletUI();
+            loadHealthPanel();
+          }, 800);
+        });
+      });
+
+      list.querySelectorAll('.user-scriptlet-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (event) => {
+          if (!confirm('Remove this user scriptlet resource?')) return;
+          const target = event.target;
+          target.disabled = true;
+          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REMOVE, id: target.dataset.id });
+          if (result) {
+            await loadUserScriptletUI();
+            await loadHealthPanel();
+          } else {
+            target.disabled = false;
+            target.title = 'Remove failed';
+          }
+        });
+      });
+    }
+
+    function wireUserScriptletControls() {
+      if (!settingsMode) return;
+      const addBtn = $('addUserScriptletSourceBtn');
+      const form = $('addUserScriptletSourceForm');
+      const nameInput = $('newUserScriptletSourceName');
+      const urlInput = $('newUserScriptletSourceUrl');
+      const errEl = $('newUserScriptletSourceError');
+      const submitBtn = $('newUserScriptletSourceAddBtn');
+      const cancelBtn = $('newUserScriptletSourceCancelBtn');
+      const saveRulesBtn = $('saveUserScriptletRulesBtn');
+      const rulesText = $('userScriptletRulesText');
+      if (!addBtn || !form) return;
+
+      const showError = (message) => {
+        if (!errEl) return;
+        errEl.textContent = message;
+        errEl.classList.remove('is-hidden');
+      };
+      const closeForm = () => {
+        form.classList.add('is-hidden');
+        if (nameInput) nameInput.value = '';
+        if (urlInput) urlInput.value = '';
+        if (errEl) {
+          errEl.classList.add('is-hidden');
+          errEl.textContent = '';
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Add';
+        }
+      };
+
+      addBtn.addEventListener('click', () => {
+        if (form.classList.contains('is-hidden')) {
+          form.classList.remove('is-hidden');
+          urlInput?.focus?.();
+        } else {
+          closeForm();
+        }
+      });
+      cancelBtn?.addEventListener('click', closeForm);
+
+      const submitAdd = async () => {
+        if (errEl) errEl.classList.add('is-hidden');
+        const url = urlInput?.value.trim() || '';
+        if (!url) return showError('URL required.');
+        let parsed;
+        try { parsed = new URL(url); } catch { return showError('Invalid URL.'); }
+        if (parsed.protocol !== 'https:') return showError('Only https:// URLs are allowed.');
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Adding...';
+        }
+        let result = null;
+        try {
+          result = await notifyBackground({
+            type: MSG.USER_SCRIPTLET_SOURCE_ADD,
+            source: {
+              name: nameInput?.value.trim() || '',
+              url
+            }
+          });
+        } catch (error) {
+          console.error('Chroma user scriptlet source add failed:', error);
+        }
+        if (!result?.ok) {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Add';
+          }
+          return showError(result?.error || 'Add failed.');
+        }
+        closeForm();
+        await loadUserScriptletUI();
+        await loadHealthPanel();
+      };
+
+      submitBtn?.addEventListener('click', submitAdd);
+      urlInput?.addEventListener('keypress', (event) => { if (event.key === 'Enter') submitAdd(); });
+      nameInput?.addEventListener('keypress', (event) => { if (event.key === 'Enter') submitAdd(); });
+
+      saveRulesBtn?.addEventListener('click', async () => {
+        if (!rulesText) return;
+        saveRulesBtn.disabled = true;
+        saveRulesBtn.textContent = 'Saving...';
+        setUserScriptletRulesStatus('Saving rules...');
+        let result = null;
+        try {
+          result = await notifyBackground({
+            type: MSG.USER_SCRIPTLET_RULES_SET,
+            ruleText: rulesText.value
+          });
+        } catch (error) {
+          console.error('Chroma user scriptlet rules save failed:', error);
+        }
+        if (result?.ok) {
+          setUserScriptletRulesStatus(`${Number(result.parsedRuleCount || 0).toLocaleString()} saved rule(s).`);
+          await loadUserScriptletUI();
+          await loadHealthPanel();
+        } else {
+          setUserScriptletRulesStatus(result?.error || 'Rules save failed.', true);
+        }
+        saveRulesBtn.disabled = false;
+        saveRulesBtn.textContent = 'Save Rules';
+      });
     }
 
     async function loadProxyRouterSection() {

@@ -239,10 +239,11 @@ function shouldRetryScriptletRegistration(scriptlets, storedRuleCount) {
   );
 }
 
-function scriptletUnavailableMessage(storedRuleCount) {
+function scriptletUnavailableMessage(storedRuleCount, userRuleCount = 0) {
   const count = Number(storedRuleCount) || 0;
   const label = count === 1 ? 'rule' : 'rules';
-  return `Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details; ${count.toLocaleString()} subscription scriptlet ${label} cannot be registered until then.`;
+  const sourceLabel = Number(userRuleCount) > 0 ? 'scriptlet' : 'subscription scriptlet';
+  return `Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details; ${count.toLocaleString()} ${sourceLabel} ${label} cannot be registered until then.`;
 }
 
 async function getFprStatus(fprEnabled) {
@@ -286,6 +287,8 @@ function computeOverall({
   trackingUrlCleanupEnabled,
   trackingUrlCleanupRuleCount,
   storedScriptletRuleCount,
+  storedUserScriptletRuleCount,
+  userScriptletResourceErrorCount,
   scriptlets,
   subscriptionErrors,
   debugLoggingAvailable,
@@ -335,7 +338,7 @@ function computeOverall({
     issues.push(makeIssue(
       'warning',
       'scriptlets',
-      scriptletUnavailableMessage(storedScriptletRuleCount),
+      scriptletUnavailableMessage(storedScriptletRuleCount, storedUserScriptletRuleCount),
       USER_SCRIPTS_ACTION
     ));
   } else if (shouldRetryScriptletRegistration(scriptlets, storedScriptletRuleCount)) {
@@ -363,6 +366,11 @@ function computeOverall({
 
   if (subscriptionErrors.length > 0) {
     issues.push(makeIssue('warning', 'subscriptions', `${subscriptionErrors.length} subscription list(s) have refresh errors.`, 'Refresh the affected lists or disable broken lists.'));
+  }
+
+  if (userScriptletResourceErrorCount > 0) {
+    const label = userScriptletResourceErrorCount === 1 ? 'resource has' : 'resources have';
+    issues.push(makeIssue('warning', 'scriptlets', `${userScriptletResourceErrorCount} user scriptlet ${label} refresh errors.`, 'Refresh or remove the affected user scriptlet resources.'));
   }
 
   if (globalProxyEnabled && !webrtc?.available) {
@@ -450,6 +458,7 @@ function computeOverall({
   if (
     (!scriptlets.apiAvailable && storedScriptletRuleCount > 0) ||
     subscriptionErrors.length > 0 ||
+    userScriptletResourceErrorCount > 0 ||
     diagnostics.some(diagnostic => diagnostic.severity === 'warning') ||
     issues.some(issue => issue.severity === 'warning')
   ) {
@@ -466,6 +475,9 @@ export async function getHealthStatus() {
     'subscriptionCosmeticRules',
     'localCosmeticRules',
     'subscriptionScriptletRules',
+    'userScriptletRules',
+    'userScriptletResources',
+    'userScriptletSources',
     'proxyConfigs',
     'whitelist',
     'fprWhitelist',
@@ -500,6 +512,15 @@ export async function getHealthStatus() {
     }));
   const lastUpdated = getLastUpdatedBounds(subscriptions);
   const subscriptionScriptletRules = asArray(storage.subscriptionScriptletRules);
+  const userScriptletRules = asArray(storage.userScriptletRules);
+  const userScriptletResourceCount = Object.keys(
+    storage.userScriptletResources && typeof storage.userScriptletResources === 'object'
+      ? storage.userScriptletResources
+      : {}
+  ).length;
+  const userScriptletSourceErrors = asArray(storage.userScriptletSources)
+    .filter(source => source?.lastError);
+  const totalScriptletRuleCount = subscriptionScriptletRules.length + userScriptletRules.length;
   const localCosmeticRules = asArray(storage.localCosmeticRules);
   const proxyConfigs = asArray(storage.proxyConfigs);
   const configuredProxies = proxyConfigs.filter(isConfiguredProxy);
@@ -507,10 +528,10 @@ export async function getHealthStatus() {
   const activeProxies = configuredProxies.filter(isActiveProxy);
   const globalProxyId = config.globalProxyId;
   const globalProxyConfigured = globalProxyId != null && activeProxies.some(pc => pc.id === globalProxyId);
-  let scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
-  if (shouldRetryScriptletRegistration(scriptlets, subscriptionScriptletRules.length)) {
+  let scriptlets = await getScriptletStatus(totalScriptletRuleCount);
+  if (shouldRetryScriptletRegistration(scriptlets, totalScriptletRuleCount)) {
     await syncUserScripts();
-    scriptlets = await getScriptletStatus(subscriptionScriptletRules.length);
+    scriptlets = await getScriptletStatus(totalScriptletRuleCount);
   }
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
   const diagnostics = normalizeHealthDiagnostics(storage.healthDiagnostics);
@@ -580,7 +601,11 @@ export async function getHealthStatus() {
     },
     scriptlets: {
       apiAvailable: scriptlets.apiAvailable,
-      storedRuleCount: subscriptionScriptletRules.length,
+      storedRuleCount: totalScriptletRuleCount,
+      subscriptionStoredRuleCount: subscriptionScriptletRules.length,
+      userStoredRuleCount: userScriptletRules.length,
+      userResourceCount: userScriptletResourceCount,
+      userResourceErrorCount: userScriptletSourceErrors.length,
       registeredUserScriptCount: scriptlets.registeredUserScriptCount,
       registrationStatus: scriptlets.registrationStatus,
       error: scriptlets.error
@@ -623,6 +648,8 @@ export async function getHealthStatus() {
     trackingUrlCleanupEnabled: health.master.trackingUrlCleanup,
     trackingUrlCleanupRuleCount: health.dnr.trackingUrlCleanupRuleCount,
     storedScriptletRuleCount: health.scriptlets.storedRuleCount,
+    storedUserScriptletRuleCount: health.scriptlets.userStoredRuleCount,
+    userScriptletResourceErrorCount: health.scriptlets.userResourceErrorCount,
     scriptlets: health.scriptlets,
     subscriptionErrors,
     debugLoggingAvailable: requestLogAvailable,

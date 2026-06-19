@@ -61,3 +61,17 @@ test('stats message types are routed as sensitive background messages', () => {
     assert.match(handlers, new RegExp(`registerHandler\\(MSG\\.${type}`), `${type} should have a handler`);
   }
 });
+
+test('user scriptlet message types are routed as sensitive background messages', () => {
+  const handlers = readProjectFile('extension/background/handlers.js');
+  for (const type of [
+    'USER_SCRIPTLETS_GET',
+    'USER_SCRIPTLET_SOURCE_ADD',
+    'USER_SCRIPTLET_SOURCE_REFRESH',
+    'USER_SCRIPTLET_SOURCE_REMOVE',
+    'USER_SCRIPTLET_RULES_SET'
+  ]) {
+    assert.match(handlers, new RegExp(`markSensitive\\(MSG\\.${type}\\)`), `${type} should be marked sensitive`);
+    assert.match(handlers, new RegExp(`registerHandler\\(MSG\\.${type}`), `${type} should have a handler`);
+  }
+});

@@ -108,7 +108,7 @@ Chroma can clean common tracking URLs without routing requests through extension
 
 ### Layer 2: Scriptlet Injection (scriptlets/engine.js)
 
-The advanced surgical layer of the extension is powered by the high-performance `chrome.userScripts` API. This engine parses complex scriptlet rules from filter list subscriptions, including uBlock Origin and AdGuard aliases.
+The advanced surgical layer of the extension is powered by the high-performance `chrome.userScripts` API. This engine registers supported scriptlet rules from filter list subscriptions and explicit user-added scriptlet resources. Subscription scriptlet rules can only call implementations shipped in Chroma's bundled library; user-added resources live in a separate advanced settings lane and run only after the user adds both a resource URL and matching rules.
 
 Key capabilities include:
 

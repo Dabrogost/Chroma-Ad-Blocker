@@ -412,7 +412,7 @@ function unquoteScriptletArg(arg) {
  * @param {string} line
  * @returns {{ domains: string[]|null, scriptlet: string, args: string[], runAt: string }|null}
  */
-function parseScriptletRule(line) {
+export function parseScriptletRule(line) {
   try {
     const markerIdx = line.indexOf('##+js(');
     if (markerIdx === -1) return null;

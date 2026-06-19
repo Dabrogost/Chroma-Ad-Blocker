@@ -627,6 +627,42 @@ test('scriptlet engine whitelist hardening', async (t) => {
     assert.doesNotMatch(code, /err\.message|err\.name|String\(err\)/);
   });
 
+  await t.test('user resource scriptlets use MAIN world, all frames, and coarse telemetry', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [{
+        scriptlet: 'resource-name.js',
+        args: ['needle'],
+        domains: ['example.net']
+      }],
+      userScriptletResources: {
+        'resource-name': {
+          name: 'resource-name',
+          displayName: 'resource-name.js',
+          sourceId: 'private-source-id',
+          code: '(function() { window.__needle = "{{1}}"; })();'
+        }
+      },
+      whitelist: ['excluded.example'],
+      config: {},
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registered.length, 1);
+    assert.strictEqual(registered[0].id, 'user_scriptlet_1');
+    assert.strictEqual(registered[0].world, 'MAIN');
+    assert.strictEqual(registered[0].allFrames, true);
+    assert.deepStrictEqual(plain(registered[0].matches), ['*://example.net/*', '*://*.example.net/*']);
+    assert.deepStrictEqual(plain(registered[0].excludeMatches), ['*://excluded.example/*', '*://*.excluded.example/*']);
+    const code = registered[0].js[0].code;
+    assert.match(code, /window\.__needle = "needle"/);
+    assert.match(code, /__CHROMA_SCRIPTLET_STATS__/);
+    assert.doesNotMatch(code, /private-source-id/);
+    assert.doesNotMatch(code, /sourceId|scriptlet:/);
+  });
+
   await t.test('whitelist changes re-sync subscription userScripts', async () => {
     const storageState = {
       subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],

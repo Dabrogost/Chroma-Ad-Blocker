@@ -65,6 +65,11 @@ const MSG = {
   SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
   SUBSCRIPTION_ADD: 'SUBSCRIPTION_ADD',
   SUBSCRIPTION_REMOVE: 'SUBSCRIPTION_REMOVE',
+  USER_SCRIPTLETS_GET: 'USER_SCRIPTLETS_GET',
+  USER_SCRIPTLET_SOURCE_ADD: 'USER_SCRIPTLET_SOURCE_ADD',
+  USER_SCRIPTLET_SOURCE_REFRESH: 'USER_SCRIPTLET_SOURCE_REFRESH',
+  USER_SCRIPTLET_SOURCE_REMOVE: 'USER_SCRIPTLET_SOURCE_REMOVE',
+  USER_SCRIPTLET_RULES_SET: 'USER_SCRIPTLET_RULES_SET',
   HEALTH_GET: 'HEALTH_GET',
   UPDATE_CHECK: 'UPDATE_CHECK',
   PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
@@ -99,6 +104,13 @@ function loadHandlers(options = {}) {
       storage.subscriptions = subscriptions;
       return { ok: true, importedCount: subscriptions.length };
     }),
+    getUserScriptletSettings: options.getUserScriptletSettings || (async () => ({ sources: [], ruleText: '', parsedRuleCount: 0 })),
+    addUserScriptletSource: options.addUserScriptletSource || (async () => ({ ok: true })),
+    refreshUserScriptletSource: options.refreshUserScriptletSource || (async () => ({ ok: true })),
+    removeUserScriptletSource: options.removeUserScriptletSource || (async () => ({ ok: true })),
+    setUserScriptletRuleText: options.setUserScriptletRuleText || (async () => ({ ok: true, parsedRuleCount: 0 })),
+    exportUserScriptletSettings: options.exportUserScriptletSettings || (async () => ({ sources: [], ruleText: '' })),
+    importUserScriptletSettings: options.importUserScriptletSettings || (async () => ({ ok: true, importedSources: 0, importedRules: 0 })),
     getStatsSnapshot: options.getStatsSnapshot || (async () => ({})),
     recordStatsEvents: options.recordStatsEvents || (async () => {}),
     resetStats: options.resetStats || (async () => {}),
@@ -279,6 +291,11 @@ test('Security Hardening - handlers.js', async (t) => {
       MSG.SUBSCRIPTION_REFRESH,
       MSG.SUBSCRIPTION_ADD,
       MSG.SUBSCRIPTION_REMOVE,
+      MSG.USER_SCRIPTLETS_GET,
+      MSG.USER_SCRIPTLET_SOURCE_ADD,
+      MSG.USER_SCRIPTLET_SOURCE_REFRESH,
+      MSG.USER_SCRIPTLET_SOURCE_REMOVE,
+      MSG.USER_SCRIPTLET_RULES_SET,
       MSG.WHITELIST_ADD,
       MSG.WHITELIST_REMOVE,
       MSG.FPR_WHITELIST_GET,
@@ -539,7 +556,15 @@ test('Security Hardening - handlers.js', async (t) => {
         enabled: true,
         isCustom: true,
         intervalHours: 24
-      }]
+      }],
+      exportUserScriptletSettings: async () => ({
+        sources: [{ name: 'Custom', url: 'https://cdn.example.com/resources.js' }],
+        ruleText: 'example.com##+js(custom-scriptlet)'
+      }),
+      importUserScriptletSettings: async (payload) => {
+        storage.userScriptlets = payload;
+        return { ok: true, importedSources: payload?.sources?.length || 0, importedRules: payload?.ruleText ? 1 : 0 };
+      }
     });
     sandbox.registerAll({
       markSensitive: () => {},
@@ -553,6 +578,12 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.deepStrictEqual(plain(exported.whitelist), ['example.com']);
     assert.deepStrictEqual(plain(exported.fprWhitelist), ['login.example.com']);
     assert.strictEqual(exported.subscriptions[0].id, 'custom_news');
+    assert.deepStrictEqual(plain(exported.userScriptlets.sources), [{
+      name: 'Custom',
+      url: 'https://cdn.example.com/resources.js'
+    }]);
+    assert.strictEqual(exported.userScriptlets.ruleText, 'example.com##+js(custom-scriptlet)');
+    assert.strictEqual(JSON.stringify(exported).includes('function()'), false);
 
     const imported = await handlers.CONFIG_IMPORT({
       settings: {
@@ -578,7 +609,11 @@ test('Security Hardening - handlers.js', async (t) => {
           url: 'https://lists.example.com/import.txt',
           enabled: false,
           isCustom: true
-        }]
+        }],
+        userScriptlets: {
+          sources: [{ name: 'Imported Scriptlets', url: 'https://cdn.example.com/imported.js' }],
+          ruleText: 'example.org##+js(imported-scriptlet)'
+        }
       }
     });
 
@@ -587,6 +622,7 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual(storage.proxyConfigs[0].authCipher, undefined);
     assert.deepStrictEqual(plain(storage.whitelist), ['example.org']);
     assert.strictEqual(storage.subscriptions.some(sub => sub.id === 'custom_import'), true);
+    assert.strictEqual(storage.userScriptlets.ruleText, 'example.org##+js(imported-scriptlet)');
     assert.deepStrictEqual(dnrUpdates, [false]);
   });
 

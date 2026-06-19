@@ -1,6 +1,7 @@
 /**
  * Chroma Ad-Blocker — Scriptlet Injection Engine (userScripts API)
- * Maps subscriptionScriptletRules to chrome.userScripts.
+ * Maps bundled subscription scriptlet rules and explicit user resources to
+ * chrome.userScripts.
  *
  * Requires manifest permissions: userScripts
  * Timing: document_start
@@ -22,6 +23,10 @@ const DEBUG = false;
 // <script> tags in <head>.
 const FPR_ID = 'chroma_fpr';
 const FPR_FILE = 'scriptlets/fingerprintRandomization.js';
+const USER_SCRIPTLET_RULES_KEY = 'userScriptletRules';
+const USER_SCRIPTLET_RESOURCES_KEY = 'userScriptletResources';
+const SUBSCRIPTION_SCRIPTLET_ID_PREFIX = 'scriptlet_';
+const USER_SCRIPTLET_ID_PREFIX = 'user_scriptlet_';
 
 function hasUserScriptsApi() {
   return !!(
@@ -62,8 +67,14 @@ export function syncUserScripts() {
 
 export async function recoverUserScriptsIfNeeded() {
   if (!hasUserScriptsApi()) return false;
-  const { subscriptionScriptletRules = [] } = await chrome.storage.local.get(['subscriptionScriptletRules']);
-  if (!Array.isArray(subscriptionScriptletRules) || subscriptionScriptletRules.length === 0) return false;
+  const {
+    subscriptionScriptletRules = [],
+    userScriptletRules = []
+  } = await chrome.storage.local.get(['subscriptionScriptletRules', USER_SCRIPTLET_RULES_KEY]);
+  const storedRuleCount =
+    (Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules.length : 0) +
+    (Array.isArray(userScriptletRules) ? userScriptletRules.length : 0);
+  if (storedRuleCount === 0) return false;
 
   const registered = await chrome.userScripts.getScripts();
   if (Array.isArray(registered) && registered.length > 0) return false;
@@ -105,16 +116,106 @@ function whitelistToExcludeMatches(whitelist) {
 
 const CHUNK_SIZE = 100;
 
+function normalizeUserScriptletName(name) {
+  const cleaned = String(name || '').trim().toLowerCase();
+  return cleaned.endsWith('.js') ? cleaned.slice(0, -3) : cleaned;
+}
+
+function getRuleMatches(rule) {
+  let matches = ['<all_urls>'];
+  let droppedDomains = 0;
+  let droppedRule = false;
+
+  if (rule.domains && rule.domains.length > 0) {
+    matches = [];
+    for (const raw of rule.domains) {
+      const d = sanitizeDomain(raw);
+      if (!d) {
+        droppedDomains++;
+        continue;
+      }
+      matches.push(`*://${d}/*`);
+      matches.push(`*://*.${d}/*`);
+    }
+    if (matches.length === 0) droppedRule = true;
+  }
+
+  return { matches, droppedDomains, droppedRule };
+}
+
+function normalizeRunAt(value) {
+  return ['document_start', 'document_end', 'document_idle'].includes(value)
+    ? value
+    : 'document_start';
+}
+
+function escapeTemplateArg(value) {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/`/g, '\\`')
+    .replace(/\$/g, '\\$');
+}
+
+function applyUserScriptletArgs(code, args) {
+  const safeArgs = Array.isArray(args) ? args : [];
+  return String(code || '')
+    .replace(/\{\{args\}\}/g, JSON.stringify(safeArgs))
+    .replace(/\{\{(\d+)\}\}/g, (_, index) => escapeTemplateArg(safeArgs[Number(index) - 1]));
+}
+
+function buildSubscriptionScriptletCode(fn, args) {
+  const argsStr = JSON.stringify(Array.isArray(args) ? args : []);
+  return `
+        try {
+          (${fn.toString()})(${argsStr});
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit' } }));
+        } catch (err) {
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error' } }));
+          throw err;
+        }
+      `;
+}
+
+function buildUserResourceCode(resource, args) {
+  const argsStr = JSON.stringify(Array.isArray(args) ? args : []);
+  const code = applyUserScriptletArgs(resource?.code || '', args);
+  return `
+        try {
+          (function() {
+            const scriptletArgs = ${argsStr};
+            const chromaScriptletArgs = scriptletArgs;
+            ${code}
+          })();
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit' } }));
+        } catch (err) {
+          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error' } }));
+          throw err;
+        }
+      `;
+}
+
 async function _syncUserScriptsImpl() {
   try {
     if (!hasUserScriptsApi()) {
-      const { subscriptionScriptletRules = [] } = await chrome.storage.local.get(['subscriptionScriptletRules']);
-      if (Array.isArray(subscriptionScriptletRules) && subscriptionScriptletRules.length > 0) {
+      const {
+        subscriptionScriptletRules = [],
+        userScriptletRules = []
+      } = await chrome.storage.local.get(['subscriptionScriptletRules', USER_SCRIPTLET_RULES_KEY]);
+      const storedRuleCount =
+        (Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules.length : 0) +
+        (Array.isArray(userScriptletRules) ? userScriptletRules.length : 0);
+      if (storedRuleCount > 0) {
         if (typeof recordHealthDiagnostic === 'function') {
           await recordHealthDiagnostic('scriptletRegistration', {
             area: 'scriptlets',
             severity: 'warning',
-            message: 'Subscription scriptlets could not be registered because the UserScripts API is unavailable.',
+            message: 'Scriptlets could not be registered because the UserScripts API is unavailable.',
             action: 'Open Chrome extension details and enable Allow User Scripts.',
             error: 'UserScripts API unavailable'
           });
@@ -130,8 +231,15 @@ async function _syncUserScriptsImpl() {
 
     const {
       subscriptionScriptletRules = [],
+      userScriptletRules = [],
+      userScriptletResources = {},
       whitelist = []
-    } = await chrome.storage.local.get(['subscriptionScriptletRules', 'whitelist']);
+    } = await chrome.storage.local.get([
+      'subscriptionScriptletRules',
+      USER_SCRIPTLET_RULES_KEY,
+      USER_SCRIPTLET_RESOURCES_KEY,
+      'whitelist'
+    ]);
     const excludeMatches = whitelistToExcludeMatches(whitelist);
 
     // Clear existing registered scripts
@@ -140,7 +248,13 @@ async function _syncUserScriptsImpl() {
       await chrome.userScripts.unregister({ ids: existing.map(s => s.id) });
     }
 
-    if (subscriptionScriptletRules.length === 0) {
+    const subscriptionRules = Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules : [];
+    const userRules = Array.isArray(userScriptletRules) ? userScriptletRules : [];
+    const userResources = userScriptletResources && typeof userScriptletResources === 'object'
+      ? userScriptletResources
+      : {};
+
+    if (subscriptionRules.length === 0 && userRules.length === 0) {
       if (typeof clearHealthDiagnostic === 'function') {
         await clearHealthDiagnostic('scriptletRegistration');
       }
@@ -149,48 +263,56 @@ async function _syncUserScriptsImpl() {
 
     const userScripts = [];
     let scriptCounter = 0;
+    let userScriptCounter = 0;
     let droppedDomains = 0;
     let droppedRules = 0;
 
-    for (const rule of subscriptionScriptletRules) {
+    for (const rule of subscriptionRules) {
       const fn = SCRIPTLET_MAP.get(rule.scriptlet);
       if (!fn) {
         if (DEBUG) console.warn(`[Chroma Scriptlets] Unknown scriptlet: ${rule.scriptlet}`);
         continue;
       }
 
-      let matches = ['<all_urls>'];
-      if (rule.domains && rule.domains.length > 0) {
-        matches = [];
-        for (const raw of rule.domains) {
-          const d = sanitizeDomain(raw);
-          if (!d) { droppedDomains++; continue; }
-          matches.push(`*://${d}/*`);
-          matches.push(`*://*.${d}/*`);
-        }
-        if (matches.length === 0) {
-          droppedRules++;
-          continue;
-        }
+      const matchResult = getRuleMatches(rule);
+      droppedDomains += matchResult.droppedDomains;
+      if (matchResult.droppedRule) {
+        droppedRules++;
+        continue;
       }
 
-      const argsStr = JSON.stringify(rule.args || []);
-      const code = `
-        try {
-          (${fn.toString()})(${argsStr});
-          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit' } }));
-        } catch (err) {
-          document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error' } }));
-          throw err;
-        }
-      `;
+      const script = {
+        id: `${SUBSCRIPTION_SCRIPTLET_ID_PREFIX}${++scriptCounter}`,
+        matches: matchResult.matches,
+        js: [{ code: buildSubscriptionScriptletCode(fn, rule.args) }],
+        runAt: normalizeRunAt(rule.runAt),
+        world: 'MAIN'
+      };
+      if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
+      userScripts.push(script);
+    }
+
+    for (const rule of userRules) {
+      const resource = userResources[normalizeUserScriptletName(rule?.scriptlet)];
+      if (!resource?.code) {
+        if (DEBUG) console.warn(`[Chroma Scriptlets] Missing user resource: ${rule?.scriptlet}`);
+        continue;
+      }
+
+      const matchResult = getRuleMatches(rule);
+      droppedDomains += matchResult.droppedDomains;
+      if (matchResult.droppedRule) {
+        droppedRules++;
+        continue;
+      }
 
       const script = {
-        id: `scriptlet_${++scriptCounter}`,
-        matches: matches,
-        js: [{ code }],
-        runAt: rule.runAt || 'document_start',
-        world: 'MAIN'
+        id: `${USER_SCRIPTLET_ID_PREFIX}${++userScriptCounter}`,
+        matches: matchResult.matches,
+        js: [{ code: buildUserResourceCode(resource, rule.args) }],
+        runAt: normalizeRunAt(rule.runAt),
+        world: 'MAIN',
+        allFrames: true
       };
       if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
       userScripts.push(script);
@@ -227,7 +349,7 @@ async function _syncUserScriptsImpl() {
         await recordHealthDiagnostic('scriptletRegistration', {
           area: 'scriptlets',
           severity: 'warning',
-          message: `Registered ${registered}/${userScripts.length} subscription scriptlets.`,
+          message: `Registered ${registered}/${userScripts.length} scriptlets.`,
           action: 'Open Chrome extension details and confirm Allow User Scripts is enabled.',
           error: `${userScripts.length - registered} scriptlet registration(s) failed`
         });
@@ -247,7 +369,7 @@ async function _syncUserScriptsImpl() {
       await recordHealthDiagnostic('scriptletRegistration', {
         area: 'scriptlets',
         severity: 'warning',
-        message: 'Subscription scriptlets could not be synchronized.',
+        message: 'Scriptlets could not be synchronized.',
         action: 'Open Chrome extension details and confirm Allow User Scripts is enabled.',
         error: err?.message || err
       });
@@ -380,7 +502,7 @@ async function _syncFprImpl() {
 //   used by subscription scriptlet domain expansion in the future)
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.subscriptionScriptletRules) {
+  if (changes.subscriptionScriptletRules || changes.userScriptletRules || changes.userScriptletResources) {
     if (DEBUG) console.log('[Chroma Scriptlets] Rule change detected, re-syncing userScripts.');
     syncUserScripts();
   }

@@ -19,6 +19,20 @@ Remote list content is not treated as arbitrary code. Lists are fetched over HTT
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
 
+## Advanced User Scriptlet Resources
+
+Chroma supports an advanced, user-initiated scriptlet resource lane for people who want to add uBO-style scriptlet resources themselves. This lane is separate from normal filter list subscriptions:
+
+- Chroma does not bundle these resources.
+- Chroma does not activate them through remote filter-list subscriptions.
+- Resource URLs must be added explicitly by the user in settings.
+- Matching `domain##+js(resource-name)` rules must also be saved by the user.
+- Cached resource code is not included in settings backups; backups store only resource URLs and user rules.
+
+User scriptlet resources are executable code. They are fetched from public HTTPS URLs selected by the user, parsed with size and MIME limits, stored locally, and registered through Chrome's documented `userScripts` API in the page MAIN world. This API is the only path Chroma uses for user-provided scriptlet code; Chroma does not use `eval`, `Function`, or extension-controlled remote script execution for this feature.
+
+Users should add only resources they trust. Health diagnostics report counts and coarse status for this feature without exposing raw resource code.
+
 ## Security Hardening
 
 Chroma implements several security measures to preserve extension integrity and reduce the amount of page-visible state:

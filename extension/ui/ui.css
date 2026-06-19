@@ -1257,6 +1257,107 @@ input.control-pending + .slider {
   padding: 1px 4px;
 }
 
+.user-scriptlet-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 9px;
+}
+
+.user-scriptlet-add-btn .icon-action-btn__icon {
+  width: 10px;
+  height: 10px;
+}
+
+.user-scriptlet-warning {
+  padding: 10px 14px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+  background: rgba(244, 197, 66, 0.07);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.user-scriptlet-subsection-title {
+  padding: 12px 14px 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.user-scriptlet-source-form {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.user-scriptlet-source-url,
+.user-scriptlet-resource-names {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.user-scriptlet-available {
+  padding-bottom: 4px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+
+.user-scriptlet-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 14px 10px;
+}
+
+.user-scriptlet-chip {
+  max-width: 100%;
+  padding: 3px 8px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  background: rgba(108, 92, 231, 0.12);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+
+.user-scriptlet-chip--muted {
+  color: var(--text-muted);
+}
+
+.user-scriptlet-rules {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+
+.user-scriptlet-rules > .user-scriptlet-subsection-title {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.user-scriptlet-rules-text {
+  min-height: 120px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  line-height: 1.45;
+}
+
+.user-scriptlet-rule-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.user-scriptlet-rules-status {
+  min-width: 0;
+  white-space: normal;
+}
+
 .zapper-domain-header {
   padding: 8px 20px 4px;
   font-size: 11px;

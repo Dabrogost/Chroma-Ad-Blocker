@@ -370,6 +370,50 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderUserScriptletsShell() {
+    return `
+      <div class="section-title section-title--inline">
+        <span class="section-title-text">User Scriptlets</span>
+        <button id="addUserScriptletSourceBtn" class="reset-btn compact-action-btn user-scriptlet-add-btn" title="Add Resource URL" aria-label="Add Resource URL" type="button">
+          ${plusIcon}
+          <span>Add URL</span>
+        </button>
+      </div>
+      <div class="protection-list user-scriptlet-panel" id="userScriptletPanel">
+        <div class="user-scriptlet-warning">
+          User scriptlet resources run code you choose through Chrome's User Scripts API. Add only resources you trust.
+        </div>
+        <div id="addUserScriptletSourceForm" class="user-scriptlet-source-form is-hidden">
+          <div class="add-subscription-grid">
+            <input type="text" id="newUserScriptletSourceName" class="chroma-input chroma-input--compact" placeholder="Name (optional)" />
+            <input type="text" id="newUserScriptletSourceUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/scriptlet-resources.js" />
+            <div id="newUserScriptletSourceError" class="form-error is-hidden"></div>
+            <div class="form-actions">
+              <button id="newUserScriptletSourceAddBtn" class="reset-btn form-submit-btn">Add</button>
+              <button id="newUserScriptletSourceCancelBtn" class="reset-btn inline-danger-btn" title="Cancel" aria-label="Cancel adding user scriptlet resource" type="button">&times;</button>
+            </div>
+          </div>
+        </div>
+        <div class="user-scriptlet-subsection-title">Resource URLs</div>
+        <div id="userScriptletSourceList" class="user-scriptlet-source-list">
+          ${renderSkeletonRows(2, 'user-scriptlet-skeleton-row')}
+        </div>
+        <div class="user-scriptlet-available is-hidden" id="userScriptletAvailableResources">
+          <div class="user-scriptlet-subsection-title">Available Resources</div>
+          <div class="user-scriptlet-chip-list" id="userScriptletAvailableResourceList"></div>
+        </div>
+        <div class="user-scriptlet-rules">
+          <div class="user-scriptlet-subsection-title">Rules</div>
+          <textarea id="userScriptletRulesText" class="chroma-input user-scriptlet-rules-text" spellcheck="false" placeholder="example.com##+js(resource-name)&#10;another.example##+js(other-resource)"></textarea>
+          <div class="user-scriptlet-rule-actions">
+            <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status"></div>
+            <button id="saveUserScriptletRulesBtn" class="reset-btn compact-action-btn" type="button">Save Rules</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderProxyShell({ settingsMode }) {
     return `
       <div class="section-title section-title--inline"${settingsMode ? ' id="proxySection"' : ''}>
@@ -441,6 +485,7 @@ const ChromaComponents = (() => {
       ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
       ${renderProtectionControls({ showZapper: !settingsMode })}
       ${renderFilterListShell({ settingsMode })}
+      ${settingsMode ? renderUserScriptletsShell() : ''}
       ${renderProxyShell({ settingsMode })}
       ${settingsMode ? renderLocalZapperShell() : ''}
       ${renderRequestLogShell()}
@@ -457,6 +502,7 @@ const ChromaComponents = (() => {
     renderProtectionControls,
     renderHealthPanelShell,
     renderFilterListShell,
+    renderUserScriptletsShell,
     renderProxyShell,
     renderLocalZapperShell,
     renderRequestLogShell,

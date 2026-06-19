@@ -22,6 +22,30 @@ Chroma supports user-added filter list subscriptions. You can host your own list
 
 Custom subscriptions can include supported Adblock/uBO-style network rules, cosmetic rules, cosmetic exceptions, and scriptlet rules. During refresh, Chroma parses the list into network, cosmetic, and scriptlet buckets, drops unsupported or malformed rules, deduplicates network rules already covered by the bundled static ruleset, and only keeps scriptlets that map to Chroma's shipped scriptlet library.
 
+## Advanced User Scriptlet Resources
+
+Chroma also has a separate advanced settings area for user-provided scriptlet resources. This is not a filter-list subscription feature and it is disabled by default until the user adds resource URLs and rules.
+
+The setup model mirrors uBlock Origin's resource-plus-rule workflow:
+
+```text
+Resource URL:
+https://example.com/user-scriptlet-resources.js
+
+Rule:
+example.com##+js(resource-name)
+```
+
+Resource files use uBO-style resource definitions such as:
+
+```text
+resource-name.js text/javascript (function() { /* user-provided code */ })();
+```
+
+When a user adds a resource, Chroma fetches the raw HTTPS file, parses JavaScript resource entries, normalizes `.js` suffixes so `resource-name.js` can be called as `+js(resource-name)`, and registers matching user rules through Chrome's `userScripts` API. Resource URLs must use public `https://` URLs with the default HTTPS port and no credentials. Local and private-network resource hosts are rejected.
+
+User scriptlet resources are executable code selected by the user. Add only resources you trust, and reload affected tabs after adding or refreshing resources so document-start hooks can run early enough.
+
 ## Why Custom Lists Still Work In MV3
 
 Manifest V3 does not allow extensions to intercept and decide every request in JavaScript the way MV2 blockers often did. Chroma's subscription design works around that by doing the expensive work at refresh time instead of request time.
@@ -68,6 +92,8 @@ example.com##+js(set-constant, adsEnabled, false)
 ## Remote List Trust Boundary
 
 Remote list content is not treated as arbitrary code. Lists are fetched over HTTPS, parsed locally, bounded by response-size and rule-budget limits, deduplicated against bundled static rules where applicable, and unsupported syntax is dropped. Scriptlet rules can only call implementations already shipped in Chroma's bundled scriptlet library.
+
+Advanced user scriptlet resources are the explicit exception to this model. They are not installed by Chroma, not bundled with Chroma, and not activated through filter-list subscriptions. They run only after the user adds a resource URL and matching user scriptlet rules in settings.
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
 

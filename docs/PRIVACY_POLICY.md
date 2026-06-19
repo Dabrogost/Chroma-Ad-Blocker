@@ -20,6 +20,7 @@ The Extension uses your browser's local storage (`chrome.storage.local`) to save
 - **User Settings**: Your preferred toggles for network blocking, YouTube stripping, ad acceleration, cosmetic filtering, fingerprint randomization, proxy routing, and related options.
 - **Whitelists**: Domains you choose to exempt from Chroma protection or fingerprint randomization.
 - **Filter List Data**: Subscription metadata and cached parsed rules from enabled filter lists.
+- **User Scriptlet Resources**: If you add advanced user scriptlet resources, Chroma stores the resource URLs, parsed resource metadata, cached resource code, and your matching user scriptlet rules locally.
 - **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are stored locally in an obfuscated form with a bundled extension key and used only for proxy authentication. This is not strong encryption; protect your browser profile and operating-system account accordingly.
 - **Local Statistics and Request Log**: Local blocked-request counts and a bounded request log used for the popup display. The log can include blocked request URLs, request types, timestamps, and matched rule IDs. This data is stored locally and can be reset from the extension UI.
 - **Health Diagnostics**: Coarse local status entries for material background failures, such as DNR sync, UserScripts registration, or proxy PAC write failures. These entries are sanitized and are not designed to store request URLs, proxy hosts, credentials, or raw filter rules.
@@ -35,7 +36,7 @@ The Extension requires specific permissions to function effectively. Below is a 
 - **`storage` and `unlimitedStorage`**: Save settings, whitelists, proxy configuration, subscription metadata, cached rules, statistics, and request-log data locally.
 - **`tabs`**: Reads the active tab URL for whitelist controls, opens extension pages or links from the popup/settings UI, and reloads tabs after site-level whitelist changes.
 - **`alarms`**: Schedules recurring subscription refresh checks in the MV3 service worker.
-- **`userScripts`**: Registers subscription scriptlets in the page context using Chrome's native userScripts API. In Chrome 138 and newer, this API also requires the user to enable Chrome's per-extension **Allow User Scripts** toggle.
+- **`userScripts`**: Registers bundled subscription scriptlets and explicit user-added scriptlet resources in the page context using Chrome's native userScripts API. In Chrome 138 and newer, this API also requires the user to enable Chrome's per-extension **Allow User Scripts** toggle.
 - **`scripting`**: Supports extension-controlled script work, including Element Zapper injection and fingerprint-randomization logic when enabled.
 - **`proxy`**: Applies browser-level PAC scripts for split-tunnel and global fallback proxy routing.
 - **`webRequest` and `webRequestAuthProvider`**: Responds to proxy authentication challenges when an HTTP/HTTPS proxy requires credentials.
@@ -46,6 +47,7 @@ We do not sell, share, or transmit your browsing data to Chroma-controlled serve
 
 Some features make network requests as part of their normal function:
 - **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, and Fanboy Annoyance. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
+- **User Scriptlet Resource Updates**: Advanced user scriptlet resources are fetched from the HTTPS URLs you add in settings.
 - **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available.
 - **Proxy Testing**: When you test a proxy, Chroma requests a public IP-check endpoint through the selected proxy to verify connectivity.
 - **Configured Proxy Routing**: If you enable a proxy route or global fallback, matching browser traffic is routed through the proxy server you configured.

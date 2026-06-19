@@ -211,6 +211,39 @@ test('health diagnostics', async (t) => {
     ));
   });
 
+  await t.test('user scriptlet resource errors return degraded without raw URLs', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        userScriptletRules: [{ scriptlet: 'custom-scriptlet', args: [], domains: ['example.com'] }],
+        userScriptletResources: {
+          'custom-scriptlet': {
+            name: 'custom-scriptlet',
+            sourceId: 'usr_test',
+            code: '(function(){})();'
+          }
+        },
+        userScriptletSources: [{
+          id: 'usr_test',
+          name: 'Custom',
+          url: 'https://cdn.example.com/resources.js',
+          lastError: 'HTTP 503 at https://cdn.example.com/resources.js'
+        }]
+      },
+      userScripts: fullUserScriptsApi({ getScripts: async () => [{ id: 'user_scriptlet_1' }] })
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.scriptlets.storedRuleCount, 1);
+    assert.strictEqual(health.scriptlets.userStoredRuleCount, 1);
+    assert.strictEqual(health.scriptlets.userResourceCount, 1);
+    assert.strictEqual(health.scriptlets.userResourceErrorCount, 1);
+    const issue = health.overall.issues.find(item => /user scriptlet resource has refresh errors/i.test(item.message));
+    assert.ok(issue);
+    assert.strictEqual(JSON.stringify(health).includes('cdn.example.com'), false);
+  });
+
   await t.test('userScripts unavailable consolidates scriptlet registration diagnostics', async () => {
     const sandbox = loadHealthSandbox({
       storage: {
