@@ -415,6 +415,47 @@ function buildResourceEntries(parsedResources, sourceId, updatedAt) {
   }));
 }
 
+function collectResourceNamesForSource(resources, source) {
+  const names = new Set();
+  for (const resource of Object.values(asObject(resources))) {
+    if (resource?.sourceId !== source?.id) continue;
+    for (const name of [resource.name, resource.displayName, ...asArray(resource.aliases)]) {
+      const normalized = normalizeUserScriptletName(name);
+      if (normalized) names.add(normalized);
+    }
+  }
+  for (const name of asArray(source?.resourceNames)) {
+    const normalized = normalizeUserScriptletName(name);
+    if (normalized) names.add(normalized);
+  }
+  return names;
+}
+
+function pruneRuleTextForRemovedResources(ruleText, removedResourceNames) {
+  if (!(removedResourceNames instanceof Set) || removedResourceNames.size === 0) return null;
+  const lines = String(ruleText || '').replace(/\r\n?/g, '\n').split('\n');
+  let changed = false;
+  const keptLines = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    const parsed = line && !isCommentLine(line) ? parseScriptletRule(line) : null;
+    if (parsed && removedResourceNames.has(normalizeUserScriptletName(parsed.scriptlet))) {
+      changed = true;
+      continue;
+    }
+    keptLines.push(rawLine);
+  }
+
+  if (!changed) return null;
+  const nextRuleText = keptLines.join('\n').trim();
+  const parsed = parseUserScriptletRuleText(nextRuleText);
+  return {
+    ruleText: parsed.ok && parsed.rules.length > 0 ? nextRuleText : '',
+    rules: parsed.ok ? parsed.rules : []
+  };
+}
+
 async function attachHashes(entries) {
   return Promise.all(entries.map(async entry => ({
     ...entry,
@@ -574,23 +615,37 @@ export async function refreshUserScriptletSource(id) {
 }
 
 export async function removeUserScriptletSource(id) {
-  const { userScriptletSources = [], userScriptletResources = {} } = await chrome.storage.local.get([
+  const {
+    userScriptletSources = [],
+    userScriptletResources = {},
+    userScriptletRuleText = ''
+  } = await chrome.storage.local.get([
     USER_SCRIPTLET_STORAGE_KEYS.sources,
-    USER_SCRIPTLET_STORAGE_KEYS.resources
+    USER_SCRIPTLET_STORAGE_KEYS.resources,
+    USER_SCRIPTLET_STORAGE_KEYS.ruleText
   ]);
   const sources = asArray(userScriptletSources);
+  const removedSource = sources.find(source => source?.id === id);
   const nextSources = sources.filter(source => source?.id !== id);
   if (nextSources.length === sources.length) return { ok: false, error: 'User scriptlet resource not found' };
 
   const nextResources = { ...asObject(userScriptletResources) };
+  const removedResourceNames = collectResourceNamesForSource(nextResources, removedSource);
   for (const [name, resource] of Object.entries(nextResources)) {
     if (resource?.sourceId === id) delete nextResources[name];
   }
+  const prunedRules = pruneRuleTextForRemovedResources(userScriptletRuleText, removedResourceNames);
 
-  await chrome.storage.local.set({
+  const update = {
     [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources,
     [USER_SCRIPTLET_STORAGE_KEYS.resources]: nextResources
-  });
+  };
+  if (prunedRules) {
+    update[USER_SCRIPTLET_STORAGE_KEYS.ruleText] = prunedRules.ruleText;
+    update[USER_SCRIPTLET_STORAGE_KEYS.rules] = prunedRules.rules;
+  }
+
+  await chrome.storage.local.set(update);
   return { ok: true };
 }
 

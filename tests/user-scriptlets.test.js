@@ -239,6 +239,51 @@ test('user scriptlet resource storage manager', async (t) => {
     assert.strictEqual(Object.keys(storage.userScriptletResources).length, 1);
   });
 
+  await t.test('removing a source clears cached resources and matching user rules', async () => {
+    const storage = {};
+    const { api } = loadUserResources({
+      storage,
+      fetch: async (url) => {
+        const isSecond = String(url).includes('/two.js');
+        const name = isSecond ? 'beta.js' : 'alpha.js';
+        return {
+          ok: true,
+          status: 200,
+          headers: makeHeaders(),
+          text: async () => `${name} text/javascript (function() { window.__${name.slice(0, -3)} = true; })();`
+        };
+      }
+    });
+
+    const alpha = await api.addUserScriptletSource({ url: 'https://cdn.example.com/one.js' });
+    const beta = await api.addUserScriptletSource({ url: 'https://cdn.example.com/two.js' });
+    assert.strictEqual(alpha.ok, true);
+    assert.strictEqual(beta.ok, true);
+
+    const alphaId = storage.userScriptletSources[0].id;
+    const betaId = storage.userScriptletSources[1].id;
+    const saved = await api.setUserScriptletRuleText([
+      '! keep comment',
+      'example.com##+js(alpha)',
+      'twitch.tv##+js(beta)'
+    ].join('\n'));
+    assert.deepStrictEqual(plain(saved), { ok: true, parsedRuleCount: 2 });
+
+    const removedAlpha = await api.removeUserScriptletSource(alphaId);
+    assert.deepStrictEqual(plain(removedAlpha), { ok: true });
+    assert.strictEqual(storage.userScriptletResources.alpha, undefined);
+    assert.ok(storage.userScriptletResources.beta);
+    assert.doesNotMatch(storage.userScriptletRuleText, /alpha/);
+    assert.match(storage.userScriptletRuleText, /beta/);
+    assert.deepStrictEqual(plain(storage.userScriptletRules.map(rule => rule.scriptlet)), ['beta']);
+
+    const removedBeta = await api.removeUserScriptletSource(betaId);
+    assert.deepStrictEqual(plain(removedBeta), { ok: true });
+    assert.deepStrictEqual(plain(storage.userScriptletResources), {});
+    assert.strictEqual(storage.userScriptletRuleText, '');
+    assert.deepStrictEqual(plain(storage.userScriptletRules), []);
+  });
+
   await t.test('settings import stores setup only and clears cached executable code', async () => {
     const { api, storage } = loadUserResources({
       storage: {

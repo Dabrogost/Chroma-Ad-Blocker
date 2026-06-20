@@ -111,6 +111,7 @@ function loadHandlers(options = {}) {
     setUserScriptletRuleText: options.setUserScriptletRuleText || (async () => ({ ok: true, parsedRuleCount: 0 })),
     exportUserScriptletSettings: options.exportUserScriptletSettings || (async () => ({ sources: [], ruleText: '' })),
     importUserScriptletSettings: options.importUserScriptletSettings || (async () => ({ ok: true, importedSources: 0, importedRules: 0 })),
+    syncUserScripts: options.syncUserScripts || (async () => {}),
     getStatsSnapshot: options.getStatsSnapshot || (async () => ({})),
     recordStatsEvents: options.recordStatsEvents || (async () => {}),
     resetStats: options.resetStats || (async () => {}),
@@ -626,6 +627,39 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.deepStrictEqual(dnrUpdates, [false]);
   });
 
+  await t.test('advanced user scriptlet mutations sync registered scripts after successful changes', async () => {
+    let syncCallCount = 0;
+    const sandbox = loadHandlers({
+      addUserScriptletSource: async () => ({ ok: true }),
+      refreshUserScriptletSource: async () => ({ ok: true }),
+      removeUserScriptletSource: async () => ({ ok: true }),
+      setUserScriptletRuleText: async (ruleText) => (
+        ruleText === 'bad'
+          ? { ok: false, error: 'Invalid user scriptlet rules' }
+          : { ok: true, parsedRuleCount: ruleText ? 1 : 0 }
+      ),
+      syncUserScripts: async () => {
+        syncCallCount++;
+      }
+    });
+
+    assert.deepStrictEqual(plain(await sandbox.handleUserScriptletSourceAdd({ source: { url: 'https://cdn.example.com/resources.js' } })), { ok: true });
+    assert.strictEqual(syncCallCount, 1);
+
+    assert.deepStrictEqual(plain(await sandbox.handleUserScriptletSourceRefresh({ id: 'usr_valid' })), { ok: true });
+    assert.strictEqual(syncCallCount, 2);
+
+    assert.deepStrictEqual(plain(await sandbox.handleUserScriptletSourceRemove({ id: 'usr_valid' })), { ok: true });
+    assert.strictEqual(syncCallCount, 3);
+
+    assert.deepStrictEqual(plain(await sandbox.handleUserScriptletRulesSet({ ruleText: '' })), { ok: true, parsedRuleCount: 0 });
+    assert.strictEqual(syncCallCount, 4);
+
+    assert.strictEqual((await sandbox.handleUserScriptletSourceRemove({ id: '../bad' })).ok, false);
+    assert.strictEqual((await sandbox.handleUserScriptletRulesSet({ ruleText: 'bad' })).ok, false);
+    assert.strictEqual(syncCallCount, 4);
+  });
+
   await t.test('proxy credential preserve keeps stored byte-array auth', async () => {
     const existing = [{
       id: 15,
@@ -851,6 +885,46 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
     assert.strictEqual(parsed.skipped.regex, 2);
     assert.strictEqual(parsed.skipped.skipOption, 1);
+    assert.strictEqual(parsed.skipped.malformed, 0);
+  });
+
+  await t.test('translates safe wildcard-host network rules to DNR regex filters', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '||temptation.*/temptation.js$script,~third-party,domain=ad.nl|hln.be',
+      '||loader.*.com/prod/*/loader.min.js$script'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.networkRules.length, 2);
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 0);
+    assert.strictEqual(parsed.stats.translatedRegexFilter, 2);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, undefined);
+    assert.match(parsed.networkRules[0].condition.regexFilter, /^\^https\?:\/\//);
+    const temptationRegex = new RegExp(parsed.networkRules[0].condition.regexFilter);
+    assert.strictEqual(temptationRegex.test('https://temptation.example/temptation.js'), true);
+    assert.strictEqual(temptationRegex.test('https://a.b.temptation.example/temptation.js'), true);
+    assert.strictEqual(temptationRegex.test('https://temptation.example/other.js'), false);
+    assert.deepStrictEqual(plain(parsed.networkRules[0].condition.resourceTypes), ['script']);
+    assert.strictEqual(parsed.networkRules[0].condition.domainType, 'firstParty');
+    assert.deepStrictEqual(plain(parsed.networkRules[0].condition.initiatorDomains), ['ad.nl', 'hln.be']);
+    const loaderRegex = new RegExp(parsed.networkRules[1].condition.regexFilter);
+    assert.strictEqual(loaderRegex.test('https://loader.foo.com/prod/v1/loader.min.js'), true);
+    assert.strictEqual(loaderRegex.test('https://cdn.foo.com/prod/v1/loader.min.js'), false);
+  });
+
+  await t.test('drops unsupported DNR urlFilter shapes without rejecting the list', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '||bad host.example/ad.js$script',
+      '||bad[host]/ad.js$script',
+      'bad|anchor.example/ad.js$script',
+      '||ads.example^'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||ads.example^');
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 3);
+    assert.strictEqual(parsed.stats.translatedRegexFilter, 0);
     assert.strictEqual(parsed.skipped.malformed, 0);
   });
 

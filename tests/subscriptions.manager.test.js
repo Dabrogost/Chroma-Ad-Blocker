@@ -18,6 +18,14 @@ function networkRule(urlFilter, actionType = 'block', overrides = {}) {
   };
 }
 
+function regexRule(regexFilter, actionType = 'block', overrides = {}) {
+  return {
+    priority: overrides.priority || (actionType === 'allow' ? 2 : 1),
+    action: { type: actionType },
+    condition: { regexFilter, ...(overrides.condition || {}) }
+  };
+}
+
 function loadManager(options = {}) {
   const storage = options.storage || {};
   const appliedRules = [];
@@ -161,7 +169,7 @@ test('Subscription lifecycle manager', async (t) => {
           { domains: ['example.com'], scriptlet: 'set-constant', args: ['foo', 'true'], runAt: 'document_start' },
           { domains: ['example.com'], scriptlet: 'missing-scriptlet', args: [], runAt: 'document_start' }
         ],
-        skipped: {}
+        skipped: { unsupportedUrlFilter: 2 }
       })
     });
 
@@ -184,9 +192,46 @@ test('Subscription lifecycle manager', async (t) => {
       sourceId: r.sourceId
     }))), [{ scriptlet: 'set-constant', sourceId: 'sub-a' }]);
     assert.deepStrictEqual(plain(storage.subscriptions[0].ruleCount), { network: 2, cosmetic: 1, scriptlet: 1 });
+    assert.deepStrictEqual(plain(storage.subscriptions[0].compatibility), { translatedRegexFilter: 0, unsupportedUrlFilter: 2 });
     assert.strictEqual(storage.subscriptions[0].lastError, null);
     assert.ok(storage.subscriptions[0].lastUpdated > 0);
     assert.ok(/^\d+$/.test(storage.subscriptions[0].version));
+  });
+
+  await t.test('refreshSubscription filters static duplicates for translated regex rules', async () => {
+    const storage = {
+      subscriptions: [{
+        id: 'sub-a',
+        name: 'Sub A',
+        url: 'https://lists.example/sub-a.txt',
+        enabled: true,
+        lastUpdated: 0,
+        version: null,
+        lastError: null,
+        ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+      }]
+    };
+    const translated = '^https?://(?:[^/?#:]+\\.)*temptation\\.[^/?#]*/temptation\\.js';
+    const manager = loadManager({
+      storage,
+      staticRules: [regexRule(translated)],
+      parseList: () => ({
+        networkRules: [
+          regexRule(translated),
+          regexRule('^https?://fresh\\.example/ad\\.js')
+        ],
+        cosmeticRules: [],
+        scriptletRules: [],
+        skipped: { unsupportedUrlFilter: 1 }
+      })
+    });
+
+    const result = await manager.refreshSubscription('sub-a');
+
+    assert.deepStrictEqual(plain(result), { ok: true });
+    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a'].map(r => r.condition.regexFilter)), ['^https?://fresh\\.example/ad\\.js']);
+    assert.deepStrictEqual(plain(storage.subscriptions[0].ruleCount), { network: 1, cosmetic: 0, scriptlet: 0 });
+    assert.deepStrictEqual(plain(storage.subscriptions[0].compatibility), { translatedRegexFilter: 1, unsupportedUrlFilter: 1 });
   });
 
   await t.test('refreshSubscription stores validators and sends conditional headers on later refreshes', async () => {

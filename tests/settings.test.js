@@ -269,8 +269,52 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(list.querySelector('.name').textContent, maliciousName);
     assert.strictEqual(list.querySelector('.user-scriptlet-source-url').textContent, maliciousUrl);
     assert.strictEqual(list.querySelector('.subscription-error').textContent, `Error: ${maliciousError}`);
-    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletAvailableResourceList .user-scriptlet-chip').textContent, 'custom-scriptlet.js');
+    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletAvailableResourceList .user-scriptlet-chip__name').textContent, 'custom-scriptlet.js');
+    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletAvailableResourceList .user-scriptlet-chip__status').textContent, 'Linked');
     assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletRulesText').value, maliciousRuleText);
+    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletRulesText').readOnly, false);
+    assert.strictEqual(harness.dom.window.document.querySelector('#saveUserScriptletRulesBtn').disabled, false);
+  });
+
+  await t.test('user scriptlet resources show linked and missing rule state', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        USER_SCRIPTLETS_GET: {
+          sources: [{
+            id: 'usr_vaft',
+            name: 'VAFT',
+            url: 'https://cdn.example.com/vaft.js',
+            lastUpdated: Date.now(),
+            lastError: null,
+            resourceCount: 2,
+            resourceNames: ['twitch-videoad.js', 'unused-helper.js']
+          }],
+          ruleText: [
+            'twitch.tv##+js(twitch-videoad)',
+            'example.com##+js(missing-helper)'
+          ].join('\n'),
+          parsedRuleCount: 2,
+          availableResourceNames: ['twitch-videoad.js', 'unused-helper.js']
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const chips = Array.from(doc.querySelectorAll('#userScriptletAvailableResourceList .user-scriptlet-chip'));
+
+    assert.ok(chips[0].classList.contains('user-scriptlet-chip--linked'));
+    assert.strictEqual(chips[0].querySelector('.user-scriptlet-chip__name').textContent, 'twitch-videoad.js');
+    assert.strictEqual(chips[0].querySelector('.user-scriptlet-chip__status').textContent, 'Linked');
+    assert.strictEqual(chips[1].querySelector('.user-scriptlet-chip__name').textContent, 'unused-helper.js');
+    assert.strictEqual(chips[1].querySelector('.user-scriptlet-chip__status').textContent, 'Unused');
+    assert.ok(chips[2].classList.contains('user-scriptlet-chip--missing'));
+    assert.strictEqual(chips[2].querySelector('.user-scriptlet-chip__name').textContent, 'missing-helper');
+    assert.strictEqual(chips[2].querySelector('.user-scriptlet-chip__status').textContent, 'Missing');
+    assert.strictEqual(doc.querySelector('#userScriptletRulesStatus').textContent, '2 saved rule(s) \u00b7 1 linked resource(s) \u00b7 1 missing resource(s).');
+    assert.ok(doc.querySelector('#userScriptletRulesStatus').classList.contains('form-error'));
   });
 
   await t.test('user scriptlet source add failures restore controls', async () => {
@@ -604,6 +648,10 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(dom.window.document.querySelector('#statsSitesList .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#subscriptionList .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#userScriptletSourceList .skeleton-row'));
+    assert.ok(dom.window.document.querySelector('#userScriptletAvailableResourceList .skeleton-line'));
+    assert.strictEqual(dom.window.document.querySelector('#userScriptletRulesText').readOnly, true);
+    assert.strictEqual(dom.window.document.querySelector('#saveUserScriptletRulesBtn').disabled, true);
+    assert.strictEqual(dom.window.document.querySelector('#userScriptletRulesStatus').textContent, 'Loading rules...');
     assert.strictEqual(dom.window.document.querySelector('#addUserScriptletSourceBtn').textContent.trim(), 'Add URL');
     assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
@@ -925,7 +973,8 @@ test('settings page proxy and zapper management safety', async (t) => {
           enabled: true,
           isCustom: true,
           lastUpdated: 0,
-          ruleCount: { network: 10, cosmetic: 0, scriptlet: 0 }
+          ruleCount: { network: 10, cosmetic: 0, scriptlet: 0 },
+          compatibility: { translatedRegexFilter: 6, unsupportedUrlFilter: 1 }
         }],
         SUBSCRIPTION_SET: { ok: false, error: 'write failed' },
         SUBSCRIPTION_REMOVE: { ok: false, error: 'remove failed' }
@@ -934,6 +983,10 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     await harness.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
+
+    const descTexts = Array.from(harness.dom.window.document.querySelectorAll('#subscriptionList .desc'))
+      .map(node => node.textContent);
+    assert.ok(descTexts.includes('Network compatibility: 6 translated \u00b7 1 skipped'));
 
     const toggle = harness.dom.window.document.querySelector('.sub-toggle');
     toggle.checked = false;
@@ -994,6 +1047,7 @@ test('settings page proxy and zapper management safety', async (t) => {
       STATS_GET: deferred(),
       HEALTH_GET: deferred(),
       SUBSCRIPTION_GET: deferred(),
+      USER_SCRIPTLETS_GET: deferred(),
       PROXY_CONFIG_GET: deferred(),
       ZAPPER_RULES_GET: deferred()
     };
@@ -1004,13 +1058,23 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(harness.messages.some(message => message.type === 'STATS_GET'));
     assert.ok(harness.messages.some(message => message.type === 'HEALTH_GET'));
     assert.ok(harness.messages.some(message => message.type === 'SUBSCRIPTION_GET'));
+    assert.ok(harness.messages.some(message => message.type === 'USER_SCRIPTLETS_GET'));
     assert.ok(harness.messages.some(message => message.type === 'PROXY_CONFIG_GET'));
     assert.ok(harness.messages.some(message => message.type === 'ZAPPER_RULES_GET'));
     assert.ok(harness.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'));
+    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletRulesText').readOnly, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#saveUserScriptletRulesBtn').disabled, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#userScriptletRulesStatus').textContent, 'Loading rules...');
 
     slow.STATS_GET.resolve(null);
     slow.HEALTH_GET.resolve(null);
     slow.SUBSCRIPTION_GET.resolve([]);
+    slow.USER_SCRIPTLETS_GET.resolve({
+      sources: [],
+      ruleText: '',
+      parsedRuleCount: 0,
+      availableResourceNames: []
+    });
     slow.PROXY_CONFIG_GET.resolve([]);
     slow.ZAPPER_RULES_GET.resolve({ rules: [] });
   });

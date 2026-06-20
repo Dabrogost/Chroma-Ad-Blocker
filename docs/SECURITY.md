@@ -33,6 +33,8 @@ User scriptlet resources are executable code. They are fetched from public HTTPS
 
 Users should add only resources they trust. Health diagnostics report counts and coarse status for this feature without exposing raw resource code.
 
+For practical setup, examples, and troubleshooting, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md).
+
 ## Security Hardening
 
 Chroma implements several security measures to preserve extension integrity and reduce the amount of page-visible state:

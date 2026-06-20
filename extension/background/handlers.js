@@ -26,6 +26,7 @@ import {
   removeUserScriptletSource,
   setUserScriptletRuleText
 } from '../scriptlets/userResources.js';
+import { syncUserScripts } from '../scriptlets/engine.js';
 import { validateConfig } from './configState.js';
 import { updateDNRState, syncDynamicRules, syncWhitelistRules } from './dnrState.js';
 import { checkForUpdate } from './updateCheck.js';
@@ -582,7 +583,8 @@ function sanitizeImportedSubscription(sub, index) {
     lastUpdated: 0,
     version: null,
     lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+    compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   };
 }
 
@@ -649,6 +651,7 @@ async function handleConfigImport(msg) {
     fprWhitelist,
     proxyConfigs: proxyValidation.configs
   });
+  await syncUserScripts();
   const wasDNRActive = existing.config?.enabled !== false && existing.config?.networkBlocking !== false;
   const isDNRActive = config.enabled !== false && config.networkBlocking !== false;
   if (isDNRActive !== wasDNRActive) {
@@ -908,26 +911,31 @@ function isValidUserScriptletSourceId(id) {
   return typeof id === 'string' && USER_SCRIPTLET_SOURCE_ID_RE.test(id);
 }
 
+async function syncUserScriptsAfterMutation(result) {
+  if (result?.ok) await syncUserScripts();
+  return result;
+}
+
 async function handleUserScriptletsGet() {
   return getUserScriptletSettings();
 }
 
 async function handleUserScriptletSourceAdd(msg) {
-  return addUserScriptletSource(msg?.source || {});
+  return syncUserScriptsAfterMutation(await addUserScriptletSource(msg?.source || {}));
 }
 
 async function handleUserScriptletSourceRefresh(msg) {
   if (!isValidUserScriptletSourceId(msg?.id)) return { ok: false, error: 'Invalid user scriptlet resource ID' };
-  return refreshUserScriptletSource(msg.id);
+  return syncUserScriptsAfterMutation(await refreshUserScriptletSource(msg.id));
 }
 
 async function handleUserScriptletSourceRemove(msg) {
   if (!isValidUserScriptletSourceId(msg?.id)) return { ok: false, error: 'Invalid user scriptlet resource ID' };
-  return removeUserScriptletSource(msg.id);
+  return syncUserScriptsAfterMutation(await removeUserScriptletSource(msg.id));
 }
 
 async function handleUserScriptletRulesSet(msg) {
-  return setUserScriptletRuleText(typeof msg?.ruleText === 'string' ? msg.ruleText : '');
+  return syncUserScriptsAfterMutation(await setUserScriptletRuleText(typeof msg?.ruleText === 'string' ? msg.ruleText : ''));
 }
 
 // ─── STATS / LOG ─────

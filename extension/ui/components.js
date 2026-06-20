@@ -379,7 +379,7 @@ const ChromaComponents = (() => {
           <span>Add URL</span>
         </button>
       </div>
-      <div class="protection-list user-scriptlet-panel" id="userScriptletPanel">
+      <div class="protection-list user-scriptlet-panel is-loading" id="userScriptletPanel">
         <div class="user-scriptlet-warning">
           User scriptlet resources run code you choose through Chrome's User Scripts API. Add only resources you trust.
         </div>
@@ -398,16 +398,18 @@ const ChromaComponents = (() => {
         <div id="userScriptletSourceList" class="user-scriptlet-source-list">
           ${renderSkeletonRows(2, 'user-scriptlet-skeleton-row')}
         </div>
-        <div class="user-scriptlet-available is-hidden" id="userScriptletAvailableResources">
+        <div class="user-scriptlet-available" id="userScriptletAvailableResources">
           <div class="user-scriptlet-subsection-title">Available Resources</div>
-          <div class="user-scriptlet-chip-list" id="userScriptletAvailableResourceList"></div>
+          <div class="user-scriptlet-chip-list is-loading" id="userScriptletAvailableResourceList">
+            ${renderSkeletonLine('skeleton-line--long')}
+          </div>
         </div>
         <div class="user-scriptlet-rules">
           <div class="user-scriptlet-subsection-title">Rules</div>
-          <textarea id="userScriptletRulesText" class="chroma-input user-scriptlet-rules-text" spellcheck="false" placeholder="example.com##+js(resource-name)&#10;another.example##+js(other-resource)"></textarea>
+          <textarea id="userScriptletRulesText" class="chroma-input user-scriptlet-rules-text control-pending" spellcheck="false" readonly aria-busy="true" placeholder="example.com##+js(resource-name)&#10;another.example##+js(other-resource)"></textarea>
           <div class="user-scriptlet-rule-actions">
-            <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status"></div>
-            <button id="saveUserScriptletRulesBtn" class="reset-btn compact-action-btn" type="button">Save Rules</button>
+            <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status">Loading rules...</div>
+            <button id="saveUserScriptletRulesBtn" class="reset-btn compact-action-btn control-pending" type="button" disabled>Save Rules</button>
           </div>
         </div>
       </div>

@@ -1312,6 +1312,9 @@ input.control-pending + .slider {
 }
 
 .user-scriptlet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
   padding: 3px 8px;
   color: var(--text-dim);
@@ -1322,6 +1325,41 @@ input.control-pending + .slider {
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 6px;
   overflow-wrap: anywhere;
+}
+
+.user-scriptlet-chip__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.user-scriptlet-chip__status {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.user-scriptlet-chip--linked {
+  color: var(--text);
+  background: rgba(0, 245, 255, 0.1);
+  border-color: rgba(0, 245, 255, 0.24);
+}
+
+.user-scriptlet-chip--linked .user-scriptlet-chip__status {
+  color: var(--c-cyan);
+}
+
+.user-scriptlet-chip--missing {
+  color: var(--text);
+  background: rgba(244, 67, 54, 0.1);
+  border-color: rgba(244, 67, 54, 0.32);
+}
+
+.user-scriptlet-chip--missing .user-scriptlet-chip__status {
+  color: var(--c-red);
 }
 
 .user-scriptlet-chip--muted {

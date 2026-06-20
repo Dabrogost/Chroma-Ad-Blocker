@@ -88,6 +88,20 @@ const ChromaApp = (() => {
     return formatCount(number);
   }
 
+  function formatSubscriptionCompatibility(sub) {
+    const compatibility = sub?.compatibility || {};
+    const translated = Number(compatibility.translatedRegexFilter) || 0;
+    const unsupported = Number(compatibility.unsupportedUrlFilter) || 0;
+    const parts = [];
+    if (translated > 0) {
+      parts.push(`${formatCount(translated)} translated`);
+    }
+    if (unsupported > 0) {
+      parts.push(`${formatCount(unsupported)} skipped`);
+    }
+    return parts.length ? `Network compatibility: ${parts.join(' \u00b7 ')}` : '';
+  }
+
   function formatDuration(seconds) {
     const total = Math.max(0, Number(seconds) || 0);
     if (total < 60) return `${Math.round(total)}s`;
@@ -1002,6 +1016,8 @@ const ChromaApp = (() => {
             if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
             if (parts.length) appendElement(info, 'div', 'desc', parts.join(' \u00b7 '));
           }
+          const compatibilityText = formatSubscriptionCompatibility(sub);
+          if (compatibilityText) appendElement(info, 'div', 'desc', compatibilityText);
 
           if (sub.lastError) {
             const error = appendElement(info, 'div', 'subscription-error', `Error: ${sub.lastError}`);
@@ -1180,20 +1196,98 @@ const ChromaApp = (() => {
       status.classList.toggle('form-error', !!isError);
     }
 
-    function renderUserScriptletResourceChips(names) {
+    function setUserScriptletRulesPending(pending) {
+      const textarea = $('userScriptletRulesText');
+      const saveBtn = $('saveUserScriptletRulesBtn');
+      if (textarea) {
+        textarea.readOnly = !!pending;
+        textarea.classList.toggle('control-pending', !!pending);
+        textarea.setAttribute('aria-busy', pending ? 'true' : 'false');
+      }
+      if (saveBtn) {
+        saveBtn.disabled = !!pending;
+        saveBtn.classList.toggle('control-pending', !!pending);
+      }
+    }
+
+    function normalizeUserScriptletResourceName(name) {
+      const cleaned = String(name || '').trim().toLowerCase();
+      return cleaned.endsWith('.js') ? cleaned.slice(0, -3) : cleaned;
+    }
+
+    function extractUserScriptletRuleNames(ruleText) {
+      const counts = new Map();
+      const lines = String(ruleText || '').replace(/\r\n?/g, '\n').split('\n');
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('!') || line.startsWith('#') || line.startsWith('[') || line.startsWith('//')) continue;
+        const match = line.match(/##\+js\(\s*([^,\s)]+)/);
+        const name = normalizeUserScriptletResourceName(match?.[1]?.replace(/^['"]|['"]$/g, ''));
+        if (name) counts.set(name, (counts.get(name) || 0) + 1);
+      }
+      return counts;
+    }
+
+    function getUserScriptletLinkState(names, ruleText) {
+      const ruleCounts = extractUserScriptletRuleNames(ruleText);
+      const resources = Array.isArray(names)
+        ? names.map(name => String(name || '').trim()).filter(Boolean)
+        : [];
+      const resourceKeys = new Set(resources.map(normalizeUserScriptletResourceName));
+      const missing = [];
+      for (const [name, ruleCount] of ruleCounts) {
+        if (!resourceKeys.has(name)) missing.push({ name, ruleCount });
+      }
+      return {
+        resources: resources.map(name => ({
+          name,
+          ruleCount: ruleCounts.get(normalizeUserScriptletResourceName(name)) || 0
+        })),
+        missing
+      };
+    }
+
+    function formatLinkedResourceStatus(settings, linkState) {
+      const savedRules = Number(settings?.parsedRuleCount || 0);
+      const linkedResources = linkState.resources.filter(resource => resource.ruleCount > 0).length;
+      const missingResources = linkState.missing.length;
+      const parts = [`${savedRules.toLocaleString()} saved rule(s)`];
+      if (linkedResources > 0) parts.push(`${linkedResources.toLocaleString()} linked resource(s)`);
+      if (missingResources > 0) parts.push(`${missingResources.toLocaleString()} missing resource(s)`);
+      return `${parts.join(' \u00b7 ')}.`;
+    }
+
+    function renderUserScriptletResourceChips(names, linkState) {
       const wrap = $('userScriptletAvailableResources');
       const list = $('userScriptletAvailableResourceList');
       if (!wrap || !list) return;
       clearElement(list);
-      const resources = Array.isArray(names)
-        ? names.map(name => String(name || '').trim()).filter(Boolean)
-        : [];
-      wrap.classList.toggle('is-hidden', resources.length === 0);
-      resources.slice(0, 30).forEach(name => {
-        appendElement(list, 'span', 'user-scriptlet-chip', name);
+      const resources = linkState?.resources || getUserScriptletLinkState(names, '').resources;
+      const missing = linkState?.missing || [];
+      list.classList.remove('is-loading');
+      resources.slice(0, 30).forEach(resource => {
+        const linked = resource.ruleCount > 0;
+        const chip = appendElement(
+          list,
+          'span',
+          `user-scriptlet-chip${linked ? ' user-scriptlet-chip--linked' : ''}`
+        );
+        appendElement(chip, 'span', 'user-scriptlet-chip__name', resource.name);
+        appendElement(chip, 'span', 'user-scriptlet-chip__status', linked ? 'Linked' : 'Unused');
       });
+      missing.slice(0, 10).forEach(resource => {
+        const chip = appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--missing');
+        appendElement(chip, 'span', 'user-scriptlet-chip__name', resource.name);
+        appendElement(chip, 'span', 'user-scriptlet-chip__status', 'Missing');
+      });
+      if (resources.length === 0 && missing.length === 0) {
+        appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--muted', 'No parsed resources');
+      }
       if (resources.length > 30) {
         appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--muted', `+${resources.length - 30}`);
+      }
+      if (missing.length > 10) {
+        appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--muted', `+${missing.length - 10} missing`);
       }
     }
 
@@ -1202,7 +1296,10 @@ const ChromaApp = (() => {
       const list = $('userScriptletSourceList');
       const textarea = $('userScriptletRulesText');
       if (!list) return;
+      setSectionLoading('userScriptletPanel');
       setSectionLoading('userScriptletSourceList');
+      setUserScriptletRulesPending(true);
+      setUserScriptletRulesStatus('Loading rules...');
 
       let settings = null;
       try {
@@ -1213,6 +1310,8 @@ const ChromaApp = (() => {
 
       if (!settings) {
         setSectionError('userScriptletSourceList', 'User scriptlets unavailable.');
+        setUserScriptletRulesStatus('User scriptlets unavailable.', true);
+        setSectionReady('userScriptletPanel');
         return;
       }
 
@@ -1263,9 +1362,12 @@ const ChromaApp = (() => {
       if (textarea && document.activeElement !== textarea) {
         textarea.value = typeof settings.ruleText === 'string' ? settings.ruleText : '';
       }
-      renderUserScriptletResourceChips(settings.availableResourceNames);
-      setUserScriptletRulesStatus(`${Number(settings.parsedRuleCount || 0).toLocaleString()} saved rule(s).`);
+      const linkState = getUserScriptletLinkState(settings.availableResourceNames, settings.ruleText);
+      renderUserScriptletResourceChips(settings.availableResourceNames, linkState);
+      setUserScriptletRulesStatus(formatLinkedResourceStatus(settings, linkState), linkState.missing.length > 0);
+      setUserScriptletRulesPending(false);
       setSectionReady('userScriptletSourceList');
+      setSectionReady('userScriptletPanel');
 
       list.querySelectorAll('.user-scriptlet-refresh-btn').forEach(btn => {
         btn.addEventListener('click', async (event) => {
