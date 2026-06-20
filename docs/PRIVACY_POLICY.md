@@ -13,7 +13,7 @@ description: Chroma Ad-Blocker privacy policy - your data stays on your device.
 Chroma Ad-Blocker ("we," "our," or "the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information in connection with your use of the Extension. **Core extension settings, logs, and cached rules are stored on your device; optional features may contact the external list, update, proxy-test, or proxy services described below.**
 
 ## 1. Information Collection and Use
-Chroma Ad-Blocker **does not collect, store, or transmit personal information to Chroma-controlled servers**. Chroma does not operate any telemetry, analytics, or tracking backend. Core extension operations are performed locally on your device.
+Chroma Ad-Blocker **does not collect, upload, or sell personal information**. Chroma does not operate any telemetry, analytics, or tracking backend. Core extension operations are performed locally on your device.
 
 ### Local Data Storage
 The Extension uses your browser's local storage (`chrome.storage.local`) to save:
@@ -43,7 +43,7 @@ The Extension requires specific permissions to function effectively. Below is a 
 - **Host Permissions (`<all_urls>` and listed site patterns)**: Allow content scripts, cosmetic filtering, DNR rule matching, subscription scriptlets, supported platform handlers, and site-level controls to operate on visited pages. This is broad by design and is why sensitive state remains local.
 
 ## 3. Data Sharing
-We do not sell, share, or transmit your browsing data to Chroma-controlled servers. There are no analytics, tracking, or telemetry scripts included in the Extension.
+We do not sell, share, or upload your browsing data. There are no analytics, tracking, or telemetry scripts included in the Extension.
 
 Some features make network requests as part of their normal function:
 - **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, and Fanboy Annoyance. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
@@ -65,7 +65,7 @@ Chroma does not intercept, read, modify, or store any data from these requests. 
 If you require stricter network filtering, you can disable the extension on any site using the **Whitelist this site** toggle in the popup.
 
 ## 5. Third-Party Websites
-The Extension interacts with websites you visit to provide ad blocking, cosmetic filtering, scriptlet protections, platform-specific ad stripping, ad acceleration fallback, and optional proxy routing. These changes happen locally in your browser. Chroma is not designed to collect account credentials, private messages, or account data from those websites, and it does not transmit that kind of data to Chroma-controlled servers.
+The Extension interacts with websites you visit to provide ad blocking, cosmetic filtering, scriptlet protections, platform-specific ad stripping, ad acceleration fallback, and optional proxy routing. These changes happen locally in your browser. Chroma is not designed to collect account credentials, private messages, or account data from those websites, and it does not upload that kind of data.
 
 ## 6. Changes to This Policy
 We may update this Privacy Policy from time to time. Changes will be reflected in the Effective Date at the top of this document. Continued use of the Extension following any update constitutes acceptance of the revised Policy.
