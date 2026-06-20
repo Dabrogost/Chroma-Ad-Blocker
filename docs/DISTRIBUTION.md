@@ -33,23 +33,27 @@ It excludes development and generated files, including:
 - `.github/`
 - previous `dist/` output
 
-## Recommended Release Check
+## Release QA Checklist
 
-Before sharing a build, run:
+Before sharing a build, complete this checklist from a clean working tree or reviewed release branch:
 
-```powershell
-npm.cmd test
-npm.cmd run test:rules
-npm.cmd run package:extension
-```
+- [ ] `npm.cmd test`
+- [ ] `npm.cmd run test:rules`
+- [ ] `npm.cmd run test:e2e`
+- [ ] `npm.cmd run package:extension`
+- [ ] Fresh unpacked install from the generated package contents.
+- [ ] Extension reload/update test from the previous release to the candidate build.
+- [ ] YouTube normal video test.
+- [ ] YouTube Shorts test.
+- [ ] Prime Video test.
+- [ ] Proxy route on/off test.
+- [ ] Global proxy fallback test.
+- [ ] Whitelist test.
+- [ ] Fingerprint randomization toggle test.
+- [ ] Health panel review.
+- [ ] Settings export/import smoke test.
 
-For the full browser-level check, also run:
-
-```powershell
-npm.cmd run test:e2e
-```
-
-The E2E command needs Chrome for Testing or Chromium configured in the current shell.
+The E2E command needs Chrome for Testing or Chromium configured in the current shell. On non-Windows systems, use the equivalent `npm` commands.
 
 ## Loading The Zip Manually
 

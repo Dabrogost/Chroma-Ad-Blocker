@@ -14,6 +14,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - [Installation & Configuration](docs/INSTALL.md)
 - [Feature Guide](docs/FEATURES.md)
 - [Architecture Deep Dive](docs/ARCHITECTURE.md)
+- [Performance Guide](docs/PERFORMANCE.md)
 - [Media Proxy Router](docs/MEDIA_PROXY_ROUTER.md)
 - [YouTube Protection](docs/YOUTUBE.md)
 - [Filter List Subscriptions](docs/FILTER_LISTS.md)
@@ -22,6 +23,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - [Statistics & Health](docs/STATISTICS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Security Policy](docs/SECURITY.md)
+- [Threat Model](docs/THREAT_MODEL.md)
 - [Testing Guide](docs/TEST_GUIDE.md)
 - [Distribution Notes](docs/DISTRIBUTION.md)
 - [Contributing](docs/CONTRIBUTING.md)
@@ -105,6 +107,7 @@ Review these before installing:
 - [Permissions](docs/PERMISSIONS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Security Policy](docs/SECURITY.md)
+- [Threat Model](docs/THREAT_MODEL.md)
 - [Project Philosophy](docs/PROJECT_PHILOSOPHY.md#why-not-the-chrome-web-store)
 
 ## Companion Extensions & Alternatives

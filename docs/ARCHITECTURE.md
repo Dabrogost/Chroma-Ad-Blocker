@@ -170,6 +170,22 @@ Chroma is not trying to recreate MV2 request interception in MV3. It leans into 
 - Keep proxy routing separate from network blocking: DNR decides policy, PAC chooses transport.
 - Make diagnostics transparent without turning local debug data into telemetry.
 
+## Failure Modes & Graceful Degradation
+
+Chroma assumes that extension APIs, browser feedback paths, network refreshes, and page handshakes can fail. The goal is to keep independent layers working where possible, report degraded state in Health, and avoid turning a partial failure into broad breakage.
+
+| Failure mode | Expected behavior | User-visible recovery |
+|---|---|---|
+| Service worker sleeps or restarts | Browser-managed DNR rules continue to apply while the worker is asleep. On wake/startup, Chroma registers handlers and resyncs DNR state, privacy controls, scriptlets, alarms, and open-tab config where possible. | Open the popup/settings page, reload the affected tab, or reload the extension if Health continues to show stale state. |
+| UserScripts API unavailable | Subscription scriptlet rules and advanced user scriptlet resources are parsed and stored, but not registered. Network DNR, cosmetics, proxy routing, and other non-`userScripts` layers can continue. | Enable **Allow User Scripts** on Chrome 138+, or use a Chromium build/version that exposes `chrome.userScripts`. |
+| Scriptlet registration failure | Chroma registers what it can, chunks registrations, retries within failed chunks, and records a scriptlet health diagnostic if only part of the set registers. | Review Health, remove malformed/broad custom rules, confirm Allow User Scripts, then reload affected tabs. |
+| PAC/proxy sync failure | Existing browser proxy settings may remain stale, or proxy routing may release routes depending on the failure point. DNR blocking is separate and can continue. | Review the proxy card, turn the route off/on, fix invalid proxy fields, or reload the extension. |
+| Subscription refresh failure | Last-known parsed rules remain available if already stored. The failed subscription records `lastError`; other subscriptions can still refresh. | Refresh the affected list manually, check HTTPS reachability and list format, or disable the subscription. |
+| DNR dynamic rule budget exhaustion | Subscription network rules are allocated by priority and trimmed to fit the MV3 dynamic-rule budget. Cosmetic rules and supported scriptlets are handled by their own layers. | Reduce large or overlapping custom subscriptions, then refresh subscriptions. |
+| MAIN-world handshake failure | Platform handlers that require the isolated-to-MAIN bridge may fall back to safe defaults or skip activation for that page load. Isolated-world cosmetics and DNR can still operate. | Reload the tab. If the page is hostile or changed its startup timing, the MAIN-world layer may remain degraded until Chroma is updated. |
+| Request-log feedback API unavailable | DNR blocking can still work, but local request-log/debug feedback and some match classification detail are unavailable. | Treat this as a diagnostics limitation. Use Health to confirm the request-log status; blocking does not depend on feedback events. |
+| Whitelisted site behavior | Whitelist allow rules are synchronized into DNR, local cleanup is suppressed where applicable, and scriptlet registrations exclude whitelisted domains. | Remove the site from the whitelist and reload the tab to restore Chroma protection. |
+
 ---
 
 Next: [Media Proxy Router](MEDIA_PROXY_ROUTER.md)
