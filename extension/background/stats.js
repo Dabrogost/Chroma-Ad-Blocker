@@ -614,6 +614,14 @@ function estimateTimeSavedSeconds(totals = {}) {
 export async function getStatsSnapshot(options = {}) {
   await flushStatsQueue();
   const stats = await ensureStatsV2();
+
+  if (options.summaryOnly === true) {
+    return {
+      version: stats.version,
+      totals: cloneJson(stats.totals)
+    };
+  }
+
   const snapshot = cloneJson(stats);
 
   snapshot.ranges = {

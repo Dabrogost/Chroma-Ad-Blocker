@@ -11,7 +11,7 @@ const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 
 const proxyUiJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.js'), 'utf8');
 const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.js'), 'utf8');
-const uiScriptsCode = [domUtilsJsCode, domainUtilsJsCode, componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
+const uiScriptsCode = [domUtilsJsCode, domainUtilsJsCode, componentsJsCode, appJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 const uiCssCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
@@ -49,7 +49,7 @@ test('domain utility uses public-suffix-aware registrable domains', () => {
 test('popup.js functionality', async (t) => {
   function createSandbox() {
     const elements = {};
-    const getElement = (id) => {
+    const ensureElement = (id) => {
       if (!elements[id]) {
         const parent = {
           classList: { add: () => {}, remove: () => {} },
@@ -104,6 +104,7 @@ test('popup.js functionality', async (t) => {
       }
       return elements[id];
     };
+    const getElement = (id) => elements[id] || null;
 
     const messages = [];
     const storageState = {
@@ -138,7 +139,7 @@ test('popup.js functionality', async (t) => {
           }
           if (msg.type === 'STATS_GET') {
             return {
-              settings: { mode: 'aggregated', retentionDays: 90, storeFullUrls: false },
+              version: 1,
               totals: {
                 protectionEvents: 100242,
                 networkBlocks: 5,
@@ -149,18 +150,7 @@ test('popup.js functionality', async (t) => {
                 zapperHits: 0,
                 proxyTests: 2,
                 proxyAuthChallenges: 1
-              },
-              ranges: {
-                today: { protectionEvents: 1 },
-                last7Days: { protectionEvents: 3 },
-                last30Days: { protectionEvents: 7 },
-                allTime: { protectionEvents: 100242 }
-              },
-              bySite: {},
-              byRule: {},
-              byDay: {},
-              recentEvents: [],
-              timeSavedSeconds: 25
+              }
             };
           }
           if (msg.type === 'STATS_EXPORT') {
@@ -180,6 +170,9 @@ test('popup.js functionality', async (t) => {
           }
           if (msg.type === 'WHITELIST_GET') {
             return { whitelist: [] };
+          }
+          if (msg.type === 'FPR_WHITELIST_GET') {
+            return { fprWhitelist: [] };
           }
           if (msg.type === 'SUBSCRIPTION_GET') {
             return [];
@@ -209,8 +202,10 @@ test('popup.js functionality', async (t) => {
       },
       tabs: {
         created: [],
+        reloaded: [],
         query: async () => [{ url: 'https://www.youtube.com/', id: 1, hostname: 'www.youtube.com' }],
-        create: async (info) => { chromeMock.tabs.created.push(info); return { id: 99, ...info }; }
+        create: async (info) => { chromeMock.tabs.created.push(info); return { id: 99, ...info }; },
+        reload: async (id) => { chromeMock.tabs.reloaded.push(id); }
       }
     };
 
@@ -219,16 +214,16 @@ test('popup.js functionality', async (t) => {
       document: {
         getElementById: getElement,
         createElement: (tag) => {
-          const el = getElement('temp-' + Math.random());
+          const el = ensureElement('temp-' + Math.random());
           el.tagName = tag.toUpperCase();
           el.appendChild = (child) => {};
-          el.querySelector = (sel) => getElement('temp-child-' + Math.random());
+          el.querySelector = (sel) => ensureElement('temp-child-' + Math.random());
           el.querySelectorAll = (sel) => [];
           return el;
         },
         querySelector: (sel) => {
           if (sel.startsWith('#')) return getElement(sel.slice(1));
-          if (sel === '.section-title') return getElement('sectionTitle');
+          if (sel === '.section-title') return ensureElement('sectionTitle');
           return null;
         },
         querySelectorAll: () => []
@@ -242,6 +237,7 @@ test('popup.js functionality', async (t) => {
       Object: Object,
       Promise: Promise,
       Error: Error,
+      URL: URL,
       setTimeout: setTimeout,
       MSG: {
         CONFIG_GET: 'CONFIG_GET',
@@ -264,6 +260,9 @@ test('popup.js functionality', async (t) => {
         WHITELIST_GET: 'WHITELIST_GET',
         WHITELIST_ADD: 'WHITELIST_ADD',
         WHITELIST_REMOVE: 'WHITELIST_REMOVE',
+        FPR_WHITELIST_GET: 'FPR_WHITELIST_GET',
+        FPR_WHITELIST_ADD: 'FPR_WHITELIST_ADD',
+        FPR_WHITELIST_REMOVE: 'FPR_WHITELIST_REMOVE',
         SUBSCRIPTION_GET: 'SUBSCRIPTION_GET',
         SUBSCRIPTION_SET: 'SUBSCRIPTION_SET',
         SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
@@ -278,42 +277,21 @@ test('popup.js functionality', async (t) => {
     };
 
 
-    getElement('toggleEnabled');
-    getElement('statusDot');
-    getElement('toggleNetwork');
-    getElement('toggleAcceleration');
-    getElement('toggleCosmetic');
-    getElement('toggleShorts');
-    getElement('toggleMerch');
-    getElement('toggleOffers');
-    getElement('toggleWarnings');
-    getElement('statProtectionEvents');
-    getElement('statBreakdownNetwork');
-    getElement('statBreakdownCleanup');
-    getElement('statBreakdownScriptlets');
-    getElement('statBreakdownProxy');
-    getElement('cardNetwork');
-    getElement('settingsIcon');
-    getElement('resetStats');
-    getElement('toggleWhitelist');
-    getElement('subscriptionList');
-    getElement('proxyRouterContainer');
-    getElement('addProxyServerBtn');
-    getElement('proxyActiveGroup');
-    getElement('proxyActiveText');
-    getElement('proxyAcceptBtn');
-    getElement('proxyClearSettingsBtn');
-    getElement('proxyHost');
-    getElement('proxyPort');
-    getElement('proxyUser');
-    getElement('proxyPass');
-    getElement('proxyDomainInput');
-    getElement('proxyAddDomainBtn');
-    getElement('proxyDomainList');
-    getElement('logToggleRow');
-    getElement('logToggleBtn');
-    getElement('logFreezeBtn');
-    getElement('logEntries');
+    ensureElement('appShell');
+    ensureElement('toggleEnabled');
+    ensureElement('statusDot');
+    ensureElement('statProtectionEvents');
+    ensureElement('statBreakdownNetwork');
+    ensureElement('statBreakdownCleanup');
+    ensureElement('statBreakdownScriptlets');
+    ensureElement('statBreakdownProxy');
+    ensureElement('cardNetwork');
+    ensureElement('settingsIcon');
+    ensureElement('toggleWhitelist');
+    ensureElement('rowFprWhitelist');
+    ensureElement('toggleFprWhitelist');
+    ensureElement('zapElementBtn');
+    ensureElement('zapperStatus');
 
     return { sandbox, elements, messages, chromeMock };
   }
@@ -325,20 +303,19 @@ test('popup.js functionality', async (t) => {
 
     await settlePopupAsyncWork();
 
-    assert.strictEqual(elements['toggleAcceleration'].checked, false);
-    assert.strictEqual(elements['toggleCosmetic'].checked, true);
-    assert.strictEqual(elements['toggleWarnings'].checked, false);
-
     assert.strictEqual(elements['statProtectionEvents'].textContent, '100.2k');
     assert.strictEqual(elements['statBreakdownNetwork'].textContent, '5');
     assert.strictEqual(elements['statBreakdownCleanup'].textContent, '3');
     assert.strictEqual(elements['statBreakdownProxy'].textContent, '3');
 
     assert.ok(messages.some(m => m.type === 'CONFIG_GET'));
-    assert.ok(messages.some(m => m.type === 'STATS_GET'));
+    assert.ok(messages.some(m => m.type === 'STATS_GET' && m.options?.summaryOnly === true));
+    assert.ok(messages.some(m => m.type === 'WHITELIST_GET'));
+    assert.strictEqual(messages.some(m => m.type === 'SUBSCRIPTION_GET'), false);
+    assert.strictEqual(messages.some(m => m.type === 'PROXY_CONFIG_GET'), false);
   });
 
-  await t.test('toggle event listeners trigger SET_CONFIG', async () => {
+  await t.test('site whitelist toggle updates the current domain', async () => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
@@ -346,38 +323,13 @@ test('popup.js functionality', async (t) => {
 
     messages.length = 0;
 
-    elements['toggleAcceleration'].checked = true;
-    await elements['toggleAcceleration'].dispatchEvent('change');
+    elements['toggleWhitelist'].checked = true;
+    await elements['toggleWhitelist'].dispatchEvent('change');
 
-    assert.ok(messages.some(m => m.type === 'CONFIG_SET' && m.config.acceleration === true));
+    assert.ok(messages.some(m => m.type === 'WHITELIST_ADD' && m.domain === 'youtube.com'));
   });
 
-  await t.test('popup protection toggles stay visually responsive while saves are pending', async () => {
-    const { sandbox, elements, chromeMock } = createSandbox();
-    vm.createContext(sandbox);
-    vm.runInContext(uiScriptsCode, sandbox);
-    await settlePopupAsyncWork();
-
-    const pendingSet = deferred();
-    const originalSendMessage = chromeMock.runtime.sendMessage;
-    chromeMock.runtime.sendMessage = async (msg) => {
-      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
-      return originalSendMessage(msg);
-    };
-
-    elements['toggleAcceleration'].checked = true;
-    const changePromise = elements['toggleAcceleration'].dispatchEvent('change');
-    await settlePopupAsyncWork(1);
-
-    assert.strictEqual(elements['toggleAcceleration'].disabled, false);
-    assert.doesNotMatch(elements['toggleAcceleration'].classList.current, /control-pending/);
-    assert.strictEqual(elements['toggleAcceleration'].checked, true);
-
-    pendingSet.resolve({ ok: true });
-    await changePromise;
-  });
-
-  await t.test('popup master toggle updates child toggles before background save resolves', async () => {
+  await t.test('popup master toggle stays visually responsive while saves are pending', async () => {
     const { sandbox, elements, chromeMock } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
@@ -396,25 +348,35 @@ test('popup.js functionality', async (t) => {
 
     assert.strictEqual(elements['toggleEnabled'].disabled, false);
     assert.doesNotMatch(elements['toggleEnabled'].classList.current, /control-pending/);
-    assert.strictEqual(elements['toggleNetwork'].checked, false);
-    assert.strictEqual(elements['toggleCosmetic'].checked, false);
+    assert.strictEqual(elements['toggleEnabled'].checked, false);
 
     pendingSet.resolve({ ok: true });
     await changePromise;
   });
 
-  await t.test('reset stats button triggers scoped stats reset and reloads UI', async () => {
-    const { sandbox, elements, messages } = createSandbox();
+  await t.test('popup master toggle updates status before background save resolves', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
     await settlePopupAsyncWork();
 
-    messages.length = 0;
+    const pendingSet = deferred();
+    const originalSendMessage = chromeMock.runtime.sendMessage;
+    chromeMock.runtime.sendMessage = async (msg) => {
+      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
+      return originalSendMessage(msg);
+    };
 
-    await elements['resetStats'].dispatchEvent('click');
+    elements['toggleEnabled'].checked = false;
+    const changePromise = elements['toggleEnabled'].dispatchEvent('change');
+    await settlePopupAsyncWork(1);
 
-    assert.ok(messages.some(m => m.type === 'STATS_RESET' && m.scope === 'all'));
-    assert.ok(messages.some(m => m.type === 'STATS_GET'));
+    assert.strictEqual(elements['toggleEnabled'].disabled, false);
+    assert.doesNotMatch(elements['toggleEnabled'].classList.current, /control-pending/);
+    assert.match(elements['statusDot'].classList.current, /off/);
+
+    pendingSet.resolve({ ok: true });
+    await changePromise;
   });
 
   await t.test('handles missing config/stats defaults gracefully', async () => {
@@ -430,11 +392,6 @@ test('popup.js functionality', async (t) => {
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
     await settlePopupAsyncWork();
-
-    // Based on TOGGLES in popup.js, acceleration defaults to false, others true
-    assert.strictEqual(elements['toggleAcceleration'].checked, false);
-    assert.strictEqual(elements['toggleCosmetic'].checked, true);
-    assert.strictEqual(elements['toggleWarnings'].checked, true);
 
     assert.strictEqual(elements['statProtectionEvents'].textContent, '0');
   });
@@ -521,34 +478,6 @@ test('popup.js functionality', async (t) => {
     await elements['cardNetwork'].dispatchEvent({ type: 'keydown', key: 'Enter' });
     assert.strictEqual(chromeMock.runtime.optionsOpened, 2);
   });
-
-  await t.test('request log row supports keyboard activation semantics', async () => {
-    const { sandbox, elements } = createSandbox();
-    vm.createContext(sandbox);
-    vm.runInContext(uiScriptsCode, sandbox);
-    await settlePopupAsyncWork();
-
-    assert.strictEqual(elements['logToggleRow'].getAttribute('role'), 'button');
-    assert.strictEqual(elements['logToggleRow'].getAttribute('tabindex'), '0');
-    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
-
-    await elements['logToggleRow'].dispatchEvent({ type: 'keydown', key: ' ' });
-    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'true');
-    assert.match(elements['logEntries'].classList.current, /visible/);
-  });
-
-  await t.test('request log freeze toggles without collapsing the row', async () => {
-    const { sandbox, elements } = createSandbox();
-    vm.createContext(sandbox);
-    vm.runInContext(uiScriptsCode, sandbox);
-    await settlePopupAsyncWork();
-
-    await elements['logFreezeBtn'].dispatchEvent('click');
-
-    assert.strictEqual(elements['logFreezeBtn'].textContent, 'Frozen');
-    assert.match(elements['logFreezeBtn'].classList.current, /is-active/);
-    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
-  });
 });
 
 test('UI hardening copy', () => {
@@ -588,7 +517,7 @@ test('UI hardening copy', () => {
   assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
   assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.doesNotMatch(popupHtmlCode, /health-ui\.js/);
-  assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
+  assert.doesNotMatch(popupHtmlCode, /proxy-ui\.js/);
   assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<div id="appShell"><\/div>/);
   assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="health-ui\.js"><\/script>\s*<script src="app\.js"><\/script>/);

@@ -675,9 +675,14 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#healthPanelBody'), null);
     assert.strictEqual(dom.window.document.querySelector('#statisticsTopCards'), null);
     assert.strictEqual(dom.window.document.querySelector('#localZapperRules'), null);
-    assert.strictEqual(dom.window.document.querySelector('#subscriptionList .skeleton-row'), null);
+    assert.strictEqual(dom.window.document.querySelector('#subscriptionList'), null);
     assert.strictEqual(dom.window.document.querySelector('#userScriptletSourceList'), null);
-    assert.strictEqual(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'), null);
+    assert.strictEqual(dom.window.document.querySelector('#proxyRouterContainer'), null);
+    assert.strictEqual(dom.window.document.querySelector('#requestLogPanel'), null);
+    assert.strictEqual(dom.window.document.querySelector('#resetStats'), null);
+    assert.strictEqual(dom.window.document.querySelector('#toggleNetwork'), null);
+    assert.ok(dom.window.document.querySelector('#zapElementBtn'));
+    assert.ok(dom.window.document.querySelector('#toggleWhitelist'));
     assert.strictEqual(dom.window.document.querySelector('#exportConfigJson'), null);
     assert.strictEqual(dom.window.document.querySelector('#importConfigFile'), null);
   });
@@ -850,6 +855,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await success.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
 
+    assert.ok(success.messages.some(message => message.type === 'STATS_GET' && !message.options?.summaryOnly));
     assert.strictEqual(success.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
     assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /Total Protection Events/);
     assert.strictEqual(success.dom.window.document.querySelector('#statsModeSelect').disabled, false);

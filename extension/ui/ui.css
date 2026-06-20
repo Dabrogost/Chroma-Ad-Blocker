@@ -187,22 +187,24 @@ header {
 
 .settings-icon {
   position: absolute;
-  right: 8px;
-  top: 8px;
+  right: 10px;
+  top: 10px;
   padding: 0;
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   border: 0;
   background: transparent;
   color: var(--c-purple);
   cursor: pointer;
+  display: grid;
+  place-items: center;
   transition: all 0.2s;
 }
 
 .settings-icon__svg {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .stat-value,
@@ -451,6 +453,7 @@ footer {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-left: auto;
 }
 
 .github-link {
@@ -1640,7 +1643,7 @@ body.popup-page {
   width: 320px;
   font-size: 13px;
   line-height: 1.5;
-  min-height: 480px;
+  min-height: 0;
 }
 
 .popup-page header {
@@ -1693,6 +1696,7 @@ body.popup-page {
 .popup-page .fpr-toggle-row .name { font-size: 12px; }
 .popup-page .toggle-info .desc { font-size: 10.5px; margin-top: 1px; }
 .popup-page .reset-btn { font-size: 10px; padding: 4px 10px; }
+.popup-page footer { padding: 7px 12px; margin-top: 0; }
 .popup-page .version { font-size: 10px; }
 .popup-page .log-header { padding: 10px 14px; }
 .popup-page .proxy-grid { padding: 10px 14px; }

@@ -125,8 +125,8 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderProtectionControls({ showZapper }) {
-    const zapperRow = showZapper ? `
+  function renderZapperRow() {
+    return `
       <div class="toggle-row zapper-action-row">
         <div class="toggle-info">
           <div class="name">Element Zapper</div>
@@ -134,12 +134,34 @@ const ChromaComponents = (() => {
         </div>
         <button class="reset-btn" id="zapElementBtn">Zap Element</button>
       </div>
-    ` : '';
+    `;
+  }
 
+  function renderSiteQuickActions() {
+    return `
+      <div class="section-title">This Site</div>
+      <div class="protection-list">
+        ${renderZapperRow()}
+        ${renderToggleRow({
+          inputId: 'toggleFprWhitelist',
+          rowId: 'rowFprWhitelist',
+          rowClass: 'fpr-whitelist-row',
+          name: 'Disable FPR on this site',
+          desc: 'For sites broken by canvas/audio noise (bot checks, captchas)'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleWhitelist',
+          name: 'Whitelist this site',
+          desc: 'Disable blocking on current domain'
+        })}
+      </div>
+    `;
+  }
+
+  function renderProtectionControls() {
     return `
       <div class="section-title">Protection Layers</div>
       <div class="protection-list">
-        ${zapperRow}
         ${renderToggleRow({
           inputId: 'toggleNetwork',
           name: 'Network Blocking',
@@ -462,10 +484,10 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderFooter() {
+  function renderFooter({ showResetStats = true } = {}) {
     return `
       <footer>
-        <button class="reset-btn" id="resetStats">Reset Stats</button>
+        ${showResetStats ? '<button class="reset-btn" id="resetStats">Reset Stats</button>' : ''}
         <div class="footer-right">
           <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" target="_blank" class="github-link" title="View Source on GitHub">
             ${githubIcon}
@@ -485,13 +507,13 @@ const ChromaComponents = (() => {
       ${renderStats({ showSettingsIcon: !settingsMode })}
       ${settingsMode ? renderHealthPanelShell() : ''}
       ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
-      ${renderProtectionControls({ showZapper: !settingsMode })}
-      ${renderFilterListShell({ settingsMode })}
+      ${settingsMode ? renderProtectionControls() : renderSiteQuickActions()}
+      ${settingsMode ? renderFilterListShell({ settingsMode }) : ''}
       ${settingsMode ? renderUserScriptletsShell() : ''}
-      ${renderProxyShell({ settingsMode })}
+      ${settingsMode ? renderProxyShell({ settingsMode }) : ''}
       ${settingsMode ? renderLocalZapperShell() : ''}
-      ${renderRequestLogShell()}
-      ${renderFooter()}
+      ${settingsMode ? renderRequestLogShell() : ''}
+      ${renderFooter({ showResetStats: settingsMode })}
     `;
 
     shell.innerHTML = settingsMode ? `<div class="main-container">${content}</div>` : content;
@@ -500,6 +522,7 @@ const ChromaComponents = (() => {
   return {
     renderHeader,
     renderStats,
+    renderSiteQuickActions,
     renderStatisticsShell,
     renderProtectionControls,
     renderHealthPanelShell,

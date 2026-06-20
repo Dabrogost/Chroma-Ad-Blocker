@@ -439,7 +439,10 @@ const ChromaApp = (() => {
     ].forEach(setSectionLoading);
     setStatsControlsPending(true);
     try {
-      stats = await notifyBackground({ type: MSG.STATS_GET }) || null;
+      const message = isSettingsPage()
+        ? { type: MSG.STATS_GET }
+        : { type: MSG.STATS_GET, options: { summaryOnly: true } };
+      stats = await notifyBackground(message) || null;
       available = !!stats;
     } catch (error) {
       console.error('Chroma stats failed to load:', error);
@@ -511,7 +514,7 @@ const ChromaApp = (() => {
       return {
         enabled: $('toggleEnabled')?.checked ?? true,
         speed: getActiveSpeed(),
-        toggles: Object.fromEntries(CONFIG_TOGGLES.map(([id]) => [id, $(id)?.checked ?? false]))
+        toggles: Object.fromEntries(CONFIG_TOGGLES.map(([id, key, def]) => [id, $(id)?.checked ?? (config[key] ?? def)]))
       };
     }
 
@@ -524,7 +527,8 @@ const ChromaApp = (() => {
       }
       syncSpeedUI(state.speed ?? 8, !!state.toggles?.toggleAcceleration && state.enabled);
       const rowFpr = $('rowFprWhitelist');
-      if (rowFpr) rowFpr.classList.toggle('is-visible', !!($('toggleFingerprintRandomization')?.checked && $('toggleEnabled')?.checked));
+      const fprEnabled = $('toggleFingerprintRandomization')?.checked ?? state.toggles?.toggleFingerprintRandomization ?? !!config.fingerprintRandomization;
+      if (rowFpr) rowFpr.classList.toggle('is-visible', !!(fprEnabled && $('toggleEnabled')?.checked));
     }
 
     function updateStatusDot(active) {
@@ -540,7 +544,8 @@ const ChromaApp = (() => {
     }
 
     function showConfigLoadError(message) {
-      const controls = $('toggleNetwork')?.closest?.('.protection-list');
+      const anchor = $('toggleNetwork') || $('toggleWhitelist');
+      const controls = anchor?.closest?.('.protection-list');
       if (!controls || controls.querySelector('.hydration-error')) return;
       const error = document.createElement('div');
       error.className = 'hydration-error hydration-error--inline';
@@ -709,14 +714,12 @@ const ChromaApp = (() => {
 
     safeHydrateSection('site controls', hydrateSiteControls);
     safeHydrateSection('stats', loadStatsUI);
-    safeHydrateSection('subscriptions', loadSubscriptionUI);
     if (settingsMode) {
+      safeHydrateSection('subscriptions', loadSubscriptionUI);
       safeHydrateSection('health panel', loadHealthPanel);
       safeHydrateSection('user scriptlets', loadUserScriptletUI);
       safeHydrateSection('proxy router', loadProxyRouterSection);
       safeHydrateSection('local zapper rules', loadLocalZapperRulesUI);
-    } else {
-      safeHydrateSection('proxy router', loadProxyRouterSection);
     }
 
     function wireStatsControls() {
@@ -912,7 +915,8 @@ const ChromaApp = (() => {
       const fprToggle = $('toggleFingerprintRandomization');
       const fprSiteToggle = $('toggleFprWhitelist');
       const updateFprRowVisibility = () => {
-        const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled')?.checked);
+        const fprEnabled = fprToggle ? fprToggle.checked : !!config.fingerprintRandomization;
+        const visible = !!(fprEnabled && $('toggleEnabled')?.checked);
         if (rowFpr) rowFpr.classList.toggle('is-visible', visible);
       };
       updateFprRowVisibility();
