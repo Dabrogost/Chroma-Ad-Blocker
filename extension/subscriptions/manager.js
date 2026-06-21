@@ -26,6 +26,20 @@ const FETCH_TIMEOUT  = 30000; // 30s per-fetch timeout
 const MAX_LIST_BYTES = 10 * 1024 * 1024; // 10 MiB per subscription response
 let _staticRuleKeySetPromise = null;
 
+function normalizeSubscriptionCompatibility(value = {}) {
+  return {
+    translatedRegexFilter: Number(value?.translatedRegexFilter) || 0,
+    unsupportedUrlFilter: Number(value?.unsupportedUrlFilter) || 0
+  };
+}
+
+function buildSubscriptionCompatibility(networkRules = [], skipped = {}) {
+  return normalizeSubscriptionCompatibility({
+    translatedRegexFilter: networkRules.filter(rule => rule?.condition?.regexFilter).length,
+    unsupportedUrlFilter: skipped?.unsupportedUrlFilter
+  });
+}
+
 function sortedArray(value) {
   return Array.isArray(value) ? value.slice().sort() : [];
 }
@@ -35,6 +49,7 @@ function networkRuleDedupeKey(rule) {
   return JSON.stringify({
     actionType: rule?.action?.type || '',
     urlFilter: condition.urlFilter || '',
+    regexFilter: condition.regexFilter || '',
     resourceTypes: sortedArray(condition.resourceTypes),
     domainType: condition.domainType || '',
     initiatorDomains: sortedArray(condition.initiatorDomains),
@@ -67,7 +82,8 @@ function utf8ByteLength(text) {
 function cloneSubscriptionMetadata(sub) {
   return {
     ...sub,
-    ruleCount: sub?.ruleCount ? { ...sub.ruleCount } : sub?.ruleCount
+    ruleCount: sub?.ruleCount ? { ...sub.ruleCount } : sub?.ruleCount,
+    compatibility: sub?.compatibility ? normalizeSubscriptionCompatibility(sub.compatibility) : sub?.compatibility
   };
 }
 
@@ -84,6 +100,11 @@ function mergeDefaultSubscriptions(existing) {
       url: defaults.url,
       intervalHours: defaults.intervalHours
     };
+    if (sub?.compatibility || defaults.compatibility) {
+      next.compatibility = normalizeSubscriptionCompatibility(sub?.compatibility || defaults.compatibility);
+    } else {
+      delete next.compatibility;
+    }
     if (defaults.cosmeticOnly === true) next.cosmeticOnly = true;
     else delete next.cosmeticOnly;
     return next;
@@ -211,7 +232,7 @@ async function buildStaticRuleKeySet() {
         if (!res.ok) return;
         const rules = await res.json();
         for (const rule of rules) {
-          if (rule.condition && rule.condition.urlFilter) {
+          if (rule.condition && (rule.condition.urlFilter || rule.condition.regexFilter)) {
             set.add(networkRuleDedupeKey(rule));
           }
         }
@@ -403,8 +424,9 @@ export async function refreshSubscription(id) {
     const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(fetched.text || '');
     const staticRuleKeys = await buildStaticRuleKeySet();
     const networkRules = parsedNetworkRules
-      .filter(r => !r.condition.urlFilter || !staticRuleKeys.has(networkRuleDedupeKey(r)))
+      .filter(r => !staticRuleKeys.has(networkRuleDedupeKey(r)))
       .map((rule, index) => ({ ...rule, _listPosition: index }));
+    const compatibility = buildSubscriptionCompatibility(sub.cosmeticOnly ? [] : networkRules, skipped);
 
     // Store parsed rules per subscription ID
     const [netStore, cosStore, scrStore] = await Promise.all([
@@ -429,6 +451,7 @@ export async function refreshSubscription(id) {
       ? {
           ...item,
           ruleCount: { network: item.cosmeticOnly ? 0 : networkRules.length, cosmetic: cosmeticRules.length, scriptlet: usableScriptlets.length },
+          compatibility,
           lastUpdated: now,
           version: String(now),
           lastError: null,
@@ -528,7 +551,8 @@ export async function addSubscription(sub) {
     lastUpdated: 0,
     version: null,
     lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+    compatibility: normalizeSubscriptionCompatibility()
   });
 
   await chrome.storage.local.set({ subscriptions });

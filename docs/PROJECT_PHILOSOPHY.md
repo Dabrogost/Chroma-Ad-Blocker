@@ -6,7 +6,7 @@ Chroma is a practical extension, but it is also a response to a specific browser
 
 Most Chrome ad blockers break often because the ground underneath them changed. Manifest V3 is not a temporary detour; for Chrome and most Chromium-based browsers, it is the platform reality now.
 
-Chromium has other browser vendors, but Google still drives the upstream platform that Chrome and most Chromium-based browsers inherit. Brave, Edge, Vivaldi, and others can patch or work around parts of that stack, but they do not make MV2-style Chrome extension blocking the durable default for Chrome users.
+Chromium has other browser vendors, but Google still drives the upstream platform that Chrome and most Chromium-based browsers inherit. Edge, Vivaldi, and others can patch or work around parts of that stack, but they do not make MV2-style Chrome extension blocking the durable default for Chrome users.
 
 Chroma exists because I wanted a blocker designed for that reality instead of fighting yesterday's API forever. It leans into MV3-native tools like Declarative Net Request, `userScripts`, local rule subscriptions, targeted scriptlets, and platform-specific handlers.
 

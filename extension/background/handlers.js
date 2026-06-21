@@ -17,9 +17,20 @@ import {
   removeSubscription,
   importCustomSubscriptions
 } from '../subscriptions/manager.js';
+import {
+  addUserScriptletSource,
+  exportUserScriptletSettings,
+  getUserScriptletSettings,
+  importUserScriptletSettings,
+  refreshUserScriptletSource,
+  removeUserScriptletSource,
+  setUserScriptletRuleText
+} from '../scriptlets/userResources.js';
+import { syncUserScripts } from '../scriptlets/engine.js';
 import { validateConfig } from './configState.js';
 import { updateDNRState, syncDynamicRules, syncWhitelistRules } from './dnrState.js';
 import { checkForUpdate } from './updateCheck.js';
+import { inspectLatestUpdatePackage } from './updatePackage.js';
 import { resetRequestLog, getMergedLog } from './requestLog.js';
 import { runProxyTest } from './proxy.js';
 import { getHealthStatus } from './health.js';
@@ -35,6 +46,7 @@ import {
 
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i;
 const SUBSCRIPTION_ID_RE = /^[a-z0-9_-]{1,80}$/i;
+const USER_SCRIPTLET_SOURCE_ID_RE = /^[a-z0-9_-]{1,96}$/i;
 const PROXY_TYPES = new Set(['PROXY', 'HTTPS', 'SOCKS4', 'SOCKS5']);
 const MAX_PROXY_NAME_LEN = 80;
 const MAX_PROXY_CREDENTIAL_LEN = 256;
@@ -572,7 +584,8 @@ function sanitizeImportedSubscription(sub, index) {
     lastUpdated: 0,
     version: null,
     lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+    compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   };
 }
 
@@ -601,7 +614,8 @@ async function handleConfigExport() {
     proxyConfigs: Array.isArray(proxyConfigs) ? proxyConfigs.map(exportProxyConfig) : [],
     subscriptions: subscriptions
       .filter(sub => sub?.isCustom === true)
-      .map(exportSubscription)
+      .map(exportSubscription),
+    userScriptlets: await exportUserScriptletSettings()
   };
 }
 
@@ -630,6 +644,7 @@ async function handleConfigImport(msg) {
     ? payload.subscriptions.slice(0, 50).map(sanitizeImportedSubscription).filter(Boolean)
     : [];
   const subscriptionImport = await importCustomSubscriptions(importedCustomSubs);
+  const userScriptletImport = await importUserScriptletSettings(payload.userScriptlets);
 
   await chrome.storage.local.set({
     config,
@@ -637,6 +652,7 @@ async function handleConfigImport(msg) {
     fprWhitelist,
     proxyConfigs: proxyValidation.configs
   });
+  await syncUserScripts();
   const wasDNRActive = existing.config?.enabled !== false && existing.config?.networkBlocking !== false;
   const isDNRActive = config.enabled !== false && config.networkBlocking !== false;
   if (isDNRActive !== wasDNRActive) {
@@ -657,7 +673,9 @@ async function handleConfigImport(msg) {
       whitelist: whitelist.length,
       fprWhitelist: fprWhitelist.length,
       proxyConfigs: proxyValidation.configs.length,
-      subscriptions: subscriptionImport.importedCount || 0
+      subscriptions: subscriptionImport.importedCount || 0,
+      userScriptletSources: userScriptletImport.importedSources || 0,
+      userScriptletRules: userScriptletImport.importedRules || 0
     },
     droppedProxyCount: proxyValidation.droppedCount,
     proxyErrors: proxyValidation.errors
@@ -890,6 +908,37 @@ async function handleSubscriptionRemove(msg) {
   return removeSubscription(msg.id);
 }
 
+function isValidUserScriptletSourceId(id) {
+  return typeof id === 'string' && USER_SCRIPTLET_SOURCE_ID_RE.test(id);
+}
+
+async function syncUserScriptsAfterMutation(result) {
+  if (result?.ok) await syncUserScripts();
+  return result;
+}
+
+async function handleUserScriptletsGet() {
+  return getUserScriptletSettings();
+}
+
+async function handleUserScriptletSourceAdd(msg) {
+  return syncUserScriptsAfterMutation(await addUserScriptletSource(msg?.source || {}));
+}
+
+async function handleUserScriptletSourceRefresh(msg) {
+  if (!isValidUserScriptletSourceId(msg?.id)) return { ok: false, error: 'Invalid user scriptlet resource ID' };
+  return syncUserScriptsAfterMutation(await refreshUserScriptletSource(msg.id));
+}
+
+async function handleUserScriptletSourceRemove(msg) {
+  if (!isValidUserScriptletSourceId(msg?.id)) return { ok: false, error: 'Invalid user scriptlet resource ID' };
+  return syncUserScriptsAfterMutation(await removeUserScriptletSource(msg.id));
+}
+
+async function handleUserScriptletRulesSet(msg) {
+  return syncUserScriptsAfterMutation(await setUserScriptletRuleText(typeof msg?.ruleText === 'string' ? msg.ruleText : ''));
+}
+
 // ─── STATS / LOG ─────
 
 function getSenderDomain(sender) {
@@ -945,8 +994,12 @@ async function handleHealthGet() {
 
 // ─── SYSTEM ─────
 
-async function handleUpdateCheck() {
-  return checkForUpdate();
+async function handleUpdateCheck(msg) {
+  return checkForUpdate(msg?.options || {});
+}
+
+async function handleUpdatePackageInspect(msg) {
+  return inspectLatestUpdatePackage(msg?.options || {});
 }
 
 // ─── REGISTRATION ─────
@@ -964,6 +1017,7 @@ export function registerAll(router) {
   router.markSensitive(MSG.STATS_SETTINGS_SET);
   router.markSensitive(MSG.LOG_GET);
   router.markSensitive(MSG.HEALTH_GET);
+  router.markSensitive(MSG.UPDATE_PACKAGE_INSPECT);
   router.markSensitive(MSG.WHITELIST_GET);
   router.markSensitive(MSG.WHITELIST_ADD);
   router.markSensitive(MSG.WHITELIST_REMOVE);
@@ -982,6 +1036,11 @@ export function registerAll(router) {
   router.markSensitive(MSG.SUBSCRIPTION_REFRESH);
   router.markSensitive(MSG.SUBSCRIPTION_ADD);
   router.markSensitive(MSG.SUBSCRIPTION_REMOVE);
+  router.markSensitive(MSG.USER_SCRIPTLETS_GET);
+  router.markSensitive(MSG.USER_SCRIPTLET_SOURCE_ADD);
+  router.markSensitive(MSG.USER_SCRIPTLET_SOURCE_REFRESH);
+  router.markSensitive(MSG.USER_SCRIPTLET_SOURCE_REMOVE);
+  router.markSensitive(MSG.USER_SCRIPTLET_RULES_SET);
 
   router.registerHandler(MSG.CONFIG_GET,           handleConfigGet);
   router.registerHandler(MSG.CONFIG_SET,           handleConfigSet);
@@ -1008,10 +1067,16 @@ export function registerAll(router) {
   router.registerHandler(MSG.SUBSCRIPTION_REFRESH, handleSubscriptionRefresh);
   router.registerHandler(MSG.SUBSCRIPTION_ADD,     handleSubscriptionAdd);
   router.registerHandler(MSG.SUBSCRIPTION_REMOVE,  handleSubscriptionRemove);
+  router.registerHandler(MSG.USER_SCRIPTLETS_GET, handleUserScriptletsGet);
+  router.registerHandler(MSG.USER_SCRIPTLET_SOURCE_ADD, handleUserScriptletSourceAdd);
+  router.registerHandler(MSG.USER_SCRIPTLET_SOURCE_REFRESH, handleUserScriptletSourceRefresh);
+  router.registerHandler(MSG.USER_SCRIPTLET_SOURCE_REMOVE, handleUserScriptletSourceRemove);
+  router.registerHandler(MSG.USER_SCRIPTLET_RULES_SET, handleUserScriptletRulesSet);
   router.registerHandler(MSG.STATS_RESET,          handleStatsReset);
   router.registerHandler(MSG.STATS_EXPORT,         handleStatsExport);
   router.registerHandler(MSG.STATS_SETTINGS_SET,   handleStatsSettingsSet);
   router.registerHandler(MSG.LOG_GET,              handleLogGet);
   router.registerHandler(MSG.HEALTH_GET,           handleHealthGet);
   router.registerHandler(MSG.UPDATE_CHECK,         handleUpdateCheck);
+  router.registerHandler(MSG.UPDATE_PACKAGE_INSPECT, handleUpdatePackageInspect);
 }

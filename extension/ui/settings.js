@@ -10,6 +10,7 @@
 
   try {
     await ChromaApp.initSharedUI();
+    globalThis.ChromaUpdaterUI?.initUpdaterPanel?.();
     ChromaApp.scrollToProxyHash();
   } catch (error) {
     console.error('Chroma settings failed to initialize:', error);

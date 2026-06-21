@@ -235,6 +235,25 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(snapshot.timeSavedSeconds, 1);
   });
 
+  await t.test('summary-only snapshot returns headline totals without analytics buckets', async () => {
+    const stats = loadStatsSandbox({ statsV2: seededDetailedStats() });
+
+    const snapshot = await stats.getStatsSnapshot({ summaryOnly: true });
+
+    assert.strictEqual(snapshot.version, 1);
+    assert.strictEqual(snapshot.totals.protectionEvents, 5);
+    assert.strictEqual(snapshot.totals.networkBlocks, 4);
+    assert.strictEqual(snapshot.settings, undefined);
+    assert.strictEqual(snapshot.ranges, undefined);
+    assert.strictEqual(snapshot.byDay, undefined);
+    assert.strictEqual(snapshot.bySite, undefined);
+    assert.strictEqual(snapshot.byResourceType, undefined);
+    assert.strictEqual(snapshot.byRule, undefined);
+    assert.strictEqual(snapshot.recentEvents, undefined);
+    assert.strictEqual(snapshot.timeSavedSeconds, undefined);
+    assert.strictEqual(snapshot.limits, undefined);
+  });
+
   await t.test('does not store raw URLs by default and sanitizes errors', async () => {
     const stats = loadStatsSandbox();
 

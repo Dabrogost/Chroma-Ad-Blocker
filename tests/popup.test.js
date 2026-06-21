@@ -11,7 +11,7 @@ const appJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 
 const proxyUiJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'proxy-ui.js'), 'utf8');
 const popupJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.js'), 'utf8');
 const settingsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.js'), 'utf8');
-const uiScriptsCode = [domUtilsJsCode, domainUtilsJsCode, componentsJsCode, appJsCode, proxyUiJsCode, popupJsCode].join('\n');
+const uiScriptsCode = [domUtilsJsCode, domainUtilsJsCode, componentsJsCode, appJsCode, popupJsCode].join('\n');
 const popupHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'popup.html'), 'utf8');
 const settingsHtmlCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'settings.html'), 'utf8');
 const uiCssCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'ui.css'), 'utf8');
@@ -47,9 +47,9 @@ test('domain utility uses public-suffix-aware registrable domains', () => {
 });
 
 test('popup.js functionality', async (t) => {
-  function createSandbox() {
+  function createSandbox({ updateCheckResult = { updateAvailable: false } } = {}) {
     const elements = {};
-    const getElement = (id) => {
+    const ensureElement = (id) => {
       if (!elements[id]) {
         const parent = {
           classList: { add: () => {}, remove: () => {} },
@@ -59,6 +59,7 @@ test('popup.js functionality', async (t) => {
         };
         elements[id] = {
           id,
+          children: [],
           checked: false,
           textContent: '',
           listeners: {},
@@ -77,7 +78,18 @@ test('popup.js functionality', async (t) => {
           },
           style: { display: '' },
           parentElement: parent,
-          appendChild: (child) => {},
+          appendChild(child) {
+            this.children.push(child);
+            return child;
+          },
+          before(child) {
+            if (child?.id) elements[child.id] = child;
+            this.beforeChild = child;
+          },
+          remove() {
+            this.removed = true;
+            if (elements[this.id] === this) delete elements[this.id];
+          },
           querySelector: (sel) => getElement('temp-child-' + Math.random()),
           querySelectorAll: (sel) => [],
           setAttribute(name, value) {
@@ -104,6 +116,7 @@ test('popup.js functionality', async (t) => {
       }
       return elements[id];
     };
+    const getElement = (id) => elements[id] || null;
 
     const messages = [];
     const storageState = {
@@ -138,7 +151,7 @@ test('popup.js functionality', async (t) => {
           }
           if (msg.type === 'STATS_GET') {
             return {
-              settings: { mode: 'aggregated', retentionDays: 90, storeFullUrls: false },
+              version: 1,
               totals: {
                 protectionEvents: 100242,
                 networkBlocks: 5,
@@ -149,18 +162,7 @@ test('popup.js functionality', async (t) => {
                 zapperHits: 0,
                 proxyTests: 2,
                 proxyAuthChallenges: 1
-              },
-              ranges: {
-                today: { protectionEvents: 1 },
-                last7Days: { protectionEvents: 3 },
-                last30Days: { protectionEvents: 7 },
-                allTime: { protectionEvents: 100242 }
-              },
-              bySite: {},
-              byRule: {},
-              byDay: {},
-              recentEvents: [],
-              timeSavedSeconds: 25
+              }
             };
           }
           if (msg.type === 'STATS_EXPORT') {
@@ -181,11 +183,14 @@ test('popup.js functionality', async (t) => {
           if (msg.type === 'WHITELIST_GET') {
             return { whitelist: [] };
           }
+          if (msg.type === 'FPR_WHITELIST_GET') {
+            return { fprWhitelist: [] };
+          }
           if (msg.type === 'SUBSCRIPTION_GET') {
             return [];
           }
           if (msg.type === 'UPDATE_CHECK') {
-            return { updateAvailable: false };
+            return updateCheckResult;
           }
         },
         getManifest: () => ({ version: '1.0.0' }),
@@ -209,8 +214,10 @@ test('popup.js functionality', async (t) => {
       },
       tabs: {
         created: [],
+        reloaded: [],
         query: async () => [{ url: 'https://www.youtube.com/', id: 1, hostname: 'www.youtube.com' }],
-        create: async (info) => { chromeMock.tabs.created.push(info); return { id: 99, ...info }; }
+        create: async (info) => { chromeMock.tabs.created.push(info); return { id: 99, ...info }; },
+        reload: async (id) => { chromeMock.tabs.reloaded.push(id); }
       }
     };
 
@@ -219,16 +226,15 @@ test('popup.js functionality', async (t) => {
       document: {
         getElementById: getElement,
         createElement: (tag) => {
-          const el = getElement('temp-' + Math.random());
+          const el = ensureElement('temp-' + Math.random());
           el.tagName = tag.toUpperCase();
-          el.appendChild = (child) => {};
-          el.querySelector = (sel) => getElement('temp-child-' + Math.random());
+          el.querySelector = (sel) => ensureElement('temp-child-' + Math.random());
           el.querySelectorAll = (sel) => [];
           return el;
         },
         querySelector: (sel) => {
           if (sel.startsWith('#')) return getElement(sel.slice(1));
-          if (sel === '.section-title') return getElement('sectionTitle');
+          if (sel === '.section-title') return ensureElement('sectionTitle');
           return null;
         },
         querySelectorAll: () => []
@@ -242,6 +248,7 @@ test('popup.js functionality', async (t) => {
       Object: Object,
       Promise: Promise,
       Error: Error,
+      URL: URL,
       setTimeout: setTimeout,
       MSG: {
         CONFIG_GET: 'CONFIG_GET',
@@ -264,10 +271,14 @@ test('popup.js functionality', async (t) => {
         WHITELIST_GET: 'WHITELIST_GET',
         WHITELIST_ADD: 'WHITELIST_ADD',
         WHITELIST_REMOVE: 'WHITELIST_REMOVE',
+        FPR_WHITELIST_GET: 'FPR_WHITELIST_GET',
+        FPR_WHITELIST_ADD: 'FPR_WHITELIST_ADD',
+        FPR_WHITELIST_REMOVE: 'FPR_WHITELIST_REMOVE',
         SUBSCRIPTION_GET: 'SUBSCRIPTION_GET',
         SUBSCRIPTION_SET: 'SUBSCRIPTION_SET',
         SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
-        UPDATE_CHECK: 'UPDATE_CHECK'
+        UPDATE_CHECK: 'UPDATE_CHECK',
+        UPDATE_PACKAGE_INSPECT: 'UPDATE_PACKAGE_INSPECT'
       },
       window: {
         addEventListener: (type, fn) => {},
@@ -278,42 +289,21 @@ test('popup.js functionality', async (t) => {
     };
 
 
-    getElement('toggleEnabled');
-    getElement('statusDot');
-    getElement('toggleNetwork');
-    getElement('toggleAcceleration');
-    getElement('toggleCosmetic');
-    getElement('toggleShorts');
-    getElement('toggleMerch');
-    getElement('toggleOffers');
-    getElement('toggleWarnings');
-    getElement('statProtectionEvents');
-    getElement('statBreakdownNetwork');
-    getElement('statBreakdownCleanup');
-    getElement('statBreakdownScriptlets');
-    getElement('statBreakdownProxy');
-    getElement('cardNetwork');
-    getElement('settingsIcon');
-    getElement('resetStats');
-    getElement('toggleWhitelist');
-    getElement('subscriptionList');
-    getElement('proxyRouterContainer');
-    getElement('addProxyServerBtn');
-    getElement('proxyActiveGroup');
-    getElement('proxyActiveText');
-    getElement('proxyAcceptBtn');
-    getElement('proxyClearSettingsBtn');
-    getElement('proxyHost');
-    getElement('proxyPort');
-    getElement('proxyUser');
-    getElement('proxyPass');
-    getElement('proxyDomainInput');
-    getElement('proxyAddDomainBtn');
-    getElement('proxyDomainList');
-    getElement('logToggleRow');
-    getElement('logToggleBtn');
-    getElement('logFreezeBtn');
-    getElement('logEntries');
+    ensureElement('appShell');
+    ensureElement('toggleEnabled');
+    ensureElement('statusDot');
+    ensureElement('statProtectionEvents');
+    ensureElement('statBreakdownNetwork');
+    ensureElement('statBreakdownCleanup');
+    ensureElement('statBreakdownScriptlets');
+    ensureElement('statBreakdownProxy');
+    ensureElement('cardNetwork');
+    ensureElement('settingsIcon');
+    ensureElement('toggleWhitelist');
+    ensureElement('rowFprWhitelist');
+    ensureElement('toggleFprWhitelist');
+    ensureElement('zapElementBtn');
+    ensureElement('zapperStatus');
 
     return { sandbox, elements, messages, chromeMock };
   }
@@ -325,20 +315,19 @@ test('popup.js functionality', async (t) => {
 
     await settlePopupAsyncWork();
 
-    assert.strictEqual(elements['toggleAcceleration'].checked, false);
-    assert.strictEqual(elements['toggleCosmetic'].checked, true);
-    assert.strictEqual(elements['toggleWarnings'].checked, false);
-
     assert.strictEqual(elements['statProtectionEvents'].textContent, '100.2k');
     assert.strictEqual(elements['statBreakdownNetwork'].textContent, '5');
     assert.strictEqual(elements['statBreakdownCleanup'].textContent, '3');
     assert.strictEqual(elements['statBreakdownProxy'].textContent, '3');
 
     assert.ok(messages.some(m => m.type === 'CONFIG_GET'));
-    assert.ok(messages.some(m => m.type === 'STATS_GET'));
+    assert.ok(messages.some(m => m.type === 'STATS_GET' && m.options?.summaryOnly === true));
+    assert.ok(messages.some(m => m.type === 'WHITELIST_GET'));
+    assert.strictEqual(messages.some(m => m.type === 'SUBSCRIPTION_GET'), false);
+    assert.strictEqual(messages.some(m => m.type === 'PROXY_CONFIG_GET'), false);
   });
 
-  await t.test('toggle event listeners trigger SET_CONFIG', async () => {
+  await t.test('site whitelist toggle updates the current domain', async () => {
     const { sandbox, elements, messages } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
@@ -346,38 +335,13 @@ test('popup.js functionality', async (t) => {
 
     messages.length = 0;
 
-    elements['toggleAcceleration'].checked = true;
-    await elements['toggleAcceleration'].dispatchEvent('change');
+    elements['toggleWhitelist'].checked = true;
+    await elements['toggleWhitelist'].dispatchEvent('change');
 
-    assert.ok(messages.some(m => m.type === 'CONFIG_SET' && m.config.acceleration === true));
+    assert.ok(messages.some(m => m.type === 'WHITELIST_ADD' && m.domain === 'youtube.com'));
   });
 
-  await t.test('popup protection toggles stay visually responsive while saves are pending', async () => {
-    const { sandbox, elements, chromeMock } = createSandbox();
-    vm.createContext(sandbox);
-    vm.runInContext(uiScriptsCode, sandbox);
-    await settlePopupAsyncWork();
-
-    const pendingSet = deferred();
-    const originalSendMessage = chromeMock.runtime.sendMessage;
-    chromeMock.runtime.sendMessage = async (msg) => {
-      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
-      return originalSendMessage(msg);
-    };
-
-    elements['toggleAcceleration'].checked = true;
-    const changePromise = elements['toggleAcceleration'].dispatchEvent('change');
-    await settlePopupAsyncWork(1);
-
-    assert.strictEqual(elements['toggleAcceleration'].disabled, false);
-    assert.doesNotMatch(elements['toggleAcceleration'].classList.current, /control-pending/);
-    assert.strictEqual(elements['toggleAcceleration'].checked, true);
-
-    pendingSet.resolve({ ok: true });
-    await changePromise;
-  });
-
-  await t.test('popup master toggle updates child toggles before background save resolves', async () => {
+  await t.test('popup master toggle stays visually responsive while saves are pending', async () => {
     const { sandbox, elements, chromeMock } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
@@ -396,25 +360,35 @@ test('popup.js functionality', async (t) => {
 
     assert.strictEqual(elements['toggleEnabled'].disabled, false);
     assert.doesNotMatch(elements['toggleEnabled'].classList.current, /control-pending/);
-    assert.strictEqual(elements['toggleNetwork'].checked, false);
-    assert.strictEqual(elements['toggleCosmetic'].checked, false);
+    assert.strictEqual(elements['toggleEnabled'].checked, false);
 
     pendingSet.resolve({ ok: true });
     await changePromise;
   });
 
-  await t.test('reset stats button triggers scoped stats reset and reloads UI', async () => {
-    const { sandbox, elements, messages } = createSandbox();
+  await t.test('popup master toggle updates status before background save resolves', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox();
     vm.createContext(sandbox);
     vm.runInContext(uiScriptsCode, sandbox);
     await settlePopupAsyncWork();
 
-    messages.length = 0;
+    const pendingSet = deferred();
+    const originalSendMessage = chromeMock.runtime.sendMessage;
+    chromeMock.runtime.sendMessage = async (msg) => {
+      if (msg.type === 'CONFIG_SET') return pendingSet.promise;
+      return originalSendMessage(msg);
+    };
 
-    await elements['resetStats'].dispatchEvent('click');
+    elements['toggleEnabled'].checked = false;
+    const changePromise = elements['toggleEnabled'].dispatchEvent('change');
+    await settlePopupAsyncWork(1);
 
-    assert.ok(messages.some(m => m.type === 'STATS_RESET' && m.scope === 'all'));
-    assert.ok(messages.some(m => m.type === 'STATS_GET'));
+    assert.strictEqual(elements['toggleEnabled'].disabled, false);
+    assert.doesNotMatch(elements['toggleEnabled'].classList.current, /control-pending/);
+    assert.match(elements['statusDot'].classList.current, /off/);
+
+    pendingSet.resolve({ ok: true });
+    await changePromise;
   });
 
   await t.test('handles missing config/stats defaults gracefully', async () => {
@@ -431,12 +405,98 @@ test('popup.js functionality', async (t) => {
     vm.runInContext(uiScriptsCode, sandbox);
     await settlePopupAsyncWork();
 
-    // Based on TOGGLES in popup.js, acceleration defaults to false, others true
-    assert.strictEqual(elements['toggleAcceleration'].checked, false);
-    assert.strictEqual(elements['toggleCosmetic'].checked, true);
-    assert.strictEqual(elements['toggleWarnings'].checked, true);
-
     assert.strictEqual(elements['statProtectionEvents'].textContent, '0');
+  });
+
+  await t.test('update banner opens guided updater when release ZIP is verified', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox({
+      updateCheckResult: {
+        updateAvailable: true,
+        latestVersion: '1.5.3',
+        assetStatus: 'found',
+        asset: {
+          name: 'chroma-ad-blocker-v1.5.3.zip',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.5.3/chroma-ad-blocker-v1.5.3.zip'
+        },
+        updateManifestStatus: 'found',
+        updateManifestAsset: {
+          name: 'updates.json',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.5.3/updates.json'
+        }
+      }
+    });
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const banner = elements.updateBanner;
+    assert.ok(banner);
+    const link = banner.children[0];
+    assert.strictEqual(link.textContent, 'Update to v1.5.3');
+    assert.strictEqual(link.href, 'chrome-extension://test/ui/settings.html#updatesSection');
+    assert.strictEqual(banner.children[1].textContent, 'guided install');
+
+    let prevented = false;
+    await link.dispatchEvent({
+      type: 'click',
+      preventDefault: () => { prevented = true; }
+    });
+
+    assert.strictEqual(prevented, true);
+    assert.strictEqual(chromeMock.tabs.created.at(-1)?.url, 'chrome-extension://test/ui/settings.html#updatesSection');
+  });
+
+  await t.test('update banner falls back to GitHub when release ZIP is missing', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox({
+      updateCheckResult: {
+        updateAvailable: true,
+        latestVersion: '1.5.3',
+        assetStatus: 'missing',
+        asset: null
+      }
+    });
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const banner = elements.updateBanner;
+    assert.ok(banner);
+    const link = banner.children[0];
+    assert.strictEqual(link.textContent, '\u2191 v1.5.3 available');
+    assert.strictEqual(link.href, 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest');
+    assert.strictEqual(link.target, '_blank');
+    assert.strictEqual(link.rel, 'noopener');
+    assert.strictEqual(banner.children[1].textContent, 'on GitHub');
+    assert.deepStrictEqual(chromeMock.tabs.created, []);
+  });
+
+  await t.test('update banner falls back to GitHub when updates.json is missing', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox({
+      updateCheckResult: {
+        updateAvailable: true,
+        latestVersion: '1.5.3',
+        assetStatus: 'found',
+        asset: {
+          name: 'chroma-ad-blocker-v1.5.3.zip',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.5.3/chroma-ad-blocker-v1.5.3.zip'
+        },
+        updateManifestStatus: 'missing',
+        updateManifestAsset: null
+      }
+    });
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const banner = elements.updateBanner;
+    assert.ok(banner);
+    const link = banner.children[0];
+    assert.strictEqual(link.textContent, '\u2191 v1.5.3 available');
+    assert.strictEqual(link.href, 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest');
+    assert.strictEqual(link.target, '_blank');
+    assert.strictEqual(link.rel, 'noopener');
+    assert.strictEqual(banner.children[1].textContent, 'on GitHub');
+    assert.deepStrictEqual(chromeMock.tabs.created, []);
   });
 
   await t.test('notifyBackground wrapper function - passes message correctly', async () => {
@@ -521,34 +581,6 @@ test('popup.js functionality', async (t) => {
     await elements['cardNetwork'].dispatchEvent({ type: 'keydown', key: 'Enter' });
     assert.strictEqual(chromeMock.runtime.optionsOpened, 2);
   });
-
-  await t.test('request log row supports keyboard activation semantics', async () => {
-    const { sandbox, elements } = createSandbox();
-    vm.createContext(sandbox);
-    vm.runInContext(uiScriptsCode, sandbox);
-    await settlePopupAsyncWork();
-
-    assert.strictEqual(elements['logToggleRow'].getAttribute('role'), 'button');
-    assert.strictEqual(elements['logToggleRow'].getAttribute('tabindex'), '0');
-    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
-
-    await elements['logToggleRow'].dispatchEvent({ type: 'keydown', key: ' ' });
-    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'true');
-    assert.match(elements['logEntries'].classList.current, /visible/);
-  });
-
-  await t.test('request log freeze toggles without collapsing the row', async () => {
-    const { sandbox, elements } = createSandbox();
-    vm.createContext(sandbox);
-    vm.runInContext(uiScriptsCode, sandbox);
-    await settlePopupAsyncWork();
-
-    await elements['logFreezeBtn'].dispatchEvent('click');
-
-    assert.strictEqual(elements['logFreezeBtn'].textContent, 'Frozen');
-    assert.match(elements['logFreezeBtn'].classList.current, /is-active/);
-    assert.strictEqual(elements['logToggleRow'].getAttribute('aria-expanded'), 'false');
-  });
 });
 
 test('UI hardening copy', () => {
@@ -588,16 +620,35 @@ test('UI hardening copy', () => {
   assert.match(popupHtmlCode, /<div id="appShell"><\/div>/);
   assert.match(popupHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="app\.js"><\/script>/);
   assert.doesNotMatch(popupHtmlCode, /health-ui\.js/);
-  assert.match(popupHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
+  assert.doesNotMatch(popupHtmlCode, /proxy-ui\.js/);
   assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<div id="appShell"><\/div>/);
+  assert.match(settingsHtmlCode, /connect-src 'self' https:\/\/api\.github\.com https:\/\/github\.com/);
   assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="health-ui\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="updater-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
+  assert.match(componentsJsCode, /id="checkLatestReleaseBtn"[\s\S]*Check Latest Release/);
+  assert.match(componentsJsCode, /id="updaterStepSupport"[\s\S]*Folder access available[\s\S]*id="updaterStepFolder"[\s\S]*Chroma folder verified[\s\S]*id="updaterStepRelease"[\s\S]*Release assets identified/);
+  assert.match(componentsJsCode, /id="checkLatestReleaseBtn"[\s\S]*Check Latest Release[\s\S]*id="chooseInstallFolderBtn"[\s\S]*Choose Chroma Folder[\s\S]*id="inspectPackageBtn"[\s\S]*Inspect Package ZIP/);
+  assert.match(componentsJsCode, /id="updaterStepRelease"[\s\S]*Release assets identified/);
+  assert.match(componentsJsCode, /id="inspectPackageBtn"[\s\S]*Inspect Package ZIP/);
+  assert.match(componentsJsCode, /id="updaterStepPackage"[\s\S]*Package ZIP inspected/);
+  assert.match(componentsJsCode, /id="updaterStepFolder"[\s\S]*Chroma folder verified[\s\S]*id="updaterStepPlan"[\s\S]*Install plan built/);
+  assert.match(componentsJsCode, /id="chooseInstallFolderBtn"[\s\S]*Choose Chroma Folder[\s\S]*id="buildInstallPlanBtn"[\s\S]*Build Install Plan/);
+  assert.match(componentsJsCode, /id="buildInstallPlanBtn"[\s\S]*Build Install Plan/);
+  assert.match(componentsJsCode, /id="updaterStepPlan"[\s\S]*Install plan built/);
+  assert.match(componentsJsCode, /id="installUpdateBtn"[\s\S]*Install Update/);
+  assert.match(componentsJsCode, /id="reloadChromaBtn"[\s\S]*Reload Chroma/);
+  assert.match(componentsJsCode, /class="updater-result-row"[\s\S]*id="updaterResult"[\s\S]*id="reloadChromaBtn"/);
+  assert.match(uiCssCode, /\.updater-actions\s*\{[\s\S]*justify-content:\s*center/);
+  assert.match(uiCssCode, /\.reset-btn\.updater-action--next/);
+  assert.match(uiCssCode, /\.updater-panel--current #inspectPackageBtn/);
+  assert.match(componentsJsCode, /id="updaterStepInstall"[\s\S]*Update installed/);
   assert.doesNotMatch(popupHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
   assert.doesNotMatch(settingsHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
-  assert.doesNotMatch(popupHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
-  assert.doesNotMatch(settingsHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
+  assert.doesNotMatch(popupHtmlCode, /style-src[^;"]*https:|font-src[^;"]*https:/i);
+  assert.doesNotMatch(settingsHtmlCode, /style-src[^;"]*https:|font-src[^;"]*https:/i);
   assert.doesNotMatch(popupHtmlCode, /unsafe-inline/i);
   assert.doesNotMatch(settingsHtmlCode, /unsafe-inline/i);
   assert.doesNotMatch(appJsCode, /\.style\./);
@@ -640,7 +691,10 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /applyGlobalButtonState\(\);/);
   assert.doesNotMatch(proxyUiJsCode, /async function renderPopupSummary[\s\S]*chrome\.storage\.local\.get\('config'\)/);
   assert.match(componentsJsCode, /id="proxySection"/);
+  assert.match(componentsJsCode, /id="updatesSection"/);
+  assert.match(componentsJsCode, /Choose Chroma Folder/);
   assert.match(settingsJsCode, /scrollToProxyHash/);
+  assert.match(settingsJsCode, /initUpdaterPanel/);
   assert.match(appJsCode, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
   assert.doesNotMatch(proxyUiJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);
   assert.doesNotMatch(proxyUiJsCode, /stageCredentialsFromInputs/);

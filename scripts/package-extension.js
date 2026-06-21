@@ -7,12 +7,22 @@ const repoRoot = path.join(__dirname, '..');
 const extensionRoot = path.join(repoRoot, 'extension');
 const manifestPath = path.join(extensionRoot, 'manifest.json');
 const distDir = path.join(repoRoot, 'dist');
+const UPDATE_MANIFEST_FILE = 'updates.json';
+const UPDATE_MANIFEST_SCHEMA = 'chroma-update-manifest-v1';
+const UPDATE_SIGNATURE_ALGORITHM = 'ECDSA_P256_SHA256';
+const UPDATE_SIGNING_KEY_ID = 'chroma-update-signing-2026-06';
+const UPDATE_SIGNING_PRIVATE_KEY_FILE_ENV = 'CHROMA_UPDATE_SIGNING_PRIVATE_KEY_FILE';
+const UPDATE_SIGNING_PRIVATE_KEY_JWK_ENV = 'CHROMA_UPDATE_SIGNING_PRIVATE_KEY_JWK';
+const REQUIRE_SIGNED_UPDATES_ENV = 'CHROMA_REQUIRE_SIGNED_UPDATES';
+const DEFAULT_UPDATE_SIGNING_PRIVATE_KEY_FILE = path.join(repoRoot, 'secrets', 'chroma-update-signing-private-key.jwk');
+const updateTrustPath = path.join(extensionRoot, 'background', 'updateTrust.js');
 
 const RELEASE_DOC_FILES = [
   'docs/README.md',
   'docs/INSTALL.md',
   'docs/FEATURES.md',
   'docs/ARCHITECTURE.md',
+  'docs/PERFORMANCE.md',
   'docs/MEDIA_PROXY_ROUTER.md',
   'docs/YOUTUBE.md',
   'docs/FILTER_LISTS.md',
@@ -20,6 +30,7 @@ const RELEASE_DOC_FILES = [
   'docs/STATISTICS.md',
   'docs/PRIVACY_POLICY.md',
   'docs/SECURITY.md',
+  'docs/THREAT_MODEL.md',
   'docs/CONTRIBUTING.md',
   'docs/TEST_GUIDE.md',
   'docs/DISTRIBUTION.md',
@@ -187,6 +198,119 @@ function verifyZipContents(zipBuffer) {
   return verifyReleaseEntries(readZipEntries(zipBuffer));
 }
 
+function stableStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+}
+
+function canonicalUpdateManifestPayload(updateManifest) {
+  return {
+    schema: updateManifest.schema,
+    version: updateManifest.version,
+    package: {
+      name: updateManifest.package.name,
+      bytes: updateManifest.package.bytes,
+      sha256: String(updateManifest.package.sha256).toLowerCase()
+    }
+  };
+}
+
+function canonicalizeUpdateManifest(updateManifest) {
+  return stableStringify(canonicalUpdateManifestPayload(updateManifest));
+}
+
+function base64UrlEncode(buffer) {
+  return Buffer.from(buffer)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function readUpdateSigningPrivateKey() {
+  const inlineJwk = process.env[UPDATE_SIGNING_PRIVATE_KEY_JWK_ENV];
+  if (inlineJwk) return JSON.parse(inlineJwk);
+
+  const keyPath = process.env[UPDATE_SIGNING_PRIVATE_KEY_FILE_ENV] || DEFAULT_UPDATE_SIGNING_PRIVATE_KEY_FILE;
+  if (!fs.existsSync(keyPath)) return null;
+  return JSON.parse(fs.readFileSync(keyPath, 'utf8'));
+}
+
+function readBundledUpdatePublicKey() {
+  const source = fs.readFileSync(updateTrustPath, 'utf8');
+  const readField = field => {
+    const match = source.match(new RegExp(`\\b${field}: '([^']+)'`));
+    if (!match) throw new Error(`Bundled update public key is missing ${field}.`);
+    return match[1];
+  };
+  return {
+    kty: readField('kty'),
+    crv: readField('crv'),
+    x: readField('x'),
+    y: readField('y')
+  };
+}
+
+function publicKeyFromPrivateJwk(privateJwk) {
+  const privateKey = crypto.createPrivateKey({ key: privateJwk, format: 'jwk' });
+  const publicJwk = crypto.createPublicKey(privateKey).export({ format: 'jwk' });
+  return {
+    kty: publicJwk.kty,
+    crv: publicJwk.crv,
+    x: publicJwk.x,
+    y: publicJwk.y
+  };
+}
+
+function validateUpdateSigningPrivateKey(privateJwk, expectedPublicJwk = readBundledUpdatePublicKey()) {
+  const actualPublicJwk = publicKeyFromPrivateJwk(privateJwk);
+  for (const field of ['kty', 'crv', 'x', 'y']) {
+    if (actualPublicJwk[field] !== expectedPublicJwk[field]) {
+      throw new Error('Update signing private key does not match the bundled public key.');
+    }
+  }
+  return true;
+}
+
+function signUpdateManifest(updateManifest, privateJwk, { keyId = UPDATE_SIGNING_KEY_ID } = {}) {
+  if (!privateJwk || typeof privateJwk !== 'object') {
+    throw new Error('Missing update signing private key JWK.');
+  }
+
+  const key = crypto.createPrivateKey({ key: privateJwk, format: 'jwk' });
+  const payload = Buffer.from(canonicalizeUpdateManifest(updateManifest), 'utf8');
+  const signature = crypto.sign('sha256', payload, {
+    key,
+    dsaEncoding: 'ieee-p1363'
+  });
+
+  return {
+    ...updateManifest,
+    signature: {
+      algorithm: UPDATE_SIGNATURE_ALGORITHM,
+      keyId,
+      value: base64UrlEncode(signature)
+    }
+  };
+}
+
+function shouldRequireSignedUpdates() {
+  return /^(1|true|yes)$/i.test(String(process.env[REQUIRE_SIGNED_UPDATES_ENV] || ''));
+}
+
+function buildUpdateManifest({ version, zipName, zipBytes, sha256 }) {
+  return {
+    schema: UPDATE_MANIFEST_SCHEMA,
+    version,
+    package: {
+      name: zipName,
+      bytes: zipBytes,
+      sha256
+    }
+  };
+}
+
 function makeZip(files) {
   const localParts = [];
   const centralParts = [];
@@ -262,7 +386,9 @@ function main() {
     console.error('extension/manifest.json must have a numeric dotted version before packaging.');
     process.exit(1);
   }
-  const zipPath = path.join(distDir, `chroma-ad-blocker-v${version}.zip`);
+  const zipName = `chroma-ad-blocker-v${version}.zip`;
+  const zipPath = path.join(distDir, zipName);
+  const updateManifestPath = path.join(distDir, UPDATE_MANIFEST_FILE);
 
   fs.mkdirSync(distDir, { recursive: true });
   const files = releaseFiles();
@@ -277,9 +403,30 @@ function main() {
   fs.writeFileSync(zipPath, zip);
 
   const hash = crypto.createHash('sha256').update(zip).digest('hex');
+  let updateManifest = buildUpdateManifest({
+    version,
+    zipName,
+    zipBytes: zip.length,
+    sha256: hash
+  });
+  const signingPrivateKey = readUpdateSigningPrivateKey();
+  if (signingPrivateKey) {
+    validateUpdateSigningPrivateKey(signingPrivateKey);
+    updateManifest = signUpdateManifest(updateManifest, signingPrivateKey);
+  } else {
+    if (shouldRequireSignedUpdates()) {
+      console.error(`Missing update signing key. Set ${UPDATE_SIGNING_PRIVATE_KEY_FILE_ENV} or ${UPDATE_SIGNING_PRIVATE_KEY_JWK_ENV}, or create ${DEFAULT_UPDATE_SIGNING_PRIVATE_KEY_FILE}.`);
+      process.exit(1);
+    }
+    console.warn(`Update manifest is unsigned. Guided updater verification requires a signing key at ${DEFAULT_UPDATE_SIGNING_PRIVATE_KEY_FILE} or ${UPDATE_SIGNING_PRIVATE_KEY_FILE_ENV}.`);
+  }
+  fs.writeFileSync(updateManifestPath, `${JSON.stringify(updateManifest, null, 2)}\n`);
+
   console.log(`ZIP: ${zipPath}`);
   console.log(`Bytes: ${zip.length}`);
   console.log(`SHA-256: ${hash}`);
+  console.log(`Update manifest: ${updateManifestPath}`);
+  console.log(`Update manifest signature: ${updateManifest.signature ? updateManifest.signature.keyId : 'unsigned'}`);
   console.log('ZIP verification passed.');
 }
 
@@ -291,6 +438,16 @@ module.exports = {
   FORBIDDEN_RELEASE_PATH_PATTERNS,
   RELEASE_DOC_FILES,
   REQUIRED_RELEASE_FILES,
+  UPDATE_MANIFEST_FILE,
+  UPDATE_MANIFEST_SCHEMA,
+  UPDATE_SIGNATURE_ALGORITHM,
+  UPDATE_SIGNING_KEY_ID,
+  buildUpdateManifest,
+  canonicalizeUpdateManifest,
+  publicKeyFromPrivateJwk,
+  readBundledUpdatePublicKey,
+  signUpdateManifest,
+  validateUpdateSigningPrivateKey,
   readZipEntries,
   verifyReleaseEntries,
   verifyZipContents

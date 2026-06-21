@@ -44,6 +44,7 @@ const DEFAULT_PARSE_BUDGET = Object.freeze({
   maxCosmeticRules: 200000,
   maxScriptletRules: 50000
 });
+const MAX_DNR_FILTER_BYTES = 2048;
 
 function parseBudget(overrides = {}) {
   return { ...DEFAULT_PARSE_BUDGET, ...overrides };
@@ -151,6 +152,121 @@ function networkParseResult(rule, skipReason = null) {
   return { rule, skipReason };
 }
 
+function utf8ByteLength(text) {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+function escapeRegexChar(ch) {
+  return /[\\^$.*+?()[\]{}|]/.test(ch) ? `\\${ch}` : ch;
+}
+
+function translatePatternTailToRegex(tail) {
+  let out = '';
+  for (let i = 0; i < tail.length; i++) {
+    const ch = tail[i];
+    if (ch === '*') {
+      out += '.*';
+    } else if (ch === '^') {
+      out += '(?:[^A-Za-z0-9_.%-]|$)';
+    } else if (ch === '|' && i === tail.length - 1) {
+      out += '$';
+    } else if (ch === '|') {
+      return null;
+    } else {
+      out += escapeRegexChar(ch);
+    }
+  }
+  return out;
+}
+
+function translateDomainAnchorWildcardPattern(pattern) {
+  if (!pattern.startsWith('||')) return { matched: false };
+
+  const body = pattern.slice(2);
+  const boundary = body.search(/[/?#^]/);
+  const hostPart = boundary === -1 ? body : body.slice(0, boundary);
+  const tail = boundary === -1 ? '' : body.slice(boundary);
+  if (!hostPart.includes('*')) return { matched: false };
+
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9.*-]*$/.test(hostPart) ||
+    !hostPart.replace(/\*/g, '').includes('.') ||
+    /[\s\x00-\x1f\x7f]/.test(tail)
+  ) {
+    return { matched: true, regexFilter: null };
+  }
+
+  let hostRegex = '';
+  for (const ch of hostPart) {
+    hostRegex += ch === '*' ? '[^/?#:]*' : escapeRegexChar(ch);
+  }
+
+  const tailRegex = translatePatternTailToRegex(tail);
+  if (tailRegex === null) return { matched: true, regexFilter: null };
+
+  const regexFilter = `^https?://(?:[^/?#:]+\\.)*${hostRegex}${tailRegex}`;
+  if (utf8ByteLength(regexFilter) > MAX_DNR_FILTER_BYTES) {
+    return { matched: true, regexFilter: null };
+  }
+
+  try {
+    new RegExp(regexFilter);
+  } catch {
+    return { matched: true, regexFilter: null };
+  }
+
+  return { matched: true, regexFilter };
+}
+
+function isLikelyDnrUrlFilter(pattern) {
+  if (
+    typeof pattern !== 'string' ||
+    pattern.length === 0 ||
+    utf8ByteLength(pattern) > MAX_DNR_FILTER_BYTES ||
+    /[\s\x00-\x1f\x7f]/.test(pattern)
+  ) {
+    return false;
+  }
+
+  if (pattern.startsWith('||')) {
+    const body = pattern.slice(2);
+    const boundary = body.search(/[/?#^]/);
+    const hostPart = boundary === -1 ? body : body.slice(0, boundary);
+    if (!hostPart || !/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(hostPart)) return false;
+  }
+
+  const bodyStart = pattern.startsWith('||') ? 2 : 0;
+  for (let i = bodyStart; i < pattern.length; i++) {
+    if (pattern[i] === '|' && i !== pattern.length - 1) return false;
+  }
+
+  return true;
+}
+
+function compileNetworkPattern(pattern) {
+  const translated = translateDomainAnchorWildcardPattern(pattern);
+  if (translated.matched) {
+    return translated.regexFilter
+      ? { condition: { regexFilter: translated.regexFilter } }
+      : null;
+  }
+
+  if (!isLikelyDnrUrlFilter(pattern)) return null;
+  return { condition: { urlFilter: pattern } };
+}
+
 // ─── NETWORK RULE PARSER ─────
 /**
  * Parses a network or exception rule line into a partial DNR rule object (no id assigned).
@@ -180,7 +296,10 @@ function parseNetworkRule(line, isException = false) {
     const opts = parseOptions(optionsStr);
     if (opts.hasSkipOption) return networkParseResult(null, 'skipOption');
 
-    const condition = { urlFilter: pattern };
+    const compiled = compileNetworkPattern(pattern);
+    if (!compiled) return networkParseResult(null, 'unsupportedUrlFilter');
+
+    const condition = { ...compiled.condition };
     if (opts.resourceTypes)              condition.resourceTypes              = opts.resourceTypes;
     if (opts.domainType)                 condition.domainType                 = opts.domainType;
     if (opts.initiatorDomains)           condition.initiatorDomains           = opts.initiatorDomains;
@@ -412,7 +531,7 @@ function unquoteScriptletArg(arg) {
  * @param {string} line
  * @returns {{ domains: string[]|null, scriptlet: string, args: string[], runAt: string }|null}
  */
-function parseScriptletRule(line) {
+export function parseScriptletRule(line) {
   try {
     const markerIdx = line.indexOf('##+js(');
     if (markerIdx === -1) return null;
@@ -473,23 +592,36 @@ function parseScriptletRule(line) {
  * Parses a complete filter list text into categorized rule buckets.
  * @param {string} text
  * @param {Object} [budgetOverrides]
- * @returns {{ networkRules: Object[], cosmeticRules: Object[], scriptletRules: Object[], skipped: Object }}
+ * @returns {{ networkRules: Object[], cosmeticRules: Object[], scriptletRules: Object[], skipped: Object, stats: Object }}
  */
 export function parseList(text, budgetOverrides = {}) {
   const budget = parseBudget(budgetOverrides);
   const networkRules  = [];
   const cosmeticRules = [];
   const scriptletRules = [];
+  const stats = {
+    translatedRegexFilter: 0
+  };
   const skipped = {
     comment:      0,
     extendedCss:  0,
     skipOption:   0,
     regex:        0,
+    unsupportedUrlFilter: 0,
     malformed:    0,
     overlong:     0,
     networkLimit: 0,
     cosmeticLimit: 0,
     scriptletLimit: 0
+  };
+
+  const addNetworkRule = (rule) => {
+    if (networkRules.length < budget.maxNetworkRules) {
+      networkRules.push(rule);
+      if (rule?.condition?.regexFilter) stats.translatedRegexFilter++;
+    } else {
+      skipped.networkLimit++;
+    }
   };
 
   let lineCount = 0;
@@ -524,10 +656,7 @@ export function parseList(text, budgetOverrides = {}) {
 
       case 'network': {
         const { rule, skipReason } = parseNetworkRule(line, false);
-        if (rule) {
-          if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
-          else skipped.networkLimit++;
-        }
+        if (rule) addNetworkRule(rule);
         else if (skipReason && Object.prototype.hasOwnProperty.call(skipped, skipReason)) skipped[skipReason]++;
         else skipped.malformed++;
         break;
@@ -535,10 +664,7 @@ export function parseList(text, budgetOverrides = {}) {
 
       case 'exception': {
         const { rule, skipReason } = parseNetworkRule(line, true);
-        if (rule) {
-          if (networkRules.length < budget.maxNetworkRules) networkRules.push(rule);
-          else skipped.networkLimit++;
-        }
+        if (rule) addNetworkRule(rule);
         else if (skipReason && Object.prototype.hasOwnProperty.call(skipped, skipReason)) skipped[skipReason]++;
         else skipped.malformed++;
         break;
@@ -576,5 +702,5 @@ export function parseList(text, budgetOverrides = {}) {
     }
   }
 
-  return { networkRules, cosmeticRules, scriptletRules, skipped };
+  return { networkRules, cosmeticRules, scriptletRules, skipped, stats };
 }

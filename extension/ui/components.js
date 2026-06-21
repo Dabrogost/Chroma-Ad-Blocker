@@ -125,8 +125,8 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderProtectionControls({ showZapper }) {
-    const zapperRow = showZapper ? `
+  function renderZapperRow() {
+    return `
       <div class="toggle-row zapper-action-row">
         <div class="toggle-info">
           <div class="name">Element Zapper</div>
@@ -134,12 +134,34 @@ const ChromaComponents = (() => {
         </div>
         <button class="reset-btn" id="zapElementBtn">Zap Element</button>
       </div>
-    ` : '';
+    `;
+  }
 
+  function renderSiteQuickActions() {
+    return `
+      <div class="section-title">This Site</div>
+      <div class="protection-list">
+        ${renderZapperRow()}
+        ${renderToggleRow({
+          inputId: 'toggleFprWhitelist',
+          rowId: 'rowFprWhitelist',
+          rowClass: 'fpr-whitelist-row',
+          name: 'Disable FPR on this site',
+          desc: 'For sites broken by canvas/audio noise (bot checks, captchas)'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleWhitelist',
+          name: 'Whitelist this site',
+          desc: 'Disable blocking on current domain'
+        })}
+      </div>
+    `;
+  }
+
+  function renderProtectionControls() {
     return `
       <div class="section-title">Protection Layers</div>
       <div class="protection-list">
-        ${zapperRow}
         ${renderToggleRow({
           inputId: 'toggleNetwork',
           name: 'Network Blocking',
@@ -282,6 +304,89 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderUpdaterShell() {
+    return `
+      <div class="section-title section-title--spaced" id="updatesSection">Updates</div>
+      <div class="protection-list updater-panel" id="updaterPanel">
+        <div class="updater-header">
+          <div class="toggle-info">
+            <div class="name" id="updaterStatusTitle">Update Setup</div>
+            <div class="desc" id="updaterStatusDesc">Choose the unpacked Chroma folder that contains manifest.json.</div>
+          </div>
+        </div>
+        <div class="updater-step-list" aria-label="Updater setup steps">
+          <div class="updater-step" id="updaterStepSupport">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Folder access available</span>
+          </div>
+          <div class="updater-step" id="updaterStepFolder">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Chroma folder verified</span>
+          </div>
+          <div class="updater-step" id="updaterStepRelease">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Release assets identified</span>
+          </div>
+          <div class="updater-step" id="updaterStepPackage">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Package ZIP inspected</span>
+          </div>
+          <div class="updater-step" id="updaterStepPlan">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Install plan built</span>
+          </div>
+          <div class="updater-step" id="updaterStepWrite">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Write probe passed</span>
+          </div>
+          <div class="updater-step" id="updaterStepInstall">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Update installed</span>
+          </div>
+        </div>
+        <div class="updater-actions">
+          <button class="reset-btn compact-action-btn" id="checkLatestReleaseBtn" type="button">Check Latest Release</button>
+          <button class="reset-btn compact-action-btn" id="chooseInstallFolderBtn" type="button">Choose Chroma Folder</button>
+          <button class="reset-btn compact-action-btn" id="inspectPackageBtn" type="button">Inspect Package ZIP</button>
+          <button class="reset-btn compact-action-btn" id="buildInstallPlanBtn" type="button">Build Install Plan</button>
+          <button class="reset-btn compact-action-btn" id="runFolderProbeBtn" type="button" disabled>Run Write Probe</button>
+          <button class="reset-btn compact-action-btn" id="installUpdateBtn" type="button" disabled>Install Update</button>
+        </div>
+        <div class="updater-plan" id="updaterPlanSummary" hidden>
+          <div class="updater-plan__counts" aria-label="Install plan summary">
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanAddCount">0</span>
+              <span class="updater-plan__label">Add</span>
+            </div>
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanOverwriteCount">0</span>
+              <span class="updater-plan__label">Overwrite</span>
+            </div>
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanRemoveCount">0</span>
+              <span class="updater-plan__label">Remove</span>
+            </div>
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanIgnoreCount">0</span>
+              <span class="updater-plan__label">Ignore</span>
+            </div>
+          </div>
+          <div class="updater-plan__preview" id="updaterPlanPreview"></div>
+        </div>
+        <div class="updater-progress" id="updaterProgress" hidden>
+          <div class="updater-progress__track">
+            <div class="updater-progress__fill" id="updaterProgressFill"></div>
+          </div>
+          <div class="updater-progress__text" id="updaterProgressText">Waiting</div>
+        </div>
+        <div class="updater-result-row">
+          <div class="desc updater-result" id="updaterResult" role="status" aria-live="polite"></div>
+          <button class="reset-btn compact-action-btn" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
+        </div>
+      </div>
+    `;
+  }
+
   function renderStatisticsShell({ settingsMode = false } = {}) {
     return `
       <div class="section-title section-title--spaced">Protection Intelligence</div>
@@ -370,6 +475,52 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderUserScriptletsShell() {
+    return `
+      <div class="section-title section-title--inline">
+        <span class="section-title-text">User Scriptlets</span>
+        <button id="addUserScriptletSourceBtn" class="reset-btn compact-action-btn user-scriptlet-add-btn" title="Add Resource URL" aria-label="Add Resource URL" type="button">
+          ${plusIcon}
+          <span>Add URL</span>
+        </button>
+      </div>
+      <div class="protection-list user-scriptlet-panel is-loading" id="userScriptletPanel">
+        <div class="user-scriptlet-warning">
+          User scriptlet resources run code you choose through Chrome's User Scripts API. Add only resources you trust.
+        </div>
+        <div id="addUserScriptletSourceForm" class="user-scriptlet-source-form is-hidden">
+          <div class="add-subscription-grid">
+            <input type="text" id="newUserScriptletSourceName" class="chroma-input chroma-input--compact" placeholder="Name (optional)" />
+            <input type="text" id="newUserScriptletSourceUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/scriptlet-resources.js" />
+            <div id="newUserScriptletSourceError" class="form-error is-hidden"></div>
+            <div class="form-actions">
+              <button id="newUserScriptletSourceAddBtn" class="reset-btn form-submit-btn">Add</button>
+              <button id="newUserScriptletSourceCancelBtn" class="reset-btn inline-danger-btn" title="Cancel" aria-label="Cancel adding user scriptlet resource" type="button">&times;</button>
+            </div>
+          </div>
+        </div>
+        <div class="user-scriptlet-subsection-title">Resource URLs</div>
+        <div id="userScriptletSourceList" class="user-scriptlet-source-list">
+          ${renderSkeletonRows(2, 'user-scriptlet-skeleton-row')}
+        </div>
+        <div class="user-scriptlet-available" id="userScriptletAvailableResources">
+          <div class="user-scriptlet-subsection-title">Available Resources</div>
+          <div class="user-scriptlet-chip-list is-loading" id="userScriptletAvailableResourceList">
+            ${renderSkeletonLine('skeleton-line--long')}
+          </div>
+        </div>
+        <div class="user-scriptlet-rules">
+          <div class="user-scriptlet-subsection-title">Rules</div>
+          <textarea id="userScriptletRulesText" class="chroma-input user-scriptlet-rules-text control-pending" spellcheck="false" readonly aria-busy="true" placeholder="example.com##+js(resource-name)&#10;another.example##+js(other-resource)"></textarea>
+          <div class="user-scriptlet-rule-actions">
+            <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status">Loading rules...</div>
+            <button id="saveUserScriptletRulesBtn" class="reset-btn compact-action-btn control-pending" type="button" disabled>Save Rules</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderProxyShell({ settingsMode }) {
     return `
       <div class="section-title section-title--inline"${settingsMode ? ' id="proxySection"' : ''}>
@@ -416,10 +567,10 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderFooter() {
+  function renderFooter({ showResetStats = true } = {}) {
     return `
       <footer>
-        <button class="reset-btn" id="resetStats">Reset Stats</button>
+        ${showResetStats ? '<button class="reset-btn" id="resetStats">Reset Stats</button>' : ''}
         <div class="footer-right">
           <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" target="_blank" class="github-link" title="View Source on GitHub">
             ${githubIcon}
@@ -438,13 +589,15 @@ const ChromaComponents = (() => {
       ${renderHeader()}
       ${renderStats({ showSettingsIcon: !settingsMode })}
       ${settingsMode ? renderHealthPanelShell() : ''}
+      ${settingsMode ? renderUpdaterShell() : ''}
       ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
-      ${renderProtectionControls({ showZapper: !settingsMode })}
-      ${renderFilterListShell({ settingsMode })}
-      ${renderProxyShell({ settingsMode })}
+      ${settingsMode ? renderProtectionControls() : renderSiteQuickActions()}
+      ${settingsMode ? renderFilterListShell({ settingsMode }) : ''}
+      ${settingsMode ? renderUserScriptletsShell() : ''}
+      ${settingsMode ? renderProxyShell({ settingsMode }) : ''}
       ${settingsMode ? renderLocalZapperShell() : ''}
-      ${renderRequestLogShell()}
-      ${renderFooter()}
+      ${settingsMode ? renderRequestLogShell() : ''}
+      ${renderFooter({ showResetStats: settingsMode })}
     `;
 
     shell.innerHTML = settingsMode ? `<div class="main-container">${content}</div>` : content;
@@ -453,10 +606,13 @@ const ChromaComponents = (() => {
   return {
     renderHeader,
     renderStats,
+    renderSiteQuickActions,
     renderStatisticsShell,
+    renderUpdaterShell,
     renderProtectionControls,
     renderHealthPanelShell,
     renderFilterListShell,
+    renderUserScriptletsShell,
     renderProxyShell,
     renderLocalZapperShell,
     renderRequestLogShell,

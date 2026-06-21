@@ -252,7 +252,9 @@ const ChromaHealthUI = (() => {
       addHealthSection(body, 'Scriptlets', [
         ['UserScripts API', health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable', health.scriptlets?.apiAvailable ? 'ok' : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')],
         ['Registered scripts', getRegisteredScriptletLabel(health), getRegisteredScriptletStatus(health)],
-        ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), '']
+        ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), ''],
+        ['User resource rules', formatCount(health.scriptlets?.userStoredRuleCount), ''],
+        ['User resources', formatCount(health.scriptlets?.userResourceCount), health.scriptlets?.userResourceErrorCount ? 'warning' : '']
       ]);
 
       addHealthSection(body, 'Fingerprint', [

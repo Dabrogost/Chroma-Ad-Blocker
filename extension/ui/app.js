@@ -11,6 +11,7 @@ const ChromaApp = (() => {
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
+  const UPDATE_SETTINGS_PATH = 'ui/settings.html#updatesSection';
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
     ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
@@ -26,6 +27,15 @@ const ChromaApp = (() => {
     ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
     ['toggleGeolocationProtection', 'geolocationProtection', false],
   ];
+
+  function publishUpdateCheckResult(result) {
+    globalThis.ChromaLatestUpdateCheck = result || null;
+    const EventCtor = globalThis.CustomEvent || globalThis.window?.CustomEvent;
+    const target = typeof globalThis.dispatchEvent === 'function' ? globalThis : globalThis.window;
+    if (typeof EventCtor === 'function' && typeof target?.dispatchEvent === 'function') {
+      target.dispatchEvent(new EventCtor('chroma:update-check-result', { detail: result || null }));
+    }
+  }
 
   function isSettingsPage() {
     const path = globalThis.location?.pathname || '';
@@ -48,6 +58,19 @@ const ChromaApp = (() => {
       chrome.runtime.openOptionsPage();
     } else {
       window.open(chrome.runtime.getURL('ui/settings.html'));
+    }
+  }
+
+  function openUpdatesSettings() {
+    const url = chrome.runtime.getURL(UPDATE_SETTINGS_PATH);
+    if (isSettingsPage()) {
+      globalThis.location.hash = '#updatesSection';
+      const section = $('updatesSection') || $('updaterPanel');
+      section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    } else if (chrome.tabs?.create) {
+      chrome.tabs.create({ url });
+    } else {
+      window.open(url);
     }
   }
 
@@ -86,6 +109,20 @@ const ChromaApp = (() => {
     }
 
     return formatCount(number);
+  }
+
+  function formatSubscriptionCompatibility(sub) {
+    const compatibility = sub?.compatibility || {};
+    const translated = Number(compatibility.translatedRegexFilter) || 0;
+    const unsupported = Number(compatibility.unsupportedUrlFilter) || 0;
+    const parts = [];
+    if (translated > 0) {
+      parts.push(`${formatCount(translated)} translated`);
+    }
+    if (unsupported > 0) {
+      parts.push(`${formatCount(unsupported)} skipped`);
+    }
+    return parts.length ? `Network compatibility: ${parts.join(' \u00b7 ')}` : '';
   }
 
   function formatDuration(seconds) {
@@ -425,7 +462,10 @@ const ChromaApp = (() => {
     ].forEach(setSectionLoading);
     setStatsControlsPending(true);
     try {
-      stats = await notifyBackground({ type: MSG.STATS_GET }) || null;
+      const message = isSettingsPage()
+        ? { type: MSG.STATS_GET }
+        : { type: MSG.STATS_GET, options: { summaryOnly: true } };
+      stats = await notifyBackground(message) || null;
       available = !!stats;
     } catch (error) {
       console.error('Chroma stats failed to load:', error);
@@ -447,20 +487,32 @@ const ChromaApp = (() => {
     }
 
     notifyBackground({ type: MSG.UPDATE_CHECK }).then(result => {
+      publishUpdateCheckResult(result);
       if (!result || !result.updateAvailable) return;
+      const guidedInstallReady = (
+        result.assetStatus === 'found'
+        && result.asset?.downloadUrl
+        && result.updateManifestStatus === 'found'
+        && result.updateManifestAsset?.downloadUrl
+      );
       const banner = document.createElement('div');
       banner.id = 'updateBanner';
       banner.className = 'update-banner';
 
       const updateLink = document.createElement('a');
-      updateLink.href = RELEASES_PAGE;
-      updateLink.target = '_blank';
+      updateLink.href = guidedInstallReady ? chrome.runtime.getURL(UPDATE_SETTINGS_PATH) : RELEASES_PAGE;
+      if (!guidedInstallReady) {
+        updateLink.target = '_blank';
+        updateLink.rel = 'noopener';
+      }
       updateLink.className = 'update-banner__link';
-      updateLink.textContent = `\u2191 v${result.latestVersion} available`;
+      updateLink.textContent = guidedInstallReady
+        ? `Update to v${result.latestVersion}`
+        : `\u2191 v${result.latestVersion} available`;
 
       const githubSpan = document.createElement('span');
       githubSpan.className = 'update-banner__source';
-      githubSpan.textContent = 'on GitHub';
+      githubSpan.textContent = guidedInstallReady ? 'guided install' : 'on GitHub';
 
       const dismissBtn = document.createElement('button');
       dismissBtn.id = 'dismissUpdate';
@@ -472,6 +524,12 @@ const ChromaApp = (() => {
       banner.appendChild(githubSpan);
       banner.appendChild(dismissBtn);
       document.querySelector('.section-title')?.before(banner);
+      if (guidedInstallReady) {
+        updateLink.addEventListener('click', event => {
+          event.preventDefault();
+          openUpdatesSettings();
+        });
+      }
       dismissBtn.addEventListener('click', () => banner.remove());
     }).catch(error => console.error('Chroma update check failed:', error));
 
@@ -497,7 +555,7 @@ const ChromaApp = (() => {
       return {
         enabled: $('toggleEnabled')?.checked ?? true,
         speed: getActiveSpeed(),
-        toggles: Object.fromEntries(CONFIG_TOGGLES.map(([id]) => [id, $(id)?.checked ?? false]))
+        toggles: Object.fromEntries(CONFIG_TOGGLES.map(([id, key, def]) => [id, $(id)?.checked ?? (config[key] ?? def)]))
       };
     }
 
@@ -510,7 +568,8 @@ const ChromaApp = (() => {
       }
       syncSpeedUI(state.speed ?? 8, !!state.toggles?.toggleAcceleration && state.enabled);
       const rowFpr = $('rowFprWhitelist');
-      if (rowFpr) rowFpr.classList.toggle('is-visible', !!($('toggleFingerprintRandomization')?.checked && $('toggleEnabled')?.checked));
+      const fprEnabled = $('toggleFingerprintRandomization')?.checked ?? state.toggles?.toggleFingerprintRandomization ?? !!config.fingerprintRandomization;
+      if (rowFpr) rowFpr.classList.toggle('is-visible', !!(fprEnabled && $('toggleEnabled')?.checked));
     }
 
     function updateStatusDot(active) {
@@ -526,7 +585,8 @@ const ChromaApp = (() => {
     }
 
     function showConfigLoadError(message) {
-      const controls = $('toggleNetwork')?.closest?.('.protection-list');
+      const anchor = $('toggleNetwork') || $('toggleWhitelist');
+      const controls = anchor?.closest?.('.protection-list');
       if (!controls || controls.querySelector('.hydration-error')) return;
       const error = document.createElement('div');
       error.className = 'hydration-error hydration-error--inline';
@@ -545,6 +605,7 @@ const ChromaApp = (() => {
         'statsTimelineList',
         'statsEventsList',
         'subscriptionList',
+        'userScriptletSourceList',
         'proxyRouterContainer',
         'localZapperRules'
       ].forEach(id => setSectionError(id, 'Unavailable until the extension background responds.'));
@@ -689,17 +750,17 @@ const ChromaApp = (() => {
     wireStatsControls();
     wireSharedLinks();
     wireAddSubscriptionForm();
+    wireUserScriptletControls();
     wireRequestLog();
 
     safeHydrateSection('site controls', hydrateSiteControls);
     safeHydrateSection('stats', loadStatsUI);
-    safeHydrateSection('subscriptions', loadSubscriptionUI);
     if (settingsMode) {
+      safeHydrateSection('subscriptions', loadSubscriptionUI);
       safeHydrateSection('health panel', loadHealthPanel);
+      safeHydrateSection('user scriptlets', loadUserScriptletUI);
       safeHydrateSection('proxy router', loadProxyRouterSection);
       safeHydrateSection('local zapper rules', loadLocalZapperRulesUI);
-    } else {
-      safeHydrateSection('proxy router', loadProxyRouterSection);
     }
 
     function wireStatsControls() {
@@ -798,6 +859,7 @@ const ChromaApp = (() => {
           }
           await Promise.all([
             loadSubscriptionUI(),
+            loadUserScriptletUI(),
             loadProxyRouterSection(),
             loadHealthPanel()
           ]);
@@ -894,7 +956,8 @@ const ChromaApp = (() => {
       const fprToggle = $('toggleFingerprintRandomization');
       const fprSiteToggle = $('toggleFprWhitelist');
       const updateFprRowVisibility = () => {
-        const visible = !!(fprToggle && fprToggle.checked && $('toggleEnabled')?.checked);
+        const fprEnabled = fprToggle ? fprToggle.checked : !!config.fingerprintRandomization;
+        const visible = !!(fprEnabled && $('toggleEnabled')?.checked);
         if (rowFpr) rowFpr.classList.toggle('is-visible', visible);
       };
       updateFprRowVisibility();
@@ -998,6 +1061,8 @@ const ChromaApp = (() => {
             if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
             if (parts.length) appendElement(info, 'div', 'desc', parts.join(' \u00b7 '));
           }
+          const compatibilityText = formatSubscriptionCompatibility(sub);
+          if (compatibilityText) appendElement(info, 'div', 'desc', compatibilityText);
 
           if (sub.lastError) {
             const error = appendElement(info, 'div', 'subscription-error', `Error: ${sub.lastError}`);
@@ -1162,6 +1227,330 @@ const ChromaApp = (() => {
       submitBtn?.addEventListener('click', submitAdd);
       urlInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
       nameInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitAdd(); });
+    }
+
+    function formatUserScriptletSourceUpdated(source) {
+      if (source?.lastUpdated) return new Date(source.lastUpdated).toLocaleString();
+      return 'Never';
+    }
+
+    function setUserScriptletRulesStatus(message, isError = false) {
+      const status = $('userScriptletRulesStatus');
+      if (!status) return;
+      status.textContent = message || '';
+      status.classList.toggle('form-error', !!isError);
+    }
+
+    function setUserScriptletRulesPending(pending) {
+      const textarea = $('userScriptletRulesText');
+      const saveBtn = $('saveUserScriptletRulesBtn');
+      if (textarea) {
+        textarea.readOnly = !!pending;
+        textarea.classList.toggle('control-pending', !!pending);
+        textarea.setAttribute('aria-busy', pending ? 'true' : 'false');
+      }
+      if (saveBtn) {
+        saveBtn.disabled = !!pending;
+        saveBtn.classList.toggle('control-pending', !!pending);
+      }
+    }
+
+    function normalizeUserScriptletResourceName(name) {
+      const cleaned = String(name || '').trim().toLowerCase();
+      return cleaned.endsWith('.js') ? cleaned.slice(0, -3) : cleaned;
+    }
+
+    function extractUserScriptletRuleNames(ruleText) {
+      const counts = new Map();
+      const lines = String(ruleText || '').replace(/\r\n?/g, '\n').split('\n');
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('!') || line.startsWith('#') || line.startsWith('[') || line.startsWith('//')) continue;
+        const match = line.match(/##\+js\(\s*([^,\s)]+)/);
+        const name = normalizeUserScriptletResourceName(match?.[1]?.replace(/^['"]|['"]$/g, ''));
+        if (name) counts.set(name, (counts.get(name) || 0) + 1);
+      }
+      return counts;
+    }
+
+    function getUserScriptletLinkState(names, ruleText) {
+      const ruleCounts = extractUserScriptletRuleNames(ruleText);
+      const resources = Array.isArray(names)
+        ? names.map(name => String(name || '').trim()).filter(Boolean)
+        : [];
+      const resourceKeys = new Set(resources.map(normalizeUserScriptletResourceName));
+      const missing = [];
+      for (const [name, ruleCount] of ruleCounts) {
+        if (!resourceKeys.has(name)) missing.push({ name, ruleCount });
+      }
+      return {
+        resources: resources.map(name => ({
+          name,
+          ruleCount: ruleCounts.get(normalizeUserScriptletResourceName(name)) || 0
+        })),
+        missing
+      };
+    }
+
+    function formatLinkedResourceStatus(settings, linkState) {
+      const savedRules = Number(settings?.parsedRuleCount || 0);
+      const linkedResources = linkState.resources.filter(resource => resource.ruleCount > 0).length;
+      const missingResources = linkState.missing.length;
+      const parts = [`${savedRules.toLocaleString()} saved rule(s)`];
+      if (linkedResources > 0) parts.push(`${linkedResources.toLocaleString()} linked resource(s)`);
+      if (missingResources > 0) parts.push(`${missingResources.toLocaleString()} missing resource(s)`);
+      return `${parts.join(' \u00b7 ')}.`;
+    }
+
+    function renderUserScriptletResourceChips(names, linkState) {
+      const wrap = $('userScriptletAvailableResources');
+      const list = $('userScriptletAvailableResourceList');
+      if (!wrap || !list) return;
+      clearElement(list);
+      const resources = linkState?.resources || getUserScriptletLinkState(names, '').resources;
+      const missing = linkState?.missing || [];
+      list.classList.remove('is-loading');
+      resources.slice(0, 30).forEach(resource => {
+        const linked = resource.ruleCount > 0;
+        const chip = appendElement(
+          list,
+          'span',
+          `user-scriptlet-chip${linked ? ' user-scriptlet-chip--linked' : ''}`
+        );
+        appendElement(chip, 'span', 'user-scriptlet-chip__name', resource.name);
+        appendElement(chip, 'span', 'user-scriptlet-chip__status', linked ? 'Linked' : 'Unused');
+      });
+      missing.slice(0, 10).forEach(resource => {
+        const chip = appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--missing');
+        appendElement(chip, 'span', 'user-scriptlet-chip__name', resource.name);
+        appendElement(chip, 'span', 'user-scriptlet-chip__status', 'Missing');
+      });
+      if (resources.length === 0 && missing.length === 0) {
+        appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--muted', 'No parsed resources');
+      }
+      if (resources.length > 30) {
+        appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--muted', `+${resources.length - 30}`);
+      }
+      if (missing.length > 10) {
+        appendElement(list, 'span', 'user-scriptlet-chip user-scriptlet-chip--muted', `+${missing.length - 10} missing`);
+      }
+    }
+
+    async function loadUserScriptletUI() {
+      if (!settingsMode) return;
+      const list = $('userScriptletSourceList');
+      const textarea = $('userScriptletRulesText');
+      if (!list) return;
+      setSectionLoading('userScriptletPanel');
+      setSectionLoading('userScriptletSourceList');
+      setUserScriptletRulesPending(true);
+      setUserScriptletRulesStatus('Loading rules...');
+
+      let settings = null;
+      try {
+        settings = await notifyBackground({ type: MSG.USER_SCRIPTLETS_GET });
+      } catch (error) {
+        console.error('Chroma user scriptlets failed to load:', error);
+      }
+
+      if (!settings) {
+        setSectionError('userScriptletSourceList', 'User scriptlets unavailable.');
+        setUserScriptletRulesStatus('User scriptlets unavailable.', true);
+        setSectionReady('userScriptletPanel');
+        return;
+      }
+
+      const sources = Array.isArray(settings.sources) ? settings.sources : [];
+      clearElement(list);
+
+      const summary = document.createElement('div');
+      summary.className = 'subscription-summary';
+      summary.textContent = `${sources.length.toLocaleString()} resource URL(s) \u00b7 ${Number(settings.availableResourceNames?.length || 0).toLocaleString()} resource(s) \u00b7 ${Number(settings.parsedRuleCount || 0).toLocaleString()} rule(s)`;
+      list.appendChild(summary);
+
+      if (sources.length === 0) {
+        appendLoadingRow(list, 'No user scriptlet resources added.');
+      } else {
+        for (const source of sources) {
+          const row = document.createElement('div');
+          row.className = 'toggle-row user-scriptlet-source-row';
+          const info = appendElement(row, 'div', 'toggle-info');
+          appendElement(info, 'div', 'name', source.name || 'User scriptlet resource');
+          const urlLine = appendElement(info, 'div', 'desc user-scriptlet-source-url', source.url || '');
+          urlLine.title = source.url || '';
+          appendElement(info, 'div', 'desc', `Updated: ${formatUserScriptletSourceUpdated(source)}`);
+          const names = Array.isArray(source.resourceNames) ? source.resourceNames.filter(Boolean) : [];
+          if (names.length > 0) {
+            const shown = names.slice(0, 8).join(', ');
+            appendElement(info, 'div', 'desc user-scriptlet-resource-names', `${source.resourceCount || names.length} resource(s): ${shown}${names.length > 8 ? '...' : ''}`);
+          } else {
+            appendElement(info, 'div', 'desc user-scriptlet-resource-names', 'No parsed resources yet.');
+          }
+          if (source.lastError) {
+            const error = appendElement(info, 'div', 'subscription-error', `Error: ${source.lastError}`);
+            error.title = source.lastError;
+          }
+
+          const actions = appendElement(row, 'div', 'subscription-actions');
+          const refreshBtn = appendElement(actions, 'button', 'user-scriptlet-refresh-btn reset-btn compact-action-btn', 'Refresh');
+          refreshBtn.dataset.id = source.id;
+          refreshBtn.title = 'Refresh resource';
+          refreshBtn.setAttribute('aria-label', `Refresh ${source.name || 'user scriptlet resource'}`);
+          const deleteBtn = appendElement(actions, 'button', 'user-scriptlet-delete-btn reset-btn inline-danger-btn compact-action-btn', 'Remove');
+          deleteBtn.dataset.id = source.id;
+          deleteBtn.title = 'Remove resource';
+          deleteBtn.setAttribute('aria-label', `Remove ${source.name || 'user scriptlet resource'}`);
+          list.appendChild(row);
+        }
+      }
+
+      if (textarea && document.activeElement !== textarea) {
+        textarea.value = typeof settings.ruleText === 'string' ? settings.ruleText : '';
+      }
+      const linkState = getUserScriptletLinkState(settings.availableResourceNames, settings.ruleText);
+      renderUserScriptletResourceChips(settings.availableResourceNames, linkState);
+      setUserScriptletRulesStatus(formatLinkedResourceStatus(settings, linkState), linkState.missing.length > 0);
+      setUserScriptletRulesPending(false);
+      setSectionReady('userScriptletSourceList');
+      setSectionReady('userScriptletPanel');
+
+      list.querySelectorAll('.user-scriptlet-refresh-btn').forEach(btn => {
+        btn.addEventListener('click', async (event) => {
+          const target = event.target;
+          target.disabled = true;
+          target.textContent = '...';
+          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REFRESH, id: target.dataset.id });
+          target.textContent = result?.ok ? 'Done' : 'Failed';
+          setTimeout(() => {
+            loadUserScriptletUI();
+            loadHealthPanel();
+          }, 800);
+        });
+      });
+
+      list.querySelectorAll('.user-scriptlet-delete-btn').forEach(btn => {
+        btn.addEventListener('click', async (event) => {
+          if (!confirm('Remove this user scriptlet resource?')) return;
+          const target = event.target;
+          target.disabled = true;
+          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REMOVE, id: target.dataset.id });
+          if (result) {
+            await loadUserScriptletUI();
+            await loadHealthPanel();
+          } else {
+            target.disabled = false;
+            target.title = 'Remove failed';
+          }
+        });
+      });
+    }
+
+    function wireUserScriptletControls() {
+      if (!settingsMode) return;
+      const addBtn = $('addUserScriptletSourceBtn');
+      const form = $('addUserScriptletSourceForm');
+      const nameInput = $('newUserScriptletSourceName');
+      const urlInput = $('newUserScriptletSourceUrl');
+      const errEl = $('newUserScriptletSourceError');
+      const submitBtn = $('newUserScriptletSourceAddBtn');
+      const cancelBtn = $('newUserScriptletSourceCancelBtn');
+      const saveRulesBtn = $('saveUserScriptletRulesBtn');
+      const rulesText = $('userScriptletRulesText');
+      if (!addBtn || !form) return;
+
+      const showError = (message) => {
+        if (!errEl) return;
+        errEl.textContent = message;
+        errEl.classList.remove('is-hidden');
+      };
+      const closeForm = () => {
+        form.classList.add('is-hidden');
+        if (nameInput) nameInput.value = '';
+        if (urlInput) urlInput.value = '';
+        if (errEl) {
+          errEl.classList.add('is-hidden');
+          errEl.textContent = '';
+        }
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Add';
+        }
+      };
+
+      addBtn.addEventListener('click', () => {
+        if (form.classList.contains('is-hidden')) {
+          form.classList.remove('is-hidden');
+          urlInput?.focus?.();
+        } else {
+          closeForm();
+        }
+      });
+      cancelBtn?.addEventListener('click', closeForm);
+
+      const submitAdd = async () => {
+        if (errEl) errEl.classList.add('is-hidden');
+        const url = urlInput?.value.trim() || '';
+        if (!url) return showError('URL required.');
+        let parsed;
+        try { parsed = new URL(url); } catch { return showError('Invalid URL.'); }
+        if (parsed.protocol !== 'https:') return showError('Only https:// URLs are allowed.');
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Adding...';
+        }
+        let result = null;
+        try {
+          result = await notifyBackground({
+            type: MSG.USER_SCRIPTLET_SOURCE_ADD,
+            source: {
+              name: nameInput?.value.trim() || '',
+              url
+            }
+          });
+        } catch (error) {
+          console.error('Chroma user scriptlet source add failed:', error);
+        }
+        if (!result?.ok) {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Add';
+          }
+          return showError(result?.error || 'Add failed.');
+        }
+        closeForm();
+        await loadUserScriptletUI();
+        await loadHealthPanel();
+      };
+
+      submitBtn?.addEventListener('click', submitAdd);
+      urlInput?.addEventListener('keypress', (event) => { if (event.key === 'Enter') submitAdd(); });
+      nameInput?.addEventListener('keypress', (event) => { if (event.key === 'Enter') submitAdd(); });
+
+      saveRulesBtn?.addEventListener('click', async () => {
+        if (!rulesText) return;
+        saveRulesBtn.disabled = true;
+        saveRulesBtn.textContent = 'Saving...';
+        setUserScriptletRulesStatus('Saving rules...');
+        let result = null;
+        try {
+          result = await notifyBackground({
+            type: MSG.USER_SCRIPTLET_RULES_SET,
+            ruleText: rulesText.value
+          });
+        } catch (error) {
+          console.error('Chroma user scriptlet rules save failed:', error);
+        }
+        if (result?.ok) {
+          setUserScriptletRulesStatus(`${Number(result.parsedRuleCount || 0).toLocaleString()} saved rule(s).`);
+          await loadUserScriptletUI();
+          await loadHealthPanel();
+        } else {
+          setUserScriptletRulesStatus(result?.error || 'Rules save failed.', true);
+        }
+        saveRulesBtn.disabled = false;
+        saveRulesBtn.textContent = 'Save Rules';
+      });
     }
 
     async function loadProxyRouterSection() {
@@ -1369,6 +1758,7 @@ const ChromaApp = (() => {
     escapeHTML,
     isSettingsPage,
     openProxySettings,
+    openUpdatesSettings,
     initSharedUI,
     scrollToProxyHash
   };
@@ -1376,3 +1766,4 @@ const ChromaApp = (() => {
 
 globalThis.ChromaApp = ChromaApp;
 globalThis.openProxySettings = ChromaApp.openProxySettings;
+globalThis.openUpdatesSettings = ChromaApp.openUpdatesSettings;

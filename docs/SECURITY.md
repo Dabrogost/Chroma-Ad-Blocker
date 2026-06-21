@@ -19,6 +19,30 @@ Remote list content is not treated as arbitrary code. Lists are fetched over HTT
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
 
+## Guided Update Trust Boundary
+
+Chroma's guided updater installs only GitHub release packages that have the exact expected ZIP asset and signed `updates.json`. The signed manifest binds the package name, byte size, and SHA-256 to Chroma's bundled update public key before the updater builds an install plan or writes files.
+
+Folder access is explicit and user-scoped through Chromium's File System Access picker. Chroma stores the selected directory handle locally for convenience, but the browser may require the user to reconnect that folder after a restart or permission reset. Guided updates do not use Chrome's Downloads permission, do not accept arbitrary update URLs, and do not install from unsigned or same-version packages.
+
+The update private key is not stored in the repository. A missing, unsigned, modified, or incorrectly signed `updates.json` blocks guided installation and leaves the manual fallback available. This protects the guided updater from simple release-asset replacement, but it does not remove the need to trust the initial install package, the maintainer's signing key, or any intentionally signed release.
+
+## Advanced User Scriptlet Resources
+
+Chroma supports an advanced, user-initiated scriptlet resource lane for people who want to add uBO-style scriptlet resources themselves. This lane is separate from normal filter list subscriptions:
+
+- Chroma does not bundle these resources.
+- Chroma does not activate them through remote filter-list subscriptions.
+- Resource URLs must be added explicitly by the user in settings.
+- Matching `domain##+js(resource-name)` rules must also be saved by the user.
+- Cached resource code is not included in settings backups; backups store only resource URLs and user rules.
+
+User scriptlet resources are executable code. They are fetched from public HTTPS URLs selected by the user, parsed with size and MIME limits, stored locally, and registered through Chrome's documented `userScripts` API in the page MAIN world. This API is the only path Chroma uses for user-provided scriptlet code; Chroma does not use `eval`, `Function`, or extension-controlled remote script execution for this feature.
+
+Users should add only resources they trust. Health diagnostics report counts and coarse status for this feature without exposing raw resource code.
+
+For practical setup, examples, and troubleshooting, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md).
+
 ## Security Hardening
 
 Chroma implements several security measures to preserve extension integrity and reduce the amount of page-visible state:

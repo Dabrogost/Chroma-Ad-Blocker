@@ -13,6 +13,37 @@ This guide covers installing Chroma, enabling required browser features, trouble
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
 6. Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
 
+## Updating Chroma
+
+Chroma is installed unpacked, so updates are handled through the same local folder Chrome already loads. Keeping that folder path the same helps preserve the extension ID, settings, and local statistics.
+
+Normal popup and settings loads use a cached GitHub release check for up to 6 hours. The **Check Latest Release** button forces a fresh check when you want to test a new release immediately.
+
+When Chroma detects a newer GitHub release with the expected direct package asset and signed `updates.json`, the popup shows an update banner. Click it to open **Settings -> Updates**, then:
+
+1. Check the latest release. The popup handoff may already have this information, but this button verifies the direct GitHub ZIP asset and `updates.json` again.
+2. Choose the current unpacked Chroma folder, the one that contains `manifest.json`.
+3. Approve Chrome's folder picker prompt when it appears. Chroma stores the directory handle locally so future update checks can reuse it when the browser still grants access.
+4. Inspect the package ZIP. Chroma downloads signed `updates.json` and the release package into memory, verifies the Chroma signature and expected SHA-256, checks the manifest, rejects unsafe ZIP paths, and confirms manifest-referenced files are present. Users do not manually download `updates.json`, and guided updates do not use Chrome's Downloads permission or download dialog.
+5. Build the install plan. This is a dry run that shows files to add, overwrite, remove, and ignore.
+6. Run the write probe. Chroma creates and removes a small temporary probe file to confirm write access.
+7. Install the update. Chroma creates a temporary backup, writes the verified package into the selected folder, removes stale files from the plan, writes `manifest.json` last, and attempts rollback if installation fails.
+8. Click **Reload Chroma** to load the updated files. If direct reload is unavailable, Chroma opens `chrome://extensions` as a fallback.
+
+If Chroma is already current, the Updates panel settles on **Chroma Is Current** instead of walking through install steps. You can still keep the install folder verified for the next update.
+
+If the popup says the update is available **on GitHub** instead of **guided install**, the release does not expose the exact `chroma-ad-blocker-vX.Y.Z.zip` asset and signed `updates.json` needed for the guided updater. Use the manual flow below.
+
+### Manual Update Fallback
+
+1. Download the latest `chroma-ad-blocker-vX.Y.Z.zip` from [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest).
+2. Extract it to a temporary folder.
+3. Back up your current unpacked Chroma folder.
+4. Copy the extracted package contents over the current Chroma folder, keeping `manifest.json` at the folder root.
+5. Open `chrome://extensions` and click Chroma's refresh button.
+
+If Chrome prompts for folder access again after a restart, choose the same unpacked Chroma folder and rerun the write probe. The prompt is part of Chromium's File System Access API, not a hidden Chrome settings page.
+
 ## Configuration
 
 | Setting | Description | Default |
@@ -44,10 +75,15 @@ This guide covers installing Chroma, enabling required browser features, trouble
 | Symptom | Check |
 |---|---|
 | Scriptlets or fingerprint randomization show unavailable in Health. | On Chrome 138+, open `chrome://extensions`, select Chroma **Details**, and enable **Allow User Scripts**. On Chrome 122-137, confirm **Developer Mode** is enabled. |
+| Guided updater is unavailable. | Use a recent Chromium browser with the File System Access directory picker, or use the manual update fallback. |
+| Guided updater reports a missing release ZIP or `updates.json`. | The GitHub release must include the exact direct asset name `chroma-ad-blocker-vX.Y.Z.zip` and signed `updates.json`. Use the manual fallback or wait for a corrected release asset. |
+| Guided updater reports an invalid update signature. | The release `updates.json` was not signed with Chroma's bundled update key, or it was changed after signing. Use the manual fallback or wait for a corrected release asset. |
+| Guided updater says Chroma is current. | No newer release is available for this install. Use **Check Latest Release** to force a fresh GitHub release check if a new release was just published. |
+| Guided install completes but the old version still runs. | Click **Reload Chroma** in the updater panel. If direct reload is unavailable, open `chrome://extensions` and click Chroma's refresh button. |
 | Loaded-extension E2E tests fail with `--load-extension` errors. | Use Chrome for Testing or Chromium for automated extension tests. Modern official Google Chrome builds reject this automation path. |
 | Authenticated SOCKS proxy credentials do not work. | Chromium extension proxy APIs do not expose SOCKS username/password auth to extensions. Use provider-side IP allowlisting or an HTTP/HTTPS proxy endpoint. |
 | Subscription refresh fails. | Confirm the list URL is HTTPS, reachable, not credential-bearing, under the response-size limit, and returns filter-list text rather than an HTML error page. |
-| A site fix requires extension changes. | Chroma checks GitHub releases and notifies you when an update is available. Install the reviewed release package for bundled rule and code updates. |
+| A site fix requires extension changes. | Chroma checks GitHub releases and notifies you when an update is available. Use the guided updater when the exact release ZIP is available, or install the reviewed release package manually. |
 | Request Log is empty. | Chroma is installed unpacked, so DNR match logging should normally be available when Chrome exposes `chrome.declarativeNetRequest.onRuleMatchedDebug`. If the browser does not expose that feedback API, blocking can still work normally. |
 
 ## Health Panel

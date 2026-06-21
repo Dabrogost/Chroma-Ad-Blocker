@@ -13,7 +13,8 @@ export const DEFAULT_SUBSCRIPTIONS = [
     lastUpdated: 0,
     version: null,
     lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+    compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   },
   {
     id: 'chroma-lib',
@@ -24,7 +25,8 @@ export const DEFAULT_SUBSCRIPTIONS = [
     lastUpdated: 0,
     version: null,
     lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+    compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   },
   {
     id: 'easylist',
@@ -36,7 +38,8 @@ export const DEFAULT_SUBSCRIPTIONS = [
     lastUpdated: 0,
     version: null,
     lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+    compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   },
   {
     id: 'fanboy-annoyance',
@@ -48,6 +51,7 @@ export const DEFAULT_SUBSCRIPTIONS = [
     lastUpdated: 0,
     version: null,
     lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+    compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   }
 ];

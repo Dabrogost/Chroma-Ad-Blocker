@@ -1,12 +1,8 @@
 # Chroma Ad-Blocker
 
-**Chroma Ad-Blocker** is a free, open-source Manifest V3 browser extension built for local, auditable ad blocking on Chrome and Chromium-based browsers. It combines browser-engine DNR blocking, YouTube payload stripping, scriptlets, cosmetic filtering, media-aware proxy routing, local statistics, and optional privacy hardening without sending browsing data to Chroma-controlled servers.
+**Chroma Ad-Blocker** is a free, open-source Manifest V3 browser extension built for local, auditable ad blocking on Chrome and Chromium-based browsers. It combines browser-engine DNR blocking, YouTube payload stripping, scriptlets, cosmetic filtering, media-aware proxy routing, local statistics, and optional privacy hardening with no Chroma telemetry or browsing-data collection.
 
 For best results, disable other ad-blocking extensions while using Chroma. Layering multiple blockers can cause overlapping rules, false positives, and broken pages.
-
-<div align="center">
-  <img src="assets/popup.gif" alt="Chroma Ad-Blocker Popup Preview" width="360">
-</div>
 
 ## Documentation
 
@@ -14,13 +10,16 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - [Installation & Configuration](docs/INSTALL.md)
 - [Feature Guide](docs/FEATURES.md)
 - [Architecture Deep Dive](docs/ARCHITECTURE.md)
+- [Performance Guide](docs/PERFORMANCE.md)
 - [Media Proxy Router](docs/MEDIA_PROXY_ROUTER.md)
 - [YouTube Protection](docs/YOUTUBE.md)
 - [Filter List Subscriptions](docs/FILTER_LISTS.md)
+- [Advanced User Scriptlets](docs/ADVANCED_USER_SCRIPTLETS.md)
 - [Permissions](docs/PERMISSIONS.md)
 - [Statistics & Health](docs/STATISTICS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Security Policy](docs/SECURITY.md)
+- [Threat Model](docs/THREAT_MODEL.md)
 - [Testing Guide](docs/TEST_GUIDE.md)
 - [Distribution Notes](docs/DISTRIBUTION.md)
 - [Contributing](docs/CONTRIBUTING.md)
@@ -33,7 +32,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - **[Split-Tunnel Proxy Router](docs/MEDIA_PROXY_ROUTER.md)**: Routes selected media domains through HTTP, HTTPS, SOCKS4, or SOCKS5 proxies while keeping unrelated browser traffic direct. Includes Global Fallback, Smart-Link media/CDN expansion, connection verification, WebRTC leak protection, and local-only proxy credential handling.
 - **[Source-Generated DNR Network Blocking](docs/ARCHITECTURE.md#layer-1-network-level-blocking-extensionrules-extensionbackgrounddnrstatejs-extensionsubscriptions)**: Uses generated OISD Big static rules, a protected custom static layer, recipe-specific rules, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **[Live Filter List Subscriptions](docs/FILTER_LISTS.md)**: Supports Hagezi Pro Mini, EasyList, Fanboy Annoyance, the bundled Chroma Scriptlet Library, and user-added custom lists with local parsing and rule-budget allocation.
-- **[Scriptlet Injection Engine](docs/ARCHITECTURE.md#layer-2-scriptlet-injection-scriptletsenginejs)**: Translates supported uBlock Origin and AdGuard-style scriptlets into native JavaScript and registers them through Chrome's `userScripts` API.
+- **[Scriptlet Injection Engine](docs/ARCHITECTURE.md#layer-2-scriptlet-injection-scriptletsenginejs)**: Translates supported uBlock Origin and AdGuard-style scriptlets into native JavaScript, and lets advanced users add [trusted uBO-style scriptlet resources](docs/ADVANCED_USER_SCRIPTLETS.md) through Chrome's `userScripts` API.
 - **[Cosmetic Filtering & Element Zapper](docs/FEATURES.md#element-zapper)**: Removes ad slots, placeholders, unwanted UI, warnings, and user-selected page elements through CSS injection, DOM monitoring, and local cosmetic rules.
 - **[Privacy Hardening & Fingerprint Randomization](docs/FEATURES.md#privacy-hardening-fingerprint-randomization)**: Optional controls for third-party cookies, Privacy Sandbox ad APIs, geolocation access, WebRTC routing behavior, and per-document fingerprint farbling.
 - **[Local Event Tracker](docs/STATISTICS.md)**: A local-only Protection Intelligence dashboard for network, cleanup, scriptlet, proxy, and payload-cleanup events.
@@ -50,7 +49,9 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
 6. Done. Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
 
-For the expanded install flow, troubleshooting table, configuration reference, and Health panel notes, see [Installation & Configuration](docs/INSTALL.md).
+When a newer GitHub release is available, Chroma can guide unpacked-extension updates from **Settings -> Updates** if the release includes the exact direct ZIP asset and signed `updates.json`. Chroma fetches those release assets internally, so users do not manually download `updates.json` and the extension does not need Chrome's download permission or download dialog. It verifies the update signature and package hash, builds a dry-run install plan, probes folder write access, backs up changed files, writes `manifest.json` last, and then shows a **Reload Chroma** action to load the updated files.
+
+For the expanded install and update flow, troubleshooting table, configuration reference, and Health panel notes, see [Installation & Configuration](docs/INSTALL.md).
 
 ## Architecture At A Glance
 
@@ -97,13 +98,14 @@ For another account-level privacy improvement, open [Google My Ad Center](https:
 
 ## Trust Model
 
-Chroma is distributed through GitHub releases instead of the Chrome Web Store. That means installation requires a higher level of user trust, but it also keeps the release package source-auditable and avoids store-mediated update delays for platform-specific fixes.
+Chroma is distributed through GitHub releases instead of the Chrome Web Store. That means installation requires a higher level of user trust, but it also keeps the release package source-auditable, enables a guided updater for exact release ZIP assets, and avoids store-mediated update delays for platform-specific fixes.
 
 Review these before installing:
 
 - [Permissions](docs/PERMISSIONS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Security Policy](docs/SECURITY.md)
+- [Threat Model](docs/THREAT_MODEL.md)
 - [Project Philosophy](docs/PROJECT_PHILOSOPHY.md#why-not-the-chrome-web-store)
 
 ## Companion Extensions & Alternatives

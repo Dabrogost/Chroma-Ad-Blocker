@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; object-src 'none';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://api.github.com https://github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com; object-src 'none';" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Chroma Settings</title>
   <link rel="stylesheet" href="ui.css" />
@@ -24,6 +24,7 @@
   <script src="components.js"></script>
   <script src="health-ui.js"></script>
   <script src="app.js"></script>
+  <script src="updater-ui.js"></script>
   <script src="proxy-ui.js"></script>
   <script src="settings.js"></script>
 </body>

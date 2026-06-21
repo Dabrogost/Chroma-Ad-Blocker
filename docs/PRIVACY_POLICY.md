@@ -13,16 +13,18 @@ description: Chroma Ad-Blocker privacy policy - your data stays on your device.
 Chroma Ad-Blocker ("we," "our," or "the Extension") is committed to protecting your privacy. This Privacy Policy explains how we handle information in connection with your use of the Extension. **Core extension settings, logs, and cached rules are stored on your device; optional features may contact the external list, update, proxy-test, or proxy services described below.**
 
 ## 1. Information Collection and Use
-Chroma Ad-Blocker **does not collect, store, or transmit personal information to Chroma-controlled servers**. Chroma does not operate any telemetry, analytics, or tracking backend. Core extension operations are performed locally on your device.
+Chroma Ad-Blocker **does not collect, upload, or sell personal information**. Chroma does not operate any telemetry, analytics, or tracking backend. Core extension operations are performed locally on your device.
 
 ### Local Data Storage
 The Extension uses your browser's local storage (`chrome.storage.local`) to save:
 - **User Settings**: Your preferred toggles for network blocking, YouTube stripping, ad acceleration, cosmetic filtering, fingerprint randomization, proxy routing, and related options.
 - **Whitelists**: Domains you choose to exempt from Chroma protection or fingerprint randomization.
 - **Filter List Data**: Subscription metadata and cached parsed rules from enabled filter lists.
+- **User Scriptlet Resources**: If you add advanced user scriptlet resources, Chroma stores the resource URLs, parsed resource metadata, cached resource code, and your matching user scriptlet rules locally.
 - **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are stored locally in an obfuscated form with a bundled extension key and used only for proxy authentication. This is not strong encryption; protect your browser profile and operating-system account accordingly.
 - **Local Statistics and Request Log**: Local blocked-request counts and a bounded request log used for the popup display. The log can include blocked request URLs, request types, timestamps, and matched rule IDs. This data is stored locally and can be reset from the extension UI.
 - **Health Diagnostics**: Coarse local status entries for material background failures, such as DNR sync, UserScripts registration, or proxy PAC write failures. These entries are sanitized and are not designed to store request URLs, proxy hosts, credentials, or raw filter rules.
+- **Guided Updater Folder Handle**: If you choose an unpacked Chroma install folder for guided updates, Chroma stores that browser-provided File System Access directory handle locally in IndexedDB. The handle is used only to reconnect to the selected install folder, and Chrome may ask you to approve access again after a restart or permission reset.
 
 ### No Tracking and Cookies
 We do not use cookies, tracking pixels, or web beacons. There is no Chroma server-side tracking of your browsing habits or your use of the Extension.
@@ -35,18 +37,19 @@ The Extension requires specific permissions to function effectively. Below is a 
 - **`storage` and `unlimitedStorage`**: Save settings, whitelists, proxy configuration, subscription metadata, cached rules, statistics, and request-log data locally.
 - **`tabs`**: Reads the active tab URL for whitelist controls, opens extension pages or links from the popup/settings UI, and reloads tabs after site-level whitelist changes.
 - **`alarms`**: Schedules recurring subscription refresh checks in the MV3 service worker.
-- **`userScripts`**: Registers subscription scriptlets in the page context using Chrome's native userScripts API. In Chrome 138 and newer, this API also requires the user to enable Chrome's per-extension **Allow User Scripts** toggle.
+- **`userScripts`**: Registers bundled subscription scriptlets and explicit user-added scriptlet resources in the page context using Chrome's native userScripts API. In Chrome 138 and newer, this API also requires the user to enable Chrome's per-extension **Allow User Scripts** toggle.
 - **`scripting`**: Supports extension-controlled script work, including Element Zapper injection and fingerprint-randomization logic when enabled.
 - **`proxy`**: Applies browser-level PAC scripts for split-tunnel and global fallback proxy routing.
 - **`webRequest` and `webRequestAuthProvider`**: Responds to proxy authentication challenges when an HTTP/HTTPS proxy requires credentials.
 - **Host Permissions (`<all_urls>` and listed site patterns)**: Allow content scripts, cosmetic filtering, DNR rule matching, subscription scriptlets, supported platform handlers, and site-level controls to operate on visited pages. This is broad by design and is why sensitive state remains local.
 
 ## 3. Data Sharing
-We do not sell, share, or transmit your browsing data to Chroma-controlled servers. There are no analytics, tracking, or telemetry scripts included in the Extension.
+We do not sell, share, or upload your browsing data. There are no analytics, tracking, or telemetry scripts included in the Extension.
 
 Some features make network requests as part of their normal function:
 - **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, and Fanboy Annoyance. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
-- **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available.
+- **User Scriptlet Resource Updates**: Advanced user scriptlet resources are fetched from the HTTPS URLs you add in settings.
+- **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available. Normal popup and settings loads reuse a local update-check cache for up to 6 hours unless you click **Check Latest Release**. If you use guided updates, Chroma can also download signed `updates.json` and the exact GitHub release ZIP into memory to verify and inspect them before installation. These guided-update downloads are not written through Chrome's Downloads system, and users do not manually download `updates.json`.
 - **Proxy Testing**: When you test a proxy, Chroma requests a public IP-check endpoint through the selected proxy to verify connectivity.
 - **Configured Proxy Routing**: If you enable a proxy route or global fallback, matching browser traffic is routed through the proxy server you configured.
 
@@ -63,7 +66,7 @@ Chroma does not intercept, read, modify, or store any data from these requests. 
 If you require stricter network filtering, you can disable the extension on any site using the **Whitelist this site** toggle in the popup.
 
 ## 5. Third-Party Websites
-The Extension interacts with websites you visit to provide ad blocking, cosmetic filtering, scriptlet protections, platform-specific ad stripping, ad acceleration fallback, and optional proxy routing. These changes happen locally in your browser. Chroma is not designed to collect account credentials, private messages, or account data from those websites, and it does not transmit that kind of data to Chroma-controlled servers.
+The Extension interacts with websites you visit to provide ad blocking, cosmetic filtering, scriptlet protections, platform-specific ad stripping, ad acceleration fallback, and optional proxy routing. These changes happen locally in your browser. Chroma is not designed to collect account credentials, private messages, or account data from those websites, and it does not upload that kind of data.
 
 ## 6. Changes to This Policy
 We may update this Privacy Policy from time to time. Changes will be reflected in the Effective Date at the top of this document. Continued use of the Extension following any update constitutes acceptance of the revised Policy.
