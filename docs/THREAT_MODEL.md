@@ -12,6 +12,7 @@ This document describes Chroma's practical security boundaries. Chroma cannot ma
 | MAIN-world handlers | Needed for page API interception, platform-specific handlers, scriptlets, and optional fingerprint randomization. | Pristine API caching, closure-scoped state, nonce-based handshake, narrow registration. |
 | DNR rules | Browser-enforced request policy for static, dynamic, subscription, cleanup, and whitelist rules. | Browser validation, static rulesets, dynamic ID ranges, budget allocation. |
 | Remote subscriptions | Can change blocking, cosmetic behavior, and supported scriptlet activation after install. | HTTPS-only fetches, response-size limits, local parsing, unsupported-syntax drops, budget allocation. |
+| Guided release updates | Can replace local unpacked extension files when the user grants folder access. | Exact release asset names, signed `updates.json`, SHA-256 package verification, safe ZIP path checks, dry-run planning, backup, rollback attempt, and manifest-last writes. |
 | User scriptlet resources | User-selected executable code that can run in the page MAIN world. | Explicit user opt-in, HTTPS-only URLs, separate resource lane, Chrome `userScripts` API, narrow rules. |
 | Proxy routing | Routes selected browser traffic through user-configured proxy servers. | PAC generation, local credential handling, connection testing, user-controlled routes. |
 
@@ -27,6 +28,7 @@ This document describes Chroma's practical security boundaries. Chroma cannot ma
 | Compromised proxy | Observes or alters traffic routed through it, fails intermittently, or logs destinations and timing. | Chroma routes only user-configured proxy targets, can keep unmatched traffic direct, supports Global Fallback only when selected, and keeps proxy credentials local. | A proxy provider can see normal proxy metadata and plaintext HTTP content, and can disrupt or modify non-TLS traffic. HTTPS protects content only according to the browser's normal TLS trust model. Chroma cannot make an untrusted proxy trustworthy. |
 | Extension-page XSS | Injects script into popup or settings pages and abuses privileged extension-page messaging. | Relies on Chrome extension-origin isolation, DOM-safe UI rendering, sanitized diagnostics, and validated background message paths. | Any real XSS in an extension page would be high impact. Treat extension UI rendering bugs as security issues and report them privately. |
 | MV3 service-worker restart or failure | Browser stops the service worker, wakes it later without `onStartup`, or interrupts long-running background work. | Persistent state lives in `chrome.storage.local` or browser-managed DNR, `userScripts`, and proxy APIs. Wake/startup paths resync DNR, privacy settings, scriptlets, proxy-related state, alarms, and tab config where possible. Health diagnostics report important failures. | Some runtime work can be delayed until the worker wakes. A failed refresh, registration, or PAC write can leave a layer stale or degraded until retry, reload, or user action. |
+| Compromised GitHub release asset | Replaces the release ZIP or `updates.json` without the Chroma update private key. | Guided updates require signed `updates.json`; that manifest binds the exact ZIP name, byte size, and SHA-256 before install planning or writes. | A first-time manual install still depends on the user choosing a trusted release. A stolen update private key or malicious signed release would still be trusted by guided updates. |
 
 ## What Chroma Defends Against
 
@@ -46,7 +48,7 @@ Chroma is designed to reduce common web tracking, advertising, and clutter at se
 Chroma is not a general sandbox, antivirus, VPN, password manager, or anonymity system. In particular, it does not defend against:
 
 - A compromised operating system, browser binary, browser profile, or another privileged extension.
-- A malicious Chroma release package or a release downloaded from an untrusted source.
+- A malicious Chroma release package, a malicious signed release, or a release downloaded from an untrusted source.
 - Browser bugs that break extension isolation, DNR enforcement, storage isolation, or `userScripts` behavior.
 - All fingerprinting or tracking. Optional fingerprint randomization can reduce some surfaces, but it is not a complete anonymity guarantee.
 - Account-level tracking or server-side decisions made after you sign in to a website.
@@ -62,6 +64,7 @@ Chroma's security model assumes:
 
 - Chromium correctly enforces extension origin isolation, isolated-world content scripts, DNR rules, `userScripts`, storage boundaries, and extension permissions.
 - The installed Chroma package matches the source you intended to install.
+- Chroma's guided updater public key matches the maintainer's private update-signing key, and that private key remains protected.
 - The local operating system account and browser profile are not compromised.
 - Default remote filter-list maintainers are trusted to influence blocking behavior within Chroma's supported rule types, or the user disables lists they do not want to trust.
 - Custom subscriptions are trusted by the user who adds them.

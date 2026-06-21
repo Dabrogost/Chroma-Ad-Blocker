@@ -304,6 +304,87 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderUpdaterShell() {
+    return `
+      <div class="section-title section-title--spaced" id="updatesSection">Updates</div>
+      <div class="protection-list updater-panel" id="updaterPanel">
+        <div class="updater-header">
+          <div class="toggle-info">
+            <div class="name" id="updaterStatusTitle">Update Setup</div>
+            <div class="desc" id="updaterStatusDesc">Choose the unpacked Chroma folder that contains manifest.json.</div>
+          </div>
+        </div>
+        <div class="updater-step-list" aria-label="Updater setup steps">
+          <div class="updater-step" id="updaterStepSupport">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Folder access available</span>
+          </div>
+          <div class="updater-step" id="updaterStepFolder">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Chroma folder verified</span>
+          </div>
+          <div class="updater-step" id="updaterStepRelease">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Release assets identified</span>
+          </div>
+          <div class="updater-step" id="updaterStepPackage">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Package ZIP inspected</span>
+          </div>
+          <div class="updater-step" id="updaterStepPlan">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Install plan built</span>
+          </div>
+          <div class="updater-step" id="updaterStepWrite">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Write probe passed</span>
+          </div>
+          <div class="updater-step" id="updaterStepInstall">
+            <span class="updater-step__dot updater-step__dot--pending" aria-hidden="true"></span>
+            <span class="updater-step__label">Update installed</span>
+          </div>
+        </div>
+        <div class="updater-actions">
+          <button class="reset-btn compact-action-btn" id="checkLatestReleaseBtn" type="button">Check Latest Release</button>
+          <button class="reset-btn compact-action-btn" id="chooseInstallFolderBtn" type="button">Choose Chroma Folder</button>
+          <button class="reset-btn compact-action-btn" id="inspectPackageBtn" type="button">Inspect Package ZIP</button>
+          <button class="reset-btn compact-action-btn" id="buildInstallPlanBtn" type="button">Build Install Plan</button>
+          <button class="reset-btn compact-action-btn" id="runFolderProbeBtn" type="button" disabled>Run Write Probe</button>
+          <button class="reset-btn compact-action-btn" id="installUpdateBtn" type="button" disabled>Install Update</button>
+          <button class="reset-btn compact-action-btn" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
+        </div>
+        <div class="updater-plan" id="updaterPlanSummary" hidden>
+          <div class="updater-plan__counts" aria-label="Install plan summary">
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanAddCount">0</span>
+              <span class="updater-plan__label">Add</span>
+            </div>
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanOverwriteCount">0</span>
+              <span class="updater-plan__label">Overwrite</span>
+            </div>
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanRemoveCount">0</span>
+              <span class="updater-plan__label">Remove</span>
+            </div>
+            <div class="updater-plan__count">
+              <span class="updater-plan__number" id="updaterPlanIgnoreCount">0</span>
+              <span class="updater-plan__label">Ignore</span>
+            </div>
+          </div>
+          <div class="updater-plan__preview" id="updaterPlanPreview"></div>
+        </div>
+        <div class="updater-progress" id="updaterProgress" hidden>
+          <div class="updater-progress__track">
+            <div class="updater-progress__fill" id="updaterProgressFill"></div>
+          </div>
+          <div class="updater-progress__text" id="updaterProgressText">Waiting</div>
+        </div>
+        <div class="desc updater-result" id="updaterResult" role="status" aria-live="polite"></div>
+      </div>
+    `;
+  }
+
   function renderStatisticsShell({ settingsMode = false } = {}) {
     return `
       <div class="section-title section-title--spaced">Protection Intelligence</div>
@@ -506,6 +587,7 @@ const ChromaComponents = (() => {
       ${renderHeader()}
       ${renderStats({ showSettingsIcon: !settingsMode })}
       ${settingsMode ? renderHealthPanelShell() : ''}
+      ${settingsMode ? renderUpdaterShell() : ''}
       ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
       ${settingsMode ? renderProtectionControls() : renderSiteQuickActions()}
       ${settingsMode ? renderFilterListShell({ settingsMode }) : ''}
@@ -524,6 +606,7 @@ const ChromaComponents = (() => {
     renderStats,
     renderSiteQuickActions,
     renderStatisticsShell,
+    renderUpdaterShell,
     renderProtectionControls,
     renderHealthPanelShell,
     renderFilterListShell,

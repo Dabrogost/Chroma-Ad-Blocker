@@ -72,6 +72,7 @@ const MSG = {
   USER_SCRIPTLET_RULES_SET: 'USER_SCRIPTLET_RULES_SET',
   HEALTH_GET: 'HEALTH_GET',
   UPDATE_CHECK: 'UPDATE_CHECK',
+  UPDATE_PACKAGE_INSPECT: 'UPDATE_PACKAGE_INSPECT',
   PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
   PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
   PROXY_TEST: 'PROXY_TEST',
@@ -119,6 +120,7 @@ function loadHandlers(options = {}) {
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
     syncBrowserPrivacyHardening: options.syncBrowserPrivacyHardening || (async () => ({})),
     syncGeolocationProtection: options.syncGeolocationProtection || (async () => ({})),
+    inspectLatestUpdatePackage: options.inspectLatestUpdatePackage || (async () => ({ ok: true, updateAvailable: false })),
     chrome: {
       storage: {
         local: {
@@ -279,6 +281,7 @@ test('Security Hardening - handlers.js', async (t) => {
       MSG.STATS_SETTINGS_SET,
       MSG.LOG_GET,
       MSG.HEALTH_GET,
+      MSG.UPDATE_PACKAGE_INSPECT,
       MSG.WHITELIST_GET,
       MSG.PROXY_CONFIG_GET,
       MSG.PROXY_CONFIG_SET,

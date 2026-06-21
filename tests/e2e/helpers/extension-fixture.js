@@ -97,8 +97,22 @@ class CdpConnection {
     const id = this.nextId++;
     const payload = { id, method, params };
     if (sessionId) payload.sessionId = sessionId;
+    const timeoutMs = positiveNumber(process.env.CHROMA_E2E_CDP_TIMEOUT_MS, 10000);
     const promise = new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timeout = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP ${method} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: value => {
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        reject: error => {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      });
     });
     this.ws.send(JSON.stringify(payload));
     return promise;
@@ -302,18 +316,25 @@ async function startChrome() {
 
 async function startExtensionBrowserInstance() {
   const browser = await startChrome();
-  let foundWorker;
   try {
+    let foundWorker;
     foundWorker = await findExtensionWorker(browser.cdp, browser.stderr);
+    const extensionId = foundWorker.worker.url.match(/^chrome-extension:\/\/([^/]+)\//)[1];
+    return { ...browser, extensionId, worker: foundWorker.worker, workerSession: foundWorker.sessionId };
   } catch (initialErr) {
-    const loaded = await loadExtensionViaCdp(browser.cdp, browser.extensionUnderTest);
-    if (loaded.error) {
-      throw new Error(`${initialErr.message}\nCDP Extensions.loadUnpacked failed: ${loaded.error}`);
+    try {
+      const loaded = await loadExtensionViaCdp(browser.cdp, browser.extensionUnderTest);
+      if (loaded.error) {
+        throw new Error(`${initialErr.message}\nCDP Extensions.loadUnpacked failed: ${loaded.error}`);
+      }
+      const foundWorker = await findExtensionWorker(browser.cdp, browser.stderr);
+      const extensionId = foundWorker.worker.url.match(/^chrome-extension:\/\/([^/]+)\//)[1];
+      return { ...browser, extensionId, worker: foundWorker.worker, workerSession: foundWorker.sessionId };
+    } catch (fallbackErr) {
+      await browser.cleanup().catch(() => {});
+      throw fallbackErr;
     }
-    foundWorker = await findExtensionWorker(browser.cdp, browser.stderr);
   }
-  const extensionId = foundWorker.worker.url.match(/^chrome-extension:\/\/([^/]+)\//)[1];
-  return { ...browser, extensionId, worker: foundWorker.worker, workerSession: foundWorker.sessionId };
 }
 
 async function startExtensionBrowser() {

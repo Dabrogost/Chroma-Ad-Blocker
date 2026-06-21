@@ -30,6 +30,7 @@ import { syncUserScripts } from '../scriptlets/engine.js';
 import { validateConfig } from './configState.js';
 import { updateDNRState, syncDynamicRules, syncWhitelistRules } from './dnrState.js';
 import { checkForUpdate } from './updateCheck.js';
+import { inspectLatestUpdatePackage } from './updatePackage.js';
 import { resetRequestLog, getMergedLog } from './requestLog.js';
 import { runProxyTest } from './proxy.js';
 import { getHealthStatus } from './health.js';
@@ -993,8 +994,12 @@ async function handleHealthGet() {
 
 // ─── SYSTEM ─────
 
-async function handleUpdateCheck() {
-  return checkForUpdate();
+async function handleUpdateCheck(msg) {
+  return checkForUpdate(msg?.options || {});
+}
+
+async function handleUpdatePackageInspect(msg) {
+  return inspectLatestUpdatePackage(msg?.options || {});
 }
 
 // ─── REGISTRATION ─────
@@ -1012,6 +1017,7 @@ export function registerAll(router) {
   router.markSensitive(MSG.STATS_SETTINGS_SET);
   router.markSensitive(MSG.LOG_GET);
   router.markSensitive(MSG.HEALTH_GET);
+  router.markSensitive(MSG.UPDATE_PACKAGE_INSPECT);
   router.markSensitive(MSG.WHITELIST_GET);
   router.markSensitive(MSG.WHITELIST_ADD);
   router.markSensitive(MSG.WHITELIST_REMOVE);
@@ -1072,4 +1078,5 @@ export function registerAll(router) {
   router.registerHandler(MSG.LOG_GET,              handleLogGet);
   router.registerHandler(MSG.HEALTH_GET,           handleHealthGet);
   router.registerHandler(MSG.UPDATE_CHECK,         handleUpdateCheck);
+  router.registerHandler(MSG.UPDATE_PACKAGE_INSPECT, handleUpdatePackageInspect);
 }

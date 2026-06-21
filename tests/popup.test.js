@@ -47,7 +47,7 @@ test('domain utility uses public-suffix-aware registrable domains', () => {
 });
 
 test('popup.js functionality', async (t) => {
-  function createSandbox() {
+  function createSandbox({ updateCheckResult = { updateAvailable: false } } = {}) {
     const elements = {};
     const ensureElement = (id) => {
       if (!elements[id]) {
@@ -59,6 +59,7 @@ test('popup.js functionality', async (t) => {
         };
         elements[id] = {
           id,
+          children: [],
           checked: false,
           textContent: '',
           listeners: {},
@@ -77,7 +78,18 @@ test('popup.js functionality', async (t) => {
           },
           style: { display: '' },
           parentElement: parent,
-          appendChild: (child) => {},
+          appendChild(child) {
+            this.children.push(child);
+            return child;
+          },
+          before(child) {
+            if (child?.id) elements[child.id] = child;
+            this.beforeChild = child;
+          },
+          remove() {
+            this.removed = true;
+            if (elements[this.id] === this) delete elements[this.id];
+          },
           querySelector: (sel) => getElement('temp-child-' + Math.random()),
           querySelectorAll: (sel) => [],
           setAttribute(name, value) {
@@ -178,7 +190,7 @@ test('popup.js functionality', async (t) => {
             return [];
           }
           if (msg.type === 'UPDATE_CHECK') {
-            return { updateAvailable: false };
+            return updateCheckResult;
           }
         },
         getManifest: () => ({ version: '1.0.0' }),
@@ -216,7 +228,6 @@ test('popup.js functionality', async (t) => {
         createElement: (tag) => {
           const el = ensureElement('temp-' + Math.random());
           el.tagName = tag.toUpperCase();
-          el.appendChild = (child) => {};
           el.querySelector = (sel) => ensureElement('temp-child-' + Math.random());
           el.querySelectorAll = (sel) => [];
           return el;
@@ -266,7 +277,8 @@ test('popup.js functionality', async (t) => {
         SUBSCRIPTION_GET: 'SUBSCRIPTION_GET',
         SUBSCRIPTION_SET: 'SUBSCRIPTION_SET',
         SUBSCRIPTION_REFRESH: 'SUBSCRIPTION_REFRESH',
-        UPDATE_CHECK: 'UPDATE_CHECK'
+        UPDATE_CHECK: 'UPDATE_CHECK',
+        UPDATE_PACKAGE_INSPECT: 'UPDATE_PACKAGE_INSPECT'
       },
       window: {
         addEventListener: (type, fn) => {},
@@ -396,6 +408,97 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['statProtectionEvents'].textContent, '0');
   });
 
+  await t.test('update banner opens guided updater when release ZIP is verified', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox({
+      updateCheckResult: {
+        updateAvailable: true,
+        latestVersion: '1.5.3',
+        assetStatus: 'found',
+        asset: {
+          name: 'chroma-ad-blocker-v1.5.3.zip',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.5.3/chroma-ad-blocker-v1.5.3.zip'
+        },
+        updateManifestStatus: 'found',
+        updateManifestAsset: {
+          name: 'updates.json',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.5.3/updates.json'
+        }
+      }
+    });
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const banner = elements.updateBanner;
+    assert.ok(banner);
+    const link = banner.children[0];
+    assert.strictEqual(link.textContent, 'Update to v1.5.3');
+    assert.strictEqual(link.href, 'chrome-extension://test/ui/settings.html#updatesSection');
+    assert.strictEqual(banner.children[1].textContent, 'guided install');
+
+    let prevented = false;
+    await link.dispatchEvent({
+      type: 'click',
+      preventDefault: () => { prevented = true; }
+    });
+
+    assert.strictEqual(prevented, true);
+    assert.strictEqual(chromeMock.tabs.created.at(-1)?.url, 'chrome-extension://test/ui/settings.html#updatesSection');
+  });
+
+  await t.test('update banner falls back to GitHub when release ZIP is missing', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox({
+      updateCheckResult: {
+        updateAvailable: true,
+        latestVersion: '1.5.3',
+        assetStatus: 'missing',
+        asset: null
+      }
+    });
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const banner = elements.updateBanner;
+    assert.ok(banner);
+    const link = banner.children[0];
+    assert.strictEqual(link.textContent, '\u2191 v1.5.3 available');
+    assert.strictEqual(link.href, 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest');
+    assert.strictEqual(link.target, '_blank');
+    assert.strictEqual(link.rel, 'noopener');
+    assert.strictEqual(banner.children[1].textContent, 'on GitHub');
+    assert.deepStrictEqual(chromeMock.tabs.created, []);
+  });
+
+  await t.test('update banner falls back to GitHub when updates.json is missing', async () => {
+    const { sandbox, elements, chromeMock } = createSandbox({
+      updateCheckResult: {
+        updateAvailable: true,
+        latestVersion: '1.5.3',
+        assetStatus: 'found',
+        asset: {
+          name: 'chroma-ad-blocker-v1.5.3.zip',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.5.3/chroma-ad-blocker-v1.5.3.zip'
+        },
+        updateManifestStatus: 'missing',
+        updateManifestAsset: null
+      }
+    });
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    const banner = elements.updateBanner;
+    assert.ok(banner);
+    const link = banner.children[0];
+    assert.strictEqual(link.textContent, '\u2191 v1.5.3 available');
+    assert.strictEqual(link.href, 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest');
+    assert.strictEqual(link.target, '_blank');
+    assert.strictEqual(link.rel, 'noopener');
+    assert.strictEqual(banner.children[1].textContent, 'on GitHub');
+    assert.deepStrictEqual(chromeMock.tabs.created, []);
+  });
+
   await t.test('notifyBackground wrapper function - passes message correctly', async () => {
     const { sandbox, messages } = createSandbox();
     vm.createContext(sandbox);
@@ -520,13 +623,28 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(popupHtmlCode, /proxy-ui\.js/);
   assert.match(popupHtmlCode, /<script src="popup\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<div id="appShell"><\/div>/);
+  assert.match(settingsHtmlCode, /connect-src 'self' https:\/\/api\.github\.com https:\/\/github\.com/);
   assert.match(settingsHtmlCode, /<script src="\.\.\/core\/messaging\.js"><\/script>\s*<script src="dom-utils\.js"><\/script>\s*<script src="domain-utils\.js"><\/script>\s*<script src="components\.js"><\/script>\s*<script src="health-ui\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(settingsHtmlCode, /<script src="updater-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="proxy-ui\.js"><\/script>/);
   assert.match(settingsHtmlCode, /<script src="settings\.js"><\/script>/);
+  assert.match(componentsJsCode, /id="checkLatestReleaseBtn"[\s\S]*Check Latest Release/);
+  assert.match(componentsJsCode, /id="updaterStepSupport"[\s\S]*Folder access available[\s\S]*id="updaterStepFolder"[\s\S]*Chroma folder verified[\s\S]*id="updaterStepRelease"[\s\S]*Release assets identified/);
+  assert.match(componentsJsCode, /id="checkLatestReleaseBtn"[\s\S]*Check Latest Release[\s\S]*id="chooseInstallFolderBtn"[\s\S]*Choose Chroma Folder[\s\S]*id="inspectPackageBtn"[\s\S]*Inspect Package ZIP/);
+  assert.match(componentsJsCode, /id="updaterStepRelease"[\s\S]*Release assets identified/);
+  assert.match(componentsJsCode, /id="inspectPackageBtn"[\s\S]*Inspect Package ZIP/);
+  assert.match(componentsJsCode, /id="updaterStepPackage"[\s\S]*Package ZIP inspected/);
+  assert.match(componentsJsCode, /id="updaterStepFolder"[\s\S]*Chroma folder verified[\s\S]*id="updaterStepPlan"[\s\S]*Install plan built/);
+  assert.match(componentsJsCode, /id="chooseInstallFolderBtn"[\s\S]*Choose Chroma Folder[\s\S]*id="buildInstallPlanBtn"[\s\S]*Build Install Plan/);
+  assert.match(componentsJsCode, /id="buildInstallPlanBtn"[\s\S]*Build Install Plan/);
+  assert.match(componentsJsCode, /id="updaterStepPlan"[\s\S]*Install plan built/);
+  assert.match(componentsJsCode, /id="installUpdateBtn"[\s\S]*Install Update/);
+  assert.match(componentsJsCode, /id="reloadChromaBtn"[\s\S]*Reload Chroma/);
+  assert.match(componentsJsCode, /id="updaterStepInstall"[\s\S]*Update installed/);
   assert.doesNotMatch(popupHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
   assert.doesNotMatch(settingsHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
-  assert.doesNotMatch(popupHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
-  assert.doesNotMatch(settingsHtmlCode, /style-src[^"]*https:|font-src[^"]*https:/i);
+  assert.doesNotMatch(popupHtmlCode, /style-src[^;"]*https:|font-src[^;"]*https:/i);
+  assert.doesNotMatch(settingsHtmlCode, /style-src[^;"]*https:|font-src[^;"]*https:/i);
   assert.doesNotMatch(popupHtmlCode, /unsafe-inline/i);
   assert.doesNotMatch(settingsHtmlCode, /unsafe-inline/i);
   assert.doesNotMatch(appJsCode, /\.style\./);
@@ -569,7 +687,10 @@ test('UI hardening copy', () => {
   assert.match(proxyUiJsCode, /applyGlobalButtonState\(\);/);
   assert.doesNotMatch(proxyUiJsCode, /async function renderPopupSummary[\s\S]*chrome\.storage\.local\.get\('config'\)/);
   assert.match(componentsJsCode, /id="proxySection"/);
+  assert.match(componentsJsCode, /id="updatesSection"/);
+  assert.match(componentsJsCode, /Choose Chroma Folder/);
   assert.match(settingsJsCode, /scrollToProxyHash/);
+  assert.match(settingsJsCode, /initUpdaterPanel/);
   assert.match(appJsCode, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
   assert.doesNotMatch(proxyUiJsCode, /pagehide[\s\S]{0,120}saveAllConfigs/);
   assert.doesNotMatch(proxyUiJsCode, /stageCredentialsFromInputs/);

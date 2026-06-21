@@ -48,7 +48,7 @@ We do not sell, share, or upload your browsing data. There are no analytics, tra
 Some features make network requests as part of their normal function:
 - **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, and Fanboy Annoyance. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
 - **User Scriptlet Resource Updates**: Advanced user scriptlet resources are fetched from the HTTPS URLs you add in settings.
-- **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available.
+- **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available. If you use guided updates, Chroma can also download signed `updates.json` and the exact GitHub release ZIP into memory to verify and inspect them before installation.
 - **Proxy Testing**: When you test a proxy, Chroma requests a public IP-check endpoint through the selected proxy to verify connectivity.
 - **Configured Proxy Routing**: If you enable a proxy route or global fallback, matching browser traffic is routed through the proxy server you configured.
 

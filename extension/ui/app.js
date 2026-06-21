@@ -11,6 +11,7 @@ const ChromaApp = (() => {
 
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
+  const UPDATE_SETTINGS_PATH = 'ui/settings.html#updatesSection';
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
     ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
@@ -48,6 +49,19 @@ const ChromaApp = (() => {
       chrome.runtime.openOptionsPage();
     } else {
       window.open(chrome.runtime.getURL('ui/settings.html'));
+    }
+  }
+
+  function openUpdatesSettings() {
+    const url = chrome.runtime.getURL(UPDATE_SETTINGS_PATH);
+    if (isSettingsPage()) {
+      globalThis.location.hash = '#updatesSection';
+      const section = $('updatesSection') || $('updaterPanel');
+      section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    } else if (chrome.tabs?.create) {
+      chrome.tabs.create({ url });
+    } else {
+      window.open(url);
     }
   }
 
@@ -465,19 +479,30 @@ const ChromaApp = (() => {
 
     notifyBackground({ type: MSG.UPDATE_CHECK }).then(result => {
       if (!result || !result.updateAvailable) return;
+      const guidedInstallReady = (
+        result.assetStatus === 'found'
+        && result.asset?.downloadUrl
+        && result.updateManifestStatus === 'found'
+        && result.updateManifestAsset?.downloadUrl
+      );
       const banner = document.createElement('div');
       banner.id = 'updateBanner';
       banner.className = 'update-banner';
 
       const updateLink = document.createElement('a');
-      updateLink.href = RELEASES_PAGE;
-      updateLink.target = '_blank';
+      updateLink.href = guidedInstallReady ? chrome.runtime.getURL(UPDATE_SETTINGS_PATH) : RELEASES_PAGE;
+      if (!guidedInstallReady) {
+        updateLink.target = '_blank';
+        updateLink.rel = 'noopener';
+      }
       updateLink.className = 'update-banner__link';
-      updateLink.textContent = `\u2191 v${result.latestVersion} available`;
+      updateLink.textContent = guidedInstallReady
+        ? `Update to v${result.latestVersion}`
+        : `\u2191 v${result.latestVersion} available`;
 
       const githubSpan = document.createElement('span');
       githubSpan.className = 'update-banner__source';
-      githubSpan.textContent = 'on GitHub';
+      githubSpan.textContent = guidedInstallReady ? 'guided install' : 'on GitHub';
 
       const dismissBtn = document.createElement('button');
       dismissBtn.id = 'dismissUpdate';
@@ -489,6 +514,12 @@ const ChromaApp = (() => {
       banner.appendChild(githubSpan);
       banner.appendChild(dismissBtn);
       document.querySelector('.section-title')?.before(banner);
+      if (guidedInstallReady) {
+        updateLink.addEventListener('click', event => {
+          event.preventDefault();
+          openUpdatesSettings();
+        });
+      }
       dismissBtn.addEventListener('click', () => banner.remove());
     }).catch(error => console.error('Chroma update check failed:', error));
 
@@ -1717,6 +1748,7 @@ const ChromaApp = (() => {
     escapeHTML,
     isSettingsPage,
     openProxySettings,
+    openUpdatesSettings,
     initSharedUI,
     scrollToProxyHash
   };
@@ -1724,3 +1756,4 @@ const ChromaApp = (() => {
 
 globalThis.ChromaApp = ChromaApp;
 globalThis.openProxySettings = ChromaApp.openProxySettings;
+globalThis.openUpdatesSettings = ChromaApp.openUpdatesSettings;

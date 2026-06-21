@@ -103,17 +103,23 @@ async function startZapper(browser, extensionPage, tabId) {
 }
 
 test('zapper browser interaction E2E', async (t) => {
-  const fixture = await startServer();
-  const browser = await startExtensionBrowser();
+  let fixture = null;
+  let browser = null;
+  let page = null;
+  let extensionPage = null;
   t.after(async () => {
-    await closeTarget(browser.cdp, extensionPage);
-    await closeTarget(browser.cdp, page);
-    await closeServer(fixture.server).catch(() => {});
-    await browser.cleanup();
+    if (browser?.cdp) {
+      await closeTarget(browser.cdp, extensionPage);
+      await closeTarget(browser.cdp, page);
+    }
+    if (fixture?.server) await closeServer(fixture.server).catch(() => {});
+    if (browser) await browser.cleanup();
   });
 
-  const page = await createPage(browser.cdp, fixture.url);
-  const extensionPage = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html');
+  fixture = await startServer();
+  browser = await startExtensionBrowser();
+  page = await createPage(browser.cdp, fixture.url);
+  extensionPage = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html');
   const tabId = await waitFor(async () => {
     const tabs = await getTabs(browser.cdp, browser.workerSession);
     return tabs.find(tab => tab.url === fixture.url)?.id || null;

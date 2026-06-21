@@ -19,6 +19,12 @@ Remote list content is not treated as arbitrary code. Lists are fetched over HTT
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
 
+## Guided Update Trust Boundary
+
+Chroma's guided updater installs only GitHub release packages that have the exact expected ZIP asset and signed `updates.json`. The signed manifest binds the package name, byte size, and SHA-256 to Chroma's bundled update public key before the updater builds an install plan or writes files.
+
+The update private key is not stored in the repository. A missing, unsigned, modified, or incorrectly signed `updates.json` blocks guided installation and leaves the manual fallback available. This protects the guided updater from simple release-asset replacement, but it does not remove the need to trust the initial install package, the maintainer's signing key, or any intentionally signed release.
+
 ## Advanced User Scriptlet Resources
 
 Chroma supports an advanced, user-initiated scriptlet resource lane for people who want to add uBO-style scriptlet resources themselves. This lane is separate from normal filter list subscriptions:

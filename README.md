@@ -53,7 +53,9 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
 6. Done. Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
 
-For the expanded install flow, troubleshooting table, configuration reference, and Health panel notes, see [Installation & Configuration](docs/INSTALL.md).
+When a newer GitHub release is available, Chroma can guide unpacked-extension updates from **Settings -> Updates** if the release includes the exact direct ZIP asset and signed `updates.json`. It verifies the update signature and package hash, builds a dry-run install plan, probes folder write access, backs up changed files, and then shows a **Reload Chroma** action to load the updated files.
+
+For the expanded install and update flow, troubleshooting table, configuration reference, and Health panel notes, see [Installation & Configuration](docs/INSTALL.md).
 
 ## Architecture At A Glance
 
@@ -100,7 +102,7 @@ For another account-level privacy improvement, open [Google My Ad Center](https:
 
 ## Trust Model
 
-Chroma is distributed through GitHub releases instead of the Chrome Web Store. That means installation requires a higher level of user trust, but it also keeps the release package source-auditable and avoids store-mediated update delays for platform-specific fixes.
+Chroma is distributed through GitHub releases instead of the Chrome Web Store. That means installation requires a higher level of user trust, but it also keeps the release package source-auditable, enables a guided updater for exact release ZIP assets, and avoids store-mediated update delays for platform-specific fixes.
 
 Review these before installing:
 

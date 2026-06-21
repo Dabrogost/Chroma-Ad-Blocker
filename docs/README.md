@@ -4,7 +4,7 @@ This directory is the long-form home for Chroma Ad-Blocker. The root [README](..
 
 ## Start Here
 
-- [Installation & Configuration](INSTALL.md) - install Chroma, enable User Scripts, troubleshoot common setup issues, review settings, and understand the Health panel.
+- [Installation & Configuration](INSTALL.md) - install Chroma, use guided or manual updates, enable User Scripts, troubleshoot common setup issues, review settings, and understand the Health panel.
 - [Feature Guide](FEATURES.md) - expanded feature descriptions for the protection layers, local controls, privacy hardening, and user workflows.
 - [Architecture Deep Dive](ARCHITECTURE.md) - diagrams, MV3 execution model, service-worker flow, system layers, and request-path boundaries.
 - [Performance Guide](PERFORMANCE.md) - DNR vs JavaScript request-path cost, service-worker lifecycle, page-side overhead, proxy routing, stats batching, and low-overhead settings.
@@ -24,7 +24,7 @@ This directory is the long-form home for Chroma Ad-Blocker. The root [README](..
 ## Development And Releases
 
 - [Testing](TEST_GUIDE.md) - Node tests, policy tests, and Chrome for Testing / Chromium E2E guidance.
-- [Distribution](DISTRIBUTION.md) - packaging the extension ZIP and release checks.
+- [Distribution](DISTRIBUTION.md) - packaging the extension ZIP, guided updater asset requirements, and release checks.
 - [Contributing](CONTRIBUTING.md) - contribution ground rules and local PR expectations.
 - [Terms of Service](ToS.md) - use terms and legal disclaimers.
 
