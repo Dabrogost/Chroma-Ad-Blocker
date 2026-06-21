@@ -311,16 +311,17 @@ export function getDefaultDynamicRules(options = {}) {
         resourceTypes: ['script'],
       },
     },
-    // Allow YouTube connectivity/measurement ping (Anti-Detection)
-    // PRIVACY TRADEOFF: Permits the generate_204 beacon on youtube.com
-    // to prevent detection. Restricted to YouTube initiator only.
+    // Allow YouTube connectivity/measurement ping (App Compatibility)
+    // PRIVACY TRADEOFF: Permits the generate_204 beacon for YouTube hosts.
+    // YouTube Music treats blocked connectivity pings as an offline signal.
     {
       id: 1015,
       priority: 4,
       action: { type: 'allow' },
       condition: {
-        urlFilter: '||youtube.com/generate_204',
-        initiatorDomains: ['youtube.com', 'www.youtube.com'],
+        urlFilter: '/generate_204',
+        requestDomains: ['youtube.com', 'www.youtube.com', 'music.youtube.com'],
+        initiatorDomains: ['youtube.com', 'www.youtube.com', 'music.youtube.com'],
         resourceTypes: ['xmlhttprequest', 'ping', 'image', 'other'],
       },
     },

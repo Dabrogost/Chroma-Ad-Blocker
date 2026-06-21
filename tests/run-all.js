@@ -21,6 +21,7 @@ const TIERS = {
     'subscriptions.manager.test.js',
     'update-check.test.js',
     'update-package.test.js',
+    'updater-ui.test.js',
     'user-scriptlets.test.js',
     'webrtc.test.js',
     'yt_handler.test.js',
@@ -37,6 +38,7 @@ const TIERS = {
     'scriptlets.test.js',
     'security_hardening.test.js',
     'settings.test.js',
+    'updater-ui.test.js',
     'user-scriptlets.test.js',
     'webrtc.test.js',
     'zapper.test.js'

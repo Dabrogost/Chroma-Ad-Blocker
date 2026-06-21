@@ -1478,6 +1478,8 @@ const ChromaUpdaterUI = (() => {
       inspectLatestPackage,
       validateReleaseMetadata,
       validateInstallManifest,
+      normalizeRelativePath,
+      shouldIgnoreInstallPath,
       verifyInstallDirectory
     }
   };

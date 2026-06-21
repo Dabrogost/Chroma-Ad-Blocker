@@ -22,6 +22,11 @@ const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
 const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
 const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
+// Keep app-level connectivity checks alive even when YouTube anti-detection
+// allow rules are reversed into blocks with Acceleration off.
+const ACCELERATION_OFF_PRESERVED_ALLOW_RULE_IDS = new Set([
+  1015
+]);
 const dynamicRuleClassifications = new Map();
 const STATIC_RULE_ACTION_OVERRIDES = new Map([
   ['custom_static_rules:28', 'allow'],
@@ -132,7 +137,9 @@ export async function syncDynamicRules() {
       // Non-allow rules, such as URL cleanup redirects, must stay intact.
       rules = rules.map(r => ({
         ...r,
-        action: r.action?.type === 'allow' ? { ...r.action, type: 'block' } : r.action
+        action: r.action?.type === 'allow' && !ACCELERATION_OFF_PRESERVED_ALLOW_RULE_IDS.has(r.id)
+          ? { ...r.action, type: 'block' }
+          : r.action
       }));
     }
 

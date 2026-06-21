@@ -287,6 +287,21 @@ test('getDefaultDynamicRules', async (t) => {
       false
     );
   });
+
+  await t.test('YouTube connectivity allow rule covers YouTube Music narrowly', () => {
+    const connectivityRule = sandbox.getDefaultDynamicRules().find(rule => rule.id === 1015);
+    assert.ok(connectivityRule, 'connectivity rule should exist');
+    assert.strictEqual(connectivityRule.action.type, 'allow');
+    assert.strictEqual(connectivityRule.condition.urlFilter, '/generate_204');
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(connectivityRule.condition.requestDomains)),
+      ['youtube.com', 'www.youtube.com', 'music.youtube.com']
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(connectivityRule.condition.initiatorDomains)),
+      ['youtube.com', 'www.youtube.com', 'music.youtube.com']
+    );
+  });
 });
 
 // ─── SYNCDYNAMICRULES SUCCESSFUL SYNCING ─────
@@ -441,7 +456,7 @@ test('syncDynamicRules successful syncing', async (t) => {
     assert.ok(updateDynamicRulesArgs.addRules.some(rule => rule.id === 1001));
   });
 
-  await t.test('acceleration-off rule reversal leaves URL cleanup redirects intact', async () => {
+  await t.test('acceleration-off rule reversal preserves connectivity allows and URL cleanup redirects', async () => {
     chromeMock.storage.local.get = async (key) => {
       if (key === 'config') return { config: { acceleration: false, trackingUrlCleanup: true } };
       if (key === 'dynamicRules') return { dynamicRules: undefined };
@@ -453,8 +468,10 @@ test('syncDynamicRules successful syncing', async (t) => {
     await sandbox.syncDynamicRules();
 
     const allowRule = updateDynamicRulesArgs.addRules.find(rule => rule.id === 1001);
+    const connectivityRule = updateDynamicRulesArgs.addRules.find(rule => rule.id === 1015);
     const cleanupRule = updateDynamicRulesArgs.addRules.find(rule => rule.id === 2000);
     assert.strictEqual(allowRule.action.type, 'block');
+    assert.strictEqual(connectivityRule.action.type, 'allow');
     assert.strictEqual(cleanupRule.action.type, 'redirect');
   });
 
