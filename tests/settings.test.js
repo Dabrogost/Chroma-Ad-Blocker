@@ -642,6 +642,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assertNextUpdaterAction(doc, null);
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
     assert.match(doc.querySelector('#updaterStatusDesc').textContent, /No update is available/);
+    assert.strictEqual(doc.querySelector('#updaterResult').textContent, 'No newer release found. This install is already on v1.0.1');
 
     doc.querySelector('#chooseInstallFolderBtn').click();
     await settleDomAsyncWork(60);
@@ -651,6 +652,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(doc.querySelector('#updaterStepFolder').classList.contains('updater-step--ok'));
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
     assert.match(doc.querySelector('#updaterStatusDesc').textContent, /install folder is verified/i);
+    assert.strictEqual(doc.querySelector('#updaterResult').textContent, 'No newer release found. Chroma is already on v1.0.1');
 
     harness.dom.window.dispatchEvent(new harness.dom.window.CustomEvent('chroma:update-check-result', {
       detail: { updateAvailable: true, latestVersion: '1.0.2' }
