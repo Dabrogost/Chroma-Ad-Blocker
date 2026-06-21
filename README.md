@@ -4,10 +4,6 @@
 
 For best results, disable other ad-blocking extensions while using Chroma. Layering multiple blockers can cause overlapping rules, false positives, and broken pages.
 
-<div align="center">
-  <img src="assets/popup.gif" alt="Chroma Ad-Blocker Popup Preview" width="360">
-</div>
-
 ## Documentation
 
 - [Documentation Hub](docs/README.md)
