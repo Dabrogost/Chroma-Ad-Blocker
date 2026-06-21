@@ -12,7 +12,7 @@ This document describes Chroma's practical security boundaries. Chroma cannot ma
 | MAIN-world handlers | Needed for page API interception, platform-specific handlers, scriptlets, and optional fingerprint randomization. | Pristine API caching, closure-scoped state, nonce-based handshake, narrow registration. |
 | DNR rules | Browser-enforced request policy for static, dynamic, subscription, cleanup, and whitelist rules. | Browser validation, static rulesets, dynamic ID ranges, budget allocation. |
 | Remote subscriptions | Can change blocking, cosmetic behavior, and supported scriptlet activation after install. | HTTPS-only fetches, response-size limits, local parsing, unsupported-syntax drops, budget allocation. |
-| Guided release updates | Can replace local unpacked extension files when the user grants folder access. | Exact release asset names, signed `updates.json`, SHA-256 package verification, safe ZIP path checks, dry-run planning, backup, rollback attempt, and manifest-last writes. |
+| Guided release updates | Can replace local unpacked extension files when the user grants folder access. | Explicit File System Access folder picker, direct GitHub release asset names, signed `updates.json`, SHA-256 package verification, safe ZIP path checks, dry-run planning, backup, rollback attempt, and manifest-last writes. |
 | User scriptlet resources | User-selected executable code that can run in the page MAIN world. | Explicit user opt-in, HTTPS-only URLs, separate resource lane, Chrome `userScripts` API, narrow rules. |
 | Proxy routing | Routes selected browser traffic through user-configured proxy servers. | PAC generation, local credential handling, connection testing, user-controlled routes. |
 

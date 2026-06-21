@@ -27,6 +27,23 @@ const ChromaUpdaterUI = (() => {
   const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
   const LOCAL_FILE_SIGNATURE = 0x04034b50;
   const ZIP64_SIZE_SENTINEL = 0xffffffff;
+  const ACTION_BUTTON_IDS = [
+    'checkLatestReleaseBtn',
+    'chooseInstallFolderBtn',
+    'inspectPackageBtn',
+    'buildInstallPlanBtn',
+    'runFolderProbeBtn',
+    'installUpdateBtn',
+    'reloadChromaBtn'
+  ];
+  const NEXT_ACTION_STEP_BY_BUTTON_ID = {
+    chooseInstallFolderBtn: 'updaterStepFolder',
+    inspectPackageBtn: 'updaterStepPackage',
+    buildInstallPlanBtn: 'updaterStepPlan',
+    runFolderProbeBtn: 'updaterStepWrite',
+    installUpdateBtn: 'updaterStepInstall',
+    reloadChromaBtn: 'updaterStepInstall'
+  };
 
   let installDirectoryHandle = null;
   let latestPackageInspection = null;
@@ -34,6 +51,8 @@ const ChromaUpdaterUI = (() => {
   let writeProbePassed = false;
   let installCompleted = false;
   let savedFolderNeedsPermission = false;
+  let updaterBusy = false;
+  let currentVersionKnown = false;
 
   const CRC_TABLE = (() => {
     const table = new Array(256);
@@ -70,6 +89,100 @@ const ChromaUpdaterUI = (() => {
     }
   }
 
+  function setUpdaterCurrentMode(active) {
+    $('updaterPanel')?.classList.toggle('updater-panel--current', active);
+  }
+
+  function getCurrentVersionText() {
+    const version = normalizeVersion(chrome.runtime.getManifest().version);
+    return version ? `v${version}` : 'the current version';
+  }
+
+  function renderCurrentVersionState(reason) {
+    const versionText = getCurrentVersionText();
+    setUpdaterCurrentMode(true);
+    hideProgress();
+    const plan = $('updaterPlanSummary');
+    if (plan) plan.hidden = true;
+    setReloadActionVisible(false);
+    setText('updaterStatusTitle', 'Chroma Is Current');
+    setText(
+      'updaterStatusDesc',
+      installDirectoryHandle && !savedFolderNeedsPermission
+        ? `Chroma ${versionText} is current, and this install folder is verified.`
+        : `Chroma ${versionText} is current. No update is available.`
+    );
+    setResult(reason || `No newer release found. Chroma is already on ${versionText}.`, 'ok');
+    updateNextActionPrompt();
+  }
+
+  function enterCurrentVersionState(resultOrReason) {
+    const reason = typeof resultOrReason === 'string' ? resultOrReason : resultOrReason?.reason;
+    currentVersionKnown = true;
+    latestPackageInspection = {
+      ok: true,
+      updateAvailable: false,
+      reason: reason || ''
+    };
+    latestInstallPlan = null;
+    writeProbePassed = false;
+    installCompleted = false;
+    renderCurrentVersionState(reason);
+  }
+
+  function clearCurrentVersionState() {
+    currentVersionKnown = false;
+    if (latestPackageInspection?.ok && latestPackageInspection.updateAvailable === false) {
+      latestPackageInspection = null;
+    }
+    setUpdaterCurrentMode(false);
+    updateNextActionPrompt();
+  }
+
+  function applyPassiveUpdateCheck(result) {
+    const validation = validateReleaseMetadata(result, chrome.runtime.getManifest());
+    if (validation.ok && result?.updateAvailable === false) {
+      enterCurrentVersionState(validation.reason);
+    } else if (result?.updateAvailable) {
+      clearCurrentVersionState();
+    }
+  }
+
+  function getNextActionButtonId() {
+    if (updaterBusy || !isFileSystemAccessSupported()) return null;
+    if (currentVersionKnown) return null;
+    if (installCompleted) return 'reloadChromaBtn';
+    if (!installDirectoryHandle || savedFolderNeedsPermission) return 'chooseInstallFolderBtn';
+    if (latestPackageInspection?.ok && latestPackageInspection.updateAvailable === false) return null;
+    if (!hasInstallVerification(latestPackageInspection) || !latestPackageInspection.updateAvailable) {
+      return 'inspectPackageBtn';
+    }
+    if (!latestInstallPlan?.ok) return 'buildInstallPlanBtn';
+    if (!writeProbePassed) return 'runFolderProbeBtn';
+    if (canInstallUpdate()) return 'installUpdateBtn';
+    return null;
+  }
+
+  function updateNextActionPrompt() {
+    const nextId = getNextActionButtonId();
+    const nextStepId = nextId ? NEXT_ACTION_STEP_BY_BUTTON_ID[nextId] : null;
+    ACTION_BUTTON_IDS.forEach(id => {
+      const button = $(id);
+      if (!button) return;
+      const active = id === nextId && !button.disabled && !button.hidden;
+      button.classList.toggle('updater-action--next', active);
+      if (active) {
+        button.setAttribute('aria-current', 'step');
+      } else {
+        button.removeAttribute('aria-current');
+      }
+    });
+    [...new Set(Object.values(NEXT_ACTION_STEP_BY_BUTTON_ID))].forEach(stepId => {
+      const step = $(stepId);
+      if (step) step.classList.toggle('updater-step--next', stepId === nextStepId);
+    });
+  }
+
   function setResult(message, state = 'neutral') {
     const el = $('updaterResult');
     if (!el) return;
@@ -83,6 +196,7 @@ const ChromaUpdaterUI = (() => {
     if (!button) return;
     button.hidden = !visible;
     button.disabled = !visible;
+    updateNextActionPrompt();
   }
 
   function setChooseFolderButtonText(text) {
@@ -91,6 +205,7 @@ const ChromaUpdaterUI = (() => {
   }
 
   function setBusy(busy) {
+    updaterBusy = busy;
     const supported = isFileSystemAccessSupported();
     const controls = [
       { id: 'checkLatestReleaseBtn', disabled: busy },
@@ -108,6 +223,7 @@ const ChromaUpdaterUI = (() => {
       el.disabled = disabled;
       el.classList.toggle('control-pending', busy);
     });
+    updateNextActionPrompt();
   }
 
   function canInstallUpdate() {
@@ -841,9 +957,13 @@ const ChromaUpdaterUI = (() => {
       setStepState('updaterStepFolder', 'ok');
       setStepState('updaterStepPlan', 'pending');
       setStepState('updaterStepWrite', 'pending');
-      setText('updaterStatusTitle', 'Install Folder Verified');
-      setText('updaterStatusDesc', 'Run the write probe to confirm Chroma can update this folder.');
-      setResult(result.reason, 'ok');
+      if (currentVersionKnown) {
+        renderCurrentVersionState();
+      } else {
+        setText('updaterStatusTitle', 'Install Folder Verified');
+        setText('updaterStatusDesc', 'Run the write probe to confirm Chroma can update this folder.');
+        setResult(result.reason, 'ok');
+      }
       if (planBtn) planBtn.disabled = false;
       if (runBtn) runBtn.disabled = false;
     } else if (result.permissionNeeded) {
@@ -862,6 +982,7 @@ const ChromaUpdaterUI = (() => {
       if (planBtn) planBtn.disabled = true;
       if (runBtn) runBtn.disabled = true;
     } else {
+      clearCurrentVersionState();
       installDirectoryHandle = null;
       savedFolderNeedsPermission = false;
       latestInstallPlan = null;
@@ -878,6 +999,7 @@ const ChromaUpdaterUI = (() => {
       if (planBtn) planBtn.disabled = true;
       if (runBtn) runBtn.disabled = true;
     }
+    updateNextActionPrompt();
   }
 
   async function chooseInstallFolder() {
@@ -930,14 +1052,17 @@ const ChromaUpdaterUI = (() => {
     try {
       const result = await notifyBackground({ type: MSG.UPDATE_CHECK, options: { force: true } });
       const validation = validateReleaseMetadata(result, chrome.runtime.getManifest());
+      if (result?.updateAvailable) {
+        clearCurrentVersionState();
+      }
       setStepState('updaterStepRelease', validation.ok ? 'ok' : 'error');
 
       if (validation.ok && result?.updateAvailable) {
         setText('updaterStatusTitle', `Release v${result.latestVersion} Ready`);
         setText('updaterStatusDesc', 'A direct release ZIP and updates.json are available for guided install.');
       } else if (validation.ok) {
-        setText('updaterStatusTitle', 'Chroma Is Up To Date');
-        setText('updaterStatusDesc', 'No download is needed for the currently installed version.');
+        enterCurrentVersionState(validation.reason);
+        return validation;
       } else {
         setText('updaterStatusTitle', 'Release Assets Not Verified');
         setText('updaterStatusDesc', 'The updater will not download anything until the expected ZIP asset and updates.json are present.');
@@ -957,6 +1082,7 @@ const ChromaUpdaterUI = (() => {
   }
 
   async function inspectLatestPackage() {
+    clearCurrentVersionState();
     setBusy(true);
     setStepState('updaterStepPackage', 'pending');
     setText('updaterStatusTitle', 'Inspecting Package ZIP');
@@ -966,6 +1092,7 @@ const ChromaUpdaterUI = (() => {
     try {
       const result = await notifyBackground({ type: MSG.UPDATE_PACKAGE_INSPECT, options: { force: true } });
       if (result?.ok && result.updateAvailable) {
+        clearCurrentVersionState();
         latestPackageInspection = result;
         latestInstallPlan = null;
         installCompleted = false;
@@ -981,12 +1108,7 @@ const ChromaUpdaterUI = (() => {
         return result;
       }
       if (result?.ok && !result.updateAvailable) {
-        latestPackageInspection = null;
-        latestInstallPlan = null;
-        setStepState('updaterStepPackage', 'pending');
-        setText('updaterStatusTitle', 'Chroma Is Up To Date');
-        setText('updaterStatusDesc', 'No package download is needed for the currently installed version.');
-        setResult(result.reason || 'No newer release package is available.', 'ok');
+        enterCurrentVersionState(result.reason || 'No newer release package is available.');
         return result;
       }
 
@@ -1012,6 +1134,10 @@ const ChromaUpdaterUI = (() => {
   }
 
   async function buildSelectedInstallPlan() {
+    if (currentVersionKnown) {
+      renderCurrentVersionState();
+      return { ok: true, updateAvailable: false, reason: 'No update is available.' };
+    }
     if (!installDirectoryHandle) {
       setStepState('updaterStepFolder', 'error');
       setResult('Choose and verify the Chroma folder before building an install plan.', 'error');
@@ -1030,8 +1156,12 @@ const ChromaUpdaterUI = (() => {
         packageInspection = await notifyBackground({ type: MSG.UPDATE_PACKAGE_INSPECT, options: { force: true } });
       }
       if (!packageInspection?.ok || !packageInspection.updateAvailable) {
+        if (packageInspection?.ok && packageInspection.updateAvailable === false) {
+          enterCurrentVersionState(packageInspection.reason || 'No newer release package is available.');
+          return { ok: true, updateAvailable: false, reason: packageInspection.reason || 'No update is available.' };
+        }
         latestPackageInspection = null;
-        setStepState('updaterStepPackage', packageInspection?.ok ? 'pending' : 'error');
+        setStepState('updaterStepPackage', 'error');
         setStepState('updaterStepPlan', 'error');
         setText('updaterStatusTitle', 'Install Plan Not Built');
         setText('updaterStatusDesc', 'A verified update package is required before planning folder changes.');
@@ -1318,12 +1448,19 @@ const ChromaUpdaterUI = (() => {
 
     chooseBtn?.addEventListener('click', chooseInstallFolder);
     probeBtn?.addEventListener('click', runSelectedFolderProbe);
+    const updateEventTarget = typeof globalThis.addEventListener === 'function' ? globalThis : globalThis.window;
+    updateEventTarget?.addEventListener?.('chroma:update-check-result', event => {
+      applyPassiveUpdateCheck(event?.detail);
+    });
+    if (Object.prototype.hasOwnProperty.call(globalThis, 'ChromaLatestUpdateCheck')) {
+      applyPassiveUpdateCheck(globalThis.ChromaLatestUpdateCheck);
+    }
 
     scrollToUpdatesHash();
     restoreSavedInstallFolder()
       .catch(() => {})
       .finally(() => {
-        if (shouldAutoInspectFromHash()) inspectLatestPackage();
+        if (shouldAutoInspectFromHash() && !currentVersionKnown) inspectLatestPackage();
       });
   }
 

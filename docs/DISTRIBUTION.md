@@ -13,7 +13,7 @@ dist/chroma-ad-blocker-v<manifest-version>.zip
 dist/updates.json
 ```
 
-The version comes from `extension/manifest.json`. Upload both files to the GitHub release. The guided updater looks for `chroma-ad-blocker-vX.Y.Z.zip` and signed `updates.json` on the latest release and falls back to the GitHub release page when either asset is missing.
+The version comes from `extension/manifest.json`. Upload both files to the GitHub release. The guided updater looks for `chroma-ad-blocker-vX.Y.Z.zip` and signed `updates.json` on the latest release, fetches them internally from their direct GitHub asset URLs, and falls back to the GitHub release page when either asset is missing. Users do not manually download `updates.json`.
 
 ## Update Signing Key
 
@@ -65,6 +65,7 @@ Before sharing a build, complete this checklist from a clean working tree or rev
 - [ ] `updates.json` signature key ID matches `chroma-update-signing-2026-06`.
 - [ ] Fresh unpacked install from the generated package contents.
 - [ ] Guided updater test from the previous release to the candidate build, including folder selection, package inspection, dry-run plan, write probe, install, and **Reload Chroma**.
+- [ ] Current-version updater test after reload: **Settings -> Updates** should show **Chroma Is Current** without presenting an in-progress install flow.
 - [ ] Manual fallback update test by extracting the release ZIP over the existing unpacked folder.
 - [ ] YouTube normal video test.
 - [ ] YouTube Shorts test.
@@ -87,13 +88,14 @@ The in-extension updater only installs a release package when all of these are t
 - The release has a direct `updates.json` asset with schema `chroma-update-manifest-v1`.
 - `updates.json` is signed by Chroma's bundled update public key.
 - `updates.json` names the ZIP asset and provides its exact byte size and SHA-256.
+- The package version is newer than the running Chroma version; same-version or older packages are rejected.
 - The ZIP has `manifest.json` at the archive root.
 - The manifest name is `Chroma Ad-Blocker`, uses Manifest V3, and matches the release version.
 - Manifest-referenced extension files are present.
 - ZIP paths are relative, unique, non-encrypted, non-ZIP64, and do not include repo-only or temporary paths such as `tests/`, `node_modules/`, `.git/`, or `.github/`.
 - The user grants a folder handle for the current unpacked install folder and the write probe passes.
 
-On install, Chroma writes into the existing unpacked folder, creates a temporary `.chroma-update-backup-*` directory, removes it after success, and attempts rollback after a failed write. `manifest.json` is written last. After success, the updater shows **Reload Chroma**; if direct reload is unavailable, Chroma opens `chrome://extensions` as a fallback.
+On install, Chroma writes into the existing unpacked folder, creates a temporary `.chroma-update-backup-*` directory, removes it after success or after a rollback attempt, and ignores any leftover backup directories during future install planning. `manifest.json` is written last. After success, the updater shows **Reload Chroma**; if direct reload is unavailable, Chroma opens `chrome://extensions` as a fallback.
 
 ## Loading The Zip Manually
 

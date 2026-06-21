@@ -42,6 +42,40 @@ function countMessages(messages, type) {
   return messages.filter(message => message.type === type).length;
 }
 
+function assertNextUpdaterAction(doc, expectedId) {
+  const buttonIds = [
+    'checkLatestReleaseBtn',
+    'chooseInstallFolderBtn',
+    'inspectPackageBtn',
+    'buildInstallPlanBtn',
+    'runFolderProbeBtn',
+    'installUpdateBtn',
+    'reloadChromaBtn'
+  ];
+  const stepByButtonId = {
+    chooseInstallFolderBtn: 'updaterStepFolder',
+    inspectPackageBtn: 'updaterStepPackage',
+    buildInstallPlanBtn: 'updaterStepPlan',
+    runFolderProbeBtn: 'updaterStepWrite',
+    installUpdateBtn: 'updaterStepInstall',
+    reloadChromaBtn: 'updaterStepInstall'
+  };
+  const expectedStepId = expectedId ? stepByButtonId[expectedId] : null;
+
+  buttonIds.forEach(buttonId => {
+    const button = doc.querySelector(`#${buttonId}`);
+    if (!button) return;
+    const isExpected = buttonId === expectedId;
+    assert.strictEqual(button.classList.contains('updater-action--next'), isExpected, `${buttonId} next-action state`);
+    assert.strictEqual(button.getAttribute('aria-current'), isExpected ? 'step' : null, `${buttonId} aria-current`);
+  });
+
+  [...new Set(Object.values(stepByButtonId))].forEach(stepId => {
+    const step = doc.querySelector(`#${stepId}`);
+    if (!step) return;
+    assert.strictEqual(step.classList.contains('updater-step--next'), stepId === expectedStepId, `${stepId} next-step state`);
+  });
+}
 const CRC_TABLE = (() => {
   const table = new Array(256);
   for (let n = 0; n < 256; n++) {
@@ -338,7 +372,7 @@ function createSettingsHarness({
         return value instanceof Error ? Promise.reject(value) : Promise.resolve(value);
       }
       if (msg.type === 'CONFIG_GET') return Promise.resolve({ enabled: true, acceleration: false, cosmetic: true });
-      if (msg.type === 'UPDATE_CHECK') return Promise.resolve({ updateAvailable: false });
+      if (msg.type === 'UPDATE_CHECK') return Promise.resolve(null);
       if (msg.type === 'UPDATE_PACKAGE_INSPECT') return Promise.resolve({ ok: true, updateAvailable: false });
       if (msg.type === 'STATS_GET') return Promise.resolve(defaultStats);
       if (msg.type === 'HEALTH_GET') return Promise.resolve(defaultHealth);
@@ -584,6 +618,111 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(doc.querySelector('#updaterStepRelease').classList.contains('updater-step--ok'));
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Release v1\.0\.2 Ready/);
     assert.match(doc.querySelector('#updaterResult').textContent, /Release ZIP and updates\.json found: chroma-ad-blocker-v1\.0\.2\.zip/);
+  });
+
+  await t.test('updater shows a settled current-version state when no update is available', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        UPDATE_CHECK: { updateAvailable: false }
+      }
+    });
+    const directory = createMockInstallDirectory({
+      manifest_version: 3,
+      name: 'Chroma Ad-Blocker',
+      version: '1.0.1'
+    });
+    harness.sandbox.showDirectoryPicker = async () => directory;
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    harness.sandbox.ChromaUpdaterUI.initUpdaterPanel();
+    await settleDomAsyncWork(80);
+
+    const doc = harness.dom.window.document;
+    assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
+    assertNextUpdaterAction(doc, null);
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
+    assert.match(doc.querySelector('#updaterStatusDesc').textContent, /No update is available/);
+
+    doc.querySelector('#chooseInstallFolderBtn').click();
+    await settleDomAsyncWork(60);
+
+    assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
+    assertNextUpdaterAction(doc, null);
+    assert.ok(doc.querySelector('#updaterStepFolder').classList.contains('updater-step--ok'));
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
+    assert.match(doc.querySelector('#updaterStatusDesc').textContent, /install folder is verified/i);
+
+    harness.dom.window.dispatchEvent(new harness.dom.window.CustomEvent('chroma:update-check-result', {
+      detail: { updateAvailable: true, latestVersion: '1.0.2' }
+    }));
+    await settleDomAsyncWork(20);
+
+    assert.strictEqual(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'), false);
+    assertNextUpdaterAction(doc, 'inspectPackageBtn');
+  });
+
+  await t.test('updater keeps current-version layout while a forced update check is pending', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        UPDATE_CHECK: { updateAvailable: false }
+      }
+    });
+    harness.sandbox.showDirectoryPicker = async () => createMockInstallDirectory({
+      manifest_version: 3,
+      name: 'Chroma Ad-Blocker',
+      version: '1.0.1'
+    });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    harness.sandbox.ChromaUpdaterUI.initUpdaterPanel();
+    await settleDomAsyncWork(80);
+
+    const doc = harness.dom.window.document;
+    assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
+
+    const forcedCheck = deferred();
+    harness.sandbox.notifyBackground = msg => {
+      harness.messages.push(msg);
+      if (msg.type === 'UPDATE_CHECK' && msg.options?.force === true) return forcedCheck.promise;
+      return Promise.resolve(null);
+    };
+
+    doc.querySelector('#checkLatestReleaseBtn').click();
+    await settleDomAsyncWork(20);
+
+    assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
+    assertNextUpdaterAction(doc, null);
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Checking Latest Release/);
+
+    forcedCheck.resolve({ updateAvailable: false });
+    await settleDomAsyncWork(60);
+
+    assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
+    assertNextUpdaterAction(doc, null);
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
+  });
+
+  await t.test('updater current-version hash entry does not auto-inspect the package', async () => {
+    const harness = createSettingsHarness({
+      url: 'chrome-extension://test/ui/settings.html#updatesSection',
+      responses: {
+        UPDATE_CHECK: { updateAvailable: false }
+      }
+    });
+    harness.sandbox.showDirectoryPicker = async () => createMockInstallDirectory({
+      manifest_version: 3,
+      name: 'Chroma Ad-Blocker',
+      version: '1.0.1'
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    harness.sandbox.ChromaUpdaterUI.initUpdaterPanel();
+    await settleDomAsyncWork(120);
+
+    const packageChecks = harness.messages.filter(message => message.type === 'UPDATE_PACKAGE_INSPECT');
+    const doc = harness.dom.window.document;
+    assert.strictEqual(packageChecks.length, 0);
+    assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
+    assertNextUpdaterAction(doc, null);
   });
 
   await t.test('updater rejects latest release metadata without expected ZIP asset', async () => {
@@ -920,14 +1059,22 @@ test('settings page proxy and zapper management safety', async (t) => {
     await settleDomAsyncWork();
 
     const doc = harness.dom.window.document;
+    assertNextUpdaterAction(doc, 'chooseInstallFolderBtn');
     doc.querySelector('#chooseInstallFolderBtn').click();
     await settleDomAsyncWork(60);
+    assertNextUpdaterAction(doc, 'inspectPackageBtn');
+    doc.querySelector('#inspectPackageBtn').click();
+    await settleDomAsyncWork(80);
+    assertNextUpdaterAction(doc, 'buildInstallPlanBtn');
     doc.querySelector('#buildInstallPlanBtn').click();
     await settleDomAsyncWork(80);
+    assertNextUpdaterAction(doc, 'runFolderProbeBtn');
     doc.querySelector('#runFolderProbeBtn').click();
     await settleDomAsyncWork(60);
+    assertNextUpdaterAction(doc, 'installUpdateBtn');
     doc.querySelector('#installUpdateBtn').click();
     await settleDomTimerWork(8);
+    assertNextUpdaterAction(doc, 'reloadChromaBtn');
 
     assert.ok(doc.querySelector('#updaterStepInstall').classList.contains('updater-step--ok'));
     assert.strictEqual(streamedBytes, zip.byteLength);
@@ -948,6 +1095,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.deepStrictEqual(harness.reloadCalls, []);
     assert.strictEqual(doc.querySelector('#reloadChromaBtn').hidden, false);
     assert.strictEqual(doc.querySelector('#reloadChromaBtn').disabled, false);
+    assert.strictEqual(doc.querySelector('.updater-result-row #reloadChromaBtn'), doc.querySelector('#reloadChromaBtn'));
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Reload Needed/);
     assert.match(doc.querySelector('#updaterResult').textContent, /Update installed/);
 
@@ -1289,6 +1437,7 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     const doc = harness.dom.window.document;
     assert.strictEqual(doc.querySelector('#chooseInstallFolderBtn').textContent, 'Reconnect Chroma Folder');
+    assertNextUpdaterAction(doc, 'chooseInstallFolderBtn');
     assert.strictEqual(doc.querySelector('#buildInstallPlanBtn').disabled, true);
     assert.ok(doc.querySelector('#updaterStepFolder').classList.contains('updater-step--pending'));
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Folder Permission Needed/);
@@ -1298,6 +1447,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await settleDomTimerWork(8);
 
     assert.strictEqual(doc.querySelector('#chooseInstallFolderBtn').textContent, 'Change Chroma Folder');
+    assertNextUpdaterAction(doc, 'inspectPackageBtn');
     assert.strictEqual(doc.querySelector('#buildInstallPlanBtn').disabled, false);
     assert.strictEqual(doc.querySelector('#runFolderProbeBtn').disabled, false);
     assert.ok(doc.querySelector('#updaterStepFolder').classList.contains('updater-step--ok'));

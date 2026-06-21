@@ -19,6 +19,8 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `webRequestAuthProvider` | Required to provide credentials to proxy servers through the `onAuthRequired` listener. |
 | Host permission: `<all_urls>` | Allows the always-on isolated content script, cosmetic filtering, DNR rules, subscription scriptlets, and optional proxy/site controls to operate across visited websites. This broad scope is why Chroma keeps sensitive settings, stats, proxy credentials, and health diagnostics local and validates privileged messages at the extension boundary. |
 
+Chroma does not request Chrome's `downloads` permission for guided updates. The updater uses the standard File System Access folder picker from the settings page after the user clicks **Choose Chroma Folder**, and it fetches verified release assets into memory rather than sending files through Chrome's Downloads shelf.
+
 ## Why Broad Host Access Exists
 
 Ad blocking, cosmetic filtering, subscription scriptlets, site whitelisting, and proxy routing all need to evaluate pages the user visits. Chroma uses broad host access so the protection stack can work across websites without needing per-site permission prompts for every domain.

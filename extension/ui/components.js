@@ -351,7 +351,6 @@ const ChromaComponents = (() => {
           <button class="reset-btn compact-action-btn" id="buildInstallPlanBtn" type="button">Build Install Plan</button>
           <button class="reset-btn compact-action-btn" id="runFolderProbeBtn" type="button" disabled>Run Write Probe</button>
           <button class="reset-btn compact-action-btn" id="installUpdateBtn" type="button" disabled>Install Update</button>
-          <button class="reset-btn compact-action-btn" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
         </div>
         <div class="updater-plan" id="updaterPlanSummary" hidden>
           <div class="updater-plan__counts" aria-label="Install plan summary">
@@ -380,7 +379,10 @@ const ChromaComponents = (() => {
           </div>
           <div class="updater-progress__text" id="updaterProgressText">Waiting</div>
         </div>
-        <div class="desc updater-result" id="updaterResult" role="status" aria-live="polite"></div>
+        <div class="updater-result-row">
+          <div class="desc updater-result" id="updaterResult" role="status" aria-live="polite"></div>
+          <button class="reset-btn compact-action-btn" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
+        </div>
       </div>
     `;
   }

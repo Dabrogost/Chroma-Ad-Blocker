@@ -28,6 +28,15 @@ const ChromaApp = (() => {
     ['toggleGeolocationProtection', 'geolocationProtection', false],
   ];
 
+  function publishUpdateCheckResult(result) {
+    globalThis.ChromaLatestUpdateCheck = result || null;
+    const EventCtor = globalThis.CustomEvent || globalThis.window?.CustomEvent;
+    const target = typeof globalThis.dispatchEvent === 'function' ? globalThis : globalThis.window;
+    if (typeof EventCtor === 'function' && typeof target?.dispatchEvent === 'function') {
+      target.dispatchEvent(new EventCtor('chroma:update-check-result', { detail: result || null }));
+    }
+  }
+
   function isSettingsPage() {
     const path = globalThis.location?.pathname || '';
     return path.endsWith('/settings.html') || path.endsWith('\\settings.html');
@@ -478,6 +487,7 @@ const ChromaApp = (() => {
     }
 
     notifyBackground({ type: MSG.UPDATE_CHECK }).then(result => {
+      publishUpdateCheckResult(result);
       if (!result || !result.updateAvailable) return;
       const guidedInstallReady = (
         result.assetStatus === 'found'

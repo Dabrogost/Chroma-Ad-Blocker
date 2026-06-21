@@ -23,6 +23,8 @@ Because enabled remote lists can still change blocking, allow rules, cosmetic be
 
 Chroma's guided updater installs only GitHub release packages that have the exact expected ZIP asset and signed `updates.json`. The signed manifest binds the package name, byte size, and SHA-256 to Chroma's bundled update public key before the updater builds an install plan or writes files.
 
+Folder access is explicit and user-scoped through Chromium's File System Access picker. Chroma stores the selected directory handle locally for convenience, but the browser may require the user to reconnect that folder after a restart or permission reset. Guided updates do not use Chrome's Downloads permission, do not accept arbitrary update URLs, and do not install from unsigned or same-version packages.
+
 The update private key is not stored in the repository. A missing, unsigned, modified, or incorrectly signed `updates.json` blocks guided installation and leaves the manual fallback available. This protects the guided updater from simple release-asset replacement, but it does not remove the need to trust the initial install package, the maintainer's signing key, or any intentionally signed release.
 
 ## Advanced User Scriptlet Resources

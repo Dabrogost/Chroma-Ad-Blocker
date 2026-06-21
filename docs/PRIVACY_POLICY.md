@@ -24,6 +24,7 @@ The Extension uses your browser's local storage (`chrome.storage.local`) to save
 - **Proxy Settings**: Proxy server configuration. HTTP/HTTPS proxy credentials, if provided, are stored locally in an obfuscated form with a bundled extension key and used only for proxy authentication. This is not strong encryption; protect your browser profile and operating-system account accordingly.
 - **Local Statistics and Request Log**: Local blocked-request counts and a bounded request log used for the popup display. The log can include blocked request URLs, request types, timestamps, and matched rule IDs. This data is stored locally and can be reset from the extension UI.
 - **Health Diagnostics**: Coarse local status entries for material background failures, such as DNR sync, UserScripts registration, or proxy PAC write failures. These entries are sanitized and are not designed to store request URLs, proxy hosts, credentials, or raw filter rules.
+- **Guided Updater Folder Handle**: If you choose an unpacked Chroma install folder for guided updates, Chroma stores that browser-provided File System Access directory handle locally in IndexedDB. The handle is used only to reconnect to the selected install folder, and Chrome may ask you to approve access again after a restart or permission reset.
 
 ### No Tracking and Cookies
 We do not use cookies, tracking pixels, or web beacons. There is no Chroma server-side tracking of your browsing habits or your use of the Extension.
@@ -48,7 +49,7 @@ We do not sell, share, or upload your browsing data. There are no analytics, tra
 Some features make network requests as part of their normal function:
 - **Filter List Updates**: Enabled remote subscriptions are fetched from their configured list URLs. Defaults include Hagezi Pro Mini, EasyList, and Fanboy Annoyance. The bundled Chroma Scriptlet Library is read from the extension package rather than fetched from the network.
 - **User Scriptlet Resource Updates**: Advanced user scriptlet resources are fetched from the HTTPS URLs you add in settings.
-- **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available. If you use guided updates, Chroma can also download signed `updates.json` and the exact GitHub release ZIP into memory to verify and inspect them before installation.
+- **Update Checks**: The extension can check GitHub's releases API to determine whether a newer Chroma version is available. Normal popup and settings loads reuse a local update-check cache for up to 6 hours unless you click **Check Latest Release**. If you use guided updates, Chroma can also download signed `updates.json` and the exact GitHub release ZIP into memory to verify and inspect them before installation. These guided-update downloads are not written through Chrome's Downloads system, and users do not manually download `updates.json`.
 - **Proxy Testing**: When you test a proxy, Chroma requests a public IP-check endpoint through the selected proxy to verify connectivity.
 - **Configured Proxy Routing**: If you enable a proxy route or global fallback, matching browser traffic is routed through the proxy server you configured.
 

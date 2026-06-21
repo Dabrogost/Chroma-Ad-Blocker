@@ -640,6 +640,10 @@ test('UI hardening copy', () => {
   assert.match(componentsJsCode, /id="updaterStepPlan"[\s\S]*Install plan built/);
   assert.match(componentsJsCode, /id="installUpdateBtn"[\s\S]*Install Update/);
   assert.match(componentsJsCode, /id="reloadChromaBtn"[\s\S]*Reload Chroma/);
+  assert.match(componentsJsCode, /class="updater-result-row"[\s\S]*id="updaterResult"[\s\S]*id="reloadChromaBtn"/);
+  assert.match(uiCssCode, /\.updater-actions\s*\{[\s\S]*justify-content:\s*center/);
+  assert.match(uiCssCode, /\.reset-btn\.updater-action--next/);
+  assert.match(uiCssCode, /\.updater-panel--current #inspectPackageBtn/);
   assert.match(componentsJsCode, /id="updaterStepInstall"[\s\S]*Update installed/);
   assert.doesNotMatch(popupHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
   assert.doesNotMatch(settingsHtmlCode, /fonts\.googleapis|fonts\.gstatic|preconnect/i);
