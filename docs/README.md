@@ -1,9 +1,10 @@
 # Chroma Documentation
 
 This directory is the long-form home for Chroma Ad-Blocker. The root [README](../README.md) is the public front door; these docs preserve the deeper implementation notes, trust model, configuration details, and project rationale.
-<p align="center">
-  <img src="assets/docs-settings-overview.png" alt="Chroma settings dashboard" />
-</p>
+
+<div align="center">
+  <img src="assets/docs-settings-overview.png" alt="Chroma settings dashboard" width="760">
+</div>
 
 ## Start Here
 
