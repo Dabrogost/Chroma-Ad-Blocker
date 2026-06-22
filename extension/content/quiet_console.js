@@ -15,7 +15,6 @@
     quietConsole: false
   };
   let hooksInstalled = false;
-  let nativeSetAttribute = null;
   const nativeToString = Function.prototype.toString;
   const toStringTargets = new Map();
 
@@ -72,11 +71,6 @@
     '/pcs/activeview',
     '/api/stats/ads'
   ];
-
-  const NOOP_SCRIPT = 'data:text/javascript,void%200';
-  const EMPTY_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
-  const EMPTY_CSS = 'data:text/css,/*%20chroma%20quiet%20*/';
-  const EMPTY_FRAME = 'about:blank';
 
   function isSafetyExcluded(hostname) {
     const host = String(hostname || '').toLowerCase().replace(/\.$/, '');
@@ -226,24 +220,6 @@
     }
   }
 
-  function tagNameOf(element) {
-    return String(element && element.tagName || '').toLowerCase();
-  }
-
-  function replacementFor(element, attrName) {
-    const tag = tagNameOf(element);
-    const attr = String(attrName || '').toLowerCase();
-    if (attr === 'src') {
-      if (tag === 'script') return NOOP_SCRIPT;
-      if (tag === 'img') return EMPTY_IMAGE;
-      if (tag === 'iframe') return EMPTY_FRAME;
-    }
-    if (attr === 'href' && tag === 'link') {
-      return EMPTY_CSS;
-    }
-    return null;
-  }
-
   function markNativeLike(fn, source) {
     if (typeof fn !== 'function') return;
     toStringTargets.set(fn, source);
@@ -270,9 +246,6 @@
     const nativeSendBeacon = window.navigator && typeof navigator.sendBeacon === 'function'
       ? navigator.sendBeacon
       : null;
-    nativeSetAttribute = window.Element && Element.prototype.setAttribute;
-    const nativeAppendChild = window.Node && Node.prototype.appendChild;
-    const nativeInsertBefore = window.Node && Node.prototype.insertBefore;
 
     if (nativeFetch) {
       window.fetch = function fetch(input, ...args) {
@@ -289,6 +262,7 @@
       XMLHttpRequest.prototype.open = function open(method, url, ...rest) {
         const requestUrl = getRequestUrl(url);
         this.__chromaQuietConsoleUrl = requestUrl;
+        this.__chromaQuietConsoleSuppressed = false;
         if (shouldQuiet(requestUrl)) {
           this.__chromaQuietConsoleSuppressed = true;
           log('quiet xhr', requestUrl);
@@ -318,100 +292,7 @@
       markNativeLike(navigator.sendBeacon, 'function sendBeacon() { [native code] }');
     }
 
-    if (typeof nativeSetAttribute === 'function') {
-      Element.prototype.setAttribute = function setAttribute(name, value) {
-        const lname = String(name || '').toLowerCase();
-        if ((lname === 'src' || lname === 'href') && shouldQuiet(value)) {
-          const replacement = replacementFor(this, lname);
-          if (replacement) {
-            log('quiet attribute', lname, value);
-            return nativeSetAttribute.call(this, name, replacement);
-          }
-        }
-        return nativeSetAttribute.apply(this, arguments);
-      };
-      markNativeLike(Element.prototype.setAttribute, 'function setAttribute() { [native code] }');
-    }
-
-    patchUrlProperty(window.HTMLScriptElement && HTMLScriptElement.prototype, 'src', 'function set src() { [native code] }');
-    patchUrlProperty(window.HTMLImageElement && HTMLImageElement.prototype, 'src', 'function set src() { [native code] }');
-    patchUrlProperty(window.HTMLIFrameElement && HTMLIFrameElement.prototype, 'src', 'function set src() { [native code] }');
-    patchUrlProperty(window.HTMLLinkElement && HTMLLinkElement.prototype, 'href', 'function set href() { [native code] }');
-
-    if (typeof nativeAppendChild === 'function') {
-      Node.prototype.appendChild = function appendChild(child) {
-        rewriteQuietResources(child);
-        return nativeAppendChild.apply(this, arguments);
-      };
-      markNativeLike(Node.prototype.appendChild, 'function appendChild() { [native code] }');
-    }
-
-    if (typeof nativeInsertBefore === 'function') {
-      Node.prototype.insertBefore = function insertBefore(child, referenceNode) {
-        rewriteQuietResources(child);
-        return nativeInsertBefore.apply(this, arguments);
-      };
-      markNativeLike(Node.prototype.insertBefore, 'function insertBefore() { [native code] }');
-    }
-
     installToStringSpoof();
-  }
-
-  function patchUrlProperty(proto, prop, nativeLabel) {
-    if (!proto) return;
-    let descriptor = null;
-    try {
-      descriptor = Object.getOwnPropertyDescriptor(proto, prop);
-    } catch (_) {}
-    if (!descriptor || typeof descriptor.set !== 'function' || descriptor.configurable === false) return;
-
-    try {
-      Object.defineProperty(proto, prop, {
-        configurable: true,
-        enumerable: descriptor.enumerable,
-        get() {
-          return descriptor.get ? descriptor.get.call(this) : '';
-        },
-        set(value) {
-          if (shouldQuiet(value)) {
-            const replacement = replacementFor(this, prop);
-            if (replacement) {
-              log('quiet property', prop, value);
-              return descriptor.set.call(this, replacement);
-            }
-          }
-          return descriptor.set.call(this, value);
-        }
-      });
-    } catch (_) {
-      return;
-    }
-    markNativeLike(Object.getOwnPropertyDescriptor(proto, prop).set, nativeLabel);
-  }
-
-  function rewriteElementResource(element) {
-    if (!element || element.nodeType !== 1) return;
-    const tag = tagNameOf(element);
-    const attr = tag === 'link' ? 'href' : 'src';
-    if (!['script', 'img', 'iframe', 'link'].includes(tag)) return;
-    let current = '';
-    try {
-      current = element.getAttribute(attr) || element[attr] || '';
-    } catch (_) {}
-    if (!shouldQuiet(current)) return;
-    const replacement = replacementFor(element, attr);
-    if (!replacement || typeof nativeSetAttribute !== 'function') return;
-    try {
-      nativeSetAttribute.call(element, attr, replacement);
-    } catch (_) {}
-  }
-
-  function rewriteQuietResources(node) {
-    rewriteElementResource(node);
-    if (!node || typeof node.querySelectorAll !== 'function') return;
-    try {
-      node.querySelectorAll('script[src],img[src],iframe[src],link[href]').forEach(rewriteElementResource);
-    } catch (_) {}
   }
 
   function installToStringSpoof() {

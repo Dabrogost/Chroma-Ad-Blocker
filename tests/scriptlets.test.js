@@ -540,6 +540,7 @@ test('reddit-promoted-ads', async (t) => {
 function loadScriptletEngine(storageState, options = {}) {
   const registered = [];
   const registeredContentScripts = [];
+  const unregisteredContentScriptIds = [];
   let changeListener = null;
   const userScripts = Object.prototype.hasOwnProperty.call(options, 'userScripts')
     ? options.userScripts
@@ -567,10 +568,28 @@ function loadScriptletEngine(storageState, options = {}) {
       },
       userScripts,
       scripting: options.scripting || {
-        getRegisteredContentScripts: async () => [],
-        unregisterContentScripts: async () => {},
+        getRegisteredContentScripts: async (query = {}) => {
+          if (Array.isArray(query.ids)) {
+            return registeredContentScripts.filter(script => query.ids.includes(script.id));
+          }
+          return registeredContentScripts.slice();
+        },
+        unregisterContentScripts: async (query = {}) => {
+          const ids = Array.isArray(query.ids) ? query.ids : registeredContentScripts.map(script => script.id);
+          unregisteredContentScriptIds.push(...ids);
+          for (const id of ids) {
+            const index = registeredContentScripts.findIndex(script => script.id === id);
+            if (index !== -1) registeredContentScripts.splice(index, 1);
+          }
+        },
         registerContentScripts: async scripts => { registeredContentScripts.push(...scripts); },
-        updateContentScripts: async scripts => { registeredContentScripts.push(...scripts); }
+        updateContentScripts: async scripts => {
+          for (const script of scripts) {
+            const index = registeredContentScripts.findIndex(existing => existing.id === script.id);
+            if (index === -1) registeredContentScripts.push(script);
+            else registeredContentScripts[index] = script;
+          }
+        }
       }
     },
     console,
@@ -581,7 +600,7 @@ function loadScriptletEngine(storageState, options = {}) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(engineCode, sandbox);
-  return { sandbox, registered, registeredContentScripts, getChangeListener: () => changeListener };
+  return { sandbox, registered, registeredContentScripts, unregisteredContentScriptIds, getChangeListener: () => changeListener };
 }
 
 test('scriptlet engine whitelist hardening', async (t) => {
@@ -660,8 +679,9 @@ test('scriptlet engine whitelist hardening', async (t) => {
 
     await sandbox.initScriptletEngine();
 
-    assert.strictEqual(registeredContentScripts.length, 1);
-    assert.deepStrictEqual(plain(registeredContentScripts[0].js), [
+    const fpr = registeredContentScripts.find(script => script.id === 'chroma_fpr');
+    assert.ok(fpr);
+    assert.deepStrictEqual(plain(fpr.js), [
       'scriptlets/fingerprintConsoleQuiet.js',
       'scriptlets/fingerprintRandomization.js'
     ]);
@@ -678,10 +698,137 @@ test('scriptlet engine whitelist hardening', async (t) => {
 
     await sandbox.initScriptletEngine();
 
-    assert.strictEqual(registeredContentScripts.length, 1);
-    assert.deepStrictEqual(plain(registeredContentScripts[0].js), [
+    const fpr = registeredContentScripts.find(script => script.id === 'chroma_fpr');
+    assert.ok(fpr);
+    assert.deepStrictEqual(plain(fpr.js), [
       'scriptlets/fingerprintRandomization.js'
     ]);
+    assert.strictEqual(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'), false);
+  });
+
+  await t.test('quiet console page helper is not registered when quiet console is off', async () => {
+    const { sandbox, registeredContentScripts } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      whitelist: [],
+      config: { enabled: true, quietConsole: false },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'), false);
+  });
+
+  await t.test('quiet console page helper is not registered when master protection is off', async () => {
+    const { sandbox, registeredContentScripts } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      whitelist: [],
+      config: { enabled: false, quietConsole: true },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'), false);
+  });
+
+  await t.test('quiet console page helper registers only when quiet console is on', async () => {
+    const { sandbox, registeredContentScripts } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      whitelist: ['example.com'],
+      config: { enabled: true, quietConsole: true },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    const quiet = registeredContentScripts.find(script => script.id === 'chroma_quiet_console');
+    assert.ok(quiet);
+    assert.deepStrictEqual(plain(quiet.js), ['content/quiet_console.js']);
+    assert.strictEqual(quiet.world, 'MAIN');
+    assert.strictEqual(quiet.runAt, 'document_start');
+    assert.strictEqual(quiet.allFrames, true);
+    assert.deepStrictEqual(plain(quiet.excludeMatches), [
+      '*://example.com/*',
+      '*://*.example.com/*'
+    ]);
+  });
+
+  await t.test('quiet console page helper unregisters when quiet console turns off', async () => {
+    const { sandbox, registeredContentScripts, unregisteredContentScriptIds, getChangeListener } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      whitelist: [],
+      config: { enabled: true, quietConsole: true },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+    assert.ok(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'));
+
+    sandbox.chrome.storage.local.get = async (keys) => {
+      const source = {
+        subscriptionScriptletRules: [],
+        userScriptletRules: [],
+        userScriptletResources: {},
+        whitelist: [],
+        fprWhitelist: [],
+        config: { enabled: true, quietConsole: false }
+      };
+      const out = {};
+      for (const key of keys) out[key] = source[key];
+      return out;
+    };
+    getChangeListener()({
+      config: {
+        oldValue: { enabled: true, quietConsole: true },
+        newValue: { enabled: true, quietConsole: false }
+      }
+    }, 'local');
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.ok(unregisteredContentScriptIds.includes('chroma_quiet_console'));
+    assert.strictEqual(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'), false);
+  });
+
+  await t.test('quiet console page helper unregisters when master protection turns off', async () => {
+    const { sandbox, registeredContentScripts, unregisteredContentScriptIds, getChangeListener } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      whitelist: [],
+      config: { enabled: true, quietConsole: true },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+    assert.ok(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'));
+
+    sandbox.chrome.storage.local.get = async (keys) => {
+      const source = {
+        subscriptionScriptletRules: [],
+        userScriptletRules: [],
+        userScriptletResources: {},
+        whitelist: [],
+        fprWhitelist: [],
+        config: { enabled: false, quietConsole: true }
+      };
+      const out = {};
+      for (const key of keys) out[key] = source[key];
+      return out;
+    };
+    getChangeListener()({
+      config: {
+        oldValue: { enabled: true, quietConsole: true },
+        newValue: { enabled: false, quietConsole: true }
+      }
+    }, 'local');
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.ok(unregisteredContentScriptIds.includes('chroma_quiet_console'));
+    assert.strictEqual(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'), false);
   });
 
   await t.test('user resource scriptlets use MAIN world, all frames, and coarse telemetry', async () => {

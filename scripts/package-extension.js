@@ -42,6 +42,7 @@ const REQUIRED_RELEASE_FILES = [
   'manifest.json',
   'README.md',
   'LICENSE.md',
+  'content/quiet_console.js',
   ...RELEASE_DOC_FILES
 ];
 

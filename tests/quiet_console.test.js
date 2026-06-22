@@ -5,6 +5,13 @@ const path = require('path');
 const vm = require('vm');
 
 const quietConsoleCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'quiet_console.js'), 'utf8');
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
+
+test('Quiet Console is not a static manifest content script', () => {
+  const declaredFiles = (manifest.content_scripts || []).flatMap(script => script.js || []);
+
+  assert.strictEqual(declaredFiles.includes('content/quiet_console.js'), false);
+});
 
 function createSandbox({ hostname = 'example.com' } = {}) {
   let nativeFetchCalls = 0;
@@ -198,7 +205,9 @@ function createSandbox({ hostname = 'example.com' } = {}) {
     sendBeacon: sandbox.navigator.sendBeacon,
     xhrOpen: sandbox.XMLHttpRequest.prototype.open,
     xhrSend: sandbox.XMLHttpRequest.prototype.send,
-    setAttribute: sandbox.Element.prototype.setAttribute
+    setAttribute: sandbox.Element.prototype.setAttribute,
+    appendChild: sandbox.Node.prototype.appendChild,
+    insertBefore: sandbox.Node.prototype.insertBefore
   };
   sandbox.globalThis = sandbox;
 
@@ -291,6 +300,20 @@ test('Quiet Console shared page layer', async (t) => {
     assert.strictEqual(sandbox.getNativeCallCounts().xhrSend, 1);
   });
 
+  await t.test('does not keep XHR suppression when a reused XHR opens an allowed URL', () => {
+    const sandbox = createSandbox();
+    sandbox.setQuietConfig({ enabled: true, quietConsole: true });
+    const xhr = new sandbox.XMLHttpRequest();
+
+    xhr.open('POST', 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js');
+    xhr.send();
+    xhr.open('GET', 'https://example.com/api/data');
+    xhr.send();
+
+    assert.strictEqual(sandbox.getNativeCallCounts().xhrOpen, 1);
+    assert.strictEqual(sandbox.getNativeCallCounts().xhrSend, 1);
+  });
+
   await t.test('short-circuits generic ad beacons', () => {
     const sandbox = createSandbox();
     sandbox.setQuietConfig({ enabled: true, quietConsole: true });
@@ -302,7 +325,7 @@ test('Quiet Console shared page layer', async (t) => {
     assert.strictEqual(sandbox.pageToString('navigator.sendBeacon'), 'function sendBeacon() { [native code] }');
   });
 
-  await t.test('replaces dynamic ad resource URLs', () => {
+  await t.test('does not install DOM resource wrappers or rewrite resource URLs', () => {
     const sandbox = createSandbox();
     sandbox.setQuietConfig({ enabled: true, quietConsole: true });
     const script = new sandbox.HTMLScriptElement();
@@ -315,10 +338,13 @@ test('Quiet Console shared page layer', async (t) => {
     frame.setAttribute('src', 'https://adservice.google.com/pagead/ads');
     link.href = 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST';
 
-    assert.match(script.src, /^data:text\/javascript/);
-    assert.match(image.getAttribute('src'), /^data:image\/gif/);
-    assert.strictEqual(frame.getAttribute('src'), 'about:blank');
-    assert.match(link.href, /^data:text\/css/);
+    assert.strictEqual(sandbox.Element.prototype.setAttribute, sandbox.originals.setAttribute);
+    assert.strictEqual(sandbox.Node.prototype.appendChild, sandbox.originals.appendChild);
+    assert.strictEqual(sandbox.Node.prototype.insertBefore, sandbox.originals.insertBefore);
+    assert.strictEqual(script.src, 'https://static.doubleclick.net/instream/ad_status.js');
+    assert.strictEqual(image.getAttribute('src'), 'https://www.google-analytics.com/collect?v=1');
+    assert.strictEqual(frame.getAttribute('src'), 'https://adservice.google.com/pagead/ads');
+    assert.strictEqual(link.href, 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST');
   });
 
   await t.test('passes first-party ad-like paths through on ordinary hosts', async () => {

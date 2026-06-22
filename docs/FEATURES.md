@@ -59,7 +59,7 @@ Advanced users can also add their own uBO-style scriptlet resource URLs in setti
 
 ### Quiet Console
 
-Quiet Console is off by default because it runs as a page-context helper and patches common request APIs. Chroma does not install those request wrappers until the toggle is turned on. When enabled, it reduces adblock-related noise in page DevTools by catching handled scriptlet and fingerprint warnings, short-circuiting known ad/tracker `fetch`, `XMLHttpRequest`, and `sendBeacon` calls, and replacing dynamically assigned known ad/tracker resource URLs with empty local stand-ins before Chrome logs blocked-request failures. Coarse local diagnostics remain available to the extension. Chrome may still show browser-generated resource-failure rows for static subresources that load before any page hook can intercept them.
+Quiet Console is off by default. Chroma does not register its page-context helper unless Quiet Console is turned on and master protection is enabled. Turning it off unregisters the helper for new documents; already-open tabs that received the helper need a reload to remove that page-context code. When enabled, it reduces adblock-related noise in page DevTools by catching handled scriptlet and fingerprint warnings and short-circuiting known ad/tracker `fetch`, `XMLHttpRequest`, and `sendBeacon` calls. It does not rewrite DOM resource URLs such as script, image, iframe, or stylesheet sources, so Chrome may still show browser-generated resource-failure rows for blocked subresources. Coarse local diagnostics remain available to the extension.
 
 ## Cosmetic Filtering Layer
 

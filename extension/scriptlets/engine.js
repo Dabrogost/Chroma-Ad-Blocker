@@ -24,6 +24,8 @@ const DEBUG = false;
 const FPR_ID = 'chroma_fpr';
 const FPR_QUIET_FILE = 'scriptlets/fingerprintConsoleQuiet.js';
 const FPR_FILE = 'scriptlets/fingerprintRandomization.js';
+const QUIET_CONSOLE_ID = 'chroma_quiet_console';
+const QUIET_CONSOLE_FILE = 'content/quiet_console.js';
 const USER_SCRIPTLET_RULES_KEY = 'userScriptletRules';
 const USER_SCRIPTLET_RESOURCES_KEY = 'userScriptletResources';
 const SUBSCRIPTION_SCRIPTLET_ID_PREFIX = 'scriptlet_';
@@ -501,11 +503,107 @@ async function _syncFprImpl() {
   }
 }
 
+let _quietConsoleInFlight = null;
+let _quietConsolePending = false;
+
+function syncQuietConsole() {
+  if (_quietConsoleInFlight) {
+    _quietConsolePending = true;
+    return _quietConsoleInFlight;
+  }
+  _quietConsoleInFlight = (async () => {
+    try {
+      await _syncQuietConsoleImpl();
+    } finally {
+      _quietConsoleInFlight = null;
+      if (_quietConsolePending) {
+        _quietConsolePending = false;
+        syncQuietConsole();
+      }
+    }
+  })();
+  return _quietConsoleInFlight;
+}
+
+async function _syncQuietConsoleImpl() {
+  try {
+    if (
+      !chrome.scripting ||
+      typeof chrome.scripting.getRegisteredContentScripts !== 'function' ||
+      typeof chrome.scripting.registerContentScripts !== 'function' ||
+      typeof chrome.scripting.unregisterContentScripts !== 'function'
+    ) {
+      return;
+    }
+
+    const { config = {}, whitelist = [] } = await chrome.storage.local.get(['config', 'whitelist']);
+    const masterEnabled = config.enabled !== false;
+    const quietEnabled = masterEnabled && config.quietConsole === true;
+
+    let existing = [];
+    try {
+      existing = await chrome.scripting.getRegisteredContentScripts({ ids: [QUIET_CONSOLE_ID] });
+    } catch (_) {
+      existing = [];
+    }
+    const isRegistered = existing.length > 0;
+
+    if (!quietEnabled) {
+      if (isRegistered) {
+        await chrome.scripting.unregisterContentScripts({ ids: [QUIET_CONSOLE_ID] });
+        if (DEBUG) console.log('[Chroma Quiet Console] Unregistered.');
+      }
+      if (typeof clearHealthDiagnostic === 'function') {
+        await clearHealthDiagnostic('quietConsoleSync');
+      }
+      return;
+    }
+
+    const script = {
+      id: QUIET_CONSOLE_ID,
+      js: [QUIET_CONSOLE_FILE],
+      matches: ['<all_urls>'],
+      runAt: 'document_start',
+      world: 'MAIN',
+      allFrames: true,
+      persistAcrossSessions: true
+    };
+    const excludeMatches = whitelistToExcludeMatches(whitelist);
+    if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
+
+    if (isRegistered && typeof chrome.scripting.updateContentScripts === 'function') {
+      await chrome.scripting.updateContentScripts([script]);
+      if (DEBUG) console.log('[Chroma Quiet Console] Updated.');
+    } else if (isRegistered) {
+      await chrome.scripting.unregisterContentScripts({ ids: [QUIET_CONSOLE_ID] });
+      await chrome.scripting.registerContentScripts([script]);
+      if (DEBUG) console.log('[Chroma Quiet Console] Re-registered.');
+    } else {
+      await chrome.scripting.registerContentScripts([script]);
+      if (DEBUG) console.log('[Chroma Quiet Console] Registered.');
+    }
+    if (typeof clearHealthDiagnostic === 'function') {
+      await clearHealthDiagnostic('quietConsoleSync');
+    }
+  } catch (err) {
+    if (typeof recordHealthDiagnostic === 'function') {
+      await recordHealthDiagnostic('quietConsoleSync', {
+        area: 'scriptlets',
+        severity: 'warning',
+        message: 'Quiet Console could not be registered.',
+        action: 'Turn Quiet Console off and on, or reload the extension.',
+        error: err?.message || err
+      });
+    }
+    if (DEBUG) console.error('[Chroma Quiet Console] Sync failed:', err);
+  }
+}
+
 // Re-sync when inputs change.
 // - subscriptionScriptletRules → userScripts only
-// - config.fingerprintRandomization / config.enabled → FPR only
-// - whitelist → both (whitelist drives excludeMatches for FPR and is also
-//   used by subscription scriptlet domain expansion in the future)
+// - config.fingerprintRandomization / config.enabled → FPR
+// - config.quietConsole / config.enabled → Quiet Console
+// - whitelist → userScripts, FPR, and Quiet Console excludeMatches
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.subscriptionScriptletRules || changes.userScriptletRules || changes.userScriptletResources) {
@@ -524,6 +622,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (oldC.quietConsole !== newC.quietConsole) {
       syncUserScripts();
     }
+    if (oldC.quietConsole !== newC.quietConsole ||
+        oldC.enabled !== newC.enabled) {
+      if (DEBUG) console.log('[Chroma Quiet Console] Config changed, re-syncing.');
+      syncQuietConsole();
+    }
   }
   if (changes.whitelist) {
     if (DEBUG) console.log('[Chroma Scriptlets] Whitelist changed, re-syncing userScripts.');
@@ -533,6 +636,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (DEBUG) console.log('[Chroma FPR] Whitelist changed, re-syncing.');
     syncFpr();
   }
+  if (changes.whitelist) {
+    if (DEBUG) console.log('[Chroma Quiet Console] Whitelist changed, re-syncing.');
+    syncQuietConsole();
+  }
 });
 
 // ─── INIT ─────
@@ -541,5 +648,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
  * service worker startup.
  */
 export async function initScriptletEngine() {
-  await Promise.all([syncUserScripts(), syncFpr()]);
+  await Promise.all([syncUserScripts(), syncFpr(), syncQuietConsole()]);
 }
