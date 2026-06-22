@@ -4,6 +4,8 @@
 
 For best results, disable other ad-blocking extensions while using Chroma. Layering multiple blockers can cause overlapping rules, false positives, and broken pages.
 
+![Chroma settings dashboard](docs/assets/docs-settings-overview.png)
+
 ## Documentation
 
 - [Documentation Hub](docs/README.md)
@@ -33,6 +35,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - **[Source-Generated DNR Network Blocking](docs/ARCHITECTURE.md#layer-1-network-level-blocking-extensionrules-extensionbackgrounddnrstatejs-extensionsubscriptions)**: Uses generated OISD Big static rules, a protected custom static layer, recipe-specific rules, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 - **[Live Filter List Subscriptions](docs/FILTER_LISTS.md)**: Supports Hagezi Pro Mini, EasyList, Fanboy Annoyance, the bundled Chroma Scriptlet Library, and user-added custom lists with local parsing and rule-budget allocation.
 - **[Scriptlet Injection Engine](docs/ARCHITECTURE.md#layer-2-scriptlet-injection-scriptletsenginejs)**: Translates supported uBlock Origin and AdGuard-style scriptlets into native JavaScript, and lets advanced users add [trusted uBO-style scriptlet resources](docs/ADVANCED_USER_SCRIPTLETS.md) through Chrome's `userScripts` API.
+- **[Quiet Console](docs/FEATURES.md#quiet-console)**: Optional DevTools noise reduction for handled scriptlet/fingerprint warnings and known ad/tracker request paths.
 - **[Cosmetic Filtering & Element Zapper](docs/FEATURES.md#element-zapper)**: Removes ad slots, placeholders, unwanted UI, warnings, and user-selected page elements through CSS injection, DOM monitoring, and local cosmetic rules.
 - **[Privacy Hardening & Fingerprint Randomization](docs/FEATURES.md#privacy-hardening-fingerprint-randomization)**: Optional controls for third-party cookies, Privacy Sandbox ad APIs, geolocation access, WebRTC routing behavior, and per-document fingerprint farbling.
 - **[Local Event Tracker](docs/STATISTICS.md)**: A local-only Protection Intelligence dashboard for network, cleanup, scriptlet, proxy, and payload-cleanup events.

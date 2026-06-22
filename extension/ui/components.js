@@ -59,6 +59,36 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderHealthSkeletonSection(titleWidthClass, metricCount, { wide = false } = {}) {
+    return `
+      <div class="health-section health-section--skeleton${wide ? ' health-section--wide' : ''}" aria-hidden="true">
+        <div class="health-section__title">
+          ${renderSkeletonLine(titleWidthClass)}
+        </div>
+        ${Array.from({ length: metricCount }, (_, index) => `
+          <div class="health-metric health-skeleton-metric">
+            ${renderSkeletonLine(index % 2 ? 'skeleton-line--medium' : 'skeleton-line--long')}
+            ${renderSkeletonLine(index % 3 ? 'skeleton-line--short' : 'skeleton-line--medium')}
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderHealthSkeleton() {
+    return [
+      renderHealthSkeletonSection('skeleton-line--short', 6),
+      renderHealthSkeletonSection('skeleton-line--medium', 5),
+      renderHealthSkeletonSection('skeleton-line--medium', 5),
+      renderHealthSkeletonSection('skeleton-line--short', 3),
+      renderHealthSkeletonSection('skeleton-line--medium', 2),
+      renderHealthSkeletonSection('skeleton-line--short', 5),
+      renderHealthSkeletonSection('skeleton-line--medium', 5),
+      renderHealthSkeletonSection('skeleton-line--short', 3),
+      renderHealthSkeletonSection('skeleton-line--short', 1, { wide: true })
+    ].join('');
+  }
+
   function renderSkeletonBars(count = 5) {
     return Array.from({ length: count }, (_, index) => `
       <div class="skeleton-row skeleton-row--timeline" aria-hidden="true">
@@ -220,6 +250,11 @@ const ChromaComponents = (() => {
           desc: 'Removes "ad blocker detected" dialogs'
         })}
         ${renderToggleRow({
+          inputId: 'toggleQuietConsole',
+          name: 'Quiet Console',
+          desc: 'Opt-in adblock noise reduction in page DevTools'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleFingerprintRandomization',
           rowClass: 'fpr-toggle-row',
           name: 'Fingerprint Randomization',
@@ -298,7 +333,7 @@ const ChromaComponents = (() => {
           <button class="reset-btn compact-action-btn" id="refreshHealthBtn" disabled>Refresh Health</button>
         </div>
         <div class="health-grid is-loading" id="healthPanelBody">
-          ${renderSkeletonGrid(6, 'health-skeleton-grid')}
+          ${renderHealthSkeleton()}
         </div>
       </div>
     `;

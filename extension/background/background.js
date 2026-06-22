@@ -51,6 +51,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         geolocationProtection: false,
         trackingUrlCleanup: true,
         deAmpLinks: false,
+        quietConsole: false,
       },
       statsV2: createDefaultStatsV2(),
       requestLog: [],

@@ -46,6 +46,8 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 
 ## Configuration
 
+![Chroma protection layer settings](assets/docs-settings-protection-layers.png)
+
 | Setting | Description | Default |
 |---|---|---|
 | `enabled` | Global switch for all features. | `true` |
@@ -61,6 +63,7 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 | `hideMerch` | Removes Merchandise panels. | `true` |
 | `hideOffers` | Removes Movie/TV offer modules. | `true` |
 | `suppressWarnings` | Removes unsolicited overlay dialogs that restrict content access. | `true` |
+| `quietConsole` | Optional DevTools noise reduction. When enabled with master protection on, Chroma registers a page-context helper for known ad/tracker `fetch`, `XMLHttpRequest`, and `sendBeacon` noise. | `false` |
 | `whitelist` | Stores domains where Chroma blocking is disabled. The current-site popup toggle updates this list. | `[]` |
 | `globalProxyEnabled` | Enables browser-level fallback routing through the selected proxy when no domain-specific proxy rule matches. | `false` |
 | `globalProxyId` | Stores the selected global fallback proxy ID. | `null` |
@@ -75,6 +78,8 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 | Symptom | Check |
 |---|---|
 | Scriptlets or fingerprint randomization show unavailable in Health. | On Chrome 138+, open `chrome://extensions`, select Chroma **Details**, and enable **Allow User Scripts**. On Chrome 122-137, confirm **Developer Mode** is enabled. |
+| Quiet Console is off but an already-open tab still behaves differently. | Reload that tab. Turning Quiet Console off unregisters the page helper for new documents, but Chrome cannot remove page-context code that already ran in an existing document. |
+| Quiet Console is on but DevTools still shows blocked resource rows. | Chrome can still log browser-generated failures for blocked subresources. Quiet Console only handles known scriptlet/fingerprint warnings and known ad/tracker `fetch`, `XMLHttpRequest`, and `sendBeacon` paths. |
 | Guided updater is unavailable. | Use a recent Chromium browser with the File System Access directory picker, or use the manual update fallback. |
 | Guided updater reports a missing release ZIP or `updates.json`. | The GitHub release must include the exact direct asset name `chroma-ad-blocker-vX.Y.Z.zip` and signed `updates.json`. Use the manual fallback or wait for a corrected release asset. |
 | Guided updater reports an invalid update signature. | The release `updates.json` was not signed with Chroma's bundled update key, or it was changed after signing. Use the manual fallback or wait for a corrected release asset. |
@@ -89,6 +94,8 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 ## Health Panel
 
 The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state.
+
+![Chroma health diagnostics panel](assets/docs-settings-health-panel.png)
 
 It covers static DNR rulesets, dynamic rules, tracking URL cleanup, De-AMP redirects, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, browser privacy hardening, proxy routing, whitelists, and request-log/debug availability.
 

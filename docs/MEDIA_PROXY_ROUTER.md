@@ -4,6 +4,8 @@ Chroma includes a built-in split-tunnel proxy router that allows you to route tr
 
 It is designed for media-site routing: sending supported services through proxy regions that reduce ad serving, or through country-specific routes for region-specific media delivery. This operates entirely within the browser via dynamic Proxy Auto-Configuration scripts, so it does not require a system-level VPN installation.
 
+![Chroma media proxy router settings](assets/docs-settings-proxy-router.png)
+
 ## How This Differs From FoxyProxy
 
 Chroma's proxy router is not intended to replace a full general-purpose proxy manager such as FoxyProxy. FoxyProxy is designed around proxy profiles, URL patterns, tab-level routing, quick switching, import/export workflows, and broad user-defined proxy management.

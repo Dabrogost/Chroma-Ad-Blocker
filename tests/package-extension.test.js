@@ -24,6 +24,7 @@ const validReleaseEntries = [
   'manifest.json',
   'README.md',
   'LICENSE.md',
+  'content/quiet_console.js',
   ...RELEASE_DOC_FILES,
   'background/background.js',
   'rules/rules_oisd_1.json'

@@ -49,8 +49,12 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-async function waitFor(predicate, label, timeoutMs = positiveNumber(process.env.CHROMA_E2E_WAIT_MS, 15000)) {
-  const pollMs = positiveNumber(process.env.CHROMA_E2E_POLL_MS, 50);
+async function waitFor(predicate, label, timeoutMsOrOptions = positiveNumber(process.env.CHROMA_E2E_WAIT_MS, 15000)) {
+  const options = typeof timeoutMsOrOptions === 'object' && timeoutMsOrOptions !== null
+    ? timeoutMsOrOptions
+    : { timeoutMs: timeoutMsOrOptions };
+  const timeoutMs = positiveNumber(options.timeoutMs, positiveNumber(process.env.CHROMA_E2E_WAIT_MS, 15000));
+  const pollMs = positiveNumber(options.pollMs, positiveNumber(process.env.CHROMA_E2E_POLL_MS, 500));
   const started = Date.now();
   let lastError;
   while (Date.now() - started < timeoutMs) {

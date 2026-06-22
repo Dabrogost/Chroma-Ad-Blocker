@@ -329,7 +329,16 @@ input:focus-visible,
 
 .toggle-info { flex: 1; min-width: 0; }
 .toggle-info .name { font-size: 16px; font-weight: 600; color: var(--text); }
-.toggle-info .desc { font-size: 13px; color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toggle-info .desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
 
 .fpr-toggle-row .name {
   display: flex;
@@ -791,6 +800,10 @@ input.control-pending + .slider {
   padding: 6px 4px 10px;
 }
 
+.health-section--skeleton {
+  pointer-events: none;
+}
+
 .health-section--wide {
   grid-column: 1 / -1;
 }
@@ -811,6 +824,15 @@ input.control-pending + .slider {
   gap: 12px;
   padding: 4px 0;
   border-top: 1px solid rgba(255,255,255,0.025);
+}
+
+.health-skeleton-metric {
+  align-items: center;
+  min-height: 23px;
+}
+
+.health-skeleton-metric .skeleton-line:last-child {
+  flex-shrink: 0;
 }
 
 .health-metric:first-of-type {

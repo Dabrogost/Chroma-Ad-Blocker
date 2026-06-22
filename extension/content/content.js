@@ -19,6 +19,7 @@
     hideOffers: true,
     suppressWarnings: true,
     deAmpLinks: false,
+    quietConsole: false,
   };
 
   function isHostOrSubdomain(hostname, domain) {
@@ -28,6 +29,7 @@
   const currentHostname = String(window.location.hostname || '').toLowerCase();
   const isYouTube = isHostOrSubdomain(currentHostname, 'youtube.com');
   const isTwitch  = isHostOrSubdomain(currentHostname, 'twitch.tv');
+  const QUIET_CONSOLE_CONFIG_EVENT = '__CHROMA_QUIET_CONSOLE_CONFIG__';
 
   // ─── STATE ─────
   let observer = null;
@@ -72,6 +74,17 @@
 
     try {
       chrome.runtime.sendMessage({ type: 'STATS_EVENT_BATCH', events }).catch(() => {});
+    } catch (_) {}
+  }
+
+  function publishQuietConsoleConfig() {
+    try {
+      document.dispatchEvent(new CustomEvent(QUIET_CONSOLE_CONFIG_EVENT, {
+        detail: {
+          enabled: CONFIG.enabled !== false && !IS_WHITELISTED,
+          quietConsole: CONFIG.quietConsole === true
+        }
+      }));
     } catch (_) {}
   }
 
@@ -632,6 +645,7 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'CONFIG_UPDATE') {
       Object.assign(CONFIG, msg.config);
+      publishQuietConsoleConfig();
       
       if (shouldRunObserver()) {
         startObserver();
@@ -687,6 +701,7 @@
       }
 
       IS_WHITELISTED = whitelist.some(d => hostname === d || hostname.endsWith('.' + d));
+      publishQuietConsoleConfig();
       if (IS_WHITELISTED) {
         if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
         return;

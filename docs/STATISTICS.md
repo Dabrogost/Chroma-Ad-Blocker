@@ -8,6 +8,8 @@ The settings page includes **Protection Intelligence**, a local analytics dashbo
 
 The popup headline shows **Protection Events**, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than "ads blocked": DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or feedback-only matches, so Chroma classifies events before counting them.
 
+![Chroma Protection Intelligence dashboard](assets/docs-settings-protection-intelligence.png)
+
 ## Event Tracker
 
 The **Events** section in settings shows recent local activity from the protection stack. It can include:
@@ -44,6 +46,8 @@ The **Time Saved (est.)** card is deliberately conservative. It uses a small sub
 ## Health Panel
 
 The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including:
+
+![Chroma health diagnostics panel](assets/docs-settings-health-panel.png)
 
 - Static DNR rulesets.
 - Dynamic rules.

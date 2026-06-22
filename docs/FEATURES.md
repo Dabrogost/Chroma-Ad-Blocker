@@ -12,6 +12,8 @@ For the full platform-specific breakdown, see [YouTube Protection](YOUTUBE.md).
 
 Chroma can route selected media domains through a user-configured HTTP, HTTPS, SOCKS4, or SOCKS5 proxy while keeping unrelated browser traffic direct. It is designed for media-site routing: sending supported services through proxy regions that reduce ad serving or match country-specific media delivery.
 
+![Chroma media proxy router settings](assets/docs-settings-proxy-router.png)
+
 The router includes:
 
 - Domain-specific proxy overrides.
@@ -56,6 +58,10 @@ Chroma's scriptlet layer uses Chrome's `userScripts` API to run supported script
 Capabilities include JSON pruning, property-read aborts, constant setting, fetch prevention, regex translation, and explicit timing flags such as `document_start`, `document_idle`, and `document_end`.
 
 Advanced users can also add their own uBO-style scriptlet resource URLs in settings, then save matching rules such as `example.com##+js(resource-name)`. These user-provided resources are not bundled with Chroma and are separate from normal filter list subscriptions; add only resources you trust. For setup examples and linked-resource troubleshooting, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md).
+
+### Quiet Console
+
+Quiet Console is off by default. Chroma does not register its page-context helper unless Quiet Console is turned on and master protection is enabled. Turning it off unregisters the helper for new documents; already-open tabs that received the helper need a reload to remove that page-context code. When enabled, it reduces adblock-related noise in page DevTools by catching handled scriptlet and fingerprint warnings and short-circuiting known ad/tracker `fetch`, `XMLHttpRequest`, and `sendBeacon` calls. It does not rewrite DOM resource URLs such as script, image, iframe, or stylesheet sources, so Chrome may still show browser-generated resource-failure rows for blocked subresources. Coarse local diagnostics remain available to the extension.
 
 ## Cosmetic Filtering Layer
 
@@ -120,6 +126,8 @@ These features are optional because browser privacy hardening and fingerprint ch
 ## Local Event Tracker
 
 The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
+
+![Chroma Protection Intelligence dashboard](assets/docs-settings-protection-intelligence.png)
 
 For retention, privacy modes, and export behavior, see [Statistics & Health](STATISTICS.md).
 

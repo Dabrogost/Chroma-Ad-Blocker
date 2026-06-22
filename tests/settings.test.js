@@ -642,6 +642,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assertNextUpdaterAction(doc, null);
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
     assert.match(doc.querySelector('#updaterStatusDesc').textContent, /No update is available/);
+    assert.strictEqual(doc.querySelector('#updaterResult').textContent, 'No newer release found. This install is already on v1.0.1');
 
     doc.querySelector('#chooseInstallFolderBtn').click();
     await settleDomAsyncWork(60);
@@ -651,6 +652,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(doc.querySelector('#updaterStepFolder').classList.contains('updater-step--ok'));
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
     assert.match(doc.querySelector('#updaterStatusDesc').textContent, /install folder is verified/i);
+    assert.strictEqual(doc.querySelector('#updaterResult').textContent, 'No newer release found. Chroma is already on v1.0.1');
 
     harness.dom.window.dispatchEvent(new harness.dom.window.CustomEvent('chroma:update-check-result', {
       detail: { updateAvailable: true, latestVersion: '1.0.2' }
@@ -1883,6 +1885,12 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(uiCss, /\.toggle-info \.proxy-domain-name\s*\{[\s\S]*font-size: 13px/);
   });
 
+  await t.test('toggle descriptions wrap instead of clipping', () => {
+    assert.match(uiCss, /\.toggle-info \.desc\s*\{[\s\S]*white-space: normal/);
+    assert.match(uiCss, /\.toggle-info \.desc\s*\{[\s\S]*overflow-wrap: anywhere/);
+    assert.doesNotMatch(uiCss, /\.toggle-info \.desc \{[^\n]*white-space: nowrap/);
+  });
+
   await t.test('active proxy global button has a distinct highlighted style', () => {
     assert.match(proxyUiJs, /appendProxyButton\(line, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback'\)/);
     assert.match(proxyUiJs, /proxy-enabled-toggle/);
@@ -1949,7 +1957,8 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     sandbox.ChromaComponents.renderPageShell({ settingsMode: true });
 
-    assert.ok(dom.window.document.querySelector('#healthPanelBody .skeleton-card'));
+    assert.strictEqual(dom.window.document.querySelectorAll('#healthPanelBody .health-section--skeleton').length, 9);
+    assert.strictEqual(dom.window.document.querySelector('#healthPanelBody .skeleton-grid'), null);
     assert.ok(dom.window.document.querySelector('#statisticsTopCards .skeleton-card'));
     assert.ok(dom.window.document.querySelector('#statsSitesList .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#subscriptionList .skeleton-row'));
@@ -1998,7 +2007,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await success.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
 
-    assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
+    assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .health-section--skeleton'), null);
     assert.match(success.dom.window.document.querySelector('#healthOverallLabel').textContent, /Healthy/);
     assert.ok(success.dom.window.document.querySelector('#healthPanelBody .health-section'));
     assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /De-AMP links\s*Disabled/);
@@ -2009,7 +2018,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await failure.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
 
-    assert.strictEqual(failure.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
+    assert.strictEqual(failure.dom.window.document.querySelector('#healthPanelBody .health-section--skeleton'), null);
     assert.match(failure.dom.window.document.querySelector('#healthOverallLabel').textContent, /Unavailable/);
     assert.match(failure.dom.window.document.querySelector('#healthPanelBody').textContent, /Could not load health diagnostics/);
   });
@@ -2191,7 +2200,68 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, false);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').checked, false);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleAcceleration').checked, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleQuietConsole').checked, false);
     assert.ok(harness.dom.window.document.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
+  });
+
+  await t.test('quiet console toggle persists to config', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: {
+          enabled: true,
+          networkBlocking: true,
+          quietConsole: false
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const toggle = harness.dom.window.document.querySelector('#toggleQuietConsole');
+    assert.ok(toggle);
+    assert.strictEqual(toggle.checked, false);
+
+    toggle.checked = true;
+    toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.ok(harness.messages.some(message =>
+      message.type === 'CONFIG_SET' &&
+      message.config?.quietConsole === true
+    ));
+  });
+
+  await t.test('quiet console toggle is independent from master protection', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: {
+          enabled: false,
+          networkBlocking: true,
+          quietConsole: true
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const master = harness.dom.window.document.querySelector('#toggleEnabled');
+    const quiet = harness.dom.window.document.querySelector('#toggleQuietConsole');
+    assert.strictEqual(master.checked, false);
+    assert.strictEqual(quiet.checked, true);
+
+    harness.messages.length = 0;
+    quiet.checked = false;
+    quiet.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.ok(harness.messages.some(message =>
+      message.type === 'CONFIG_SET' &&
+      message.config?.quietConsole === false &&
+      !Object.prototype.hasOwnProperty.call(message.config, 'enabled')
+    ));
+    assert.strictEqual(master.checked, false);
   });
 
   await t.test('settings config null keeps controls disabled and shows an error', async () => {

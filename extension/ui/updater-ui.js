@@ -112,7 +112,7 @@ const ChromaUpdaterUI = (() => {
         ? `Chroma ${versionText} is current, and this install folder is verified.`
         : `Chroma ${versionText} is current. No update is available.`
     );
-    setResult(reason || `No newer release found. Chroma is already on ${versionText}.`, 'ok');
+    setResult(reason || `No newer release found. Chroma is already on ${versionText}`, 'ok');
     updateNextActionPrompt();
   }
 
@@ -378,7 +378,7 @@ const ChromaUpdaterUI = (() => {
     if (currentManifest.version && manifest.version !== currentManifest.version) {
       return {
         ok: false,
-        reason: `Selected Chroma folder is v${manifest.version}; this running copy is v${currentManifest.version}.`
+        reason: `Selected Chroma folder is v${manifest.version}; this running copy is v${currentManifest.version}`
       };
     }
     return { ok: true, reason: `Chroma v${manifest.version || 'unknown'} install folder verified.` };
@@ -435,7 +435,7 @@ const ChromaUpdaterUI = (() => {
       return {
         ok: true,
         reason: currentVersion
-          ? `No newer release found. This install is already on v${currentVersion}.`
+          ? `No newer release found. This install is already on v${currentVersion}`
           : 'No newer release found for this install.'
       };
     }
@@ -1478,6 +1478,8 @@ const ChromaUpdaterUI = (() => {
       inspectLatestPackage,
       validateReleaseMetadata,
       validateInstallManifest,
+      normalizeRelativePath,
+      shouldIgnoreInstallPath,
       verifyInstallDirectory
     }
   };

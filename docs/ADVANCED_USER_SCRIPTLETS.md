@@ -185,6 +185,7 @@ twitch.tv##+js(twitch-videoad)
 | Rule status shows **Missing** | A saved rule references a resource that is not available. | Check the resource name, refresh the URL, or remove the stale rule. |
 | Resource URL will not add | The URL is not a permitted public HTTPS URL. | Use a raw `https://` URL with no credentials, no custom port, and no local/private host. |
 | Nothing changes on the page | The tab loaded before the scriptlet was registered, or the domain rule does not match. | Reload the tab and check the rule domain. |
+| Scriptlet errors do not appear in DevTools | Quiet Console is enabled. | Turn off **Quiet Console** in settings while debugging, then reload the affected tab. |
 | A site stays broken after removal | The old script already ran in that page document. | Remove the rule/resource, then reload the affected tab. |
 | Health says UserScripts unavailable | Chrome has not enabled Chroma's `userScripts` access. | Open the extension details page and enable **Allow User Scripts**. |
 

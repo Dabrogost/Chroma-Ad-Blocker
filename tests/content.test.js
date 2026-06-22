@@ -48,6 +48,7 @@ test('Content script generic functionality', async (t) => {
   const createSandbox = (setupDoc, options = {}) => {
     const sentMessages = [];
     const documentListeners = {};
+    const dispatchedEvents = [];
     const location = options.location || { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' };
     const sandbox = {
       chrome: {
@@ -87,6 +88,7 @@ test('Content script generic functionality', async (t) => {
           documentListeners[type].push(fn);
         },
         dispatchEvent: (event) => {
+          dispatchedEvents.push(event);
           const listeners = documentListeners[event?.type] || [];
           listeners.forEach(fn => fn(event));
           return true;
@@ -115,6 +117,12 @@ test('Content script generic functionality', async (t) => {
       URL,
       Promise: Promise,
       Error: Error,
+      CustomEvent: class {
+        constructor(type, init = {}) {
+          this.type = type;
+          this.detail = init.detail;
+        }
+      },
       window: { 
         location,
         addEventListener: () => {},
@@ -138,6 +146,7 @@ test('Content script generic functionality', async (t) => {
       notifyBackground: () => Promise.resolve()
     };
     sandbox.__sentMessages = sentMessages;
+    sandbox.__dispatchedEvents = dispatchedEvents;
     sandbox.globalThis = sandbox;
 
     if (setupDoc) setupDoc(sandbox.document);
@@ -336,6 +345,24 @@ test('Content script generic functionality', async (t) => {
     assert.strictEqual('scriptlet' in event, false);
     assert.strictEqual('ruleSource' in event, false);
     assert.strictEqual('error' in event, false);
+  });
+
+  await t.test('publishes quiet console config to MAIN-world quiet layer', async () => {
+    const sandbox = createSandbox(null, {
+      storage: {
+        config: { enabled: true },
+        whitelist: []
+      }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    const event = sandbox.__dispatchedEvents.find(item => item?.type === '__CHROMA_QUIET_CONSOLE_CONFIG__');
+
+    assert.ok(event, 'quiet console config event should be dispatched');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(event.detail)), {
+      enabled: true,
+      quietConsole: false
+    });
   });
 
   await t.test('disabled cosmetic mode does not record cleanup events', async (st) => {
