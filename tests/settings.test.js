@@ -1957,7 +1957,8 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     sandbox.ChromaComponents.renderPageShell({ settingsMode: true });
 
-    assert.ok(dom.window.document.querySelector('#healthPanelBody .skeleton-card'));
+    assert.strictEqual(dom.window.document.querySelectorAll('#healthPanelBody .health-section--skeleton').length, 9);
+    assert.strictEqual(dom.window.document.querySelector('#healthPanelBody .skeleton-grid'), null);
     assert.ok(dom.window.document.querySelector('#statisticsTopCards .skeleton-card'));
     assert.ok(dom.window.document.querySelector('#statsSitesList .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#subscriptionList .skeleton-row'));
@@ -2006,7 +2007,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await success.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
 
-    assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
+    assert.strictEqual(success.dom.window.document.querySelector('#healthPanelBody .health-section--skeleton'), null);
     assert.match(success.dom.window.document.querySelector('#healthOverallLabel').textContent, /Healthy/);
     assert.ok(success.dom.window.document.querySelector('#healthPanelBody .health-section'));
     assert.match(success.dom.window.document.querySelector('#healthPanelBody').textContent, /De-AMP links\s*Disabled/);
@@ -2017,7 +2018,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await failure.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
 
-    assert.strictEqual(failure.dom.window.document.querySelector('#healthPanelBody .skeleton-card'), null);
+    assert.strictEqual(failure.dom.window.document.querySelector('#healthPanelBody .health-section--skeleton'), null);
     assert.match(failure.dom.window.document.querySelector('#healthOverallLabel').textContent, /Unavailable/);
     assert.match(failure.dom.window.document.querySelector('#healthPanelBody').textContent, /Could not load health diagnostics/);
   });
