@@ -1885,6 +1885,12 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(uiCss, /\.toggle-info \.proxy-domain-name\s*\{[\s\S]*font-size: 13px/);
   });
 
+  await t.test('toggle descriptions wrap instead of clipping', () => {
+    assert.match(uiCss, /\.toggle-info \.desc\s*\{[\s\S]*white-space: normal/);
+    assert.match(uiCss, /\.toggle-info \.desc\s*\{[\s\S]*overflow-wrap: anywhere/);
+    assert.doesNotMatch(uiCss, /\.toggle-info \.desc \{[^\n]*white-space: nowrap/);
+  });
+
   await t.test('active proxy global button has a distinct highlighted style', () => {
     assert.match(proxyUiJs, /appendProxyButton\(line, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback'\)/);
     assert.match(proxyUiJs, /proxy-enabled-toggle/);
@@ -2193,6 +2199,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, false);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').checked, false);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleAcceleration').checked, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleQuietConsole').checked, false);
     assert.ok(harness.dom.window.document.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
   });
 

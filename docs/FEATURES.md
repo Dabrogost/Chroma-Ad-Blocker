@@ -57,6 +57,10 @@ Capabilities include JSON pruning, property-read aborts, constant setting, fetch
 
 Advanced users can also add their own uBO-style scriptlet resource URLs in settings, then save matching rules such as `example.com##+js(resource-name)`. These user-provided resources are not bundled with Chroma and are separate from normal filter list subscriptions; add only resources you trust. For setup examples and linked-resource troubleshooting, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md).
 
+### Quiet Console
+
+Quiet Console is off by default because it runs as a page-context helper and patches common request APIs. Chroma does not install those request wrappers until the toggle is turned on. When enabled, it reduces adblock-related noise in page DevTools by catching handled scriptlet and fingerprint warnings, short-circuiting known ad/tracker `fetch`, `XMLHttpRequest`, and `sendBeacon` calls, and replacing dynamically assigned known ad/tracker resource URLs with empty local stand-ins before Chrome logs blocked-request failures. Coarse local diagnostics remain available to the extension. Chrome may still show browser-generated resource-failure rows for static subresources that load before any page hook can intercept them.
+
 ## Cosmetic Filtering Layer
 
 The cosmetic layer removes ad slots, placeholders, unwanted UI, and unsolicited overlay dialogs through CSS injection and DOM mutation monitoring. It is optimized for YouTube and Twitch, where server-side ad insertion or platform UI behavior can leave page clutter even when network blocking is active.

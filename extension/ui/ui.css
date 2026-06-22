@@ -329,7 +329,16 @@ input:focus-visible,
 
 .toggle-info { flex: 1; min-width: 0; }
 .toggle-info .name { font-size: 16px; font-weight: 600; color: var(--text); }
-.toggle-info .desc { font-size: 13px; color: var(--text-dim); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toggle-info .desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
 
 .fpr-toggle-row .name {
   display: flex;

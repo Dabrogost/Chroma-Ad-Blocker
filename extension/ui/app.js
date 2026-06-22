@@ -23,10 +23,10 @@ const ChromaApp = (() => {
     ['toggleMerch',        'hideMerch',                true],
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
+    ['toggleQuietConsole', 'quietConsole',             false, { masterLinked: false }],
     ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
     ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
     ['toggleGeolocationProtection', 'geolocationProtection', false],
-    ['toggleQuietConsole', 'quietConsole', false, { masterLinked: false }],
   ];
 
   function publishUpdateCheckResult(result) {

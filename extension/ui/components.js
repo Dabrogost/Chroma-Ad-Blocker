@@ -220,6 +220,11 @@ const ChromaComponents = (() => {
           desc: 'Removes "ad blocker detected" dialogs'
         })}
         ${renderToggleRow({
+          inputId: 'toggleQuietConsole',
+          name: 'Quiet Console',
+          desc: 'Opt-in adblock noise reduction in page DevTools'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleFingerprintRandomization',
           rowClass: 'fpr-toggle-row',
           name: 'Fingerprint Randomization',
@@ -240,11 +245,6 @@ const ChromaComponents = (() => {
           inputId: 'toggleDeAmpLinks',
           name: 'De-AMP Links',
           desc: 'Redirects supported AMP viewer pages to publisher URLs'
-        })}
-        ${renderToggleRow({
-          inputId: 'toggleQuietConsole',
-          name: 'Quiet DevTools Console',
-          desc: 'Suppresses Chroma scriptlet noise in page DevTools'
         })}
         ${renderToggleRow({
           inputId: 'toggleFprWhitelist',

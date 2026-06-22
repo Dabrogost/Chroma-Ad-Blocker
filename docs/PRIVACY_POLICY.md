@@ -17,7 +17,7 @@ Chroma Ad-Blocker **does not collect, upload, or sell personal information**. Ch
 
 ### Local Data Storage
 The Extension uses your browser's local storage (`chrome.storage.local`) to save:
-- **User Settings**: Your preferred toggles for network blocking, YouTube stripping, ad acceleration, cosmetic filtering, fingerprint randomization, proxy routing, and related options.
+- **User Settings**: Your preferred toggles for network blocking, YouTube stripping, ad acceleration, cosmetic filtering, Quiet Console behavior, fingerprint randomization, proxy routing, and related options.
 - **Whitelists**: Domains you choose to exempt from Chroma protection or fingerprint randomization.
 - **Filter List Data**: Subscription metadata and cached parsed rules from enabled filter lists.
 - **User Scriptlet Resources**: If you add advanced user scriptlet resources, Chroma stores the resource URLs, parsed resource metadata, cached resource code, and your matching user scriptlet rules locally.
