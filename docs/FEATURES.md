@@ -12,7 +12,9 @@ For the full platform-specific breakdown, see [YouTube Protection](YOUTUBE.md).
 
 Chroma can route selected media domains through a user-configured HTTP, HTTPS, SOCKS4, or SOCKS5 proxy while keeping unrelated browser traffic direct. It is designed for media-site routing: sending supported services through proxy regions that reduce ad serving or match country-specific media delivery.
 
-![Chroma media proxy router settings](assets/docs-settings-proxy-router.png)
+<div align="center">
+  <img src="assets/docs-settings-proxy-router.png" alt="Chroma media proxy router settings" width="760">
+</div>
 
 The router includes:
 
@@ -127,7 +129,9 @@ These features are optional because browser privacy hardening and fingerprint ch
 
 The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
 
-![Chroma Protection Intelligence dashboard](assets/docs-settings-protection-intelligence.png)
+<div align="center">
+  <img src="assets/docs-settings-protection-intelligence.png" alt="Chroma Protection Intelligence dashboard" width="760">
+</div>
 
 For retention, privacy modes, and export behavior, see [Statistics & Health](STATISTICS.md).
 
