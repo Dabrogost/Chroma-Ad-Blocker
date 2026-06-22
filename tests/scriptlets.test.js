@@ -539,6 +539,7 @@ test('reddit-promoted-ads', async (t) => {
 
 function loadScriptletEngine(storageState, options = {}) {
   const registered = [];
+  const registeredContentScripts = [];
   let changeListener = null;
   const userScripts = Object.prototype.hasOwnProperty.call(options, 'userScripts')
     ? options.userScripts
@@ -565,11 +566,11 @@ function loadScriptletEngine(storageState, options = {}) {
         }
       },
       userScripts,
-      scripting: {
+      scripting: options.scripting || {
         getRegisteredContentScripts: async () => [],
         unregisterContentScripts: async () => {},
-        registerContentScripts: async () => {},
-        updateContentScripts: async () => {}
+        registerContentScripts: async scripts => { registeredContentScripts.push(...scripts); },
+        updateContentScripts: async scripts => { registeredContentScripts.push(...scripts); }
       }
     },
     console,
@@ -580,7 +581,7 @@ function loadScriptletEngine(storageState, options = {}) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(engineCode, sandbox);
-  return { sandbox, registered, getChangeListener: () => changeListener };
+  return { sandbox, registered, registeredContentScripts, getChangeListener: () => changeListener };
 }
 
 test('scriptlet engine whitelist hardening', async (t) => {
@@ -625,6 +626,62 @@ test('scriptlet engine whitelist hardening', async (t) => {
     assert.doesNotMatch(code, /sourceId|source:/);
     assert.doesNotMatch(code, /scriptlet:/);
     assert.doesNotMatch(code, /err\.message|err\.name|String\(err\)/);
+  });
+
+  await t.test('quiet console records scriptlet telemetry without throwing into page DevTools', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{
+        scriptlet: 'set-constant',
+        args: ['foo', 'true'],
+        domains: ['example.org']
+      }],
+      whitelist: [],
+      config: { quietConsole: true },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registered.length, 1);
+    const code = registered[0].js[0].code;
+    assert.match(code, /detail:\s*\{\s*type:\s*'error'\s*\}/);
+    assert.match(code, /if\s*\(false\)\s*throw err/);
+    assert.doesNotMatch(code, /if\s*\(true\)\s*throw err/);
+  });
+
+  await t.test('quiet console registers the FPR quiet bootstrap before the FPR script', async () => {
+    const { sandbox, registeredContentScripts } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      whitelist: [],
+      config: { enabled: true, fingerprintRandomization: true, quietConsole: true },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registeredContentScripts.length, 1);
+    assert.deepStrictEqual(plain(registeredContentScripts[0].js), [
+      'scriptlets/fingerprintConsoleQuiet.js',
+      'scriptlets/fingerprintRandomization.js'
+    ]);
+  });
+
+  await t.test('default FPR registration does not need a console bootstrap', async () => {
+    const { sandbox, registeredContentScripts } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      whitelist: [],
+      config: { enabled: true, fingerprintRandomization: true, quietConsole: false },
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registeredContentScripts.length, 1);
+    assert.deepStrictEqual(plain(registeredContentScripts[0].js), [
+      'scriptlets/fingerprintRandomization.js'
+    ]);
   });
 
   await t.test('user resource scriptlets use MAIN world, all frames, and coarse telemetry', async () => {

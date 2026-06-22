@@ -26,6 +26,7 @@ const ChromaApp = (() => {
     ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
     ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
     ['toggleGeolocationProtection', 'geolocationProtection', false],
+    ['toggleQuietConsole', 'quietConsole', false, { masterLinked: false }],
   ];
 
   function publishUpdateCheckResult(result) {
@@ -534,8 +535,12 @@ const ChromaApp = (() => {
     }).catch(error => console.error('Chroma update check failed:', error));
 
     const syncUI = (cfg, masterOn) => {
-      for (const [elId, key, def] of CONFIG_TOGGLES) {
-        if ($(elId)) $(elId).checked = masterOn ? (cfg[key] ?? def) : false;
+      for (const [elId, key, def, options = {}] of CONFIG_TOGGLES) {
+        if ($(elId)) {
+          $(elId).checked = options.masterLinked === false
+            ? (cfg[key] ?? config[key] ?? def)
+            : (masterOn ? (cfg[key] ?? def) : false);
+        }
       }
     };
 
@@ -671,7 +676,7 @@ const ChromaApp = (() => {
       });
     });
 
-    for (const [elId, key] of CONFIG_TOGGLES) {
+    for (const [elId, key, _def, options = {}] of CONFIG_TOGGLES) {
       $(elId)?.addEventListener('change', async (e) => {
         const isChecked = e.target.checked;
         const previous = captureProtectionState();
@@ -679,13 +684,15 @@ const ChromaApp = (() => {
         setProtectionTogglePending(elId, true);
         const nextConfig = { [key]: isChecked };
         let nextEnabled = $('toggleEnabled')?.checked;
-        if (isChecked && !$('toggleEnabled')?.checked) {
+        if (options.masterLinked !== false && isChecked && !$('toggleEnabled')?.checked) {
           nextEnabled = true;
           nextConfig.enabled = true;
           $('toggleEnabled').checked = true;
           updateStatusDot(true);
-        } else if (!isChecked) {
-          const anyOn = CONFIG_TOGGLES.some(([id]) => $(id)?.checked);
+        } else if (options.masterLinked !== false && !isChecked) {
+          const anyOn = CONFIG_TOGGLES.some(([id, _key, _def, toggleOptions = {}]) =>
+            toggleOptions.masterLinked !== false && $(id)?.checked
+          );
           if (!anyOn && $('toggleEnabled')) {
             nextEnabled = false;
             nextConfig.enabled = false;
@@ -727,7 +734,7 @@ const ChromaApp = (() => {
       config.enabled = active;
 
       if (!active) {
-        syncUI({}, false);
+        syncUI(config, false);
       } else {
         const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
         if (activeConfig) {

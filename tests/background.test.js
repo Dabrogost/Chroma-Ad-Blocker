@@ -234,6 +234,19 @@ test('getDefaultDynamicRules', async (t) => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ deAmpLinks: null }))), {});
   });
 
+  await t.test('config validation accepts quiet console booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ quietConsole: true }))),
+      { quietConsole: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ quietConsole: false }))),
+      { quietConsole: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ quietConsole: 'true' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ quietConsole: null }))), {});
+  });
+
   await t.test('tracking URL cleanup rule strips known tracking params on top-level navigations only', () => {
     const rules = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true });
     const cleanupRules = rules.filter(rule => rule.id >= 2000 && rule.id <= 2099);

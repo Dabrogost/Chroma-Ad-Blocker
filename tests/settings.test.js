@@ -2196,6 +2196,66 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(harness.dom.window.document.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
   });
 
+  await t.test('quiet console toggle persists to config', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: {
+          enabled: true,
+          networkBlocking: true,
+          quietConsole: false
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const toggle = harness.dom.window.document.querySelector('#toggleQuietConsole');
+    assert.ok(toggle);
+    assert.strictEqual(toggle.checked, false);
+
+    toggle.checked = true;
+    toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.ok(harness.messages.some(message =>
+      message.type === 'CONFIG_SET' &&
+      message.config?.quietConsole === true
+    ));
+  });
+
+  await t.test('quiet console toggle is independent from master protection', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: {
+          enabled: false,
+          networkBlocking: true,
+          quietConsole: true
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const master = harness.dom.window.document.querySelector('#toggleEnabled');
+    const quiet = harness.dom.window.document.querySelector('#toggleQuietConsole');
+    assert.strictEqual(master.checked, false);
+    assert.strictEqual(quiet.checked, true);
+
+    harness.messages.length = 0;
+    quiet.checked = false;
+    quiet.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.ok(harness.messages.some(message =>
+      message.type === 'CONFIG_SET' &&
+      message.config?.quietConsole === false &&
+      !Object.prototype.hasOwnProperty.call(message.config, 'enabled')
+    ));
+    assert.strictEqual(master.checked, false);
+  });
+
   await t.test('settings config null keeps controls disabled and shows an error', async () => {
     const harness = createSettingsHarness({ responses: { CONFIG_GET: null } });
 

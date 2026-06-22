@@ -45,6 +45,11 @@
     const GL2 = self.WebGL2RenderingContext;
     const AudioBuf = self.AudioBuffer;
     const _Navigator = self.Navigator;
+    const quietConsole = self.__CHROMA_QUIET_CONSOLE__ === true;
+    function warn(message, error) {
+      if (quietConsole) return;
+      try { console.warn(message, error); } catch (_) {}
+    }
 
     // Seed derivation: fresh per-document salt plus full-hostname domain
     // separation. The salt is intentionally not persisted, so revisiting the
@@ -263,7 +268,7 @@
         replaceProtoMethod(OffCtx2D.prototype, 'getImageData', makeGetImageDataWrapper);
       }
     } catch (e) {
-      try { console.warn('[Chroma FPR] canvas vector failed:', e); } catch (_) {}
+      warn('[Chroma FPR] canvas vector failed:', e);
     }
 
     // ─── Vector 2: WebGL ─────
@@ -301,7 +306,7 @@
         replaceProtoMethod(GL2.prototype, 'readPixels', makeReadPixelsWrapper);
       }
     } catch (e) {
-      try { console.warn('[Chroma FPR] webgl vector failed:', e); } catch (_) {}
+      warn('[Chroma FPR] webgl vector failed:', e);
     }
 
     // ─── Vector 3: AudioBuffer farbling ─────
@@ -339,7 +344,7 @@
         });
       }
     } catch (e) {
-      try { console.warn('[Chroma FPR] audio vector failed:', e); } catch (_) {}
+      warn('[Chroma FPR] audio vector failed:', e);
     }
 
     // ─── Vector 4: Navigator clamping ─────
@@ -435,9 +440,11 @@
         }
       }
     } catch (e) {
-      try { console.warn('[Chroma FPR] navigator vector failed:', e); } catch (_) {}
+      warn('[Chroma FPR] navigator vector failed:', e);
     }
   } catch (e) {
-    try { console.warn('[Chroma FPR] installer crashed:', e); } catch (_) {}
+    if (self.__CHROMA_QUIET_CONSOLE__ !== true) {
+      try { console.warn('[Chroma FPR] installer crashed:', e); } catch (_) {}
+    }
   }
 })();

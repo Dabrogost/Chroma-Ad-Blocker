@@ -242,6 +242,11 @@ const ChromaComponents = (() => {
           desc: 'Redirects supported AMP viewer pages to publisher URLs'
         })}
         ${renderToggleRow({
+          inputId: 'toggleQuietConsole',
+          name: 'Quiet DevTools Console',
+          desc: 'Suppresses Chroma scriptlet noise in page DevTools'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleFprWhitelist',
           rowId: 'rowFprWhitelist',
           rowClass: 'fpr-whitelist-row',

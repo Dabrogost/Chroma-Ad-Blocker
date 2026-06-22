@@ -22,6 +22,7 @@ const DEBUG = false;
 // the prototype. userScripts.register is best-effort timing and races inline
 // <script> tags in <head>.
 const FPR_ID = 'chroma_fpr';
+const FPR_QUIET_FILE = 'scriptlets/fingerprintConsoleQuiet.js';
 const FPR_FILE = 'scriptlets/fingerprintRandomization.js';
 const USER_SCRIPTLET_RULES_KEY = 'userScriptletRules';
 const USER_SCRIPTLET_RESOURCES_KEY = 'userScriptletResources';
@@ -169,21 +170,23 @@ function applyUserScriptletArgs(code, args) {
     .replace(/\{\{(\d+)\}\}/g, (_, index) => escapeTemplateArg(safeArgs[Number(index) - 1]));
 }
 
-function buildSubscriptionScriptletCode(fn, args) {
+function buildSubscriptionScriptletCode(fn, args, quietConsole = false) {
   const argsStr = JSON.stringify(Array.isArray(args) ? args : []);
+  const shouldThrow = quietConsole ? 'false' : 'true';
   return `
         try {
           (${fn.toString()})(${argsStr});
           document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit' } }));
         } catch (err) {
           document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error' } }));
-          throw err;
+          if (${shouldThrow}) throw err;
         }
       `;
 }
 
-function buildUserResourceCode(resource, args) {
+function buildUserResourceCode(resource, args, quietConsole = false) {
   const argsStr = JSON.stringify(Array.isArray(args) ? args : []);
+  const shouldThrow = quietConsole ? 'false' : 'true';
   const code = applyUserScriptletArgs(resource?.code || '', args);
   return `
         try {
@@ -195,7 +198,7 @@ function buildUserResourceCode(resource, args) {
           document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'hit' } }));
         } catch (err) {
           document.dispatchEvent(new CustomEvent('__CHROMA_SCRIPTLET_STATS__', { detail: { type: 'error' } }));
-          throw err;
+          if (${shouldThrow}) throw err;
         }
       `;
 }
@@ -233,13 +236,16 @@ async function _syncUserScriptsImpl() {
       subscriptionScriptletRules = [],
       userScriptletRules = [],
       userScriptletResources = {},
-      whitelist = []
+      whitelist = [],
+      config = {}
     } = await chrome.storage.local.get([
       'subscriptionScriptletRules',
       USER_SCRIPTLET_RULES_KEY,
       USER_SCRIPTLET_RESOURCES_KEY,
-      'whitelist'
+      'whitelist',
+      'config'
     ]);
+    const quietConsole = config.quietConsole === true;
     const excludeMatches = whitelistToExcludeMatches(whitelist);
 
     // Clear existing registered scripts
@@ -284,7 +290,7 @@ async function _syncUserScriptsImpl() {
       const script = {
         id: `${SUBSCRIPTION_SCRIPTLET_ID_PREFIX}${++scriptCounter}`,
         matches: matchResult.matches,
-        js: [{ code: buildSubscriptionScriptletCode(fn, rule.args) }],
+        js: [{ code: buildSubscriptionScriptletCode(fn, rule.args, quietConsole) }],
         runAt: normalizeRunAt(rule.runAt),
         world: 'MAIN'
       };
@@ -309,7 +315,7 @@ async function _syncUserScriptsImpl() {
       const script = {
         id: `${USER_SCRIPTLET_ID_PREFIX}${++userScriptCounter}`,
         matches: matchResult.matches,
-        js: [{ code: buildUserResourceCode(resource, rule.args) }],
+        js: [{ code: buildUserResourceCode(resource, rule.args, quietConsole) }],
         runAt: normalizeRunAt(rule.runAt),
         world: 'MAIN',
         allFrames: true
@@ -446,7 +452,7 @@ async function _syncFprImpl() {
     const excludeMatches = whitelistToExcludeMatches(merged);
     const script = {
       id: FPR_ID,
-      js: [FPR_FILE],
+      js: config.quietConsole === true ? [FPR_QUIET_FILE, FPR_FILE] : [FPR_FILE],
       matches: ['<all_urls>'],
       runAt: 'document_start',
       world: 'MAIN',
@@ -510,9 +516,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const oldC = changes.config.oldValue || {};
     const newC = changes.config.newValue || {};
     if (oldC.fingerprintRandomization !== newC.fingerprintRandomization ||
+        oldC.quietConsole !== newC.quietConsole ||
         oldC.enabled !== newC.enabled) {
       if (DEBUG) console.log('[Chroma FPR] Config changed, re-syncing.');
       syncFpr();
+    }
+    if (oldC.quietConsole !== newC.quietConsole) {
+      syncUserScripts();
     }
   }
   if (changes.whitelist) {
