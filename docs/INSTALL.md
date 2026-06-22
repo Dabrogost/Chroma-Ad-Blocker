@@ -46,6 +46,8 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 
 ## Configuration
 
+![Chroma protection layer settings](assets/docs-settings-protection-layers.png)
+
 | Setting | Description | Default |
 |---|---|---|
 | `enabled` | Global switch for all features. | `true` |
@@ -92,6 +94,8 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 ## Health Panel
 
 The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state.
+
+![Chroma health diagnostics panel](assets/docs-settings-health-panel.png)
 
 It covers static DNR rulesets, dynamic rules, tracking URL cleanup, De-AMP redirects, subscriptions, cosmetic filtering, scriptlets, fingerprint randomization, browser privacy hardening, proxy routing, whitelists, and request-log/debug availability.
 
