@@ -24,42 +24,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup Chrome for Testing
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
+
       - name: Run Node, policy, and package checks
         run: npm run test:ci
 
-      - name: Locate Chromium or Chrome for Testing
-        id: browser
+      - name: Select Chrome for Testing
         shell: bash
         run: |
           set -euo pipefail
-          browser="$(command -v chromium || command -v chromium-browser || true)"
-          if [ -z "$browser" ]; then
-            for candidate in \
-              /opt/chrome-for-testing/chrome-linux64/chrome \
-              /opt/google/chrome-for-testing/chrome \
-              "$HOME/chrome-for-testing/chrome-linux64/chrome"; do
-              if [ -x "$candidate" ]; then
-                browser="$candidate"
-                break
-              fi
-            done
-          fi
-          if [ -z "$browser" ]; then
-            echo "No Chromium or Chrome for Testing binary found; skipping E2E."
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          browser="${{ steps.setup-chrome.outputs.chrome-path }}"
+          test -x "$browser"
           echo "Using browser: $browser"
-          echo "available=true" >> "$GITHUB_OUTPUT"
+          "$browser" --version
+          echo "CHROME_FOR_TESTING_PATH=$browser" >> "$GITHUB_ENV"
           echo "CHROME_BIN=$browser" >> "$GITHUB_ENV"
           echo "CHROME_PATH=$browser" >> "$GITHUB_ENV"
 
       - name: Run loaded-extension E2E smoke
-        if: steps.browser.outputs.available == 'true'
         timeout-minutes: 5
         run: npm run test:e2e:smoke
 
       - name: Run full browser E2E
-        if: github.event_name == 'workflow_dispatch' && steps.browser.outputs.available == 'true'
+        if: github.event_name == 'workflow_dispatch'
         timeout-minutes: 15
         run: npm run test:e2e
