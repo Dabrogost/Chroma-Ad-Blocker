@@ -127,6 +127,9 @@
         "*://cooking.nytimes.com/*",
         "*://*.weelicious.com/*",
         "*://*.therecipecritic.com/*",
+        "*://*.acozykitchen.com/*",
+        "*://*.twopeasandtheirpod.com/*",
+        "*://*.halfbakedharvest.com/*",
         "*://*.pcgamer.com/*"
       ],
       "js": [

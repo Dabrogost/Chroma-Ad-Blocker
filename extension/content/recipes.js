@@ -17,7 +17,8 @@
     'smittenkitchen.com', 'budgetbytes.com', 'pinchofyum.com',
     'sallysbakingaddiction.com', 'minimalistbaker.com', 'thewoksoflife.com',
     'americastestkitchen.com', 'cooking.nytimes.com', 'weelicious.com',
-    'therecipecritic.com',
+    'therecipecritic.com', 'acozykitchen.com', 'twopeasandtheirpod.com',
+    'halfbakedharvest.com',
     'pcgamer.com',
   ];
 
