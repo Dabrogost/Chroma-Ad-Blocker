@@ -75,7 +75,10 @@ test('loaded extension E2E smoke', async (t) => {
   await t.test('settings health panel renders diagnostics', async () => {
     const settings = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html');
     const healthText = await waitFor(async () => {
-      const text = await evaluate(browser.cdp, settings.sessionId, 'document.getElementById("healthPanel")?.innerText || ""');
+      const text = await evaluate(browser.cdp, settings.sessionId, `(() => {
+        document.getElementById("healthPanelBody")?.closest("details")?.setAttribute("open", "");
+        return document.getElementById("healthPanel")?.innerText || "";
+      })()`);
       return text.includes('Static rulesets') && text.includes('UserScripts API') ? text : null;
     }, 'settings health panel');
 

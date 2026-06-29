@@ -31,11 +31,117 @@ const ChromaHealthUI = (() => {
   }) {
     let healthLoadSerial = 0;
 
+    function clearElement(element) {
+      if (!element) return;
+      if (globalThis.ChromaDom?.clearElement) {
+        globalThis.ChromaDom.clearElement(element);
+      } else {
+        element.textContent = '';
+      }
+    }
+
+    function toCount(value) {
+      const count = Number(value);
+      return Number.isFinite(count) && count > 0 ? count : 0;
+    }
+
     function addHealthMetric(parent, label, value, state = '') {
       const row = appendElement(parent, 'div', 'health-metric');
       appendElement(row, 'span', 'health-metric__label', label);
       appendElement(row, 'span', state ? `health-metric__value health-metric__value--${state}` : 'health-metric__value', value);
       return row;
+    }
+
+    function addHealthSummaryChip(parent, label, value, state = 'disabled') {
+      const chip = appendElement(parent, 'div', `health-summary-chip health-summary-chip--${state}`);
+      appendElement(chip, 'span', 'health-summary-chip__label', label);
+      appendElement(chip, 'span', 'health-summary-chip__value', value);
+      return chip;
+    }
+
+    function setHealthSummaryLoading() {
+      const summary = $('healthSummary');
+      if (!summary) return;
+      summary.className = 'health-summary is-loading';
+      clearElement(summary);
+      appendElement(summary, 'span', 'health-summary-chip health-summary-chip--loading', 'Loading health...');
+    }
+
+    function renderHealthSummary(health, networkBlockingActive = false) {
+      const summary = $('healthSummary');
+      if (!summary) return;
+      summary.className = 'health-summary';
+      clearElement(summary);
+
+      if (!health) {
+        addHealthSummaryChip(summary, 'Health', 'Unavailable', 'error');
+        return;
+      }
+
+      const subscriptionsTotal = toCount(health.subscriptions?.total);
+      const subscriptionsEnabled = toCount(health.subscriptions?.enabled);
+      const subscriptionErrors = toCount(health.subscriptions?.withErrors);
+      addHealthSummaryChip(
+        summary,
+        'Core',
+        networkBlockingActive ? 'Active' : 'Off',
+        networkBlockingActive ? 'ok' : 'disabled'
+      );
+      addHealthSummaryChip(
+        summary,
+        'Lists',
+        subscriptionsTotal ? `${formatCount(subscriptionsEnabled)} / ${formatCount(subscriptionsTotal)}` : 'None',
+        subscriptionErrors ? 'warning' : (subscriptionsTotal ? 'ok' : 'disabled')
+      );
+
+      const scriptlets = health.scriptlets || {};
+      const storedScriptlets = toCount(scriptlets.storedRuleCount);
+      const registeredScriptlets = toCount(scriptlets.registeredUserScriptCount);
+      let scriptletValue = `${formatCount(registeredScriptlets)} active`;
+      let scriptletState = 'ok';
+      if (scriptlets.apiAvailable === false) {
+        scriptletValue = storedScriptlets ? 'Needs API' : 'Unavailable';
+        scriptletState = storedScriptlets ? 'warning' : 'disabled';
+      } else if (storedScriptlets && registeredScriptlets === 0) {
+        scriptletValue = 'Check setup';
+        scriptletState = 'warning';
+      }
+      addHealthSummaryChip(summary, 'Scriptlets', scriptletValue, scriptletState);
+
+      const proxy = health.proxy || {};
+      let proxyValue = 'Off';
+      let proxyState = 'disabled';
+      if (proxy.globalProxyEnabled) {
+        proxyValue = proxy.globalProxyConfigured ? 'Global' : 'Check setup';
+        proxyState = proxy.globalProxyConfigured ? 'ok' : 'warning';
+      } else if (toCount(proxy.routedDomainCount)) {
+        proxyValue = `${formatCount(proxy.routedDomainCount)} routed`;
+        proxyState = 'ok';
+      } else if (toCount(proxy.acceptedCount)) {
+        proxyValue = `${formatCount(proxy.acceptedCount)} ready`;
+        proxyState = 'ok';
+      }
+      addHealthSummaryChip(summary, 'Proxy', proxyValue, proxyState);
+
+      const browserPrivacy = health.browserPrivacy || {};
+      addHealthSummaryChip(
+        summary,
+        'Privacy',
+        browserPrivacy.enabled
+          ? (browserPrivacy.active ? 'Hardened' : `${formatCount(browserPrivacy.hardenedCount)} / ${formatCount(browserPrivacy.totalCount)}`)
+          : 'Off',
+        browserPrivacy.enabled ? (browserPrivacy.active ? 'ok' : 'warning') : 'disabled'
+      );
+
+      const issues = Array.isArray(health.overall?.issues) ? health.overall.issues : [];
+      const hasErrors = issues.some(issue => normalizeHealthIssueSeverity(issue.severity) === 'error');
+      const hasWarnings = issues.some(issue => normalizeHealthIssueSeverity(issue.severity) === 'warning');
+      addHealthSummaryChip(
+        summary,
+        'Issues',
+        issues.length ? `${formatCount(issues.length)} issue${issues.length === 1 ? '' : 's'}` : 'Clear',
+        hasErrors ? 'error' : (hasWarnings ? 'warning' : 'ok')
+      );
     }
 
     function addHealthSection(parent, title, metrics) {
@@ -186,6 +292,7 @@ const ChromaHealthUI = (() => {
 
       const loadId = ++healthLoadSerial;
       setSectionLoading('healthPanelBody');
+      setHealthSummaryLoading();
       if (refreshBtn) {
         refreshBtn.disabled = true;
         refreshBtn.textContent = 'Refreshing...';
@@ -198,11 +305,7 @@ const ChromaHealthUI = (() => {
         console.error('Chroma health failed to load:', error);
       }
       if (loadId !== healthLoadSerial) return;
-      if (globalThis.ChromaDom?.clearElement) {
-        globalThis.ChromaDom.clearElement(body);
-      } else {
-        body.textContent = '';
-      }
+      clearElement(body);
 
       if (!health) {
         if (overallLabel) {
@@ -210,6 +313,7 @@ const ChromaHealthUI = (() => {
           overallLabel.textContent = 'Unavailable';
         }
         if (versionText) versionText.textContent = 'Health endpoint did not respond.';
+        renderHealthSummary(null);
         appendElement(body, 'div', 'health-empty', 'Could not load health diagnostics.');
         setSectionReady('healthPanelBody');
         if (refreshBtn) {
@@ -231,6 +335,7 @@ const ChromaHealthUI = (() => {
       }
       const networkBlockingActive = health.master?.networkBlocking && health.master?.enabled;
       const deAmpLinksActive = health.master?.deAmpLinks && health.master?.enabled;
+      renderHealthSummary(health, networkBlockingActive);
 
       addHealthSection(body, 'Core', [
         ['Network blocking', networkBlockingActive ? 'Active' : 'Disabled', networkBlockingActive ? 'ok' : 'disabled'],

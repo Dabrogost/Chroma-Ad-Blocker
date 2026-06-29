@@ -192,7 +192,7 @@ const ChromaProxyUI = (() => {
 
     const actions = appendElement(body, 'div', 'proxy-actions');
     if (accepted) {
-      appendProxyButton(actions, 'reset-btn proxy-refresh-btn compact-action-btn', '\u21bb', 'Refresh Connection');
+      appendProxyButton(actions, 'reset-btn proxy-refresh-btn compact-action-btn action-btn', 'Test', 'Test Connection');
       appendProxyButton(actions, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback');
       appendSwitch(actions, 'proxy-enabled-toggle', 'Enable Proxy Routing');
     }
@@ -253,8 +253,8 @@ const ChromaProxyUI = (() => {
     appendElement(inputGroup, 'div', 'proxy-error proxy-grid-wide is-hidden');
 
     const formActions = appendElement(inputGroup, 'div', 'proxy-form-actions');
-    appendProxyButton(formActions, 'reset-btn proxy-accept-btn form-submit-btn', 'Accept Settings');
-    appendProxyButton(formActions, 'reset-btn proxy-del-server-btn inline-danger-btn compact-action-btn', 'Delete', 'Delete Server');
+    appendProxyButton(formActions, 'reset-btn proxy-accept-btn form-submit-btn action-btn action-btn--primary', 'Accept Settings');
+    appendProxyButton(formActions, 'reset-btn proxy-del-server-btn inline-danger-btn compact-action-btn action-btn action-btn--danger', 'Delete Server', 'Delete Server');
 
     const activeGroup = appendElement(card, 'div', `proxy-active-group ${isAccepted ? '' : 'is-hidden'}`);
     activeGroup.id = activeGroupId;
@@ -262,10 +262,10 @@ const ChromaProxyUI = (() => {
     appendElement(main, 'div', 'proxy-title', `Active: ${pc.name || 'Server ' + (index + 1)}`);
     appendElement(main, 'div', 'proxy-endpoint', `${pc.host}:${pc.port}`);
     appendStatusLine(main, 'Checking...', line => {
-      appendProxyButton(line, 'reset-btn proxy-edit-btn compact-action-btn', 'Edit', 'Edit Server');
-      appendProxyButton(line, 'reset-btn proxy-refresh-btn compact-action-btn', '\u21bb', 'Refresh Connection');
+      appendProxyButton(line, 'reset-btn proxy-edit-btn compact-action-btn action-btn', 'Edit', 'Edit Server');
+      appendProxyButton(line, 'reset-btn proxy-refresh-btn compact-action-btn action-btn', 'Test', 'Test Connection');
       appendProxyButton(line, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback');
-      appendProxyButton(line, 'reset-btn proxy-clear-settings-btn inline-danger-btn compact-action-btn', 'Clear', 'Clear Settings');
+      appendProxyButton(line, 'reset-btn proxy-clear-settings-btn inline-danger-btn compact-action-btn action-btn action-btn--danger', 'Clear Config', 'Clear Settings');
     });
 
     const enabledControl = appendElement(activeGroup, 'div', 'proxy-enabled-control');
@@ -273,7 +273,7 @@ const ChromaProxyUI = (() => {
 
     const domainTools = appendElement(card, 'div', 'proxy-grid-full proxy-domain-tools');
     appendInput(domainTools, 'text', 'chroma-input chroma-input--compact proxy-domain-input', '', 'Domain (e.g. youtube.com)');
-    appendProxyButton(domainTools, 'reset-btn proxy-add-domain-btn compact-action-btn', 'ADD', 'Add routed domain');
+    appendProxyButton(domainTools, 'reset-btn proxy-add-domain-btn compact-action-btn action-btn', 'Add Domain', 'Add routed domain');
     appendElement(card, 'div', 'proxy-domain-list');
   }
 
@@ -293,7 +293,7 @@ const ChromaProxyUI = (() => {
     }
 
     const actions = appendElement(row, 'div', 'proxy-domain-actions');
-    const removeBtn = appendElement(actions, 'button', 'reset-btn d-del-btn inline-danger-btn compact-action-btn', 'Remove');
+    const removeBtn = appendElement(actions, 'button', 'reset-btn d-del-btn inline-danger-btn compact-action-btn action-btn action-btn--danger', 'Remove Domain');
     removeBtn.title = 'Remove Domain';
     appendElement(actions, 'span', 'inline-separator');
 

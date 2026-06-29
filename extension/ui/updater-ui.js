@@ -116,6 +116,13 @@ const ChromaUpdaterUI = (() => {
     updateNextActionPrompt();
   }
 
+  function formatManualCheckReason(reason) {
+    const text = String(reason || '').trim();
+    if (!text) return 'Checked just now. No newer release found.';
+    if (/^Checked just now\./i.test(text)) return text;
+    return `Checked just now. ${text}`;
+  }
+
   function enterCurrentVersionState(resultOrReason) {
     const reason = typeof resultOrReason === 'string' ? resultOrReason : resultOrReason?.reason;
     currentVersionKnown = true;
@@ -187,8 +194,9 @@ const ChromaUpdaterUI = (() => {
     const el = $('updaterResult');
     if (!el) return;
     el.textContent = message || '';
-    el.classList.remove('updater-result--ok', 'updater-result--error', 'updater-result--neutral');
+    el.classList.remove('updater-result--ok', 'updater-result--error', 'updater-result--neutral', 'updater-result--checking');
     el.classList.add(`updater-result--${state}`);
+    el.setAttribute('aria-busy', state === 'checking' ? 'true' : 'false');
   }
 
   function setReloadActionVisible(visible) {
@@ -1043,11 +1051,14 @@ const ChromaUpdaterUI = (() => {
   }
 
   async function inspectLatestRelease() {
+    const preserveCurrentState = currentVersionKnown;
     setBusy(true);
     setStepState('updaterStepRelease', 'pending');
-    setText('updaterStatusTitle', 'Checking Latest Release');
-    setText('updaterStatusDesc', 'Verifying the direct GitHub ZIP asset and updates.json before downloading the package.');
-    setResult('Checking GitHub release metadata...', 'neutral');
+    if (!preserveCurrentState) {
+      setText('updaterStatusTitle', 'Checking Latest Release');
+      setText('updaterStatusDesc', 'Verifying the direct GitHub ZIP asset and updates.json before downloading the package.');
+    }
+    setResult('Checking GitHub release metadata...', 'checking');
 
     try {
       const result = await notifyBackground({ type: MSG.UPDATE_CHECK, options: { force: true } });
@@ -1061,7 +1072,7 @@ const ChromaUpdaterUI = (() => {
         setText('updaterStatusTitle', `Release v${result.latestVersion} Ready`);
         setText('updaterStatusDesc', 'A direct release ZIP and updates.json are available for guided install.');
       } else if (validation.ok) {
-        enterCurrentVersionState(validation.reason);
+        enterCurrentVersionState(formatManualCheckReason(validation.reason));
         return validation;
       } else {
         setText('updaterStatusTitle', 'Release Assets Not Verified');
