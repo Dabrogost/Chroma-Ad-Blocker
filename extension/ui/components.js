@@ -188,9 +188,29 @@ const ChromaComponents = (() => {
     `;
   }
 
+  function renderSettingsNav() {
+    const links = [
+      ['#protectionSection', 'Protection'],
+      ['#filterListsSection', 'Lists'],
+      ['#proxySection', 'Proxy'],
+      ['#healthSection', 'Health'],
+      ['#statsSection', 'Stats'],
+      ['#updatesSection', 'Updates'],
+      ['#userScriptletsSection', 'Scriptlets'],
+      ['#zapperRulesSection', 'Zapper'],
+      ['#requestLogSection', 'Log']
+    ];
+
+    return `
+      <nav class="settings-nav" aria-label="Settings sections">
+        ${links.map(([href, label]) => `<a class="settings-nav__link" href="${href}">${label}</a>`).join('')}
+      </nav>
+    `;
+  }
+
   function renderProtectionControls() {
     return `
-      <div class="section-title">Protection Layers</div>
+      <div class="section-title" id="protectionSection">Protection Layers</div>
       <div class="protection-list">
         ${renderToggleRow({
           inputId: 'toggleNetwork',
@@ -294,7 +314,7 @@ const ChromaComponents = (() => {
 
   function renderFilterListShell({ settingsMode = false } = {}) {
     return `
-      <div class="section-title section-title--inline">
+      <div class="section-title section-title--inline" id="filterListsSection">
         <span class="section-title-text">Filter Lists</span>
         <button id="addSubscriptionBtn" class="reset-btn icon-action-btn" title="Add Filter List" aria-label="Add Filter List" type="button">
           ${plusIcon}
@@ -306,8 +326,8 @@ const ChromaComponents = (() => {
           <input type="text" id="newSubUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/list.txt" />
           <div id="newSubError" class="form-error is-hidden"></div>
           <div class="form-actions">
-            <button id="newSubAddBtn" class="reset-btn form-submit-btn">Add</button>
-            <button id="newSubCancelBtn" class="reset-btn inline-danger-btn" title="Cancel" aria-label="Cancel adding filter list" type="button">&times;</button>
+            <button id="newSubAddBtn" class="reset-btn form-submit-btn action-btn action-btn--primary">Add</button>
+            <button id="newSubCancelBtn" class="reset-btn inline-danger-btn compact-action-btn action-btn action-btn--danger" title="Cancel" aria-label="Cancel adding filter list" type="button">Cancel</button>
           </div>
         </div>
       </div>
@@ -323,18 +343,27 @@ const ChromaComponents = (() => {
 
   function renderHealthPanelShell() {
     return `
-      <div class="section-title section-title--spaced">Health</div>
+      <div class="section-title section-title--spaced" id="healthSection">Health</div>
       <div class="protection-list health-panel" id="healthPanel">
         <div class="health-header">
           <div class="toggle-info">
             <div class="name">Overall: <span id="healthOverallLabel" class="health-status health-status--disabled">Loading</span></div>
             <div class="desc" id="healthVersionText">Checking protection layers...</div>
           </div>
-          <button class="reset-btn compact-action-btn" id="refreshHealthBtn" disabled>Refresh Health</button>
+          <button class="reset-btn compact-action-btn action-btn" id="refreshHealthBtn" disabled>Refresh Health</button>
         </div>
-        <div class="health-grid is-loading" id="healthPanelBody">
-          ${renderHealthSkeleton()}
+        <div class="health-summary is-loading" id="healthSummary" aria-label="Health summary">
+          <span class="health-summary-chip health-summary-chip--loading">Loading health...</span>
         </div>
+        <details class="settings-detail health-detail">
+          <summary class="settings-detail__summary">
+            <span class="settings-detail__title">Diagnostic details</span>
+            <span class="settings-detail__hint" aria-hidden="true"></span>
+          </summary>
+          <div class="health-grid is-loading" id="healthPanelBody">
+            ${renderHealthSkeleton()}
+          </div>
+        </details>
       </div>
     `;
   }
@@ -344,7 +373,7 @@ const ChromaComponents = (() => {
       <div class="section-title section-title--spaced" id="updatesSection">Updates</div>
       <div class="protection-list updater-panel" id="updaterPanel">
         <div class="updater-header">
-          <div class="toggle-info">
+          <div class="toggle-info updater-status-copy">
             <div class="name" id="updaterStatusTitle">Update Setup</div>
             <div class="desc" id="updaterStatusDesc">Choose the unpacked Chroma folder that contains manifest.json.</div>
           </div>
@@ -380,12 +409,32 @@ const ChromaComponents = (() => {
           </div>
         </div>
         <div class="updater-actions">
-          <button class="reset-btn compact-action-btn" id="checkLatestReleaseBtn" type="button">Check Latest Release</button>
-          <button class="reset-btn compact-action-btn" id="chooseInstallFolderBtn" type="button">Choose Chroma Folder</button>
-          <button class="reset-btn compact-action-btn" id="inspectPackageBtn" type="button">Inspect Package ZIP</button>
-          <button class="reset-btn compact-action-btn" id="buildInstallPlanBtn" type="button">Build Install Plan</button>
-          <button class="reset-btn compact-action-btn" id="runFolderProbeBtn" type="button" disabled>Run Write Probe</button>
-          <button class="reset-btn compact-action-btn" id="installUpdateBtn" type="button" disabled>Install Update</button>
+          <div class="updater-action-group updater-action-group--release">
+            <div class="updater-action-group__label">Release</div>
+            <div class="updater-action-buttons">
+              <button class="reset-btn compact-action-btn action-btn" id="checkLatestReleaseBtn" type="button">Check Latest Release</button>
+            </div>
+          </div>
+          <div class="updater-action-group updater-action-group--folder">
+            <div class="updater-action-group__label">Folder</div>
+            <div class="updater-action-buttons">
+              <button class="reset-btn compact-action-btn action-btn" id="chooseInstallFolderBtn" type="button">Choose Chroma Folder</button>
+            </div>
+          </div>
+          <div class="updater-action-group updater-action-group--package">
+            <div class="updater-action-group__label">Package</div>
+            <div class="updater-action-buttons">
+              <button class="reset-btn compact-action-btn action-btn" id="inspectPackageBtn" type="button">Inspect Package ZIP</button>
+              <button class="reset-btn compact-action-btn action-btn" id="buildInstallPlanBtn" type="button">Build Install Plan</button>
+              <button class="reset-btn compact-action-btn action-btn" id="runFolderProbeBtn" type="button" disabled>Run Write Probe</button>
+            </div>
+          </div>
+          <div class="updater-action-group updater-action-group--install">
+            <div class="updater-action-group__label">Install</div>
+            <div class="updater-action-buttons">
+              <button class="reset-btn compact-action-btn action-btn action-btn--primary" id="installUpdateBtn" type="button" disabled>Install Update</button>
+            </div>
+          </div>
         </div>
         <div class="updater-plan" id="updaterPlanSummary" hidden>
           <div class="updater-plan__counts" aria-label="Install plan summary">
@@ -416,7 +465,7 @@ const ChromaComponents = (() => {
         </div>
         <div class="updater-result-row">
           <div class="desc updater-result" id="updaterResult" role="status" aria-live="polite"></div>
-          <button class="reset-btn compact-action-btn" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
+          <button class="reset-btn compact-action-btn action-btn action-btn--primary" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
         </div>
       </div>
     `;
@@ -424,7 +473,7 @@ const ChromaComponents = (() => {
 
   function renderStatisticsShell({ settingsMode = false } = {}) {
     return `
-      <div class="section-title section-title--spaced">Protection Intelligence</div>
+      <div class="section-title section-title--spaced" id="statsSection">Protection Intelligence</div>
       <div class="protection-list stats-panel" id="statisticsPanel">
         <div class="stats-panel-header">
           <div class="toggle-info">
@@ -444,75 +493,89 @@ const ChromaComponents = (() => {
           </div>
         </div>
 
-        <div class="stats-subsection">
-          <div class="stats-subsection-title">Sites</div>
-          <div class="stats-list is-loading" id="statsSitesList">
-            ${renderSkeletonRows(4)}
-          </div>
-        </div>
+        <details class="settings-detail stats-detail">
+          <summary class="settings-detail__summary">
+            <span class="settings-detail__title">Activity detail</span>
+            <span class="settings-detail__hint" aria-hidden="true"></span>
+          </summary>
 
-        <div class="stats-subsection">
-          <div class="stats-subsection-title">Rules</div>
-          <div class="stats-list is-loading" id="statsRulesList">
-            ${renderSkeletonRows(4)}
-          </div>
-        </div>
-
-        <div class="stats-subsection">
-          <div class="stats-subsection-title">Timeline</div>
-          <div class="stats-timeline is-loading" id="statsTimelineList">
-            ${renderSkeletonBars(5)}
-          </div>
-        </div>
-
-        <div class="stats-subsection">
-          <div class="stats-subsection-title">Events</div>
-          <div class="stats-list is-loading" id="statsEventsList">
-            ${renderSkeletonRows(4)}
-          </div>
-        </div>
-
-        <div class="stats-subsection stats-privacy">
-          <div class="stats-subsection-title">Privacy</div>
-          <div class="stats-controls-grid">
-            <select id="statsModeSelect" class="chroma-input chroma-input--compact control-pending" disabled>
-              <option value="basic">Basic: totals only</option>
-              <option value="aggregated">Aggregated: domains and rule sources</option>
-              <option value="debug">Debug: include recent full URLs</option>
-            </select>
-            <select id="statsRetentionSelect" class="chroma-input chroma-input--compact control-pending" disabled>
-              <option value="30">30 days</option>
-              <option value="90">90 days</option>
-              <option value="180">180 days</option>
-              <option value="365">365 days</option>
-            </select>
-          </div>
-          <div class="stats-actions">
-            <button class="reset-btn compact-action-btn" id="resetAllStats">Reset all stats</button>
-            <button class="reset-btn compact-action-btn" id="resetSiteStats">Reset site stats</button>
-            <button class="reset-btn compact-action-btn" id="resetRequestLogOnly">Reset debug request log</button>
-            <button class="reset-btn compact-action-btn" id="exportStatsJson">Export JSON</button>
-          </div>
-        </div>
-
-        ${settingsMode ? `
-          <div class="stats-subsection settings-backup">
-            <div class="stats-subsection-title">Settings Backup</div>
-            <div class="stats-actions">
-              <button class="reset-btn compact-action-btn" id="exportConfigJson">Export settings</button>
-              <button class="reset-btn compact-action-btn" id="importConfigJson">Import settings</button>
-              <input type="file" id="importConfigFile" class="visually-hidden" accept="application/json,.json" />
+          <div class="stats-subsection">
+            <div class="stats-subsection-title">Sites</div>
+            <div class="stats-list is-loading" id="statsSitesList">
+              ${renderSkeletonRows(4)}
             </div>
-            <div class="desc settings-backup-status" id="settingsBackupStatus"></div>
           </div>
-        ` : ''}
+
+          <div class="stats-subsection">
+            <div class="stats-subsection-title">Rules</div>
+            <div class="stats-list is-loading" id="statsRulesList">
+              ${renderSkeletonRows(4)}
+            </div>
+          </div>
+
+          <div class="stats-subsection">
+            <div class="stats-subsection-title">Timeline</div>
+            <div class="stats-timeline is-loading" id="statsTimelineList">
+              ${renderSkeletonBars(5)}
+            </div>
+          </div>
+
+          <div class="stats-subsection">
+            <div class="stats-subsection-title">Events</div>
+            <div class="stats-list is-loading" id="statsEventsList">
+              ${renderSkeletonRows(4)}
+            </div>
+          </div>
+        </details>
+
+        <details class="settings-detail stats-detail">
+          <summary class="settings-detail__summary">
+            <span class="settings-detail__title">Privacy and exports</span>
+            <span class="settings-detail__hint" aria-hidden="true"></span>
+          </summary>
+
+          <div class="stats-subsection stats-privacy">
+            <div class="stats-subsection-title">Privacy</div>
+            <div class="stats-controls-grid">
+              <select id="statsModeSelect" class="chroma-input chroma-input--compact control-pending" disabled>
+                <option value="basic">Basic: totals only</option>
+                <option value="aggregated">Aggregated: domains and rule sources</option>
+                <option value="debug">Debug: include recent full URLs</option>
+              </select>
+              <select id="statsRetentionSelect" class="chroma-input chroma-input--compact control-pending" disabled>
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+                <option value="180">180 days</option>
+                <option value="365">365 days</option>
+              </select>
+            </div>
+            <div class="stats-actions">
+              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetAllStats">Reset all stats</button>
+              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetSiteStats">Reset site stats</button>
+              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetRequestLogOnly">Reset request log</button>
+              <button class="reset-btn compact-action-btn action-btn" id="exportStatsJson">Export JSON</button>
+            </div>
+          </div>
+
+          ${settingsMode ? `
+            <div class="stats-subsection settings-backup">
+              <div class="stats-subsection-title">Settings Backup</div>
+              <div class="stats-actions">
+                <button class="reset-btn compact-action-btn action-btn" id="exportConfigJson">Export settings</button>
+                <button class="reset-btn compact-action-btn action-btn" id="importConfigJson">Import settings</button>
+                <input type="file" id="importConfigFile" class="visually-hidden" accept="application/json,.json" />
+              </div>
+              <div class="desc settings-backup-status" id="settingsBackupStatus"></div>
+            </div>
+          ` : ''}
+        </details>
       </div>
     `;
   }
 
   function renderUserScriptletsShell() {
     return `
-      <div class="section-title section-title--inline">
+      <div class="section-title section-title--inline" id="userScriptletsSection">
         <span class="section-title-text">User Scriptlets</span>
         <button id="addUserScriptletSourceBtn" class="reset-btn compact-action-btn user-scriptlet-add-btn" title="Add Resource URL" aria-label="Add Resource URL" type="button">
           ${plusIcon}
@@ -523,14 +586,32 @@ const ChromaComponents = (() => {
         <div class="user-scriptlet-warning">
           User scriptlet resources run code you choose through Chrome's User Scripts API. Add only resources you trust.
         </div>
+        <div class="user-scriptlet-overview is-loading" id="userScriptletOverview" aria-label="User scriptlet summary">
+          <div class="user-scriptlet-overview-card">
+            <span class="user-scriptlet-overview-card__label">Sources</span>
+            <span class="user-scriptlet-overview-card__value" id="userScriptletSourceCount">...</span>
+          </div>
+          <div class="user-scriptlet-overview-card">
+            <span class="user-scriptlet-overview-card__label">Resources</span>
+            <span class="user-scriptlet-overview-card__value" id="userScriptletResourceCount">...</span>
+          </div>
+          <div class="user-scriptlet-overview-card">
+            <span class="user-scriptlet-overview-card__label">Rules</span>
+            <span class="user-scriptlet-overview-card__value" id="userScriptletRuleCount">...</span>
+          </div>
+          <div class="user-scriptlet-overview-card">
+            <span class="user-scriptlet-overview-card__label">Missing</span>
+            <span class="user-scriptlet-overview-card__value" id="userScriptletMissingCount">...</span>
+          </div>
+        </div>
         <div id="addUserScriptletSourceForm" class="user-scriptlet-source-form is-hidden">
           <div class="add-subscription-grid">
             <input type="text" id="newUserScriptletSourceName" class="chroma-input chroma-input--compact" placeholder="Name (optional)" />
             <input type="text" id="newUserScriptletSourceUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/scriptlet-resources.js" />
             <div id="newUserScriptletSourceError" class="form-error is-hidden"></div>
             <div class="form-actions">
-              <button id="newUserScriptletSourceAddBtn" class="reset-btn form-submit-btn">Add</button>
-              <button id="newUserScriptletSourceCancelBtn" class="reset-btn inline-danger-btn" title="Cancel" aria-label="Cancel adding user scriptlet resource" type="button">&times;</button>
+              <button id="newUserScriptletSourceAddBtn" class="reset-btn form-submit-btn action-btn action-btn--primary">Add</button>
+              <button id="newUserScriptletSourceCancelBtn" class="reset-btn inline-danger-btn compact-action-btn action-btn action-btn--danger" title="Cancel" aria-label="Cancel adding user scriptlet resource" type="button">Cancel</button>
             </div>
           </div>
         </div>
@@ -544,14 +625,20 @@ const ChromaComponents = (() => {
             ${renderSkeletonLine('skeleton-line--long')}
           </div>
         </div>
-        <div class="user-scriptlet-rules">
-          <div class="user-scriptlet-subsection-title">Rules</div>
-          <textarea id="userScriptletRulesText" class="chroma-input user-scriptlet-rules-text control-pending" spellcheck="false" readonly aria-busy="true" placeholder="example.com##+js(resource-name)&#10;another.example##+js(other-resource)"></textarea>
-          <div class="user-scriptlet-rule-actions">
-            <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status">Loading rules...</div>
-            <button id="saveUserScriptletRulesBtn" class="reset-btn compact-action-btn control-pending" type="button" disabled>Save Rules</button>
+        <details class="settings-detail user-scriptlet-rules-detail">
+          <summary class="settings-detail__summary">
+            <span class="settings-detail__title">Rules editor</span>
+            <span class="settings-detail__hint" aria-hidden="true"></span>
+          </summary>
+          <div class="user-scriptlet-rules">
+            <div class="user-scriptlet-subsection-title">Rules</div>
+            <textarea id="userScriptletRulesText" class="chroma-input user-scriptlet-rules-text control-pending" spellcheck="false" readonly aria-busy="true" placeholder="example.com##+js(resource-name)&#10;another.example##+js(other-resource)"></textarea>
+            <div class="user-scriptlet-rule-actions">
+              <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status">Loading rules...</div>
+              <button id="saveUserScriptletRulesBtn" class="reset-btn compact-action-btn action-btn action-btn--primary control-pending" type="button" disabled>Save Rules</button>
+            </div>
           </div>
-        </div>
+        </details>
       </div>
     `;
   }
@@ -574,24 +661,68 @@ const ChromaComponents = (() => {
 
   function renderLocalZapperShell() {
     return `
-      <div class="section-title section-title--spaced">Local Zapper Rules</div>
-      <div class="protection-list" id="localZapperRules">
-        ${renderSkeletonRows(3, 'zapper-skeleton-row')}
+      <div class="section-title section-title--spaced" id="zapperRulesSection">Local Zapper Rules</div>
+      <div class="protection-list zapper-rules-panel">
+        <div class="zapper-overview" id="zapperOverview" aria-label="Local zapper summary">
+          <div class="zapper-overview-card">
+            <span class="zapper-overview-card__label">Domains</span>
+            <span class="zapper-overview-card__value" id="zapperDomainCount">0</span>
+          </div>
+          <div class="zapper-overview-card">
+            <span class="zapper-overview-card__label">Rules</span>
+            <span class="zapper-overview-card__value" id="zapperRuleCount">0</span>
+          </div>
+          <div class="zapper-overview-card">
+            <span class="zapper-overview-card__label">Enabled</span>
+            <span class="zapper-overview-card__value" id="zapperEnabledCount">0</span>
+          </div>
+          <div class="zapper-overview-card">
+            <span class="zapper-overview-card__label">Paused</span>
+            <span class="zapper-overview-card__value" id="zapperDisabledCount">0</span>
+          </div>
+        </div>
+        <details class="settings-detail zapper-rules-detail" open>
+          <summary class="settings-detail__summary">
+            <span class="settings-detail__title">Saved selectors <span id="zapperRulesSummaryCount">0</span></span>
+            <span class="settings-detail__hint" aria-hidden="true"></span>
+          </summary>
+          <div class="zapper-rule-list" id="localZapperRules">
+            ${renderSkeletonRows(3, 'zapper-skeleton-row')}
+          </div>
+        </details>
       </div>
     `;
   }
 
   function renderRequestLogShell() {
     return `
-      <div class="section-title section-title--spaced">Request Log</div>
-      <div class="protection-list" id="requestLogPanel">
+      <div class="section-title section-title--spaced" id="requestLogSection">Request Log</div>
+      <div class="protection-list request-log-panel" id="requestLogPanel">
+        <div class="request-log-summary" id="requestLogSummary" aria-label="Request log summary">
+          <div class="request-log-summary-card">
+            <span class="request-log-summary-card__label">Entries</span>
+            <span class="request-log-summary-card__value" id="logEntryCount">0</span>
+          </div>
+          <div class="request-log-summary-card">
+            <span class="request-log-summary-card__label">Types</span>
+            <span class="request-log-summary-card__value" id="logTypeCount">0</span>
+          </div>
+          <div class="request-log-summary-card">
+            <span class="request-log-summary-card__label">Latest</span>
+            <span class="request-log-summary-card__value request-log-summary-card__value--small" id="logLatestTime">None</span>
+          </div>
+          <div class="request-log-summary-card">
+            <span class="request-log-summary-card__label">State</span>
+            <span class="request-log-summary-card__value request-log-summary-card__value--small" id="logStreamState">Live</span>
+          </div>
+        </div>
         <div class="log-header" id="logToggleRow" role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries">
           <div class="toggle-info">
             <div class="name">Matched Requests</div>
-            <div class="desc">Rules fired on this session</div>
+            <div class="desc" id="logHeaderDesc">Rules fired on this session</div>
           </div>
           <div class="log-actions">
-            <button class="reset-btn compact-action-btn log-freeze-btn" id="logFreezeBtn" title="Freeze request log" aria-label="Freeze request log" type="button">Freeze</button>
+            <button class="reset-btn compact-action-btn action-btn log-freeze-btn" id="logFreezeBtn" title="Freeze request log" aria-label="Freeze request log" type="button">Freeze</button>
             <button class="log-toggle-btn" id="logToggleBtn" title="Expand log" aria-label="Expand request log" type="button">&#x25bc;</button>
           </div>
         </div>
@@ -605,7 +736,7 @@ const ChromaComponents = (() => {
   function renderFooter({ showResetStats = true } = {}) {
     return `
       <footer>
-        ${showResetStats ? '<button class="reset-btn" id="resetStats">Reset Stats</button>' : ''}
+        ${showResetStats ? '<button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetStats">Reset Stats</button>' : ''}
         <div class="footer-right">
           <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" target="_blank" class="github-link" title="View Source on GitHub">
             ${githubIcon}
@@ -623,13 +754,14 @@ const ChromaComponents = (() => {
     const content = `
       ${renderHeader()}
       ${renderStats({ showSettingsIcon: !settingsMode })}
-      ${settingsMode ? renderHealthPanelShell() : ''}
-      ${settingsMode ? renderUpdaterShell() : ''}
-      ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
+      ${settingsMode ? renderSettingsNav() : ''}
       ${settingsMode ? renderProtectionControls() : renderSiteQuickActions()}
       ${settingsMode ? renderFilterListShell({ settingsMode }) : ''}
-      ${settingsMode ? renderUserScriptletsShell() : ''}
       ${settingsMode ? renderProxyShell({ settingsMode }) : ''}
+      ${settingsMode ? renderHealthPanelShell() : ''}
+      ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
+      ${settingsMode ? renderUpdaterShell() : ''}
+      ${settingsMode ? renderUserScriptletsShell() : ''}
       ${settingsMode ? renderLocalZapperShell() : ''}
       ${settingsMode ? renderRequestLogShell() : ''}
       ${renderFooter({ showResetStats: settingsMode })}
@@ -641,6 +773,7 @@ const ChromaComponents = (() => {
   return {
     renderHeader,
     renderStats,
+    renderSettingsNav,
     renderSiteQuickActions,
     renderStatisticsShell,
     renderUpdaterShell,

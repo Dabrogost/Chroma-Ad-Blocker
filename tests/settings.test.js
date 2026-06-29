@@ -663,7 +663,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assertNextUpdaterAction(doc, 'inspectPackageBtn');
   });
 
-  await t.test('updater keeps current-version layout while a forced update check is pending', async () => {
+  await t.test('updater keeps current-version layout and copy while a forced update check is pending', async () => {
     const harness = createSettingsHarness({
       responses: {
         UPDATE_CHECK: { updateAvailable: false }
@@ -693,7 +693,12 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
     assertNextUpdaterAction(doc, null);
-    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Checking Latest Release/);
+    assert.strictEqual(doc.querySelector('#checkLatestReleaseBtn').disabled, true);
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
+    assert.match(doc.querySelector('#updaterStatusDesc').textContent, /No update is available/);
+    assert.ok(doc.querySelector('#updaterResult').classList.contains('updater-result--checking'));
+    assert.strictEqual(doc.querySelector('#updaterResult').getAttribute('aria-busy'), 'true');
+    assert.strictEqual(doc.querySelector('#updaterResult').textContent, 'Checking GitHub release metadata...');
 
     forcedCheck.resolve({ updateAvailable: false });
     await settleDomAsyncWork(60);
@@ -701,6 +706,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'));
     assertNextUpdaterAction(doc, null);
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
+    assert.strictEqual(doc.querySelector('#updaterResult').getAttribute('aria-busy'), 'false');
+    assert.match(doc.querySelector('#updaterResult').textContent, /^Checked just now\. No newer release found\./);
   });
 
   await t.test('updater current-version hash entry does not auto-inspect the package', async () => {
@@ -2549,6 +2556,14 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(uiCss, /@keyframes skeleton-shimmer/);
     assert.match(uiCss, /prefers-reduced-motion: reduce/);
     assert.match(uiCss, /\.hydration-fade-in/);
+    assert.match(
+      uiCss,
+      /\.settings-nav\s*{[\s\S]*?animation:\s*border-cycle 16s linear infinite;[\s\S]*?}/
+    );
+    assert.match(
+      uiCss,
+      /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?\.settings-nav,[\s\S]*?animation:\s*none !important;[\s\S]*?}/
+    );
     assert.match(
       uiCss,
       /\.protection-list\.hydration-fade-in\s*{[\s\S]*?animation:\s*border-cycle 16s linear infinite,\s*hydration-fade-in 0\.18s ease-out;[\s\S]*?}/

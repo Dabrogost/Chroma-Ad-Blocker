@@ -12,6 +12,17 @@ const ChromaApp = (() => {
   const RELEASES_PAGE = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
   const PROXY_SETTINGS_PATH = 'ui/settings.html#proxySection';
   const UPDATE_SETTINGS_PATH = 'ui/settings.html#updatesSection';
+  const SETTINGS_SECTION_IDS = [
+    'protectionSection',
+    'filterListsSection',
+    'proxySection',
+    'healthSection',
+    'statsSection',
+    'updatesSection',
+    'userScriptletsSection',
+    'zapperRulesSection',
+    'requestLogSection'
+  ];
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
     ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
@@ -73,6 +84,27 @@ const ChromaApp = (() => {
     } else {
       window.open(url);
     }
+  }
+
+  function scrollToSettingsHash() {
+    const hash = globalThis.location?.hash || '';
+    let sectionId = '';
+    try {
+      sectionId = hash.startsWith('#') ? decodeURIComponent(hash.slice(1)) : '';
+    } catch {
+      sectionId = '';
+    }
+    if (!SETTINGS_SECTION_IDS.includes(sectionId)) return;
+
+    const scroll = (behavior = 'smooth') => {
+      $(sectionId)?.scrollIntoView?.({ behavior, block: 'start' });
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => scroll());
+    } else {
+      Promise.resolve().then(scroll);
+    }
+    setTimeout(() => scroll('auto'), 160);
   }
 
   function formatCount(value) {
@@ -759,6 +791,7 @@ const ChromaApp = (() => {
     wireAddSubscriptionForm();
     wireUserScriptletControls();
     wireRequestLog();
+    wireSettingsNav();
 
     safeHydrateSection('site controls', hydrateSiteControls);
     safeHydrateSection('stats', loadStatsUI);
@@ -1078,14 +1111,14 @@ const ChromaApp = (() => {
 
           const actions = appendElement(row, 'div', 'subscription-actions');
           if (sub.isCustom) {
-            const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn subscription-icon-btn', '\u00d7');
+            const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn compact-action-btn subscription-icon-btn action-btn action-btn--danger', 'Remove');
             deleteBtn.dataset.id = sub.id;
             deleteBtn.title = 'Remove List';
             deleteBtn.setAttribute('aria-label', `Remove ${sub.name || 'filter list'}`);
             appendElement(actions, 'span', 'inline-separator');
           }
 
-          const refreshBtn = appendElement(actions, 'button', 'sub-refresh-btn reset-btn compact-action-btn', '\u21bb');
+          const refreshBtn = appendElement(actions, 'button', 'sub-refresh-btn reset-btn compact-action-btn action-btn', 'Refresh');
           refreshBtn.dataset.id = sub.id;
           refreshBtn.title = 'Force refresh';
           refreshBtn.setAttribute('aria-label', `Refresh ${sub.name || 'filter list'}`);
@@ -1124,12 +1157,12 @@ const ChromaApp = (() => {
       list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
           const id = e.target.dataset.id;
-          e.target.textContent = '\u2026';
+          e.target.textContent = 'Refreshing';
           e.target.disabled = true;
           const result = await sendMutation({ type: MSG.SUBSCRIPTION_REFRESH, id });
-          e.target.textContent = result && result.ok ? '\u2713' : '\u2717';
+          e.target.textContent = result && result.ok ? 'Updated' : 'Failed';
           setTimeout(() => {
-            e.target.textContent = '\u21bb';
+            e.target.textContent = 'Refresh';
             e.target.disabled = false;
             loadSubscriptionUI();
             loadHealthPanel();
@@ -1309,6 +1342,17 @@ const ChromaApp = (() => {
       return `${parts.join(' \u00b7 ')}.`;
     }
 
+    function updateUserScriptletOverview(settings, sources, linkState) {
+      const overview = $('userScriptletOverview');
+      if (!overview) return;
+      overview.classList.remove('is-loading');
+      setText('userScriptletSourceCount', Number(sources?.length || 0).toLocaleString());
+      setText('userScriptletResourceCount', Number(settings?.availableResourceNames?.length || 0).toLocaleString());
+      setText('userScriptletRuleCount', Number(settings?.parsedRuleCount || 0).toLocaleString());
+      setText('userScriptletMissingCount', Number(linkState?.missing?.length || 0).toLocaleString());
+      overview.classList.toggle('has-missing', Number(linkState?.missing?.length || 0) > 0);
+    }
+
     function renderUserScriptletResourceChips(names, linkState) {
       const wrap = $('userScriptletAvailableResources');
       const list = $('userScriptletAvailableResourceList');
@@ -1399,11 +1443,11 @@ const ChromaApp = (() => {
           }
 
           const actions = appendElement(row, 'div', 'subscription-actions');
-          const refreshBtn = appendElement(actions, 'button', 'user-scriptlet-refresh-btn reset-btn compact-action-btn', 'Refresh');
+          const refreshBtn = appendElement(actions, 'button', 'user-scriptlet-refresh-btn reset-btn compact-action-btn action-btn', 'Refresh');
           refreshBtn.dataset.id = source.id;
           refreshBtn.title = 'Refresh resource';
           refreshBtn.setAttribute('aria-label', `Refresh ${source.name || 'user scriptlet resource'}`);
-          const deleteBtn = appendElement(actions, 'button', 'user-scriptlet-delete-btn reset-btn inline-danger-btn compact-action-btn', 'Remove');
+          const deleteBtn = appendElement(actions, 'button', 'user-scriptlet-delete-btn reset-btn inline-danger-btn compact-action-btn action-btn action-btn--danger', 'Remove');
           deleteBtn.dataset.id = source.id;
           deleteBtn.title = 'Remove resource';
           deleteBtn.setAttribute('aria-label', `Remove ${source.name || 'user scriptlet resource'}`);
@@ -1415,6 +1459,7 @@ const ChromaApp = (() => {
         textarea.value = typeof settings.ruleText === 'string' ? settings.ruleText : '';
       }
       const linkState = getUserScriptletLinkState(settings.availableResourceNames, settings.ruleText);
+      updateUserScriptletOverview(settings, sources, linkState);
       renderUserScriptletResourceChips(settings.availableResourceNames, linkState);
       setUserScriptletRulesStatus(formatLinkedResourceStatus(settings, linkState), linkState.missing.length > 0);
       setUserScriptletRulesPending(false);
@@ -1425,9 +1470,9 @@ const ChromaApp = (() => {
         btn.addEventListener('click', async (event) => {
           const target = event.target;
           target.disabled = true;
-          target.textContent = '...';
+          target.textContent = 'Refreshing';
           const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REFRESH, id: target.dataset.id });
-          target.textContent = result?.ok ? 'Done' : 'Failed';
+          target.textContent = result?.ok ? 'Updated' : 'Failed';
           setTimeout(() => {
             loadUserScriptletUI();
             loadHealthPanel();
@@ -1567,6 +1612,39 @@ const ChromaApp = (() => {
       }
     }
 
+    function updateZapperOverview(rules) {
+      const safeRules = Array.isArray(rules) ? rules : [];
+      const domains = new Set(safeRules.map(rule => rule?.domain || 'unknown'));
+      const enabledCount = safeRules.filter(rule => !!rule?.enabled).length;
+      const disabledCount = Math.max(0, safeRules.length - enabledCount);
+
+      setText('zapperDomainCount', formatCompactCount(domains.size));
+      setText('zapperRuleCount', formatCompactCount(safeRules.length));
+      setText('zapperEnabledCount', formatCompactCount(enabledCount));
+      setText('zapperDisabledCount', formatCompactCount(disabledCount));
+      setText('zapperRulesSummaryCount', safeRules.length ? `(${formatCount(safeRules.length)})` : '(0)');
+
+      const overview = $('zapperOverview');
+      overview?.classList.toggle('is-empty', safeRules.length === 0);
+      overview?.classList.toggle('has-paused', disabledCount > 0);
+    }
+
+    function formatZapperDate(value) {
+      const timestamp = Number(value) || Date.now();
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) return 'Saved date unknown';
+      return `Saved ${date.toLocaleDateString()}`;
+    }
+
+    function setZapperRuleRowState(row, enabled) {
+      if (!row) return;
+      row.classList.toggle('is-paused', !enabled);
+      const chip = row.querySelector('.zapper-status-chip');
+      if (!chip) return;
+      chip.textContent = enabled ? 'Enabled' : 'Paused';
+      chip.classList.toggle('zapper-status-chip--paused', !enabled);
+    }
+
     async function loadLocalZapperRulesUI() {
       if (!settingsMode) return;
       const list = $('localZapperRules');
@@ -1579,10 +1657,12 @@ const ChromaApp = (() => {
         rules = Array.isArray(res.rules) ? res.rules : [];
       } catch (error) {
         console.error('Chroma local zapper rules failed to load:', error);
+        updateZapperOverview([]);
         setSectionError('localZapperRules', 'Local zapper rules unavailable.');
         return;
       }
 
+      updateZapperOverview(rules);
       clearElement(list);
       if (rules.length === 0) {
         appendLoadingRow(list, 'No local zapper rules saved.');
@@ -1600,16 +1680,24 @@ const ChromaApp = (() => {
       for (const [domain, domainRules] of grouped) {
         const header = document.createElement('div');
         header.className = 'zapper-domain-header';
-        header.textContent = domain;
+        appendElement(header, 'span', 'zapper-domain-header__name', domain);
+        const enabledForDomain = domainRules.filter(rule => !!rule.enabled).length;
+        const ruleLabel = domainRules.length === 1 ? 'rule' : 'rules';
+        const domainSummary = `${formatCount(domainRules.length)} ${ruleLabel} \u00b7 ${formatCount(enabledForDomain)} enabled`;
+        header.setAttribute('aria-label', `${domain}: ${domainSummary}`);
+        appendElement(header, 'span', 'zapper-domain-header__count', domainSummary);
         list.appendChild(header);
 
         for (const rule of domainRules) {
           const row = document.createElement('div');
-          row.className = 'toggle-row';
+          row.className = `toggle-row zapper-rule-row${rule.enabled ? '' : ' is-paused'}`;
           const info = appendElement(row, 'div', 'toggle-info');
           const selector = appendElement(info, 'div', 'zapper-rule-selector', rule.selector);
           selector.title = rule.selector;
-          appendElement(info, 'div', 'desc', `Saved ${new Date(rule.createdAt || Date.now()).toLocaleDateString()}`);
+          const meta = appendElement(info, 'div', 'desc zapper-rule-meta');
+          const chip = appendElement(meta, 'span', `zapper-status-chip${rule.enabled ? '' : ' zapper-status-chip--paused'}`, rule.enabled ? 'Enabled' : 'Paused');
+          chip.setAttribute('aria-hidden', 'true');
+          appendElement(meta, 'span', 'zapper-rule-date', formatZapperDate(rule.createdAt));
 
           const actions = appendElement(row, 'div', 'zapper-rule-actions');
           const toggleLabel = appendElement(actions, 'label', 'switch switch-sm');
@@ -1617,11 +1705,12 @@ const ChromaApp = (() => {
           const toggleInput = appendElement(toggleLabel, 'input', 'zapper-rule-toggle');
           toggleInput.type = 'checkbox';
           toggleInput.dataset.id = rule.id;
+          toggleInput.dataset.domain = domain;
           toggleInput.checked = !!rule.enabled;
           toggleInput.setAttribute('aria-label', `${rule.enabled ? 'Disable' : 'Enable'} zapper rule for ${domain}`);
           appendElement(toggleLabel, 'span', 'slider');
 
-          const deleteBtn = appendElement(actions, 'button', 'reset-btn zapper-rule-delete inline-danger-btn compact-action-btn', 'Delete');
+          const deleteBtn = appendElement(actions, 'button', 'reset-btn zapper-rule-delete inline-danger-btn compact-action-btn action-btn action-btn--danger', 'Delete Rule');
           deleteBtn.dataset.id = rule.id;
           deleteBtn.title = 'Delete rule';
           deleteBtn.setAttribute('aria-label', `Delete zapper rule for ${domain}`);
@@ -1641,6 +1730,14 @@ const ChromaApp = (() => {
             enabled: event.target.checked
           });
           if (!result) event.target.checked = previous;
+          if (result) {
+            const rule = rules.find(item => item.id === event.target.dataset.id);
+            if (rule) rule.enabled = event.target.checked;
+            event.target.setAttribute('aria-label', `${event.target.checked ? 'Disable' : 'Enable'} zapper rule for ${event.target.dataset.domain || 'this domain'}`);
+            event.target.closest('label')?.setAttribute('title', event.target.checked ? 'Disable rule' : 'Enable rule');
+            setZapperRuleRowState(event.target.closest('.zapper-rule-row'), event.target.checked);
+            updateZapperOverview(rules);
+          }
           event.target.disabled = false;
           event.target.classList.remove('control-pending');
         });
@@ -1694,7 +1791,9 @@ const ChromaApp = (() => {
         }
       };
       const formatTimeAgo = (ts) => {
-        const seconds = Math.floor((Date.now() - ts) / 1000);
+        const timestamp = Number(ts);
+        if (!Number.isFinite(timestamp) || timestamp <= 0) return 'Unknown';
+        const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
         if (seconds < 60) return `${seconds}s`;
         if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
         return `${Math.floor(seconds / 3600)}h`;
@@ -1702,9 +1801,53 @@ const ChromaApp = (() => {
 
       let isOpen = false;
       let isFrozen = false;
+
+      function updateLogState() {
+        const summary = $('requestLogSummary');
+        summary?.classList.toggle('is-frozen', isFrozen);
+        setText('logStreamState', isFrozen ? 'Frozen' : 'Live');
+      }
+
+      function updateLogSummary(log) {
+        const safeLog = Array.isArray(log) ? log : [];
+        const typeCount = new Set(safeLog.map(entry => entry?.rt || 'unknown')).size;
+        const latestTimestamp = safeLog.reduce((latest, entry) => {
+          const timestamp = Number(entry?.ts) || 0;
+          return timestamp > latest ? timestamp : latest;
+        }, 0);
+        const entryLabel = safeLog.length === 1 ? 'matched request' : 'matched requests';
+
+        setText('logEntryCount', formatCompactCount(safeLog.length));
+        setText('logTypeCount', formatCompactCount(typeCount));
+        setText('logLatestTime', latestTimestamp ? formatTimeAgo(latestTimestamp) : 'None');
+        setText('logHeaderDesc', safeLog.length ? `${formatCount(safeLog.length)} ${entryLabel} buffered` : 'No matched requests buffered');
+        $('requestLogSummary')?.classList.toggle('has-entries', safeLog.length > 0);
+        updateLogState();
+      }
+
+      async function getLogEntries() {
+        try {
+          return await notifyBackground({ type: MSG.LOG_GET }) || [];
+        } catch (error) {
+          console.error('Chroma request log failed to load:', error);
+          return null;
+        }
+      }
+
+      async function refreshLogSummary() {
+        const log = await getLogEntries();
+        if (!log) {
+          setText('logHeaderDesc', 'Request log unavailable.');
+          setText('logStreamState', 'Unavailable');
+          return [];
+        }
+        updateLogSummary(log);
+        return log;
+      }
+
       async function renderLog() {
         if (isFrozen) return;
-        const log = await notifyBackground({ type: MSG.LOG_GET }) || [];
+        const log = await refreshLogSummary();
         clearElement(entries);
         if (log.length === 0) {
           appendElement(entries, 'div', 'log-empty', 'No entries yet.');
@@ -1718,7 +1861,9 @@ const ChromaApp = (() => {
           appendElement(row, 'span', `log-rt log-rt--${badge.className}`, badge.label);
           const url = appendElement(row, 'span', 'log-url', formatLogUrl(entry.url));
           url.title = entry.url;
-          appendElement(row, 'span', 'log-time', formatTimeAgo(entry.ts));
+          const timeText = formatTimeAgo(entry.ts);
+          appendElement(row, 'span', 'log-time', timeText);
+          row.setAttribute('aria-label', `${badge.label} request ${url.textContent} ${timeText}`);
           entries.appendChild(row);
         }
       }
@@ -1732,15 +1877,94 @@ const ChromaApp = (() => {
         if (isOpen) await renderLog();
       }
 
+      refreshLogSummary();
+
       freezeBtn?.addEventListener('click', async (event) => {
         event.stopPropagation();
         isFrozen = !isFrozen;
         freezeBtn.classList.toggle('is-active', isFrozen);
         freezeBtn.textContent = isFrozen ? 'Frozen' : 'Freeze';
         freezeBtn.setAttribute('aria-label', isFrozen ? 'Unfreeze request log' : 'Freeze request log');
+        updateLogState();
         if (!isFrozen && isOpen) await renderLog();
       });
       addKeyboardActivation(toggleRow, toggleRequestLog);
+    }
+
+    function wireSettingsNav() {
+      if (!settingsMode) return;
+      const nav = document.querySelector('.settings-nav');
+      if (!nav) return;
+      const links = Array.from(nav.querySelectorAll('.settings-nav__link'));
+      const sections = SETTINGS_SECTION_IDS.map(id => $(id)).filter(Boolean);
+      if (!links.length || !sections.length) return;
+
+      let activeId = '';
+      let framePending = false;
+
+      const setActive = (sectionId) => {
+        if (!sectionId || sectionId === activeId) return;
+        activeId = sectionId;
+        links.forEach(link => {
+          const isActive = link.getAttribute('href') === `#${sectionId}`;
+          link.classList.toggle('is-active', isActive);
+          if (isActive) {
+            link.setAttribute('aria-current', 'location');
+            if (nav.scrollWidth > nav.clientWidth) {
+              link.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+            }
+          } else {
+            link.removeAttribute('aria-current');
+          }
+        });
+      };
+
+      const getCurrentSectionId = () => {
+        const bottom = document.documentElement.scrollHeight - globalThis.innerHeight - 8;
+        if ((globalThis.scrollY || 0) >= bottom) return sections[sections.length - 1]?.id;
+
+        const navBottom = nav.getBoundingClientRect().bottom;
+        const threshold = Math.max(96, navBottom + 24);
+        let current = sections[0]?.id;
+        for (const section of sections) {
+          if (section.getBoundingClientRect().top <= threshold) {
+            current = section.id;
+          } else {
+            break;
+          }
+        }
+        return current;
+      };
+
+      const refreshActive = () => {
+        framePending = false;
+        setActive(getCurrentSectionId());
+      };
+
+      const scheduleRefresh = () => {
+        if (framePending) return;
+        framePending = true;
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(refreshActive);
+        } else {
+          setTimeout(refreshActive, 0);
+        }
+      };
+
+      links.forEach(link => {
+        link.addEventListener('click', () => {
+          const sectionId = link.getAttribute('href')?.slice(1);
+          if (sectionId) setActive(sectionId);
+        });
+      });
+      globalThis.window?.addEventListener?.('scroll', scheduleRefresh, { passive: true });
+      globalThis.window?.addEventListener?.('resize', scheduleRefresh);
+      globalThis.window?.addEventListener?.('hashchange', () => {
+        scrollToSettingsHash();
+        scheduleRefresh();
+      });
+      refreshActive();
+      scrollToSettingsHash();
     }
   }
 
