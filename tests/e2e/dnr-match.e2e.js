@@ -105,7 +105,7 @@ test('DNR match/outcome E2E', async (t) => {
   });
 
   await t.test('whitelist adds high-priority allow diagnostic rule', async () => {
-    const page = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html');
+    const page = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/popup.html');
     await sendRuntimeMessage(browser.cdp, page.sessionId, { type: 'WHITELIST_ADD', domain: 'example.com' });
     const outcome = await testMatchOutcome(browser, {
       url: 'https://www.google-analytics.com/analytics.js',
