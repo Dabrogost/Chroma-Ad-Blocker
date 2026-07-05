@@ -201,9 +201,17 @@ const ChromaUpdaterUI = (() => {
 
   function setReloadActionVisible(visible) {
     const button = $('reloadChromaBtn');
-    if (!button) return;
-    button.hidden = !visible;
-    button.disabled = !visible;
+    const overlay = $('updaterReloadOverlay');
+    if (overlay) {
+      overlay.hidden = !visible;
+      overlay.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    }
+    if (button) {
+      button.textContent = 'Reload Chroma';
+      button.hidden = !visible;
+      button.disabled = !visible;
+      if (visible) setTimeout(() => button.focus?.(), 0);
+    }
     updateNextActionPrompt();
   }
 
@@ -215,13 +223,14 @@ const ChromaUpdaterUI = (() => {
   function setBusy(busy) {
     updaterBusy = busy;
     const supported = isFileSystemAccessSupported();
+    const reloadRequired = installCompleted;
     const controls = [
-      { id: 'checkLatestReleaseBtn', disabled: busy },
-      { id: 'inspectPackageBtn', disabled: busy },
-      { id: 'buildInstallPlanBtn', disabled: busy || !supported || !installDirectoryHandle || savedFolderNeedsPermission },
-      { id: 'chooseInstallFolderBtn', disabled: busy || !supported },
-      { id: 'runFolderProbeBtn', disabled: busy || !supported || !installDirectoryHandle || savedFolderNeedsPermission },
-      { id: 'installUpdateBtn', disabled: busy || !canInstallUpdate() },
+      { id: 'checkLatestReleaseBtn', disabled: busy || reloadRequired },
+      { id: 'inspectPackageBtn', disabled: busy || reloadRequired },
+      { id: 'buildInstallPlanBtn', disabled: busy || reloadRequired || !supported || !installDirectoryHandle || savedFolderNeedsPermission },
+      { id: 'chooseInstallFolderBtn', disabled: busy || reloadRequired || !supported },
+      { id: 'runFolderProbeBtn', disabled: busy || reloadRequired || !supported || !installDirectoryHandle || savedFolderNeedsPermission },
+      { id: 'installUpdateBtn', disabled: busy || reloadRequired || !canInstallUpdate() },
       { id: 'reloadChromaBtn', disabled: busy || !installCompleted }
     ];
 
@@ -1386,6 +1395,11 @@ const ChromaUpdaterUI = (() => {
   }
 
   function reloadChroma() {
+    const button = $('reloadChromaBtn');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Reloading...';
+    }
     setResult('Reloading Chroma...', 'neutral');
     if (typeof chrome.runtime?.reload === 'function') {
       chrome.runtime.reload();

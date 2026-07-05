@@ -1102,14 +1102,20 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual([...directory._children.keys()].some(name => name.startsWith('.chroma-update-backup-')), false);
     assert.deepStrictEqual(harness.tabsCreated, []);
     assert.deepStrictEqual(harness.reloadCalls, []);
+    assert.strictEqual(doc.querySelector('#updaterReloadOverlay').hidden, false);
+    assert.strictEqual(doc.querySelector('#updaterReloadOverlay').getAttribute('aria-hidden'), 'false');
     assert.strictEqual(doc.querySelector('#reloadChromaBtn').hidden, false);
     assert.strictEqual(doc.querySelector('#reloadChromaBtn').disabled, false);
-    assert.strictEqual(doc.querySelector('.updater-result-row #reloadChromaBtn'), doc.querySelector('#reloadChromaBtn'));
+    assert.strictEqual(doc.querySelector('.updater-reload-overlay #reloadChromaBtn'), doc.querySelector('#reloadChromaBtn'));
+    assert.strictEqual(doc.querySelector('.updater-result-row #reloadChromaBtn'), null);
+    assert.strictEqual(doc.querySelector('#checkLatestReleaseBtn').disabled, true);
+    assert.strictEqual(doc.querySelector('#chooseInstallFolderBtn').disabled, true);
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Reload Needed/);
     assert.match(doc.querySelector('#updaterResult').textContent, /Update installed/);
 
     doc.querySelector('#reloadChromaBtn').click();
     assert.strictEqual(harness.reloadCalls.length, 1);
+    assert.strictEqual(doc.querySelector('#reloadChromaBtn').disabled, true);
     assert.match(doc.querySelector('#updaterResult').textContent, /Reloading Chroma/);
   });
 
