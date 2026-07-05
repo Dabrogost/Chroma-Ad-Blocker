@@ -465,7 +465,14 @@ const ChromaComponents = (() => {
         </div>
         <div class="updater-result-row">
           <div class="desc updater-result" id="updaterResult" role="status" aria-live="polite"></div>
-          <button class="reset-btn compact-action-btn action-btn action-btn--primary" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
+        </div>
+      </div>
+      <div class="updater-reload-overlay" id="updaterReloadOverlay" role="dialog" aria-modal="true" aria-labelledby="updaterReloadTitle" aria-describedby="updaterReloadDesc" aria-hidden="true" hidden>
+        <div class="updater-reload-dialog">
+          <div class="updater-reload-dialog__eyebrow">Update installed</div>
+          <div class="updater-reload-dialog__title" id="updaterReloadTitle">Reload Chroma to finish</div>
+          <div class="updater-reload-dialog__desc" id="updaterReloadDesc">The new files are in place. Reload Chroma before changing any other settings.</div>
+          <button class="reset-btn compact-action-btn action-btn action-btn--primary updater-reload-dialog__button" id="reloadChromaBtn" type="button" hidden disabled>Reload Chroma</button>
         </div>
       </div>
     `;
@@ -681,7 +688,7 @@ const ChromaComponents = (() => {
             <span class="zapper-overview-card__value" id="zapperDisabledCount">0</span>
           </div>
         </div>
-        <details class="settings-detail zapper-rules-detail" open>
+        <details class="settings-detail zapper-rules-detail">
           <summary class="settings-detail__summary">
             <span class="settings-detail__title">Saved selectors <span id="zapperRulesSummaryCount">0</span></span>
             <span class="settings-detail__hint" aria-hidden="true"></span>

@@ -66,18 +66,6 @@ function sumRuleCount(subscriptions, key) {
   return asArray(subscriptions).reduce((sum, sub) => sum + (Number(sub?.ruleCount?.[key]) || 0), 0);
 }
 
-function getTotalRuleCount(sub) {
-  return (
-    (Number(sub?.ruleCount?.network) || 0) +
-    (Number(sub?.ruleCount?.cosmetic) || 0) +
-    (Number(sub?.ruleCount?.scriptlet) || 0)
-  );
-}
-
-function isVisibleSubscription(sub) {
-  return sub?.id !== 'chroma-hotfix' || getTotalRuleCount(sub) > 0;
-}
-
 function getLastUpdatedBounds(subscriptions) {
   const updated = asArray(subscriptions)
     .map(sub => Number(sub?.lastUpdated) || 0)
@@ -502,7 +490,7 @@ export async function getHealthStatus() {
   const subscriptionDynamicRuleCount = countByRange(dynamicRules, SUBSCRIPTION_RULE_ID_START, SUBSCRIPTION_RULE_ID_END);
   const whitelistRuleCount = countByRange(dynamicRules, WHITELIST_RULE_ID_START);
 
-  const subscriptions = asArray(storage.subscriptions).filter(isVisibleSubscription);
+  const subscriptions = asArray(storage.subscriptions);
   const subscriptionErrors = subscriptions
     .filter(sub => sub?.lastError)
     .map(sub => ({

@@ -183,6 +183,7 @@ test('docs document broad host permission and remote list trust boundary', () =>
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
   const permissions = fs.readFileSync(path.join(__dirname, '..', 'docs', 'PERMISSIONS.md'), 'utf8');
   const filterLists = fs.readFileSync(path.join(__dirname, '..', 'docs', 'FILTER_LISTS.md'), 'utf8');
+  const defaultLists = fs.readFileSync(path.join(__dirname, '..', 'extension', 'subscriptions', 'lists.js'), 'utf8');
   const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 
   assert.ok(manifest.host_permissions.includes('<all_urls>'));
@@ -190,6 +191,8 @@ test('docs document broad host permission and remote list trust boundary', () =>
   assert.match(filterLists, /does not ship a maintainer-controlled hotfix subscription/i);
   assert.match(filterLists, /GitHub release packages/i);
   assert.match(filterLists, /custom subscription/i);
+  assert.doesNotMatch(defaultLists, /chroma-hotfix|hotfix\.txt/i);
+  assert.strictEqual(fs.existsSync(path.join(__dirname, '..', 'subscriptions', 'hotfix.txt')), false);
   assert.match(readme, /\[Permissions\]\(docs\/PERMISSIONS\.md\)/);
 });
 

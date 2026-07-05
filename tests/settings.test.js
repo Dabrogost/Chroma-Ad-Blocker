@@ -1102,14 +1102,20 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual([...directory._children.keys()].some(name => name.startsWith('.chroma-update-backup-')), false);
     assert.deepStrictEqual(harness.tabsCreated, []);
     assert.deepStrictEqual(harness.reloadCalls, []);
+    assert.strictEqual(doc.querySelector('#updaterReloadOverlay').hidden, false);
+    assert.strictEqual(doc.querySelector('#updaterReloadOverlay').getAttribute('aria-hidden'), 'false');
     assert.strictEqual(doc.querySelector('#reloadChromaBtn').hidden, false);
     assert.strictEqual(doc.querySelector('#reloadChromaBtn').disabled, false);
-    assert.strictEqual(doc.querySelector('.updater-result-row #reloadChromaBtn'), doc.querySelector('#reloadChromaBtn'));
+    assert.strictEqual(doc.querySelector('.updater-reload-overlay #reloadChromaBtn'), doc.querySelector('#reloadChromaBtn'));
+    assert.strictEqual(doc.querySelector('.updater-result-row #reloadChromaBtn'), null);
+    assert.strictEqual(doc.querySelector('#checkLatestReleaseBtn').disabled, true);
+    assert.strictEqual(doc.querySelector('#chooseInstallFolderBtn').disabled, true);
     assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Reload Needed/);
     assert.match(doc.querySelector('#updaterResult').textContent, /Update installed/);
 
     doc.querySelector('#reloadChromaBtn').click();
     assert.strictEqual(harness.reloadCalls.length, 1);
+    assert.strictEqual(doc.querySelector('#reloadChromaBtn').disabled, true);
     assert.match(doc.querySelector('#updaterResult').textContent, /Reloading Chroma/);
   });
 
@@ -1977,6 +1983,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#addUserScriptletSourceBtn').textContent.trim(), 'Add URL');
     assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
+    assert.strictEqual(dom.window.document.querySelector('.zapper-rules-detail').open, false);
     assert.strictEqual(dom.window.document.querySelector('#statsModeSelect').disabled, true);
     assert.ok(dom.window.document.querySelector('#exportConfigJson'));
     assert.ok(dom.window.document.querySelector('#importConfigFile'));
@@ -2562,7 +2569,11 @@ test('settings page proxy and zapper management safety', async (t) => {
     );
     assert.match(
       uiCss,
-      /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?\.settings-nav,[\s\S]*?animation:\s*none !important;[\s\S]*?}/
+      /\.settings-page footer\s*{[\s\S]*?animation:\s*border-cycle 16s linear infinite;[\s\S]*?}/
+    );
+    assert.match(
+      uiCss,
+      /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?\.settings-nav,[\s\S]*?\.settings-page footer,[\s\S]*?animation:\s*none !important;[\s\S]*?}/
     );
     assert.match(
       uiCss,
