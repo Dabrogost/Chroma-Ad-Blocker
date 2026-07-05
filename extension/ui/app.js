@@ -1052,16 +1052,6 @@ const ChromaApp = (() => {
       let subscriptions = [];
       try {
         subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
-        subscriptions = subscriptions.filter(s => {
-          if (s.id !== 'chroma-hotfix') return true;
-          const totalRules = (s.ruleCount?.network || 0) + (s.ruleCount?.cosmetic || 0) + (s.ruleCount?.scriptlet || 0);
-          return totalRules > 0;
-        });
-        subscriptions.sort((a, b) => {
-          if (a.id === 'chroma-hotfix') return 1;
-          if (b.id === 'chroma-hotfix') return -1;
-          return 0;
-        });
 
         const { appliedNetworkRuleCount = 0, appliedNetworkRulesPerSub = {} } =
           await chrome.storage.local.get(['appliedNetworkRuleCount', 'appliedNetworkRulesPerSub']);

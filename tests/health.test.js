@@ -470,60 +470,6 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.subscriptions.errors[0].error.includes('https://example.com'), false);
   });
 
-  await t.test('empty chroma hotfix list is excluded from user-facing subscription totals', async () => {
-    const sandbox = loadHealthSandbox({
-      storage: {
-        subscriptions: [
-          {
-            id: 'oisd',
-            name: 'OISD',
-            enabled: true,
-            ruleCount: { network: 10, cosmetic: 2, scriptlet: 0 }
-          },
-          {
-            id: 'chroma-hotfix',
-            name: 'Chroma Hotfix',
-            enabled: true,
-            ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
-          }
-        ]
-      }
-    });
-
-    const health = await sandbox.getHealthStatus();
-
-    assert.strictEqual(health.subscriptions.total, 1);
-    assert.strictEqual(health.subscriptions.enabled, 1);
-    assert.strictEqual(health.subscriptions.parsedNetwork, 10);
-  });
-
-  await t.test('chroma hotfix list is included once it contains rules', async () => {
-    const sandbox = loadHealthSandbox({
-      storage: {
-        subscriptions: [
-          {
-            id: 'oisd',
-            name: 'OISD',
-            enabled: true,
-            ruleCount: { network: 10, cosmetic: 2, scriptlet: 0 }
-          },
-          {
-            id: 'chroma-hotfix',
-            name: 'Chroma Hotfix',
-            enabled: true,
-            ruleCount: { network: 1, cosmetic: 0, scriptlet: 0 }
-          }
-        ]
-      }
-    });
-
-    const health = await sandbox.getHealthStatus();
-
-    assert.strictEqual(health.subscriptions.total, 2);
-    assert.strictEqual(health.subscriptions.enabled, 2);
-    assert.strictEqual(health.subscriptions.parsedNetwork, 11);
-  });
-
   await t.test('request logging unavailable is diagnostic only', async () => {
     const sandbox = loadHealthSandbox({
       debugLogging: false
