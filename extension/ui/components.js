@@ -681,7 +681,7 @@ const ChromaComponents = (() => {
             <span class="zapper-overview-card__value" id="zapperDisabledCount">0</span>
           </div>
         </div>
-        <details class="settings-detail zapper-rules-detail" open>
+        <details class="settings-detail zapper-rules-detail">
           <summary class="settings-detail__summary">
             <span class="settings-detail__title">Saved selectors <span id="zapperRulesSummaryCount">0</span></span>
             <span class="settings-detail__hint" aria-hidden="true"></span>

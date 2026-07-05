@@ -1977,6 +1977,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#addUserScriptletSourceBtn').textContent.trim(), 'Add URL');
     assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
+    assert.strictEqual(dom.window.document.querySelector('.zapper-rules-detail').open, false);
     assert.strictEqual(dom.window.document.querySelector('#statsModeSelect').disabled, true);
     assert.ok(dom.window.document.querySelector('#exportConfigJson'));
     assert.ok(dom.window.document.querySelector('#importConfigFile'));
@@ -2562,7 +2563,11 @@ test('settings page proxy and zapper management safety', async (t) => {
     );
     assert.match(
       uiCss,
-      /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?\.settings-nav,[\s\S]*?animation:\s*none !important;[\s\S]*?}/
+      /\.settings-page footer\s*{[\s\S]*?animation:\s*border-cycle 16s linear infinite;[\s\S]*?}/
+    );
+    assert.match(
+      uiCss,
+      /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?\.settings-nav,[\s\S]*?\.settings-page footer,[\s\S]*?animation:\s*none !important;[\s\S]*?}/
     );
     assert.match(
       uiCss,

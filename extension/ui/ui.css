@@ -270,15 +270,15 @@ header {
   gap: 6px;
   margin: 0 0 24px;
   padding: 8px;
-  background: rgba(8, 4, 20, 0.74);
-  border: 1px solid rgba(108, 92, 231, 0.22);
+  background: rgba(10, 5, 25, 0.62);
+  border: 1px solid rgba(108, 92, 231, 0.18);
   border-radius: 8px;
   backdrop-filter: blur(24px) saturate(145%);
   -webkit-backdrop-filter: blur(24px) saturate(145%);
   animation: border-cycle 16s linear infinite;
   box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.32),
-    0 0 0 1px rgba(255, 255, 255, 0.025) inset;
+    0 7px 20px rgba(0, 0, 0, 0.26),
+    0 0 0 1px rgba(255, 255, 255, 0.018) inset;
 }
 
 .settings-nav__link {
@@ -546,6 +546,7 @@ footer {
   border: 1px solid rgba(108, 92, 231, 0.16);
   border-radius: 8px;
   background: rgba(10, 5, 25, 0.45);
+  animation: border-cycle 16s linear infinite;
   box-shadow:
     0 7px 20px rgba(0, 0, 0, 0.2),
     0 0 0 1px rgba(255, 255, 255, 0.016) inset;
@@ -2958,6 +2959,7 @@ body.popup-page {
   .hydration-fade-in,
   .pill-nav-inner,
   .settings-nav,
+  .settings-page footer,
   .stat-card,
   .stat-value,
   .stat-label,
