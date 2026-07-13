@@ -8,23 +8,30 @@
  *   sub_network_rules        — { [id]: Object[] } parsed network rules per subscription
  *   sub_cosmetic_rules       — { [id]: Object[] } parsed cosmetic rules per subscription
  *   sub_scriptlet_rules      — { [id]: Object[] } parsed scriptlet rules per subscription
- *   subscriptionCosmeticRules  — Object[] flat combined array consumed by content.js
- *   subscriptionScriptletRules — Object[] flat combined array consumed by scriptlets/engine.js
+ *   subscriptionCosmeticRules  — active flat runtime image consumed by content.js
+ *   subscriptionScriptletRules — active flat runtime image consumed by scriptlets/engine.js
  */
 
 'use strict';
 
 import { DEFAULT_SUBSCRIPTIONS } from './lists.js';
 import { parseList }             from './parser.js';
-import { allocate }              from './budget.js';
-import { applySubscriptionRules, clearSubscriptionRules } from './dnr.js';
 import { SCRIPTLET_MAP } from '../scriptlets/lib.js';
+import { reconcileNetworkDnr } from '../background/dnrState.js';
+import { validateRemoteHttpsUrl } from '../core/remoteUrl.js';
 
 const DEBUG = false;
 const ALARM_NAME     = 'chroma-subscription-check';
 const FETCH_TIMEOUT  = 30000; // 30s per-fetch timeout
 const MAX_LIST_BYTES = 10 * 1024 * 1024; // 10 MiB per subscription response
 let _staticRuleKeySetPromise = null;
+let _subscriptionStateTail = Promise.resolve();
+
+function serializeSubscriptionState(task) {
+  const run = _subscriptionStateTail.then(task);
+  _subscriptionStateTail = run.catch(() => {});
+  return run;
+}
 
 function normalizeSubscriptionCompatibility(value = {}) {
   return {
@@ -163,6 +170,12 @@ async function readResponseTextWithLimit(res, maxBytes) {
  * @returns {Promise<{ text?: string, notModified?: boolean, etag: string|null, lastModified: string|null }>}
  */
 async function fetchList(sub) {
+  const isBundledResource = sub?.isCustom !== true && String(sub?.url || '').startsWith('chrome-extension://');
+  if (!isBundledResource) {
+    const requestedUrl = validateRemoteHttpsUrl(sub?.url, { label: 'Subscription' });
+    if (!requestedUrl.ok) throw new Error(`Unsafe subscription URL: ${requestedUrl.error}`);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   const headers = {};
@@ -171,6 +184,13 @@ async function fetchList(sub) {
 
   try {
     const res = await fetch(sub.url, { signal: controller.signal, cache: 'no-cache', headers });
+    // Bundled chrome-extension:// resources do not cross a remote trust
+    // boundary. Every HTTPS response, including a 304, is checked at its final
+    // post-redirect URL before headers or body data are accepted.
+    if (!isBundledResource) {
+      const finalUrl = validateRemoteHttpsUrl(res.url || sub.url, { label: 'Subscription' });
+      if (!finalUrl.ok) throw new Error(`Unsafe subscription redirect: ${finalUrl.error}`);
+    }
     const etag = getHeader(res, 'etag');
     const lastModified = getHeader(res, 'last-modified');
     if (res.status === 304) {
@@ -192,6 +212,44 @@ async function fetchList(sub) {
 }
 
 // ─── COSMETIC DEDUPLICATION ─────
+function storedCosmeticDomainKey(domains) {
+  if (domains == null) return { valid: true, key: '' };
+  if (!Array.isArray(domains) || domains.length === 0) return { valid: false, key: '' };
+
+  const normalized = [];
+  for (const value of domains) {
+    if (typeof value !== 'string' || value !== value.trim()) return { valid: false, key: '' };
+    const domain = value.toLowerCase();
+    if (
+      domain.length > 253 ||
+      !domain.includes('.') ||
+      domain.startsWith('.') ||
+      domain.endsWith('.') ||
+      !/^[a-z0-9.-]+$/.test(domain)
+    ) {
+      return { valid: false, key: '' };
+    }
+    const labels = domain.split('.');
+    if (labels.some(label => (
+      label.length === 0 ||
+      label.length > 63 ||
+      label.startsWith('-') ||
+      label.endsWith('-')
+    ))) {
+      return { valid: false, key: '' };
+    }
+    if (/^[0-9.]+$/.test(domain) && (
+      labels.length !== 4 ||
+      labels.some(label => !/^\d{1,3}$/.test(label) || Number(label) > 255)
+    )) {
+      return { valid: false, key: '' };
+    }
+    normalized.push(domain);
+  }
+
+  return { valid: true, key: normalized.sort().join(',') };
+}
+
 /**
  * Deduplicates cosmetic rules across subscriptions before storage.
  * @param {Object[]} rules
@@ -200,7 +258,14 @@ async function fetchList(sub) {
 function deduplicateCosmeticRules(rules) {
   const seen = new Set();
   return rules.filter(rule => {
-    const key = `${rule.isException}|${rule.domains ? rule.domains.slice().sort().join(',') : ''}|${rule.selector}`;
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return false;
+    if (typeof rule.selector !== 'string' || !rule.selector.trim() || typeof rule.isException !== 'boolean') return false;
+    const included = storedCosmeticDomainKey(rule.domains);
+    const excluded = storedCosmeticDomainKey(rule.excludedDomains);
+    // Do not let malformed cached values collide with a valid semantic key or
+    // make the combined-cache rebuild reject otherwise valid sibling rules.
+    if (!included.valid || !excluded.valid) return false;
+    const key = `${rule.isException}|${included.key}|${excluded.key}|${rule.selector}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -249,52 +314,12 @@ async function buildStaticRuleKeySet() {
 
 // ─── REBUILD HELPERS ─────
 /**
- * Reads per-subscription stored network rules, combines enabled subs,
- * runs budget allocator, and applies to DNR.
- * @param {Object[]} subscriptions
+ * Reconciles cached subscription rules through the authoritative DNR
+ * coordinator.
  * @returns {Promise<void>}
  */
-function buildNetworkRuleApplication(subscriptions, perSubRules = {}) {
-  const allRules = [];
-  for (const sub of subscriptions) {
-    if (sub.cosmeticOnly) continue;
-    if (sub.enabled && perSubRules[sub.id]) {
-      for (const rule of perSubRules[sub.id]) {
-        if (rule.action && (rule.action.type === 'block' || rule.action.type === 'allow')) {
-          // Tag with sub id so we can count per-sub survivors after allocate().
-          // Stripped before passing to DNR.
-          allRules.push({ ...rule, _subId: sub.id });
-        }
-      }
-    }
-  }
-
-  const { allocated, trimCount } = allocate(allRules);
-  if (DEBUG && trimCount > 0) {
-    console.warn(`[Chroma Subscriptions] Budget trim: dropped ${trimCount} rules.`);
-  }
-
-  const perSubApplied = {};
-  const stripped = allocated.map(({ _subId, ...rule }) => {
-    if (_subId) perSubApplied[_subId] = (perSubApplied[_subId] || 0) + 1;
-    return rule;
-  });
-
-  return {
-    networkRules: stripped,
-    appliedNetworkRuleCount: stripped.length,
-    appliedNetworkRulesPerSub: perSubApplied
-  };
-}
-
-async function rebuildNetworkRules(subscriptions) {
-  const { sub_network_rules: perSubRules = {} } = await chrome.storage.local.get('sub_network_rules');
-  const application = buildNetworkRuleApplication(subscriptions, perSubRules);
-  await applySubscriptionRules(application.networkRules);
-  await chrome.storage.local.set({
-    appliedNetworkRuleCount: application.appliedNetworkRuleCount,
-    appliedNetworkRulesPerSub: application.appliedNetworkRulesPerSub
-  });
+async function rebuildNetworkRules() {
+  await reconcileNetworkDnr('subscription-cache');
 }
 
 /**
@@ -306,7 +331,7 @@ async function rebuildNetworkRules(subscriptions) {
 function buildCombinedCosmeticRules(subscriptions, perSubRules = {}) {
   const allRules = [];
   for (const sub of subscriptions) {
-    if (sub.enabled && perSubRules[sub.id]) {
+    if (sub?.enabled && Array.isArray(perSubRules[sub.id])) {
       for (const rule of perSubRules[sub.id]) {
         allRules.push(rule);
       }
@@ -314,11 +339,6 @@ function buildCombinedCosmeticRules(subscriptions, perSubRules = {}) {
   }
 
   return deduplicateCosmeticRules(allRules);
-}
-
-async function rebuildCosmeticRules(subscriptions) {
-  const { sub_cosmetic_rules: perSubRules = {} } = await chrome.storage.local.get('sub_cosmetic_rules');
-  await chrome.storage.local.set({ subscriptionCosmeticRules: buildCombinedCosmeticRules(subscriptions, perSubRules) });
 }
 
 /**
@@ -330,7 +350,7 @@ async function rebuildCosmeticRules(subscriptions) {
 function buildCombinedScriptletRules(subscriptions, perSubRules = {}) {
   const allRules = [];
   for (const sub of subscriptions) {
-    if (sub.enabled && perSubRules[sub.id]) {
+    if (sub?.enabled && Array.isArray(perSubRules[sub.id])) {
       for (const rule of perSubRules[sub.id]) {
         allRules.push({ ...rule, sourceId: sub.id });
       }
@@ -340,12 +360,180 @@ function buildCombinedScriptletRules(subscriptions, perSubRules = {}) {
   return allRules;
 }
 
-async function rebuildScriptletRules(subscriptions) {
-  const { sub_scriptlet_rules: perSubRules = {} } = await chrome.storage.local.get('sub_scriptlet_rules');
-  await chrome.storage.local.set({ subscriptionScriptletRules: buildCombinedScriptletRules(subscriptions, perSubRules) });
+function isSubscriptionRuntimeActive(config) {
+  return config?.enabled !== false;
+}
+
+function buildSubscriptionRuntimeState(config, subscriptions, cosmeticRules, scriptletRules) {
+  if (!isSubscriptionRuntimeActive(config)) {
+    return {
+      subscriptionCosmeticRules: [],
+      subscriptionScriptletRules: []
+    };
+  }
+
+  return {
+    subscriptionCosmeticRules: buildCombinedCosmeticRules(subscriptions, cosmeticRules),
+    subscriptionScriptletRules: buildCombinedScriptletRules(subscriptions, scriptletRules)
+  };
+}
+
+function clonePerSubscriptionStore(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? { ...value }
+    : {};
+}
+
+function subscriptionStageError(error) {
+  return { ok: false, error, importedCount: 0, storage: null };
+}
+
+/**
+ * Builds the complete subscription-owned portion of a settings-import storage
+ * image without writing storage or reconciling DNR. Transactional callers can
+ * combine this image with other staged settings and commit it atomically.
+ *
+ * @param {Object[]} importedCustomSubs
+ * @param {Object} currentState current subscription-owned storage values
+ * @param {Object} runtimeConfig staged configuration controlling the aggregate runtime image
+ * @returns {{ ok: boolean, importedCount: number, storage: Object|null, error?: string }}
+ */
+export function stageCustomSubscriptions(
+  importedCustomSubs = [],
+  currentState = {},
+  runtimeConfig = currentState?.config
+) {
+  if (!Array.isArray(importedCustomSubs)) {
+    return subscriptionStageError('Imported subscriptions must be an array');
+  }
+
+  const storedSubscriptions = Array.isArray(currentState?.subscriptions)
+    ? currentState.subscriptions
+    : [];
+  const baseSubscriptions = mergeDefaultSubscriptions(storedSubscriptions)
+    .map(cloneSubscriptionMetadata);
+  const defaultIds = new Set(
+    baseSubscriptions.filter(sub => sub?.isCustom !== true).map(sub => sub.id)
+  );
+  const candidatesById = new Map();
+
+  for (const candidate of importedCustomSubs) {
+    const validShape = candidate && typeof candidate === 'object' && !Array.isArray(candidate) &&
+      typeof candidate.id === 'string' && candidate.id.length > 0 &&
+      typeof candidate.url === 'string' && candidate.url.length > 0;
+    if (!validShape) {
+      return subscriptionStageError('Imported subscription metadata is malformed');
+    }
+    if (defaultIds.has(candidate.id)) {
+      return subscriptionStageError(`Imported subscription ID conflicts with a default: ${candidate.id}`);
+    }
+    if (candidatesById.has(candidate.id)) {
+      return subscriptionStageError(`Duplicate imported subscription ID: ${candidate.id}`);
+    }
+    const validatedUrl = validateRemoteHttpsUrl(candidate.url, { label: 'Subscription' });
+    if (!validatedUrl.ok) {
+      return subscriptionStageError(`Invalid imported subscription URL: ${validatedUrl.error}`);
+    }
+    candidatesById.set(candidate.id, {
+      ...cloneSubscriptionMetadata(candidate),
+      url: validatedUrl.url,
+      isCustom: true
+    });
+  }
+
+  const keptSubscriptions = baseSubscriptions.filter(sub => sub?.isCustom !== true);
+  const usedUrls = new Set(keptSubscriptions.map(sub => sub?.url).filter(Boolean));
+  const acceptedImports = [];
+
+  for (const candidate of candidatesById.values()) {
+    if (usedUrls.has(candidate.url)) {
+      return subscriptionStageError(`Duplicate or conflicting imported subscription URL: ${candidate.url}`);
+    }
+    usedUrls.add(candidate.url);
+    acceptedImports.push(candidate);
+  }
+
+  const nextSubscriptions = keptSubscriptions.concat(acceptedImports);
+  const netPerSub = clonePerSubscriptionStore(currentState?.sub_network_rules);
+  const cosPerSub = clonePerSubscriptionStore(currentState?.sub_cosmetic_rules);
+  const scrPerSub = clonePerSubscriptionStore(currentState?.sub_scriptlet_rules);
+  const clearedIds = new Set([
+    ...baseSubscriptions.filter(sub => sub?.isCustom === true).map(sub => sub.id),
+    ...acceptedImports.map(sub => sub.id)
+  ]);
+  const stagedIds = new Set(nextSubscriptions.map(sub => sub?.id).filter(Boolean));
+  for (const store of [netPerSub, cosPerSub, scrPerSub]) {
+    for (const id of Object.keys(store)) {
+      if (!stagedIds.has(id)) delete store[id];
+    }
+  }
+
+  for (const id of clearedIds) {
+    delete netPerSub[id];
+    delete cosPerSub[id];
+    delete scrPerSub[id];
+  }
+
+  const storage = {
+    subscriptions: nextSubscriptions,
+    sub_network_rules: netPerSub,
+    sub_cosmetic_rules: cosPerSub,
+    sub_scriptlet_rules: scrPerSub,
+    ...buildSubscriptionRuntimeState(runtimeConfig, nextSubscriptions, cosPerSub, scrPerSub)
+  };
+
+  return {
+    ok: true,
+    importedCount: acceptedImports.length,
+    storage
+  };
 }
 
 // ─── PUBLIC API ─────
+/**
+ * Converges the two subscription-owned runtime aggregates with master state.
+ * Per-list caches and requested subscription enablement are never changed, so
+ * re-enabling can restore the exact cosmetic/scriptlet image without fetching.
+ *
+ * @returns {Promise<{ ok: true, active: boolean, changed: boolean, cosmeticRuleCount: number, scriptletRuleCount: number }>}
+ */
+export function reconcileSubscriptionRuntimeState() {
+  return serializeSubscriptionState(async () => {
+    const {
+      config = {},
+      subscriptions = [],
+      sub_cosmetic_rules: cosmeticRules = {},
+      sub_scriptlet_rules: scriptletRules = {},
+      subscriptionCosmeticRules: currentCosmeticRules = [],
+      subscriptionScriptletRules: currentScriptletRules = []
+    } = await chrome.storage.local.get([
+      'config',
+      'subscriptions',
+      'sub_cosmetic_rules',
+      'sub_scriptlet_rules',
+      'subscriptionCosmeticRules',
+      'subscriptionScriptletRules'
+    ]);
+    const runtimeState = buildSubscriptionRuntimeState(
+      config,
+      subscriptions,
+      cosmeticRules,
+      scriptletRules
+    );
+    const changed =
+      JSON.stringify(currentCosmeticRules) !== JSON.stringify(runtimeState.subscriptionCosmeticRules) ||
+      JSON.stringify(currentScriptletRules) !== JSON.stringify(runtimeState.subscriptionScriptletRules);
+    if (changed) await chrome.storage.local.set(runtimeState);
+    return {
+      ok: true,
+      active: isSubscriptionRuntimeActive(config),
+      changed,
+      cosmeticRuleCount: runtimeState.subscriptionCosmeticRules.length,
+      scriptletRuleCount: runtimeState.subscriptionScriptletRules.length
+    };
+  });
+}
+
 /**
  * Called from onInstalled. Writes default subscriptions if none exist.
  * Registers the update alarm.
@@ -357,6 +545,7 @@ export async function initSubscriptions() {
   if (JSON.stringify(merged) !== JSON.stringify(subscriptions)) {
     await chrome.storage.local.set({ subscriptions: merged });
   }
+  await reconcileSubscriptionRuntimeState();
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: 60 });
   if (DEBUG) console.log('[Chroma Subscriptions] Initialized.');
 }
@@ -407,17 +596,30 @@ export async function refreshSubscription(id) {
     const now = Date.now();
 
     if (fetched.notModified) {
-      const nextSubscriptions = subscriptions.map(item => item.id === id
-        ? {
-            ...item,
-            lastUpdated: now,
-            lastError: null,
-            etag: fetched.etag,
-            lastModified: fetched.lastModified
-          }
-        : item
-      );
-      await chrome.storage.local.set({ subscriptions: nextSubscriptions });
+      const metadataCommitted = await serializeSubscriptionState(async () => {
+        const { subscriptions: latestSubscriptions = [] } = await chrome.storage.local.get('subscriptions');
+        const currentSub = latestSubscriptions.find(item => item.id === id);
+        if (!currentSub || currentSub.url !== sub.url) return false;
+        const nextSubscriptions = latestSubscriptions.map(item => item.id === id
+          ? {
+              ...item,
+              lastUpdated: now,
+              lastError: null,
+              etag: fetched.etag,
+              lastModified: fetched.lastModified
+            }
+          : item
+        );
+        await chrome.storage.local.set({ subscriptions: nextSubscriptions });
+        return true;
+      });
+      if (!metadataCommitted) {
+        return { ok: false, error: 'Subscription changed during refresh' };
+      }
+      await reconcileSubscriptionRuntimeState();
+      // A 304 confirms the cache is current; rebuilding here also repairs a
+      // missing runtime ruleset after browser or service-worker recovery.
+      await reconcileNetworkDnr('subscription-not-modified');
       return { ok: true, notModified: true };
     }
 
@@ -428,69 +630,92 @@ export async function refreshSubscription(id) {
       .map((rule, index) => ({ ...rule, _listPosition: index }));
     const compatibility = buildSubscriptionCompatibility(sub.cosmeticOnly ? [] : networkRules, skipped);
 
-    // Store parsed rules per subscription ID
-    const [netStore, cosStore, scrStore] = await Promise.all([
-      chrome.storage.local.get('sub_network_rules'),
-      chrome.storage.local.get('sub_cosmetic_rules'),
-      chrome.storage.local.get('sub_scriptlet_rules')
-    ]);
-
-    const netPerSub = { ...(netStore.sub_network_rules || {}) };
-    const cosPerSub = { ...(cosStore.sub_cosmetic_rules || {}) };
-    const scrPerSub = { ...(scrStore.sub_scriptlet_rules || {}) };
-
-    netPerSub[id] = sub.cosmeticOnly ? [] : networkRules;
-    cosPerSub[id] = cosmeticRules;
     // Only keep scriptlet rules whose name matches an implementation we ship.
     // Anything else would be silently dropped at engine registration anyway,
     // so we drop it here to avoid storing thousands of dead rules.
     const usableScriptlets = scriptletRules.filter(r => SCRIPTLET_MAP.has(r.scriptlet));
-    scrPerSub[id] = usableScriptlets;
+    const cacheCommitted = await serializeSubscriptionState(async () => {
+      const {
+        subscriptions: latestSubscriptions = [],
+        sub_network_rules: storedNetworkRules = {},
+        sub_cosmetic_rules: storedCosmeticRules = {},
+        sub_scriptlet_rules: storedScriptletRules = {},
+        config = {}
+      } = await chrome.storage.local.get([
+        'subscriptions',
+        'sub_network_rules',
+        'sub_cosmetic_rules',
+        'sub_scriptlet_rules',
+        'config'
+      ]);
+      const currentSub = latestSubscriptions.find(item => item.id === id);
+      if (!currentSub || currentSub.url !== sub.url) return false;
 
-    const nextSubscriptions = subscriptions.map(item => item.id === id
-      ? {
-          ...item,
-          ruleCount: { network: item.cosmeticOnly ? 0 : networkRules.length, cosmetic: cosmeticRules.length, scriptlet: usableScriptlets.length },
-          compatibility,
-          lastUpdated: now,
-          version: String(now),
-          lastError: null,
-          etag: fetched.etag,
-          lastModified: fetched.lastModified
-        }
-      : item
-    );
+      const netPerSub = { ...storedNetworkRules };
+      const cosPerSub = { ...storedCosmeticRules };
+      const scrPerSub = { ...storedScriptletRules };
+      netPerSub[id] = currentSub.cosmeticOnly ? [] : networkRules;
+      cosPerSub[id] = cosmeticRules;
+      scrPerSub[id] = usableScriptlets;
 
-    const networkApplication = buildNetworkRuleApplication(nextSubscriptions, netPerSub);
-    const subscriptionCosmeticRules = buildCombinedCosmeticRules(nextSubscriptions, cosPerSub);
-    const subscriptionScriptletRules = buildCombinedScriptletRules(nextSubscriptions, scrPerSub);
+      const nextSubscriptions = latestSubscriptions.map(item => item.id === id
+        ? {
+            ...item,
+            ruleCount: {
+              network: item.cosmeticOnly ? 0 : networkRules.length,
+              cosmetic: cosmeticRules.length,
+              scriptlet: usableScriptlets.length
+            },
+            compatibility,
+            lastUpdated: now,
+            version: String(now),
+            lastError: null,
+            etag: fetched.etag,
+            lastModified: fetched.lastModified
+          }
+        : item
+      );
 
-    await applySubscriptionRules(networkApplication.networkRules);
-
-    await chrome.storage.local.set({
-      subscriptions: nextSubscriptions,
-      sub_network_rules: netPerSub,
-      sub_cosmetic_rules: cosPerSub,
-      sub_scriptlet_rules: scrPerSub,
-      subscriptionCosmeticRules,
-      subscriptionScriptletRules,
-      appliedNetworkRuleCount: networkApplication.appliedNetworkRuleCount,
-      appliedNetworkRulesPerSub: networkApplication.appliedNetworkRulesPerSub
+      await chrome.storage.local.set({
+        subscriptions: nextSubscriptions,
+        sub_network_rules: netPerSub,
+        sub_cosmetic_rules: cosPerSub,
+        sub_scriptlet_rules: scrPerSub,
+        ...buildSubscriptionRuntimeState(config, nextSubscriptions, cosPerSub, scrPerSub)
+      });
+      return true;
     });
 
+    if (!cacheCommitted) {
+      return { ok: false, error: 'Subscription changed during refresh' };
+    }
+    // The coordinator rereads config and cached rules immediately before its
+    // commit. Off-state refreshes therefore update cache without adding DNR.
+    await reconcileNetworkDnr('subscription-refresh');
+
     if (DEBUG) {
-      console.log(`[Chroma Subscriptions] ${sub.name} — Network: ${networkRules.length}, Cosmetic: ${cosmeticRules.length}, Scriptlet: ${scriptletRules.length}, Skipped:`, skipped);
+      console.log(
+        `[Chroma Subscriptions] ${sub.name} —`,
+        `Network: ${networkRules.length},`,
+        `Cosmetic: ${cosmeticRules.length},`,
+        `Scriptlet: ${scriptletRules.length},`,
+        'Skipped:',
+        skipped
+      );
     }
 
     return { ok: true };
   } catch (err) {
     // Record error without clobbering other subscription metadata
-    const { subscriptions: subs = [] } = await chrome.storage.local.get('subscriptions');
-    const s = subs.find(x => x.id === id);
-    if (s) {
-      s.lastError = err.message;
-      await chrome.storage.local.set({ subscriptions: subs });
-    }
+    await serializeSubscriptionState(async () => {
+      const { subscriptions: subs = [] } = await chrome.storage.local.get('subscriptions');
+      if (!subs.some(item => item.id === id)) return;
+      await chrome.storage.local.set({
+        subscriptions: subs.map(item => item.id === id
+          ? { ...item, lastError: err.message }
+          : item)
+      });
+    });
     if (DEBUG) console.error(`[Chroma Subscriptions] Refresh failed for ${id}:`, err);
     return { ok: false, error: err.message };
   }
@@ -512,20 +737,32 @@ export async function getSubscriptions() {
  * @returns {Promise<{ ok: boolean }>}
  */
 export async function setSubscriptionEnabled(id, enabled) {
-  const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
-  const sub = subscriptions.find(s => s.id === id);
-  if (!sub) return { ok: false };
+  const updated = await serializeSubscriptionState(async () => {
+    const {
+      subscriptions = [],
+      sub_cosmetic_rules: cosmeticRules = {},
+      sub_scriptlet_rules: scriptletRules = {},
+      config = {}
+    } = await chrome.storage.local.get([
+      'subscriptions',
+      'sub_cosmetic_rules',
+      'sub_scriptlet_rules',
+      'config'
+    ]);
+    if (!subscriptions.some(sub => sub.id === id)) return false;
 
-  sub.enabled = enabled;
-  await chrome.storage.local.set({ subscriptions });
+    const nextSubscriptions = subscriptions.map(sub => sub.id === id
+      ? { ...sub, enabled }
+      : sub);
+    await chrome.storage.local.set({
+      subscriptions: nextSubscriptions,
+      ...buildSubscriptionRuntimeState(config, nextSubscriptions, cosmeticRules, scriptletRules)
+    });
+    return true;
+  });
+  if (!updated) return { ok: false };
 
-  await rebuildNetworkRules(subscriptions);
-  await rebuildCosmeticRules(subscriptions);
-  await rebuildScriptletRules(subscriptions);
-
-  // If disabling all subscriptions, clear DNR subscription rules entirely
-  const anyEnabled = subscriptions.some(s => s.enabled);
-  if (!anyEnabled) await clearSubscriptionRules();
+  await rebuildNetworkRules();
 
   return { ok: true };
 }
@@ -560,121 +797,47 @@ export async function addSubscription(sub) {
 }
 
 /**
- * Imports custom subscription metadata from a settings backup.
- * Imported lists start empty and are fetched on the next manual/stale refresh,
- * so any previous per-subscription rule caches for replaced custom IDs are
- * cleared before rebuilding the combined runtime stores.
- * @param {Object[]} importedCustomSubs
- * @returns {Promise<{ ok: boolean, importedCount: number }>}
- */
-export async function importCustomSubscriptions(importedCustomSubs = []) {
-  if (!Array.isArray(importedCustomSubs) || importedCustomSubs.length === 0) {
-    return { ok: true, importedCount: 0 };
-  }
-
-  const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
-  const baseSubscriptions = mergeDefaultSubscriptions(subscriptions);
-  const defaultIds = new Set(baseSubscriptions.filter(sub => sub?.isCustom !== true).map(sub => sub.id));
-  const candidatesById = new Map();
-
-  for (const sub of importedCustomSubs) {
-    if (!sub?.id || defaultIds.has(sub.id) || candidatesById.has(sub.id)) continue;
-    candidatesById.set(sub.id, sub);
-  }
-
-  const candidateIds = new Set(candidatesById.keys());
-  const keptBeforeUrlCheck = baseSubscriptions.filter(sub =>
-    sub?.isCustom !== true || !candidateIds.has(sub.id)
-  );
-  const usedUrls = new Set(keptBeforeUrlCheck.map(sub => sub?.url).filter(Boolean));
-  const acceptedImports = [];
-
-  for (const sub of candidatesById.values()) {
-    if (usedUrls.has(sub.url)) continue;
-    usedUrls.add(sub.url);
-    acceptedImports.push(sub);
-  }
-
-  if (acceptedImports.length === 0) {
-    return { ok: true, importedCount: 0 };
-  }
-
-  const acceptedIds = new Set(acceptedImports.map(sub => sub.id));
-  const nextSubscriptions = baseSubscriptions
-    .filter(sub => sub?.isCustom !== true || !acceptedIds.has(sub.id))
-    .concat(acceptedImports);
-
-  const {
-    sub_network_rules: storedNetworkRules = {},
-    sub_cosmetic_rules: storedCosmeticRules = {},
-    sub_scriptlet_rules: storedScriptletRules = {}
-  } = await chrome.storage.local.get(['sub_network_rules', 'sub_cosmetic_rules', 'sub_scriptlet_rules']);
-
-  const netPerSub = { ...storedNetworkRules };
-  const cosPerSub = { ...storedCosmeticRules };
-  const scrPerSub = { ...storedScriptletRules };
-
-  for (const id of acceptedIds) {
-    delete netPerSub[id];
-    delete cosPerSub[id];
-    delete scrPerSub[id];
-  }
-
-  const networkApplication = buildNetworkRuleApplication(nextSubscriptions, netPerSub);
-  const subscriptionCosmeticRules = buildCombinedCosmeticRules(nextSubscriptions, cosPerSub);
-  const subscriptionScriptletRules = buildCombinedScriptletRules(nextSubscriptions, scrPerSub);
-
-  await applySubscriptionRules(networkApplication.networkRules);
-
-  await chrome.storage.local.set({
-    subscriptions: nextSubscriptions,
-    sub_network_rules: netPerSub,
-    sub_cosmetic_rules: cosPerSub,
-    sub_scriptlet_rules: scrPerSub,
-    subscriptionCosmeticRules,
-    subscriptionScriptletRules,
-    appliedNetworkRuleCount: networkApplication.appliedNetworkRuleCount,
-    appliedNetworkRulesPerSub: networkApplication.appliedNetworkRulesPerSub
-  });
-
-  return { ok: true, importedCount: acceptedImports.length };
-}
-
-/**
  * Removes a subscription and its stored rules. Rebuilds combined sets.
  * @param {string} id
  * @returns {Promise<{ ok: boolean }>}
  */
 export async function removeSubscription(id) {
-  const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
-  const filtered = subscriptions.filter(s => s.id !== id);
-  if (filtered.length === subscriptions.length) return { ok: false };
+  const removed = await serializeSubscriptionState(async () => {
+    const {
+      config = {},
+      subscriptions = [],
+      sub_network_rules: storedNetworkRules = {},
+      sub_cosmetic_rules: storedCosmeticRules = {},
+      sub_scriptlet_rules: storedScriptletRules = {}
+    } = await chrome.storage.local.get([
+      'config',
+      'subscriptions',
+      'sub_network_rules',
+      'sub_cosmetic_rules',
+      'sub_scriptlet_rules'
+    ]);
+    const filtered = subscriptions.filter(sub => sub.id !== id);
+    if (filtered.length === subscriptions.length) return false;
 
-  // Remove per-subscription stored rules
-  const [netStore, cosStore, scrStore] = await Promise.all([
-    chrome.storage.local.get('sub_network_rules'),
-    chrome.storage.local.get('sub_cosmetic_rules'),
-    chrome.storage.local.get('sub_scriptlet_rules')
-  ]);
+    const netPerSub = { ...storedNetworkRules };
+    const cosPerSub = { ...storedCosmeticRules };
+    const scrPerSub = { ...storedScriptletRules };
+    delete netPerSub[id];
+    delete cosPerSub[id];
+    delete scrPerSub[id];
 
-  const netPerSub = netStore.sub_network_rules || {};
-  const cosPerSub = cosStore.sub_cosmetic_rules || {};
-  const scrPerSub = scrStore.sub_scriptlet_rules || {};
-
-  delete netPerSub[id];
-  delete cosPerSub[id];
-  delete scrPerSub[id];
-
-  await chrome.storage.local.set({
-    subscriptions: filtered,
-    sub_network_rules:   netPerSub,
-    sub_cosmetic_rules:  cosPerSub,
-    sub_scriptlet_rules: scrPerSub
+    await chrome.storage.local.set({
+      subscriptions: filtered,
+      sub_network_rules: netPerSub,
+      sub_cosmetic_rules: cosPerSub,
+      sub_scriptlet_rules: scrPerSub,
+      ...buildSubscriptionRuntimeState(config, filtered, cosPerSub, scrPerSub)
+    });
+    return true;
   });
+  if (!removed) return { ok: false };
 
-  await rebuildNetworkRules(filtered);
-  await rebuildCosmeticRules(filtered);
-  await rebuildScriptletRules(filtered);
+  await rebuildNetworkRules();
 
   return { ok: true };
 }

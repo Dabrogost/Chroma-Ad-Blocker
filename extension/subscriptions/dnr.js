@@ -1,12 +1,17 @@
 /**
- * Chroma Ad-Blocker — Subscription DNR Application Layer
- * Manages the subscription ID range within chrome.declarativeNetRequest.
- * Full rebuild strategy: remove all subscription IDs, apply new set atomically.
+ * Chroma Ad-Blocker — Subscription DNR rule preparation.
+ *
+ * This module is deliberately side-effect free. The background DNR coordinator
+ * is the only place that commits rules to chrome.declarativeNetRequest.
  */
 
 'use strict';
 
-import { SUBSCRIPTION_ID_START, SUBSCRIPTION_ID_END } from './budget.js';
+import {
+  allocate,
+  SUBSCRIPTION_ID_START,
+  SUBSCRIPTION_ID_END
+} from './budget.js';
 
 const DEBUG = false;
 const VALID_ACTION_TYPES = new Set(['block', 'allow']);
@@ -45,9 +50,9 @@ function byteLength(value) {
   return bytes;
 }
 
-function validateStringArray(values, label, { allowEmpty = false, valueSet = null } = {}) {
+function validateStringArray(values, label, { valueSet = null, validateValue = null } = {}) {
   if (values === undefined) return;
-  if (!Array.isArray(values) || (!allowEmpty && values.length === 0)) {
+  if (!Array.isArray(values) || values.length === 0) {
     throw new Error(`${label} must be a non-empty array`);
   }
   for (const value of values) {
@@ -57,7 +62,36 @@ function validateStringArray(values, label, { allowEmpty = false, valueSet = nul
     if (valueSet && !valueSet.has(value)) {
       throw new Error(`${label} contains unsupported value: ${value}`);
     }
+    if (validateValue && !validateValue(value)) {
+      throw new Error(`${label} contains malformed value: ${value}`);
+    }
   }
+}
+
+function isValidDomainConstraint(value) {
+  if (
+    value !== value.trim() ||
+    value.length > 253 ||
+    !value.includes('.') ||
+    value.startsWith('.') ||
+    value.endsWith('.') ||
+    !/^[a-z0-9.-]+$/i.test(value)
+  ) {
+    return false;
+  }
+  const labels = value.split('.');
+  if (/^[0-9.]+$/.test(value) && (
+    labels.length !== 4 ||
+    labels.some(label => !/^\d{1,3}$/.test(label) || Number(label) > 255)
+  )) {
+    return false;
+  }
+  return labels.every(label =>
+    label.length > 0 &&
+    label.length <= 63 &&
+    !label.startsWith('-') &&
+    !label.endsWith('-')
+  );
 }
 
 function validateSubscriptionRule(rule, index) {
@@ -83,6 +117,9 @@ function validateSubscriptionRule(rule, index) {
   const hasRegexFilter = condition.regexFilter !== undefined;
   if (!hasUrlFilter && !hasRegexFilter) {
     throw new Error(`${label} requires urlFilter or regexFilter`);
+  }
+  if (hasUrlFilter && hasRegexFilter) {
+    throw new Error(`${label} cannot combine urlFilter and regexFilter`);
   }
   if (hasUrlFilter) {
     if (typeof condition.urlFilter !== 'string' || condition.urlFilter.length === 0) {
@@ -115,71 +152,65 @@ function validateSubscriptionRule(rule, index) {
   }
   validateStringArray(condition.resourceTypes, `${label}.condition.resourceTypes`, { valueSet: VALID_RESOURCE_TYPES });
   validateStringArray(condition.excludedResourceTypes, `${label}.condition.excludedResourceTypes`, { valueSet: VALID_RESOURCE_TYPES });
-  validateStringArray(condition.initiatorDomains, `${label}.condition.initiatorDomains`);
-  validateStringArray(condition.excludedInitiatorDomains, `${label}.condition.excludedInitiatorDomains`);
+  validateStringArray(condition.initiatorDomains, `${label}.condition.initiatorDomains`, { validateValue: isValidDomainConstraint });
+  validateStringArray(condition.excludedInitiatorDomains, `${label}.condition.excludedInitiatorDomains`, { validateValue: isValidDomainConstraint });
 }
 
-function validateSubscriptionRules(rules) {
-  for (let index = 0; index < rules.length; index++) {
-    validateSubscriptionRule(rules[index], index);
-  }
-}
-
-/**
- * Assigns sequential IDs to rules starting from SUBSCRIPTION_ID_START.
- * @param {Object[]} rules - Rules without IDs
- * @returns {Object[]}
- */
-function assignIds(rules) {
-  return rules.map((rule, i) => ({ ...rule, id: SUBSCRIPTION_ID_START + i }));
-}
-
-/**
- * Applies subscription network rules to DNR via full rebuild.
- * Removes all existing IDs in subscription range, then applies new set in one call.
- * @param {Object[]} networkRules - Parsed rule objects without IDs
- * @returns {Promise<void>}
- */
-export async function applySubscriptionRules(networkRules) {
+function isSafeCachedRule(rule) {
   try {
-    const existing  = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeIds = existing
-      .filter(r => r.id >= SUBSCRIPTION_ID_START && r.id <= SUBSCRIPTION_ID_END)
-      .map(r => r.id);
-
-    const rulesToAdd = assignIds(networkRules);
-    validateSubscriptionRules(rulesToAdd);
-
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: removeIds,
-      addRules: rulesToAdd
-    });
-
-    if (DEBUG) console.log(`[Chroma Subscriptions] Applied ${rulesToAdd.length} network rules to DNR.`);
+    validateSubscriptionRule({ ...rule, id: SUBSCRIPTION_ID_START }, 0);
+    return true;
   } catch (err) {
-    if (DEBUG) console.error('[Chroma Subscriptions] DNR apply failed:', err);
-    throw err;
+    if (DEBUG) console.warn('[Chroma Subscriptions] Dropping malformed cached DNR rule:', err);
+    return false;
   }
 }
 
 /**
- * Removes all subscription rules from DNR. Called when network blocking is disabled.
- * @returns {Promise<void>}
+ * Combines cached rules for enabled subscriptions and applies the deterministic
+ * subscription budget. Stored subscription order and per-list order are kept.
  */
-export async function clearSubscriptionRules() {
-  try {
-    const existing  = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeIds = existing
-      .filter(r => r.id >= SUBSCRIPTION_ID_START && r.id <= SUBSCRIPTION_ID_END)
-      .map(r => r.id);
-
-    if (removeIds.length === 0) return;
-
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
-
-    if (DEBUG) console.log(`[Chroma Subscriptions] Cleared ${removeIds.length} subscription rules from DNR.`);
-  } catch (err) {
-    if (DEBUG) console.error('[Chroma Subscriptions] DNR clear failed:', err);
-    throw err;
+export function buildSubscriptionRuleApplication(subscriptions = [], perSubRules = {}) {
+  const allRules = [];
+  for (const sub of subscriptions) {
+    if (sub?.cosmeticOnly || !sub?.enabled || !Array.isArray(perSubRules[sub?.id])) continue;
+    for (const rule of perSubRules[sub.id]) {
+      if (isSafeCachedRule(rule)) {
+        allRules.push({ ...rule, _subId: sub.id });
+      }
+    }
   }
+
+  const { allocated, trimCount } = allocate(allRules);
+  if (DEBUG && trimCount > 0) {
+    console.warn(`[Chroma Subscriptions] Budget trim: dropped ${trimCount} rules.`);
+  }
+
+  const appliedNetworkRulesPerSub = {};
+  const networkRules = allocated.map(({ _subId, ...rule }) => {
+    if (_subId) {
+      appliedNetworkRulesPerSub[_subId] = (appliedNetworkRulesPerSub[_subId] || 0) + 1;
+    }
+    return rule;
+  });
+
+  return {
+    networkRules,
+    appliedNetworkRuleCount: networkRules.length,
+    appliedNetworkRulesPerSub
+  };
+}
+
+/**
+ * Assigns stable subscription IDs and validates every rule before a DNR commit.
+ */
+export function prepareSubscriptionRules(networkRules = []) {
+  const prepared = networkRules.map((rule, index) => ({
+    ...rule,
+    id: SUBSCRIPTION_ID_START + index
+  }));
+  for (let index = 0; index < prepared.length; index++) {
+    validateSubscriptionRule(prepared[index], index);
+  }
+  return prepared;
 }

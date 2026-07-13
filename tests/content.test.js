@@ -49,6 +49,8 @@ test('Content script generic functionality', async (t) => {
     const sentMessages = [];
     const documentListeners = {};
     const dispatchedEvents = [];
+    const storageChangeListeners = [];
+    let runtimeMessageListener = null;
     const location = options.location || { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' };
     const sandbox = {
       chrome: {
@@ -57,12 +59,15 @@ test('Content script generic functionality', async (t) => {
             sentMessages.push(msg);
             return Promise.resolve({ ok: true });
           },
-          onMessage: { addListener: () => {} }
+          onMessage: { addListener: listener => { runtimeMessageListener = listener; } }
         },
         storage: {
           local: {
             get: () => Promise.resolve(options.storage || {}),
             set: () => Promise.resolve()
+          },
+          onChanged: {
+            addListener: listener => { storageChangeListeners.push(listener); }
           }
         }
       },
@@ -147,6 +152,10 @@ test('Content script generic functionality', async (t) => {
     };
     sandbox.__sentMessages = sentMessages;
     sandbox.__dispatchedEvents = dispatchedEvents;
+    sandbox.__emitStorageChange = changes => {
+      storageChangeListeners.forEach(listener => listener(changes, 'local'));
+    };
+    sandbox.__sendRuntimeMessage = message => runtimeMessageListener?.(message);
     sandbox.globalThis = sandbox;
 
     if (setupDoc) setupDoc(sandbox.document);
@@ -303,6 +312,7 @@ test('Content script generic functionality', async (t) => {
     sandbox.CONFIG.enabled = true;
     sandbox.CONFIG.cosmetic = true;
     sandbox.CONFIG.suppressWarnings = true;
+    await new Promise(resolve => setImmediate(resolve));
 
     sandbox.suppressAdblockWarnings();
     sandbox.removeLeftoverAdContainers(adNode);
@@ -313,15 +323,15 @@ test('Content script generic functionality', async (t) => {
       .filter(msg => msg.type === 'STATS_EVENT_BATCH')
       .flatMap(msg => msg.events);
     assert.ok(events.length > 0, 'expected stats batch events');
-    assert.ok(events.some(event => event.layer === 'warning' && event.type === 'suppression'));
-    assert.ok(events.some(event => event.layer === 'cosmetic' && event.subtype === 'leftover_ad_container'));
-    assert.ok(events.some(event => event.layer === 'zapper'));
-    assert.ok(events.every(event => event.domain === 'www.youtube.com'));
-    assert.ok(events.every(event => event.ts !== 1));
+    assert.ok(events.some(event => event.eventType === 'warning_suppression'));
+    assert.ok(events.some(event => event.eventType === 'cosmetic_hide'));
+    assert.ok(events.some(event => event.eventType === 'zapper_hit'));
+    assert.ok(events.every(event => Object.keys(event).length === 1));
   });
 
   await t.test('scriptlet telemetry bridge records only aggregate event type', async (st) => {
     const sandbox = createSandbox();
+    await new Promise(resolve => setImmediate(resolve));
 
     sandbox.document.dispatchEvent({
       type: '__CHROMA_SCRIPTLET_STATS__',
@@ -337,14 +347,55 @@ test('Content script generic functionality', async (t) => {
     const event = sandbox.__sentMessages
       .filter(msg => msg.type === 'STATS_EVENT_BATCH')
       .flatMap(msg => msg.events)
-      .find(item => item.layer === 'scriptlet');
+      .find(item => item.eventType === 'scriptlet_error');
 
     assert.ok(event, 'expected scriptlet stats event');
-    assert.strictEqual(event.type, 'error');
-    assert.strictEqual(event.domain, 'www.youtube.com');
-    assert.strictEqual('scriptlet' in event, false);
-    assert.strictEqual('ruleSource' in event, false);
-    assert.strictEqual('error' in event, false);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(event)), { eventType: 'scriptlet_error' });
+  });
+
+  await t.test('forged scriptlet telemetry is enum-gated, master-gated, and rate bounded', async () => {
+    const sandbox = createSandbox();
+    await new Promise(resolve => setImmediate(resolve));
+
+    sandbox.document.dispatchEvent({
+      type: '__CHROMA_SCRIPTLET_STATS__',
+      detail: { type: 'unknown', count: 100000, source: 'private-list-id' }
+    });
+    for (let index = 0; index < 1000; index++) {
+      sandbox.document.dispatchEvent({
+        type: '__CHROMA_SCRIPTLET_STATS__',
+        detail: { type: 'hit', count: 100000, source: `forged-${index}` }
+      });
+    }
+
+    let events = sandbox.__sentMessages
+      .filter(msg => msg.type === 'STATS_EVENT_BATCH')
+      .flatMap(msg => msg.events);
+    assert.strictEqual(events.length, 20);
+    assert.ok(events.every(event => event.eventType === 'scriptlet_hit'));
+    assert.ok(events.every(event => Object.keys(event).length === 1));
+
+    const disabled = createSandbox(null, {
+      storage: { config: { enabled: false }, whitelist: [] }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    disabled.document.dispatchEvent({
+      type: '__CHROMA_SCRIPTLET_STATS__',
+      detail: { type: 'hit' }
+    });
+    events = disabled.__sentMessages.filter(msg => msg.type === 'STATS_EVENT_BATCH');
+    assert.deepStrictEqual(events, []);
+
+    const whitelisted = createSandbox(null, {
+      storage: { config: { enabled: true }, whitelist: ['youtube.com'] }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    whitelisted.document.dispatchEvent({
+      type: '__CHROMA_SCRIPTLET_STATS__',
+      detail: { type: 'hit' }
+    });
+    events = whitelisted.__sentMessages.filter(msg => msg.type === 'STATS_EVENT_BATCH');
+    assert.deepStrictEqual(events, []);
   });
 
   await t.test('publishes quiet console config to MAIN-world quiet layer', async () => {
@@ -363,6 +414,108 @@ test('Content script generic functionality', async (t) => {
       enabled: true,
       quietConsole: false
     });
+  });
+
+  await t.test('subscription cosmetics apply globally except on negated domains', async () => {
+    const rules = [
+      null,
+      {
+        domains: null,
+        excludedDomains: ['example.com'],
+        selector: '.global-except-example',
+        isException: false
+      },
+      {
+        domains: null,
+        excludedDomains: ['bad/domain'],
+        selector: '.malformed-must-not-broaden',
+        isException: false
+      },
+      {
+        domains: [],
+        excludedDomains: null,
+        selector: '.empty-inclusion-must-not-be-global',
+        isException: false
+      },
+      {
+        domains: null,
+        excludedDomains: [],
+        selector: '.empty-exclusion-must-not-be-global',
+        isException: false
+      },
+      {
+        domains: 'example.com',
+        excludedDomains: null,
+        selector: '.non-array-inclusion-must-not-apply',
+        isException: false
+      }
+    ];
+    const makeStorage = () => ({
+      config: { enabled: true, cosmetic: true },
+      HIDE_SELECTORS: [],
+      whitelist: [],
+      subscriptionCosmeticRules: rules
+    });
+
+    const included = createSandbox(null, {
+      location: { hostname: 'news.test', href: 'https://news.test/' },
+      storage: makeStorage()
+    });
+    const excluded = createSandbox(null, {
+      location: { hostname: 'cdn.example.com', href: 'https://cdn.example.com/' },
+      storage: makeStorage()
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    const includedCss = included.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    const excludedCss = excluded.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    assert.match(includedCss, /\.global-except-example/);
+    assert.doesNotMatch(excludedCss, /\.global-except-example/);
+    assert.doesNotMatch(includedCss, /\.malformed-must-not-broaden/);
+    assert.doesNotMatch(excludedCss, /\.malformed-must-not-broaden/);
+    assert.doesNotMatch(includedCss, /\.empty-inclusion-must-not-be-global/);
+    assert.doesNotMatch(includedCss, /\.empty-exclusion-must-not-be-global/);
+    assert.doesNotMatch(includedCss, /\.non-array-inclusion-must-not-apply/);
+  });
+
+  await t.test('a tab loaded while master-off restores subscription cosmetics live on re-enable', async () => {
+    const sandbox = createSandbox(null, {
+      location: { hostname: 'news.test', href: 'https://news.test/' },
+      storage: {
+        config: { enabled: false, cosmetic: true },
+        HIDE_SELECTORS: [],
+        whitelist: [],
+        subscriptionCosmeticRules: []
+      }
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+
+    sandbox.__emitStorageChange({
+      subscriptionCosmeticRules: {
+        oldValue: [],
+        newValue: [{
+          domains: null,
+          excludedDomains: null,
+          selector: '.restored-subscription-ad',
+          isException: false
+        }]
+      }
+    });
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0, 'master-off remains inert');
+
+    sandbox.__sendRuntimeMessage({
+      type: 'CONFIG_UPDATE',
+      config: { enabled: true, cosmetic: true }
+    });
+    const restoredCss = sandbox.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    assert.match(restoredCss, /\.restored-subscription-ad/);
+
+    sandbox.__sendRuntimeMessage({
+      type: 'CONFIG_UPDATE',
+      config: { enabled: false }
+    });
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
   });
 
   await t.test('disabled cosmetic mode does not record cleanup events', async (st) => {

@@ -356,16 +356,7 @@ test('Ad field stripping', async (t) => {
     await modifiedSandbox.window.fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false');
 
     assert.strictEqual(modifiedEvents.length, 1);
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(modifiedEvents[0])), {
-      layer: 'youtube',
-      type: 'payload',
-      source: 'fetch',
-      payloadsInspected: 1,
-      payloadsModified: 1,
-      fieldsPruned: 1,
-      adObjectsRemoved: 0,
-      cleans: 1
-    });
+    assert.strictEqual(modifiedEvents[0], 'youtube_payload_modified');
   });
 
   await t.test('JSON.parse payload prefilter recognizes ad signals cheaply', (st) => {
@@ -619,6 +610,51 @@ test('YouTube ad acceleration', async (t) => {
     assert.strictEqual(mockVideo.muted, true);
   });
 
+  await t.test('accepts the same positive fractional speed as background config validation', () => {
+    const mockVideo = createMockElement('video');
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => sel.includes('video') ? mockVideo : null;
+      doc.getElementsByClassName = (cls) => cls === 'ad-showing' ? [createMockElement()] : [];
+    }, { accelerationSpeed: 0.5 });
+
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(mockVideo.playbackRate, 0.5);
+  });
+
+  await t.test('disabling acceleration restores Chroma-owned video state only', () => {
+    const mockVideo = createMockElement('video');
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => sel.includes('video') ? mockVideo : null;
+      doc.getElementsByClassName = (cls) => cls === 'ad-showing' ? [createMockElement()] : [];
+    });
+
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(mockVideo.playbackRate, 8);
+    assert.strictEqual(mockVideo.muted, true);
+
+    sandbox.window.__CHROMA_INTERNAL__.config = {
+      enabled: true,
+      stripping: true,
+      acceleration: false,
+      accelerationSpeed: 8
+    };
+    sandbox.window.__CHROMA_INTERNAL__.revision = 1;
+    sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
+    assert.strictEqual(mockVideo.playbackRate, 1);
+    assert.strictEqual(mockVideo.muted, false);
+
+    sandbox.window.__CHROMA_INTERNAL__.config.acceleration = true;
+    sandbox.window.__CHROMA_INTERNAL__.revision = 2;
+    sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
+    sandbox.handleAdAcceleration();
+    mockVideo.playbackRate = 2;
+
+    sandbox.window.__CHROMA_INTERNAL__.config.acceleration = false;
+    sandbox.window.__CHROMA_INTERNAL__.revision = 3;
+    sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
+    assert.strictEqual(mockVideo.playbackRate, 2, 'cleanup must preserve a later page-owned rate');
+  });
+
   await t.test('unmute when main content starts during debounce', async (st) => {
     const mockVideo = createMockElement('video');
     mockVideo.readyState = 4;
@@ -726,32 +762,64 @@ test('YouTube ad acceleration', async (t) => {
     assert.ok(bridgeQueries > 0, 'handler should resolve the bridge after load, not stay pinned to fallback APIs');
   });
 
-  await t.test('Event-Driven Initialization Flow', async (st) => {
-    await st.test('aborts initialization when __EXT_INIT__ activates kill switch', async () => {
-      let intervalFns = [];
-      const sandbox = createSandbox();
-      sandbox.window.__CHROMA_INTERNAL__.config = null;
-      sandbox.setInterval = (fn) => intervalFns.push(fn);
-      // Run yt_handler again so it picks up the null config state
-      vm.runInContext(youtubeJsCode, sandbox);
+  await t.test('Secure Bridge Initialization Flow', async (st) => {
+    await st.test('starts inert and ignores forged public config/init details', async () => {
+      const sandbox = createSandbox(null, {}, (candidate) => {
+        candidate.window.__CHROMA_INTERNAL__.config = null;
+        candidate.setInterval = () => 1;
+      });
 
-      sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: false } });
-      intervalFns.forEach(fn => fn());
+      assert.strictEqual(sandbox.CONFIG.enabled, false);
+      assert.strictEqual(sandbox.CONFIG.stripping, false);
+      sandbox.document.dispatchEvent({
+        type: '__EXT_INIT__',
+        detail: { active: true, stripping: true, acceleration: true }
+      });
+      sandbox.document.dispatchEvent({
+        type: '__CHROMA_CONFIG_UPDATE__',
+        detail: { enabled: true, stripping: true, acceleration: true }
+      });
 
-      assert.strictEqual(sandbox.CONFIG.enabled, false, 'Kill switch should prevent enabling');
+      assert.strictEqual(sandbox.CONFIG.enabled, false);
+      assert.strictEqual(sandbox.CONFIG.stripping, false);
+      assert.strictEqual(sandbox.CONFIG.acceleration, false);
     });
 
-    await st.test('wakes up normally when __EXT_INIT__ fires true', async () => {
-      let intervalFns = [];
-      const sandbox = createSandbox();
-      sandbox.window.__CHROMA_INTERNAL__.config = null;
-      sandbox.setInterval = (fn) => intervalFns.push(fn);
-      vm.runInContext(youtubeJsCode, sandbox);
-      
-      sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: true } });
-      intervalFns.forEach(fn => fn());
+    await st.test('a protected bridge snapshot activates on a detail-free notification', async () => {
+      const sandbox = createSandbox(null, {}, (candidate) => {
+        candidate.window.__CHROMA_INTERNAL__.config = null;
+        candidate.setInterval = () => 1;
+      });
+      sandbox.window.__CHROMA_INTERNAL__.config = {
+        enabled: true,
+        stripping: false,
+        acceleration: true,
+        accelerationSpeed: 12
+      };
+      sandbox.window.__CHROMA_INTERNAL__.revision = 1;
+      sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
 
-      assert.strictEqual(sandbox.CONFIG.enabled, true, 'Should enable when active');
+      assert.strictEqual(sandbox.CONFIG.enabled, true);
+      assert.strictEqual(sandbox.CONFIG.stripping, false);
+      assert.strictEqual(sandbox.CONFIG.acceleration, true);
+      assert.strictEqual(sandbox.CONFIG.accelerationSpeed, 12);
+
+      sandbox.window.__CHROMA_INTERNAL__.config = {
+        enabled: false,
+        stripping: false,
+        acceleration: false,
+        accelerationSpeed: 12
+      };
+      sandbox.window.__CHROMA_INTERNAL__.revision = 2;
+      sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
+      assert.strictEqual(sandbox.CONFIG.enabled, false);
+      assert.strictEqual(sandbox.CONFIG.acceleration, false);
+
+      sandbox.document.dispatchEvent({
+        type: '__CHROMA_CONFIG_UPDATE__',
+        detail: { enabled: true, acceleration: true }
+      });
+      assert.strictEqual(sandbox.CONFIG.enabled, false, 'same-revision forged signals are ignored');
     });
   });
 });

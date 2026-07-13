@@ -6,6 +6,8 @@
 
   const nativeCreateElement = Document.prototype.createElement;
   const nativeQuerySelectorAll = Document.prototype.querySelectorAll;
+  const nativeAddDocEventListener = document.addEventListener.bind(document);
+  const nativeRemoveDocEventListener = document.removeEventListener.bind(document);
 
   // ─── SITE DETECTION ─────
 
@@ -25,48 +27,102 @@
   const siteKey = SITE_KEYS.find(k => host === k || host.endsWith('.' + k));
   if (!siteKey) return;
 
-  log('active on', host, 'matched', siteKey);
+  log('loaded inert on', host, 'matched', siteKey);
 
-  if (siteKey === 'pcgamer.com') {
-    const suffix = '_as_req';
-    window.addEventListener('message', (e) => {
-      if (e.source === window && typeof e.data === 'string' && e.data.endsWith(suffix)) {
-        const token = e.data.slice(0, -suffix.length);
-        window.postMessage(token + '_as_res', '*');
-      }
-    });
-
+  // The Session 3 bridge reserves this name synchronously with an inert config
+  // and advances revision only after authenticated MessagePort updates. Public
+  // event details are never trusted.
+  const getBridge = () => {
     try {
-      const origRemove = Element.prototype.remove;
-      Element.prototype.remove = function () {
-        if (this === document.body) {
-          log('blocked document.body.remove() for PCGamer');
-          return;
-        }
-        if (origRemove) return origRemove.apply(this, arguments);
-      };
-    } catch (_) {}
-
-    try {
-      Object.defineProperty(Location.prototype, 'reload', {
-        value: function () { log('blocked location.reload() for PCGamer'); },
-        writable: false,
-        configurable: false,
-      });
+      const descriptor = Object.getOwnPropertyDescriptor(window, '__CHROMA_INTERNAL__');
+      const bridge = descriptor?.value;
+      if (!bridge || descriptor.configurable !== false || descriptor.writable !== false ||
+          !Object.isFrozen(bridge)) return null;
+      return bridge;
     } catch (_) {
-      try { window.location.reload = function () { log('blocked location.reload() for PCGamer'); }; } catch (_) {}
+      return null;
+    }
+  };
+  const getBridgeConfig = () => getBridge()?.config || null;
+  const getBridgeRevision = () => getBridge()?.revision;
+
+  let isActive = false;
+  let lifecycleGeneration = 0;
+  let lastBridgeRevision = -1;
+  const patchCleanups = [];
+  const ownedPatches = new WeakMap();
+
+  function getOwnedPatch(owner, key) {
+    return ownedPatches.get(owner)?.get(key) || null;
+  }
+
+  function setOwnedPatch(owner, key, record) {
+    let records = ownedPatches.get(owner);
+    if (!records) {
+      records = new Map();
+      ownedPatches.set(owner, records);
+    }
+    records.set(key, record);
+  }
+
+  function clearOwnedPatch(owner, key, record) {
+    const records = ownedPatches.get(owner);
+    if (!records || records.get(key) !== record) return;
+    records.delete(key);
+    if (records.size === 0) ownedPatches.delete(owner);
+  }
+
+  function patchMethod(owner, key, createWrapper) {
+    if (!owner) return null;
+    const existingRecord = getOwnedPatch(owner, key);
+    if (existingRecord) return existingRecord.wrapper;
+    let originalDescriptor;
+    let original;
+    try {
+      originalDescriptor = Object.getOwnPropertyDescriptor(owner, key);
+      original = owner[key];
+    } catch (_) {
+      return null;
+    }
+    if (typeof original !== 'function') return null;
+    if (originalDescriptor && !Object.prototype.hasOwnProperty.call(originalDescriptor, 'value')) {
+      return null;
+    }
+    if (originalDescriptor && originalDescriptor.writable !== true) return null;
+
+    const lifecycle = { active: true };
+    const wrapper = createWrapper(original, lifecycle);
+    try {
+      if (originalDescriptor) {
+        Object.defineProperty(owner, key, { ...originalDescriptor, value: wrapper });
+      } else {
+        owner[key] = wrapper;
+      }
+      if (owner[key] !== wrapper) return null;
+    } catch (_) {
+      return null;
     }
 
-    try {
-      const origGo = History.prototype.go;
-      History.prototype.go = function (delta) {
-        if (delta === 0 || delta === '0') {
-          log('blocked history.go(0) for PCGamer');
-          return;
+    const record = { wrapper, lifecycle };
+    setOwnedPatch(owner, key, record);
+    patchCleanups.push(() => {
+      lifecycle.active = false;
+      try {
+        if (owner[key] === wrapper) {
+          if (originalDescriptor) Object.defineProperty(owner, key, originalDescriptor);
+          else delete owner[key];
         }
-        if (origGo) return origGo.apply(this, arguments);
-      };
-    } catch (_) {}
+      } catch (_) {}
+      clearOwnedPatch(owner, key, record);
+    });
+    return wrapper;
+  }
+
+  function restoreApiPatches() {
+    while (patchCleanups.length > 0) {
+      const cleanup = patchCleanups.pop();
+      try { cleanup(); } catch (_) {}
+    }
   }
 
   // ─── RECIPE CARD PROTECTION ─────
@@ -193,16 +249,73 @@ ${HIDE_SELECTORS.join(',\n')} {
 }
 `;
 
-  function injectCSS() {
+  let recipeSheet = null;
+  let recipeStyle = null;
+
+  function getAdoptedStyleSheets() {
+    const api = getBridge()?.api;
     try {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(CSS);
-      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+      if (api && typeof api.getAdoptedStyleSheets === 'function') {
+        return api.getAdoptedStyleSheets();
+      }
+      return document.adoptedStyleSheets;
     } catch (_) {
-      const style = nativeCreateElement.call(document, 'style');
-      style.setAttribute('data-chroma-recipes', '1');
-      style.textContent = CSS;
-      (document.head || document.documentElement).appendChild(style);
+      return [];
+    }
+  }
+
+  function setAdoptedStyleSheets(sheets) {
+    const api = getBridge()?.api;
+    if (api && typeof api.setAdoptedStyleSheets === 'function') {
+      api.setAdoptedStyleSheets(sheets);
+      return;
+    }
+    document.adoptedStyleSheets = sheets;
+  }
+
+  function injectCSS() {
+    if (!isActive) return;
+    try {
+      if (!recipeSheet) {
+        const api = getBridge()?.api;
+        recipeSheet = api && typeof api.createCssStyleSheet === 'function'
+          ? api.createCssStyleSheet()
+          : new CSSStyleSheet();
+        if (!recipeSheet) throw new Error('Constructed stylesheets unavailable');
+        recipeSheet.replaceSync(CSS);
+      }
+      const current = Array.from(getAdoptedStyleSheets() || []);
+      if (!current.includes(recipeSheet)) setAdoptedStyleSheets([...current, recipeSheet]);
+      return;
+    } catch (_) {
+      recipeSheet = null;
+    }
+
+    try {
+      if (!recipeStyle || !recipeStyle.isConnected) {
+        recipeStyle = nativeCreateElement.call(document, 'style');
+        recipeStyle.setAttribute('data-chroma-recipes', '1');
+        recipeStyle.textContent = CSS;
+        (document.head || document.documentElement).appendChild(recipeStyle);
+      }
+    } catch (_) {}
+  }
+
+  function removeCSS() {
+    if (recipeSheet) {
+      try {
+        const current = Array.from(getAdoptedStyleSheets() || []);
+        if (current.includes(recipeSheet)) {
+          setAdoptedStyleSheets(current.filter(sheet => sheet !== recipeSheet));
+        }
+      } catch (_) {}
+      recipeSheet = null;
+    }
+    if (recipeStyle) {
+      try {
+        if (recipeStyle.parentNode) recipeStyle.parentNode.removeChild(recipeStyle);
+      } catch (_) {}
+      recipeStyle = null;
     }
   }
 
@@ -227,25 +340,46 @@ ${HIDE_SELECTORS.join(',\n')} {
     } catch (_) { return false; }
   }
 
-  // Patch HTMLScriptElement.prototype.src once, for every future script.
-  try {
-    const scriptSrcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
-    if (scriptSrcDesc && scriptSrcDesc.configurable) {
-      Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+  function installScriptSrcPatch() {
+    try {
+      const owner = HTMLScriptElement.prototype;
+      if (getOwnedPatch(owner, 'src')) return;
+      const originalDescriptor = Object.getOwnPropertyDescriptor(owner, 'src');
+      if (!originalDescriptor?.configurable || typeof originalDescriptor.get !== 'function' ||
+          typeof originalDescriptor.set !== 'function') return;
+      const lifecycle = { active: true };
+      const wrapperGet = function () {
+        return Reflect.apply(originalDescriptor.get, this, []);
+      };
+      const wrapperSet = function (value) {
+        if (!lifecycle.active) return Reflect.apply(originalDescriptor.set, this, [value]);
+        if (isBadUrl(value)) {
+          log('neutered script.src →', value);
+          try { this.setAttribute('data-chroma-neutered', '1'); } catch (_) {}
+          return Reflect.apply(originalDescriptor.set, this, [NOOP_SRC]);
+        }
+        return Reflect.apply(originalDescriptor.set, this, [value]);
+      };
+      Object.defineProperty(owner, 'src', {
         configurable: true,
-        enumerable: scriptSrcDesc.enumerable,
-        get() { return scriptSrcDesc.get.call(this); },
-        set(v) {
-          if (isBadUrl(v)) {
-            log('neutered script.src →', v);
-            this.setAttribute('data-chroma-neutered', '1');
-            return scriptSrcDesc.set.call(this, NOOP_SRC);
-          }
-          return scriptSrcDesc.set.call(this, v);
-        },
+        enumerable: originalDescriptor.enumerable,
+        get: wrapperGet,
+        set: wrapperSet,
       });
-    }
-  } catch (_) {}
+      const record = { wrapper: wrapperSet, get: wrapperGet, set: wrapperSet, lifecycle };
+      setOwnedPatch(owner, 'src', record);
+      patchCleanups.push(() => {
+        lifecycle.active = false;
+        try {
+          const current = Object.getOwnPropertyDescriptor(owner, 'src');
+          if (current?.get === wrapperGet && current?.set === wrapperSet) {
+            Object.defineProperty(owner, 'src', originalDescriptor);
+          }
+        } catch (_) {}
+        clearOwnedPatch(owner, 'src', record);
+      });
+    } catch (_) {}
+  }
 
   // Anti-adblock injectors hide a recovery payload in the script's
   // onerror/onload HTML attrs; a sibling obfuscated script reads those
@@ -274,54 +408,61 @@ ${HIDE_SELECTORS.join(',\n')} {
     } catch (_) { return false; }
   }
 
-  const _setAttr = Element.prototype.setAttribute;
-  const _getAttr = Element.prototype.getAttribute;
-  const _prototypesTrusted = _isNative(_setAttr) && _isNative(_getAttr);
+  const initialSetAttribute = Element.prototype.setAttribute;
+  const initialGetAttribute = Element.prototype.getAttribute;
+  const initialAttributePrimitivesTrusted =
+    _isNative(initialSetAttribute) && _isNative(initialGetAttribute);
+  let attributePatchesEstablished = false;
 
-  // Patch setAttribute so `el.setAttribute('src', url)` is caught too.
-  if (_prototypesTrusted) {
-    Element.prototype.setAttribute = function (name, value) {
-      if (this.tagName === 'SCRIPT' && String(name).toLowerCase() === 'src' && isBadUrl(value)) {
+  function installElementAttributePatches() {
+    const currentSetAttribute = Element.prototype.setAttribute;
+    const currentGetAttribute = Element.prototype.getAttribute;
+    if (!initialAttributePrimitivesTrusted) return;
+    // Before the first trusted installation, refuse a page replacement made
+    // while configuration was still loading. After a prior Chroma lifecycle,
+    // a preserved page wrapper is expected and receives a fresh active layer.
+    if (!attributePatchesEstablished &&
+        (currentSetAttribute !== initialSetAttribute || currentGetAttribute !== initialGetAttribute)) return;
+
+    // Patch setAttribute so `el.setAttribute('src', url)` is caught too.
+    const setWrapper = patchMethod(Element.prototype, 'setAttribute', (original, lifecycle) => function (name, value) {
+      if (!lifecycle.active) return Reflect.apply(original, this, arguments);
+      const lowerName = String(name).toLowerCase();
+      if (this.tagName === 'SCRIPT' && lowerName === 'src' && isBadUrl(value)) {
         log('neutered setAttribute src →', value);
-        _setAttr.call(this, 'data-chroma-neutered', '1');
-        return _setAttr.call(this, 'src', NOOP_SRC);
+        Reflect.apply(original, this, ['data-chroma-neutered', '1']);
+        return Reflect.apply(original, this, ['src', NOOP_SRC]);
       }
-      if (this.tagName === 'SCRIPT') {
-        const lname = String(name).toLowerCase();
-        if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(value)) {
-          log('blocked setAttribute', lname, 'on injector', this.id || '(no id)');
-          return;
-        }
+      if (this.tagName === 'SCRIPT' &&
+          (lowerName === 'onerror' || lowerName === 'onload') &&
+          looksLikeInjectorPayload(value)) {
+        log('blocked setAttribute', lowerName, 'on injector', this.id || '(no id)');
+        return;
       }
-      if (this.tagName === 'META' && String(name).toLowerCase() === 'content'
-          && looksLikeRedirectTrap(value)) {
+      if (this.tagName === 'META' && lowerName === 'content' && looksLikeRedirectTrap(value)) {
         log('blocked meta-refresh →', value);
         return;
       }
-      return _setAttr.call(this, name, value);
-    };
-  }
+      return Reflect.apply(original, this, arguments);
+    });
 
-  // The HTML parser sets `onerror`/`onload` directly (not via setAttribute),
-  // so a sibling inline script can eval the payload before any observer
-  // fires. Intercept getAttribute so the reader script sees empty.
-  if (_prototypesTrusted) {
-    Element.prototype.getAttribute = function (name) {
-      const v = _getAttr.call(this, name);
+    // The HTML parser sets `onerror`/`onload` directly (not via setAttribute),
+    // so a sibling inline script can eval the payload before an observer fires.
+    const getWrapper = patchMethod(Element.prototype, 'getAttribute', (original, lifecycle) => function (name) {
+      const value = Reflect.apply(original, this, arguments);
+      if (!lifecycle.active) return value;
       if (this.tagName === 'SCRIPT') {
-        const lname = String(name).toLowerCase();
-        if ((lname === 'onerror' || lname === 'onload') && looksLikeInjectorPayload(v)) {
-          log('hid injector', lname, 'from getAttribute');
+        const lowerName = String(name).toLowerCase();
+        if ((lowerName === 'onerror' || lowerName === 'onload') &&
+            looksLikeInjectorPayload(value)) {
+          log('hid injector', lowerName, 'from getAttribute');
           return '';
         }
       }
-      return v;
-    };
+      return value;
+    });
+    if (setWrapper || getWrapper) attributePatchesEstablished = true;
   }
-
-  Document.prototype.createElement = function (tag, opts) {
-    return nativeCreateElement.call(this, tag, opts);
-  };
 
   // ─── REDIRECT GUARD ─────
   // content-loader.com / error-report.com redirect the top frame when they
@@ -333,32 +474,31 @@ ${HIDE_SELECTORS.join(',\n')} {
       return REDIRECT_BLOCKLIST.some(b => s.includes(b));
     } catch (_) { return false; }
   }
-  try {
-    // `window.location` isn't reliably reconfigurable cross-browser; instead
-    // patch the common setter paths on the existing Location object.
-    const L = window.location;
-    const origAssign = L.assign.bind(L);
-    const origReplace = L.replace.bind(L);
-    L.assign = function (url) {
-      if (looksLikeRedirectTrap(url)) { log('blocked assign →', url); return; }
-      return origAssign(url);
-    };
-    L.replace = function (url) {
-      if (looksLikeRedirectTrap(url)) { log('blocked replace →', url); return; }
-      return origReplace(url);
-    };
-    // Why: anti-adblock fallback calls reload(); F5 still works (browser-level).
-    // Use defineProperty on Location.prototype so page scripts can't restore native.
-    try {
-      Object.defineProperty(Location.prototype, 'reload', {
-        value: function () { log('blocked location.reload() from page script'); },
-        writable: false,
-        configurable: false,
-      });
-    } catch (_) {
-      L.reload = function () { log('blocked location.reload() from page script'); };
-    }
-  } catch (_) {}
+  function installRedirectPatches() {
+    patchMethod(Location.prototype, 'assign', (original, lifecycle) => function (url) {
+      if (lifecycle.active && looksLikeRedirectTrap(url)) {
+        log('blocked assign →', url);
+        return;
+      }
+      return Reflect.apply(original, this, arguments);
+    });
+    patchMethod(Location.prototype, 'replace', (original, lifecycle) => function (url) {
+      if (lifecycle.active && looksLikeRedirectTrap(url)) {
+        log('blocked replace →', url);
+        return;
+      }
+      return Reflect.apply(original, this, arguments);
+    });
+    // Page-triggered reloads are blocked only while active. The replacement is
+    // kept configurable so deactivation can restore the original descriptor.
+    patchMethod(Location.prototype, 'reload', (original, lifecycle) => function () {
+      if (lifecycle.active) {
+        log('blocked location.reload() from page script');
+        return;
+      }
+      return Reflect.apply(original, this, arguments);
+    });
+  }
 
   // Suppress the fallback alert() the loader fires after all its sources fail.
   const BAD_ALERT_PATTERNS = [
@@ -369,37 +509,107 @@ ${HIDE_SELECTORS.join(',\n')} {
     /allow ads/i,
     /please.+ads.+on this site/i,
   ];
-  const origAlert = window.alert;
-  window.alert = function (msg) {
+  function installDialogPatches() {
+    patchMethod(window, 'alert', (original, lifecycle) => function (message) {
+      if (lifecycle.active) {
+        try {
+          const text = String(message == null ? '' : message);
+          if (BAD_ALERT_PATTERNS.some(pattern => pattern.test(text))) {
+            log('swallowed alert →', text);
+            return;
+          }
+        } catch (_) {}
+      }
+      return Reflect.apply(original, this, arguments);
+    });
+    patchMethod(window, 'confirm', (original, lifecycle) => function (message) {
+      if (lifecycle.active) {
+        try {
+          const text = String(message == null ? '' : message);
+          if (BAD_ALERT_PATTERNS.some(pattern => pattern.test(text))) {
+            log('swallowed confirm →', text);
+            return false;
+          }
+        } catch (_) {}
+      }
+      return Reflect.apply(original, this, arguments);
+    });
+  }
+
+  function installPcgamerFeatures() {
+    if (siteKey !== 'pcgamer.com') return;
+    const suffix = '_as_req';
+    const lifecycle = { active: true };
+    const messageHandler = event => {
+      if (!lifecycle.active) return;
+      if (event.source === window && typeof event.data === 'string' && event.data.endsWith(suffix)) {
+        const token = event.data.slice(0, -suffix.length);
+        window.postMessage(token + '_as_res', '*');
+      }
+    };
+    const api = getBridge()?.api;
     try {
-      const s = String(msg == null ? '' : msg);
-      if (BAD_ALERT_PATTERNS.some(r => r.test(s))) {
-        log('swallowed alert →', s);
+      if (api && typeof api.addEventListener === 'function') api.addEventListener('message', messageHandler);
+      else window.addEventListener('message', messageHandler);
+      patchCleanups.push(() => {
+        lifecycle.active = false;
+        try {
+          if (api && typeof api.removeEventListener === 'function') api.removeEventListener('message', messageHandler);
+          else window.removeEventListener('message', messageHandler);
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    patchMethod(Element.prototype, 'remove', (original, patchLifecycle) => function () {
+      if (patchLifecycle.active && this === document.body) {
+        log('blocked document.body.remove() for PCGamer');
         return;
       }
-    } catch (_) {}
-    return origAlert.apply(this, arguments);
-  };
-
-  // Suppress the fallback confirm() some loaders use instead of alert().
-  const origConfirm = window.confirm;
-  window.confirm = function (msg) {
-    try {
-      const s = String(msg == null ? '' : msg);
-      if (BAD_ALERT_PATTERNS.some(r => r.test(s))) {
-        log('swallowed confirm →', s);
-        return false;
+      return Reflect.apply(original, this, arguments);
+    });
+    patchMethod(History.prototype, 'go', (original, patchLifecycle) => function (delta) {
+      if (patchLifecycle.active && (delta === 0 || delta === '0')) {
+        log('blocked history.go(0) for PCGamer');
+        return;
       }
-    } catch (_) {}
-    return origConfirm.apply(this, arguments);
-  };
+      return Reflect.apply(original, this, arguments);
+    });
+  }
 
   // ─── MUTATION OBSERVER ─────
   // Catch late-injected ad/overlay containers the CSS rules miss (inline styles,
   // dynamically-generated IDs, shadow wrappers).
   const AD_ID_PATTERN = /^(ad[_-]|google_ads_|taboola-|outbrain-|mediavine-|adthrive|om-)/i;
+  const hiddenElements = new Map();
+
+  function hideElement(element) {
+    if (!isActive || !element?.style || hiddenElements.has(element)) return;
+    try {
+      hiddenElements.set(element, {
+        value: element.style.getPropertyValue('display'),
+        priority: element.style.getPropertyPriority('display'),
+      });
+      element.style.setProperty('display', 'none', 'important');
+    } catch (_) {
+      hiddenElements.delete(element);
+    }
+  }
+
+  function restoreHiddenElements() {
+    for (const [element, original] of hiddenElements) {
+      try {
+        // Do not overwrite a style that the page changed after Chroma hid it.
+        if (element.style.getPropertyValue('display') !== 'none' ||
+            element.style.getPropertyPriority('display') !== 'important') continue;
+        if (original.value) element.style.setProperty('display', original.value, original.priority);
+        else element.style.removeProperty('display');
+      } catch (_) {}
+    }
+    hiddenElements.clear();
+  }
 
   function sweep(root) {
+    if (!isActive) return;
     const scope = root && root.querySelectorAll ? root : document;
     let nodes;
     try {
@@ -407,7 +617,7 @@ ${HIDE_SELECTORS.join(',\n')} {
     } catch (_) { return; }
     for (const el of nodes) {
       if (insideRecipeCard(el)) continue;
-      el.style.setProperty('display', 'none', 'important');
+      hideElement(el);
     }
 
     // ID-pattern sweep for things the selector list can't express generically.
@@ -415,33 +625,57 @@ ${HIDE_SELECTORS.join(',\n')} {
     for (const el of idCandidates) {
       if (!AD_ID_PATTERN.test(el.id)) continue;
       if (insideRecipeCard(el)) continue;
-      el.style.setProperty('display', 'none', 'important');
+      hideElement(el);
     }
   }
 
   let observer = null;
+  let pendingNodes = new Set();
+  let scheduledAnimationFrame = null;
+  let domReadyHandler = null;
+
+  function requestFrame(callback) {
+    const api = getBridge()?.api;
+    if (api && typeof api.requestAnimationFrame === 'function') return api.requestAnimationFrame(callback);
+    return window.requestAnimationFrame(callback);
+  }
+
+  function cancelFrame(id) {
+    const api = getBridge()?.api;
+    if (api && typeof api.cancelAnimationFrame === 'function') api.cancelAnimationFrame(id);
+    else if (typeof window.cancelAnimationFrame === 'function') window.cancelAnimationFrame(id);
+  }
+
   function startObserver() {
-    if (observer) observer.disconnect();
-    let pending = new Set();
-    let scheduled = false;
+    if (!isActive || observer || !document.documentElement) return;
+    const generation = lifecycleGeneration;
 
     observer = new MutationObserver((mutations) => {
+      if (!isActive || generation !== lifecycleGeneration) return;
       let added = false;
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            pending.add(node);
+            pendingNodes.add(node);
             added = true;
           }
         }
       }
-      if (added && !scheduled) {
-        scheduled = true;
-        requestAnimationFrame(() => {
-          const batch = Array.from(pending);
-          pending.clear();
-          scheduled = false;
-          for (const n of batch) sweep(n);
+      if (added && scheduledAnimationFrame == null) {
+        const schedule = { id: null, generation };
+        scheduledAnimationFrame = schedule;
+        schedule.id = requestFrame(() => {
+          // A canceled callback may still run. It must not clear a newer
+          // generation's frame record or pending batch.
+          if (scheduledAnimationFrame !== schedule) return;
+          scheduledAnimationFrame = null;
+          if (!isActive || generation !== lifecycleGeneration) {
+            pendingNodes.clear();
+            return;
+          }
+          const batch = Array.from(pendingNodes);
+          pendingNodes.clear();
+          for (const node of batch) sweep(node);
         });
       }
     });
@@ -449,16 +683,92 @@ ${HIDE_SELECTORS.join(',\n')} {
     observer.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  // ─── BOOT ─────
-  injectCSS();
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
+  function startDomLifecycle() {
+    if (!isActive) return;
+    if (document.readyState !== 'loading') {
       sweep(document);
       startObserver();
-    }, { once: true });
-  } else {
-    sweep(document);
-    startObserver();
+      return;
+    }
+    const generation = lifecycleGeneration;
+    domReadyHandler = () => {
+      domReadyHandler = null;
+      if (!isActive || generation !== lifecycleGeneration) return;
+      sweep(document);
+      startObserver();
+    };
+    nativeAddDocEventListener('DOMContentLoaded', domReadyHandler, { once: true });
   }
+
+  function stopDomLifecycle() {
+    if (domReadyHandler) {
+      try { nativeRemoveDocEventListener('DOMContentLoaded', domReadyHandler); } catch (_) {}
+      domReadyHandler = null;
+    }
+    if (observer) {
+      try { observer.disconnect(); } catch (_) {}
+      observer = null;
+    }
+    if (scheduledAnimationFrame != null) {
+      const schedule = scheduledAnimationFrame;
+      scheduledAnimationFrame = null;
+      try { cancelFrame(schedule.id); } catch (_) {}
+    }
+    pendingNodes.clear();
+  }
+
+  function installApiPatches() {
+    installElementAttributePatches();
+    installScriptSrcPatch();
+    installRedirectPatches();
+    installDialogPatches();
+    installPcgamerFeatures();
+  }
+
+  function activate() {
+    if (isActive) return;
+    isActive = true;
+    lifecycleGeneration++;
+    installApiPatches();
+    injectCSS();
+    startDomLifecycle();
+    log('activated at bridge revision', lastBridgeRevision);
+  }
+
+  function deactivate() {
+    if (!isActive && patchCleanups.length === 0 && hiddenElements.size === 0) return;
+    // Flip the global lifecycle first. Individual API cleanup callbacks then
+    // permanently deactivate their own cells before attempting restoration.
+    isActive = false;
+    lifecycleGeneration++;
+    stopDomLifecycle();
+    removeCSS();
+    restoreHiddenElements();
+    restoreApiPatches();
+    log('deactivated at bridge revision', lastBridgeRevision);
+  }
+
+  function reconcileTrustedConfig() {
+    const bridge = getBridge();
+    if (!bridge) {
+      deactivate();
+      return;
+    }
+    const revision = getBridgeRevision();
+    if (!Number.isSafeInteger(revision) || revision < 0 || revision <= lastBridgeRevision) return;
+    const config = getBridgeConfig();
+    if (!config || !Object.isFrozen(config) || typeof config.enabled !== 'boolean') {
+      deactivate();
+      return;
+    }
+    lastBridgeRevision = revision;
+    if (config.enabled === true) activate();
+    else deactivate();
+  }
+
+  // These events are notification-only and therefore safe for pages to forge:
+  // every callback re-reads the immutable bridge and requires a newer revision.
+  nativeAddDocEventListener('__CHROMA_BRIDGE_READY__', reconcileTrustedConfig, true);
+  nativeAddDocEventListener('__CHROMA_CONFIG_UPDATE__', reconcileTrustedConfig, true);
+  reconcileTrustedConfig();
 })();

@@ -27,10 +27,15 @@ User scriptlet resources are executable code. Chroma does not bundle them, audit
 
 They run only when all of these are true:
 
-1. You add a trusted HTTPS resource URL in settings.
-2. Chroma successfully parses one or more JavaScript resources from that file.
-3. You save a matching `domain##+js(resource-name)` rule.
-4. Chrome's **Allow User Scripts** setting is enabled for Chroma.
+1. Chroma's master protection switch is enabled.
+2. You add a trusted HTTPS resource URL in settings.
+3. Chroma successfully parses one or more JavaScript resources from that file.
+4. You save a matching `domain##+js(resource-name)` rule.
+5. Chrome's **Allow User Scripts** setting is enabled for Chroma.
+
+Turning master protection off unregisters advanced user scriptlets while keeping
+their cached resources and rules available for restoration when protection is
+enabled again.
 
 Resource URLs must be public `https://` URLs using the default HTTPS port, with no username or password in the URL. Localhost and private-network hosts are rejected.
 

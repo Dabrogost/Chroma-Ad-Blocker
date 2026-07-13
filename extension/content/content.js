@@ -23,7 +23,54 @@
   };
 
   function isHostOrSubdomain(hostname, domain) {
-    return hostname === domain || hostname.endsWith('.' + domain);
+    if (typeof domain !== 'string') return false;
+    const normalizedDomain = domain.toLowerCase();
+    return hostname === normalizedDomain || hostname.endsWith('.' + normalizedDomain);
+  }
+
+  function isStoredSubscriptionDomain(domain) {
+    if (
+      typeof domain !== 'string' ||
+      domain.length > 253 ||
+      !domain.includes('.') ||
+      domain.startsWith('.') ||
+      domain.endsWith('.') ||
+      !/^[a-z0-9.-]+$/i.test(domain)
+    ) {
+      return false;
+    }
+    const labels = domain.split('.');
+    if (/^[0-9.]+$/.test(domain) && (
+      labels.length !== 4 ||
+      labels.some(label => !/^\d{1,3}$/.test(label) || Number(label) > 255)
+    )) {
+      return false;
+    }
+    return labels.every(label =>
+      label.length > 0 &&
+      label.length <= 63 &&
+      !label.startsWith('-') &&
+      !label.endsWith('-')
+    );
+  }
+
+  function subscriptionDomainRuleApplies(rule, hostname) {
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return false;
+    if (rule.domains != null && (!Array.isArray(rule.domains) || rule.domains.length === 0)) return false;
+    if (rule.excludedDomains != null &&
+        (!Array.isArray(rule.excludedDomains) || rule.excludedDomains.length === 0)) return false;
+    const includedDomains = rule.domains || [];
+    const excludedDomains = rule.excludedDomains || [];
+    if (
+      includedDomains.some(domain => !isStoredSubscriptionDomain(domain)) ||
+      excludedDomains.some(domain => !isStoredSubscriptionDomain(domain))
+    ) {
+      return false;
+    }
+    const included = includedDomains.length === 0 ||
+      includedDomains.some(domain => isHostOrSubdomain(hostname, domain));
+    const excluded = excludedDomains.some(domain => isHostOrSubdomain(hostname, domain));
+    return included && !excluded;
   }
 
   const currentHostname = String(window.location.hostname || '').toLowerCase();
@@ -33,27 +80,80 @@
 
   // ─── STATE ─────
   let observer = null;
+  let BUILTIN_HIDE_SELECTORS = [];
+  let SUBSCRIPTION_HIDE_SELECTORS = [];
   let HIDE_SELECTORS = [];
   let LOCAL_ZAPPER_SELECTORS = [];
   let WARNING_SELECTOR_COMBINED = '';
   let IS_WHITELISTED = false;
   let statsQueue = [];
   let statsTimer = null;
+  let statsConfigReady = false;
   const STATS_FLUSH_MS = 750;
   const STATS_BATCH_CAP = 50;
+  const STATS_WINDOW_MS = 60_000;
+  const STATS_WINDOW_CAP = 20;
+  const STATS_EVENT_TYPES = Object.freeze({
+    COSMETIC_HIDE: 'cosmetic_hide',
+    WARNING_SUPPRESSION: 'warning_suppression',
+    ZAPPER_HIT: 'zapper_hit',
+    SCRIPTLET_HIT: 'scriptlet_hit',
+    SCRIPTLET_ERROR: 'scriptlet_error'
+  });
+  let statsWindowStartedAt = Date.now();
+  let statsWindowCount = 0;
   const countedElementsByKey = new Map();
   
   // Track our adopted stylesheets to allow toggling without clobbering other extensions
   const chromaSheets = new Map();
   const chromaSheetContent = new Map();
 
+  function getStatsEventType(event) {
+    if (!event || typeof event !== 'object' || Array.isArray(event)) return null;
+    if (event.layer === 'cosmetic' && event.type === 'hide') return STATS_EVENT_TYPES.COSMETIC_HIDE;
+    if (event.layer === 'warning' && event.type === 'suppression') return STATS_EVENT_TYPES.WARNING_SUPPRESSION;
+    if (event.layer === 'zapper' && event.type === 'hit') return STATS_EVENT_TYPES.ZAPPER_HIT;
+    if (event.layer === 'scriptlet' && event.type === 'hit') return STATS_EVENT_TYPES.SCRIPTLET_HIT;
+    if (event.layer === 'scriptlet' && event.type === 'error') return STATS_EVENT_TYPES.SCRIPTLET_ERROR;
+    return null;
+  }
+
+  function isStatsFeatureActive(eventType) {
+    if (!statsConfigReady || CONFIG.enabled !== true || IS_WHITELISTED) return false;
+    if (eventType === STATS_EVENT_TYPES.COSMETIC_HIDE) return CONFIG.cosmetic === true;
+    if (eventType === STATS_EVENT_TYPES.WARNING_SUPPRESSION) return CONFIG.suppressWarnings === true;
+    return eventType === STATS_EVENT_TYPES.ZAPPER_HIT ||
+      eventType === STATS_EVENT_TYPES.SCRIPTLET_HIT ||
+      eventType === STATS_EVENT_TYPES.SCRIPTLET_ERROR;
+  }
+
+  function reconcilePendingStats() {
+    if (CONFIG.enabled !== true || IS_WHITELISTED) {
+      statsQueue.length = 0;
+      statsWindowStartedAt = Date.now();
+      statsWindowCount = 0;
+    } else {
+      statsQueue = statsQueue.filter(({ eventType }) => isStatsFeatureActive(eventType));
+    }
+
+    if (statsQueue.length === 0 && statsTimer) {
+      clearTimeout(statsTimer);
+      statsTimer = null;
+    }
+  }
+
   function queueStatsEvent(event) {
-    if (!event || typeof event !== 'object') return;
-    statsQueue.push({
-      ...event,
-      ts: Date.now(),
-      domain: window.location.hostname
-    });
+    const eventType = getStatsEventType(event);
+    if (!eventType || !isStatsFeatureActive(eventType)) return;
+
+    const now = Date.now();
+    if (now - statsWindowStartedAt >= STATS_WINDOW_MS) {
+      statsWindowStartedAt = now;
+      statsWindowCount = 0;
+    }
+    if (statsWindowCount >= STATS_WINDOW_CAP) return;
+    statsWindowCount++;
+    statsQueue.push({ eventType });
 
     if (statsQueue.length >= STATS_BATCH_CAP) {
       flushStatsQueue();
@@ -138,6 +238,31 @@
     }
 
     return out;
+  }
+
+  function getMatchingSubscriptionCosmeticSelectors(rules, hostname = currentHostname) {
+    if (!Array.isArray(rules)) return [];
+    const exceptionSelectors = new Set(
+      rules
+        .filter(rule => rule?.isException === true && subscriptionDomainRuleApplies(rule, hostname))
+        .map(rule => rule.selector)
+    );
+    return getValidSelectors(
+      rules
+        .filter(rule =>
+          rule?.isException === false &&
+          !exceptionSelectors.has(rule?.selector) &&
+          subscriptionDomainRuleApplies(rule, hostname)
+        )
+        .map(rule => rule.selector)
+    );
+  }
+
+  function rebuildHideSelectors() {
+    HIDE_SELECTORS = getValidSelectors([
+      ...BUILTIN_HIDE_SELECTORS,
+      ...SUBSCRIPTION_HIDE_SELECTORS
+    ]);
   }
 
   function buildHideCSS(selectors) {
@@ -645,6 +770,7 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'CONFIG_UPDATE') {
       Object.assign(CONFIG, msg.config);
+      reconcilePendingStats();
       publishQuietConsoleConfig();
       
       if (shouldRunObserver()) {
@@ -662,20 +788,39 @@
 
   if (chrome.storage?.onChanged?.addListener) {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes.localCosmeticRules) return;
+      if (area !== 'local') return;
       if (IS_WHITELISTED) return;
-      LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(changes.localCosmeticRules.newValue || []);
-      injectAllCSS();
+      let cosmeticRuntimeChanged = false;
+      if (changes.localCosmeticRules) {
+        LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(changes.localCosmeticRules.newValue || []);
+        cosmeticRuntimeChanged = true;
+      }
+      if (changes.subscriptionCosmeticRules) {
+        SUBSCRIPTION_HIDE_SELECTORS = getMatchingSubscriptionCosmeticSelectors(
+          changes.subscriptionCosmeticRules.newValue || []
+        );
+        rebuildHideSelectors();
+        cosmeticRuntimeChanged = true;
+      }
+      if (cosmeticRuntimeChanged) injectAllCSS();
     });
   }
 
   // ─── INIT ─────
   document.addEventListener('__CHROMA_SCRIPTLET_STATS__', (event) => {
-    const detail = event?.detail;
-    if (!detail || typeof detail !== 'object') return;
+    let eventType = null;
+    try {
+      const detail = event?.detail;
+      if (!detail || typeof detail !== 'object' || Array.isArray(detail) ||
+          !Object.prototype.hasOwnProperty.call(detail, 'type')) return;
+      if (detail.type === 'hit' || detail.type === 'error') eventType = detail.type;
+    } catch (_) {
+      return;
+    }
+    if (!eventType) return;
     queueStatsEvent({
       layer: 'scriptlet',
-      type: detail.type === 'error' ? 'error' : 'hit'
+      type: eventType
     });
   }, true);
 
@@ -700,7 +845,8 @@
         return;
       }
 
-      IS_WHITELISTED = whitelist.some(d => hostname === d || hostname.endsWith('.' + d));
+      IS_WHITELISTED = whitelist.some(domain => isHostOrSubdomain(hostname.toLowerCase(), domain));
+      statsConfigReady = true;
       publishQuietConsoleConfig();
       if (IS_WHITELISTED) {
         if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
@@ -708,31 +854,14 @@
       }
 
       if (data.HIDE_SELECTORS) {
-        HIDE_SELECTORS = getValidSelectors(data.HIDE_SELECTORS);
+        BUILTIN_HIDE_SELECTORS = getValidSelectors(data.HIDE_SELECTORS);
       }
 
-      // Merge subscription cosmetic rules applicable to the current hostname.
-      if (data.subscriptionCosmeticRules && Array.isArray(data.subscriptionCosmeticRules)) {
-        const h = window.location.hostname;
-
-        // Collect exception selectors for this domain first
-        const exceptionSelectors = new Set(
-          data.subscriptionCosmeticRules
-            .filter(r => r.isException && (r.domains === null || r.domains.some(d => h === d || h.endsWith('.' + d))))
-            .map(r => r.selector)
-        );
-
-        // Merge non-excepted selectors into HIDE_SELECTORS
-        const additional = data.subscriptionCosmeticRules
-          .filter(r =>
-            !r.isException &&
-            !exceptionSelectors.has(r.selector) &&
-            (r.domains === null || r.domains.some(d => h === d || h.endsWith('.' + d)))
-          )
-          .map(r => r.selector);
-
-        HIDE_SELECTORS = getValidSelectors([...HIDE_SELECTORS, ...additional]);
-      }
+      SUBSCRIPTION_HIDE_SELECTORS = getMatchingSubscriptionCosmeticSelectors(
+        data.subscriptionCosmeticRules || [],
+        hostname
+      );
+      rebuildHideSelectors();
 
       LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(data.localCosmeticRules || [], hostname);
       
@@ -783,7 +912,10 @@
     /** @param {string} val @returns {void} */
     globalThis.setWarningSelector = (val) => { WARNING_SELECTOR_COMBINED = val; };
     /** @param {string[]} val @returns {void} */
-    globalThis.setHideSelectors = (val) => { HIDE_SELECTORS = getValidSelectors(val); };
+    globalThis.setHideSelectors = (val) => {
+      BUILTIN_HIDE_SELECTORS = getValidSelectors(val);
+      rebuildHideSelectors();
+    };
     /** @param {Object[]} val @param {string} [hostname] @returns {string[]} */
     globalThis.getMatchingLocalZapperSelectors = getMatchingLocalZapperSelectors;
     /** @param {Object[]} val @returns {void} */

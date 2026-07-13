@@ -18,6 +18,7 @@ const backgroundJsCode = backgroundJsCodeRaw
     var setSubscriptionEnabled = globalThis._mockSetSubscriptionEnabled;
     var addSubscription      = globalThis._mockAddSubscription;
     var removeSubscription   = globalThis._mockRemoveSubscription;
+    var reconcileSubscriptionRuntimeState = globalThis._mockReconcileSubscriptionRuntimeState || (async () => ({ ok: true }));
   `)
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
@@ -42,6 +43,10 @@ const dnrStateCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ba
   .replace('const DEBUG = false;', 'var DEBUG = false;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = globalThis._mockClearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._mockRecordHealthDiagnostic || (async () => {});")
+  .replace(/import\s*\{[\s\S]*?\}\s*from\s*['"]\.\.\/subscriptions\/dnr\.js['"];?/, `
+    var buildSubscriptionRuleApplication = globalThis._mockBuildSubscriptionRuleApplication || (() => ({ networkRules: [], appliedNetworkRuleCount: 0, appliedNetworkRulesPerSub: {} }));
+    var prepareSubscriptionRules = globalThis._mockPrepareSubscriptionRules || (rules => rules.map((rule, index) => ({ ...rule, id: 100000 + index })));
+  `)
   .replace(/^export\s+/gm, '');
 
 // ─── GETDEFAULTDYNAMICRULES ─────
@@ -69,6 +74,7 @@ test('getDefaultDynamicRules', async (t) => {
     declarativeNetRequest: {
       getDynamicRules: () => Promise.resolve([]),
       updateDynamicRules: () => Promise.resolve(),
+      updateEnabledRulesets: () => Promise.resolve(),
       onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
@@ -101,6 +107,22 @@ test('getDefaultDynamicRules', async (t) => {
   sandbox._mockAddSubscription      = async () => ({ ok: true });
   sandbox._mockRemoveSubscription   = async () => ({ ok: true });
   sandbox._mockInitScriptletEngine  = async () => {};
+  let userScriptRecoveryCalls = 0;
+  const subscriptionRecoveryOrder = [];
+  const webRtcWakeCalls = [];
+  const browserPrivacyWakeCalls = [];
+  const geolocationWakeCalls = [];
+  sandbox._mockReconcileSubscriptionRuntimeState = async () => {
+    subscriptionRecoveryOrder.push('subscription-runtime');
+    return { ok: true };
+  };
+  sandbox._mockRecoverUserScriptsIfNeeded = async () => {
+    subscriptionRecoveryOrder.push('user-scripts');
+    userScriptRecoveryCalls++;
+  };
+  sandbox._mockSyncWebRtcLeakProtection = async (...args) => { webRtcWakeCalls.push(args); };
+  sandbox._mockSyncBrowserPrivacyHardening = async (...args) => { browserPrivacyWakeCalls.push(args); };
+  sandbox._mockSyncGeolocationProtection = async (...args) => { geolocationWakeCalls.push(args); };
   sandbox._mockDecryptAuth          = async () => ({ username: 'u', password: 'p' });
   sandbox._mockEncryptAuth          = async () => ({ iv: 'iv', ciphertext: 'ct' });
 
@@ -118,6 +140,19 @@ test('getDefaultDynamicRules', async (t) => {
   vm.runInContext(configStateCode, sandbox);
   vm.runInContext(dnrStateCode, sandbox);
   vm.runInContext(backgroundJsCode, sandbox);
+
+  await t.test('ordinary service-worker evaluation restores subscription aggregates before userScript recovery', async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(userScriptRecoveryCalls, 1);
+    assert.deepStrictEqual(subscriptionRecoveryOrder, ['subscription-runtime', 'user-scripts']);
+  });
+
+  await t.test('ordinary service-worker evaluation reconciles Chrome privacy controls', async () => {
+    for (let index = 0; index < 4; index++) await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(webRtcWakeCalls.length, 1);
+    assert.strictEqual(browserPrivacyWakeCalls.length, 1);
+    assert.strictEqual(geolocationWakeCalls.length, 1);
+  });
 
   await t.test('returns an array of rules', () => {
     const rules = sandbox.getDefaultDynamicRules();
@@ -327,6 +362,11 @@ test('syncDynamicRules successful syncing', async (t) => {
   const mockExistingRules = [{ id: 1001 }, { id: 1002 }];
   const mockStoredRules = [{ id: 999, action: { type: 'block' } }];
   const defaultStorageGet = async (key) => {
+    if (Array.isArray(key)) {
+      const result = {};
+      for (const item of key) Object.assign(result, await defaultStorageGet(item));
+      return result;
+    }
     if (key === 'dynamicRules') {
       return { dynamicRules: sandbox.mockStorageRules };
     }
@@ -361,6 +401,7 @@ test('syncDynamicRules successful syncing', async (t) => {
         updateDynamicRulesCalls.push(args);
         return Promise.resolve();
       },
+      updateEnabledRulesets: () => Promise.resolve(),
       onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
@@ -383,6 +424,16 @@ test('syncDynamicRules successful syncing', async (t) => {
     webRequest: {
       onAuthRequired: { addListener: () => {} }
     }
+  };
+  const useStorage = (values) => {
+    chromeMock.storage.local.get = async (keys) => {
+      const requested = Array.isArray(keys) ? keys : [keys];
+      const result = {};
+      for (const key of requested) {
+        if (Object.prototype.hasOwnProperty.call(values, key)) result[key] = values[key];
+      }
+      return result;
+    };
   };
 
   sandbox._mockInitSubscriptions    = async () => {};
@@ -454,11 +505,7 @@ test('syncDynamicRules successful syncing', async (t) => {
   });
 
   await t.test('tracking URL cleanup can be disabled without disabling default dynamic rules', async () => {
-    chromeMock.storage.local.get = async (key) => {
-      if (key === 'config') return { config: { trackingUrlCleanup: false } };
-      if (key === 'dynamicRules') return { dynamicRules: undefined };
-      return {};
-    };
+    useStorage({ config: { trackingUrlCleanup: false }, dynamicRules: undefined });
     updateDynamicRulesArgs = null;
     updateDynamicRulesCalls = [];
 
@@ -470,11 +517,7 @@ test('syncDynamicRules successful syncing', async (t) => {
   });
 
   await t.test('acceleration-off rule reversal preserves connectivity allows and URL cleanup redirects', async () => {
-    chromeMock.storage.local.get = async (key) => {
-      if (key === 'config') return { config: { acceleration: false, trackingUrlCleanup: true } };
-      if (key === 'dynamicRules') return { dynamicRules: undefined };
-      return {};
-    };
+    useStorage({ config: { acceleration: false, trackingUrlCleanup: true }, dynamicRules: undefined });
     updateDynamicRulesArgs = null;
     updateDynamicRulesCalls = [];
 
@@ -489,12 +532,11 @@ test('syncDynamicRules successful syncing', async (t) => {
   });
 
   await t.test('tracking URL cleanup rejection does not block core default dynamic rules', async () => {
-    chromeMock.storage.local.get = async (key) => {
-      if (key === 'config') return { config: { acceleration: true, trackingUrlCleanup: true } };
-      if (key === 'dynamicRules') return { dynamicRules: undefined };
-      if (key === 'whitelist') return { whitelist: [] };
-      return {};
-    };
+    useStorage({
+      config: { acceleration: true, trackingUrlCleanup: true },
+      dynamicRules: undefined,
+      whitelist: []
+    });
     updateDynamicRulesArgs = null;
     updateDynamicRulesCalls = [];
     chromeMock.declarativeNetRequest.updateDynamicRules = async (args) => {
@@ -546,7 +588,7 @@ test('syncDynamicRules successful syncing', async (t) => {
     }).type, 'block');
     assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 1001 } }).type, 'allow');
     assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 1002 } }).type, 'block');
-    assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 100000 } }).type, 'block');
+    assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 100000 } }).type, 'match');
     assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 9000000 } }).type, 'allow');
     assert.strictEqual(sandbox.classifyDnrMatch({ rule: { ruleId: 42 } }).type, 'match');
   });
@@ -579,6 +621,7 @@ test('syncDynamicRules error handling', async (t) => {
     declarativeNetRequest: {
       getDynamicRules: () => Promise.resolve([]),
       updateDynamicRules: () => Promise.reject(new Error('Simulated update error')),
+      updateEnabledRulesets: () => Promise.resolve(),
       onRuleMatchedDebug: { addListener: () => {} }
     },
     tabs: {
@@ -638,10 +681,104 @@ test('syncDynamicRules error handling', async (t) => {
   vm.runInContext(backgroundJsCode, sandbox);
 
   await t.test('catches and logs error when updateDynamicRules fails', async () => {
-    await sandbox.syncDynamicRules();
+    await assert.rejects(() => sandbox.syncDynamicRules(), /Simulated update error/);
 
     assert.strictEqual(consoleErrorCalled, true, 'console.error should have been called');
     assert.ok(errorLogged instanceof Error, 'Logged error should be an Error instance');
     assert.strictEqual(errorLogged.message, 'Simulated update error', 'Should log the correct error');
   });
+});
+
+test('network lifecycle paths preserve an inactive desired state', async () => {
+  const listeners = {};
+  const storage = {
+    config: { enabled: true, networkBlocking: false },
+    proxyConfigs: []
+  };
+  let runtimeRules = [];
+  let reconcileCount = 0;
+  let refreshCount = 0;
+  const webRtcLifecycleStates = [];
+  const browserPrivacyLifecycleStates = [];
+  const geolocationLifecycleStates = [];
+
+  const reconcile = async () => {
+    reconcileCount++;
+    runtimeRules = storage.config?.enabled !== false && storage.config?.networkBlocking !== false
+      ? ['network-rule']
+      : [];
+  };
+  const refresh = async () => {
+    refreshCount++;
+    await reconcile();
+  };
+  const chrome = {
+    runtime: {
+      onInstalled: { addListener: listener => { listeners.installed = listener; } },
+      onStartup: { addListener: listener => { listeners.startup = listener; } }
+    },
+    storage: {
+      local: {
+        get: async (keys) => {
+          const requested = Array.isArray(keys) ? keys : [keys];
+          return Object.fromEntries(requested.map(key => [key, storage[key]]));
+        },
+        set: async values => Object.assign(storage, values)
+      }
+    },
+    tabs: { query: async () => [], sendMessage: async () => {} },
+    alarms: { onAlarm: { addListener: listener => { listeners.alarm = listener; } } }
+  };
+  const sandbox = {
+    chrome,
+    console,
+    setTimeout,
+    clearTimeout,
+    updateDNRState: reconcile,
+    _mockInitSubscriptions: async () => {},
+    _mockEnsureAlarm: async () => {},
+    _mockRefreshAllStale: refresh,
+    _mockRefreshSubscription: async () => ({ ok: true }),
+    _mockGetSubscriptions: async () => [],
+    _mockSetSubscriptionEnabled: async () => ({ ok: true }),
+    _mockAddSubscription: async () => ({ ok: true }),
+    _mockRemoveSubscription: async () => ({ ok: true }),
+    _mockInitScriptletEngine: async () => {},
+    _mockRecoverUserScriptsIfNeeded: async () => false,
+    _mockSyncWebRtcLeakProtection: async config => { webRtcLifecycleStates.push(config?.enabled !== false); },
+    _mockSyncBrowserPrivacyHardening: async config => { browserPrivacyLifecycleStates.push(config?.enabled !== false); },
+    _mockSyncGeolocationProtection: async config => { geolocationLifecycleStates.push(config?.enabled !== false); },
+    _mockInitRequestLogListener: () => {},
+    _mockClearHealthDiagnostic: async () => {},
+    _mockRecordHealthDiagnostic: async () => {}
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(backgroundJsCode, sandbox);
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.deepStrictEqual(runtimeRules, [], 'ordinary worker wake');
+  assert.deepStrictEqual(webRtcLifecycleStates, [true], 'ordinary worker WebRTC wake');
+  assert.deepStrictEqual(browserPrivacyLifecycleStates, [true], 'ordinary worker browser privacy wake');
+  assert.deepStrictEqual(geolocationLifecycleStates, [true], 'ordinary worker geolocation wake');
+
+  await listeners.installed({ reason: 'update' });
+  assert.deepStrictEqual(runtimeRules, [], 'onInstalled refresh');
+  assert.strictEqual(webRtcLifecycleStates.length, 2);
+  assert.strictEqual(browserPrivacyLifecycleStates.length, 2);
+  assert.strictEqual(geolocationLifecycleStates.length, 2);
+
+  runtimeRules = ['stale-rule'];
+  await listeners.startup();
+  assert.deepStrictEqual(runtimeRules, [], 'startup recovery');
+  assert.strictEqual(webRtcLifecycleStates.length, 3);
+  assert.strictEqual(browserPrivacyLifecycleStates.length, 3);
+  assert.strictEqual(geolocationLifecycleStates.length, 3);
+
+  runtimeRules = ['stale-rule'];
+  listeners.alarm({ name: 'chroma-subscription-check' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepStrictEqual(runtimeRules, [], 'scheduled refresh');
+  assert.ok(reconcileCount >= 4);
+  assert.strictEqual(refreshCount, 2);
 });

@@ -81,6 +81,7 @@ const ChromaHealthUI = (() => {
       const subscriptionsTotal = toCount(health.subscriptions?.total);
       const subscriptionsEnabled = toCount(health.subscriptions?.enabled);
       const subscriptionErrors = toCount(health.subscriptions?.withErrors);
+      const masterEnabled = health.master?.enabled !== false;
       addHealthSummaryChip(
         summary,
         'Core',
@@ -90,8 +91,12 @@ const ChromaHealthUI = (() => {
       addHealthSummaryChip(
         summary,
         'Lists',
-        subscriptionsTotal ? `${formatCount(subscriptionsEnabled)} / ${formatCount(subscriptionsTotal)}` : 'None',
-        subscriptionErrors ? 'warning' : (subscriptionsTotal ? 'ok' : 'disabled')
+        subscriptionsTotal
+          ? (masterEnabled
+              ? `${formatCount(subscriptionsEnabled)} / ${formatCount(subscriptionsTotal)}`
+              : `${formatCount(subscriptionsEnabled)} / ${formatCount(subscriptionsTotal)} paused`)
+          : 'None',
+        subscriptionErrors ? 'warning' : (subscriptionsTotal && masterEnabled ? 'ok' : 'disabled')
       );
 
       const scriptlets = health.scriptlets || {};
@@ -99,7 +104,10 @@ const ChromaHealthUI = (() => {
       const registeredScriptlets = toCount(scriptlets.registeredUserScriptCount);
       let scriptletValue = `${formatCount(registeredScriptlets)} active`;
       let scriptletState = 'ok';
-      if (scriptlets.apiAvailable === false) {
+      if (!masterEnabled) {
+        scriptletValue = storedScriptlets ? 'Paused' : 'Off';
+        scriptletState = 'disabled';
+      } else if (scriptlets.apiAvailable === false) {
         scriptletValue = storedScriptlets ? 'Needs API' : 'Unavailable';
         scriptletState = storedScriptlets ? 'warning' : 'disabled';
       } else if (storedScriptlets && registeredScriptlets === 0) {
@@ -111,12 +119,28 @@ const ChromaHealthUI = (() => {
       const proxy = health.proxy || {};
       let proxyValue = 'Off';
       let proxyState = 'disabled';
-      if (proxy.globalProxyEnabled) {
-        proxyValue = proxy.globalProxyConfigured ? 'Global' : 'Check setup';
-        proxyState = proxy.globalProxyConfigured ? 'ok' : 'warning';
-      } else if (toCount(proxy.routedDomainCount)) {
-        proxyValue = `${formatCount(proxy.routedDomainCount)} routed`;
-        proxyState = 'ok';
+      const proxyRequested = proxy.requestedRouting === true ||
+        (proxy.globalProxyEnabled && proxy.globalProxyRouteEnabled) ||
+        toCount(proxy.routedDomainCount) > 0;
+      if (proxy.error || (!masterEnabled && proxy.effectiveRouting === true)) {
+        proxyValue = 'Release incomplete';
+        proxyState = 'warning';
+      } else if (!masterEnabled && proxyRequested) {
+        proxyValue = 'Paused';
+        proxyState = 'disabled';
+      } else if (proxyRequested) {
+        if (proxy.effectiveRouting === true) {
+          proxyValue = proxy.effectiveGlobalProxy ? 'Global' : `${formatCount(proxy.routedDomainCount)} routed`;
+          proxyState = 'ok';
+        } else {
+          proxyValue = proxy.conflict ? 'Controlled elsewhere' : 'Not active';
+          proxyState = 'warning';
+        }
+      } else if (proxy.globalProxyEnabled && proxy.globalProxyConfigured && !proxy.globalProxyRouteEnabled) {
+        proxyValue = 'Paused';
+      } else if (proxy.globalProxyEnabled && !proxy.globalProxyConfigured) {
+        proxyValue = 'Check setup';
+        proxyState = 'warning';
       } else if (toCount(proxy.acceptedCount)) {
         proxyValue = `${formatCount(proxy.acceptedCount)} ready`;
         proxyState = 'ok';
@@ -155,22 +179,33 @@ const ChromaHealthUI = (() => {
 
     function getWebRtcHealthMetric(health) {
       const webrtc = health.webrtc || {};
-      const globalProxyActive = health.proxy?.globalProxyEnabled && health.proxy?.globalProxyConfigured;
-      const mode = String(webrtc.mode || 'auto');
+      const mode = String(webrtc.requestedMode || webrtc.mode || 'auto');
       const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
+      if (!webrtc.enabled && webrtc.controlledByThisExtension) {
+        return ['WebRTC leak protection', 'Release incomplete', 'warning'];
+      }
+      if (webrtc.requested && !webrtc.enabled) {
+        return ['WebRTC leak protection', `${modeLabel} (Paused)`, 'disabled'];
+      }
+      if (!webrtc.enabled) {
+        return ['WebRTC leak protection', mode === 'off' ? 'Off' : `${modeLabel} (Off)`, 'disabled'];
+      }
       if (!webrtc.available) {
-        return ['WebRTC leak protection', `${modeLabel} (Unavailable)`, globalProxyActive ? 'warning' : 'disabled'];
+        return ['WebRTC leak protection', `${modeLabel} (Unavailable)`, 'warning'];
       }
-      if (webrtc.levelOfControl && !webrtc.controllable) {
-        return ['WebRTC leak protection', `${modeLabel} (Controlled elsewhere)`, webrtc.recommended ? 'warning' : 'disabled'];
+      if (!webrtc.controlledByThisExtension || webrtc.error) {
+        const controlLabel = webrtc.levelOfControl && webrtc.controllable === false
+          ? 'Controlled elsewhere'
+          : 'Not applied';
+        return ['WebRTC leak protection', `${modeLabel} (${controlLabel})`, 'warning'];
       }
-      if (webrtc.protected) {
+      if (webrtc.effective && webrtc.protected) {
         return ['WebRTC leak protection', mode === 'strict' ? 'Strict' : `${modeLabel} (Strict)`, 'ok'];
       }
-      if (webrtc.partial) {
-        return ['WebRTC leak protection', mode === 'balanced' ? 'Balanced' : `${modeLabel} (Partial)`, globalProxyActive ? 'warning' : 'ok'];
+      if (webrtc.effective && webrtc.partial) {
+        return ['WebRTC leak protection', mode === 'balanced' ? 'Balanced' : `${modeLabel} (Partial)`, 'ok'];
       }
-      return ['WebRTC leak protection', mode === 'off' ? 'Off' : `${modeLabel} (Off)`, globalProxyActive ? 'warning' : 'disabled'];
+      return ['WebRTC leak protection', `${modeLabel} (Not active)`, 'warning'];
     }
 
     function getBrowserPrivacySetting(health, key) {
@@ -180,19 +215,27 @@ const ChromaHealthUI = (() => {
       return settings.find(setting => setting?.key === key) || null;
     }
 
+    function isBrowserPrivacySettingExternallyControlled(setting) {
+      return !!setting?.levelOfControl && setting.controllable === false;
+    }
+
     function getBrowserPrivacySettingLabel(health, key) {
       const setting = getBrowserPrivacySetting(health, key);
-      if (!health.browserPrivacy?.enabled) return 'Disabled';
+      if (!health.browserPrivacy?.requested) return 'Disabled';
+      if (!health.browserPrivacy?.enabled && setting?.controlledByThisExtension) return 'Release incomplete';
+      if (!health.browserPrivacy?.enabled) return 'Paused';
       if (!setting?.available) return 'Unavailable';
-      if (setting.levelOfControl && !setting.controllable && !setting.hardened) return 'Controlled elsewhere';
-      return setting.hardened ? 'Hardened' : 'Not hardened';
+      if (isBrowserPrivacySettingExternallyControlled(setting)) return 'Controlled elsewhere';
+      if (!setting.controlledByThisExtension || setting.error) return 'Not applied';
+      return setting.effective ? 'Hardened' : 'Not hardened';
     }
 
     function getBrowserPrivacySettingStatus(health, key) {
       const setting = getBrowserPrivacySetting(health, key);
-      if (!health.browserPrivacy?.enabled) return 'disabled';
+      if (!health.browserPrivacy?.enabled && setting?.controlledByThisExtension) return 'warning';
+      if (!health.browserPrivacy?.requested || !health.browserPrivacy?.enabled) return 'disabled';
       if (!setting?.available) return 'warning';
-      return setting.hardened ? 'ok' : 'warning';
+      return setting.controlledByThisExtension && setting.effective ? 'ok' : 'warning';
     }
 
     function getPrivacySandboxSettings(health) {
@@ -202,32 +245,87 @@ const ChromaHealthUI = (() => {
     }
 
     function getPrivacySandboxLabel(health) {
-      if (!health.browserPrivacy?.enabled) return 'Disabled';
+      if (!health.browserPrivacy?.requested) return 'Disabled';
+      if (!health.browserPrivacy?.enabled) return 'Paused';
       const settings = getPrivacySandboxSettings(health);
       if (settings.length === 0) return 'Unavailable';
-      const hardened = settings.filter(setting => setting.hardened).length;
+      if (settings.some(isBrowserPrivacySettingExternallyControlled)) return 'Controlled elsewhere';
+      if (settings.some(setting => !setting.controlledByThisExtension || setting.error)) return 'Not applied';
+      const hardened = settings.filter(setting => setting.effective).length;
       return hardened === settings.length ? 'Hardened' : `${formatCount(hardened)} / ${formatCount(settings.length)} hardened`;
     }
 
     function getPrivacySandboxStatus(health) {
-      if (!health.browserPrivacy?.enabled) return 'disabled';
+      if (!health.browserPrivacy?.requested || !health.browserPrivacy?.enabled) return 'disabled';
       const settings = getPrivacySandboxSettings(health);
       if (settings.length === 0) return 'warning';
-      return settings.every(setting => setting.hardened) ? 'ok' : 'warning';
+      return settings.every(setting => setting.controlledByThisExtension && setting.effective) ? 'ok' : 'warning';
     }
 
     function getGeolocationProtectionLabel(health) {
       const geo = health.geolocation || {};
-      if (!geo.enabled) return 'Disabled';
+      if (!geo.enabled && geo.reconciliationError) return 'Release incomplete';
+      if (!geo.requested) return 'Disabled';
+      if (!geo.enabled) return 'Paused';
       if (!geo.available) return 'Unavailable';
-      return geo.active ? 'Blocked' : 'Not blocked';
+      return geo.effective ? 'Blocked' : 'Not blocked';
     }
 
     function getGeolocationProtectionStatus(health) {
       const geo = health.geolocation || {};
-      if (!geo.enabled) return 'disabled';
+      if (!geo.enabled && geo.reconciliationError) return 'warning';
+      if (!geo.requested || !geo.enabled) return 'disabled';
       if (!geo.available) return 'warning';
-      return geo.active ? 'ok' : 'warning';
+      return geo.effective ? 'ok' : 'warning';
+    }
+
+    function getEffectiveProxyRoutingLabel(health) {
+      const proxy = health.proxy || {};
+      if (health.master?.enabled === false) {
+        if (proxy.error || proxy.effectiveRouting) return 'Release incomplete';
+        return proxy.requestedRouting ? 'Paused' : 'Off';
+      }
+      if (proxy.effectiveRouting) return 'Active';
+      return proxy.requestedRouting ? 'Inactive' : 'Off';
+    }
+
+    function getEffectiveProxyRoutingStatus(health) {
+      const proxy = health.proxy || {};
+      if (health.master?.enabled === false) {
+        return proxy.error || proxy.effectiveRouting ? 'warning' : 'disabled';
+      }
+      if (proxy.effectiveRouting) return 'ok';
+      return proxy.requestedRouting || proxy.error ? 'warning' : 'disabled';
+    }
+
+    function getGlobalProxyLabel(health) {
+      const proxy = health.proxy || {};
+      if (!proxy.globalProxyEnabled) return 'Disabled';
+      if (!proxy.globalProxyConfigured) return 'Misconfigured';
+      if (health.master?.enabled === false) return 'Paused';
+      return proxy.globalProxyRouteEnabled ? 'Requested' : 'Paused';
+    }
+
+    function getGlobalProxyStatus(health) {
+      const proxy = health.proxy || {};
+      if (!proxy.globalProxyEnabled) return 'disabled';
+      if (!proxy.globalProxyConfigured) return 'warning';
+      if (health.master?.enabled === false) return 'disabled';
+      return proxy.globalProxyRouteEnabled ? '' : 'disabled';
+    }
+
+    function getBrowserPrivacyHardeningLabel(health) {
+      const privacy = health.browserPrivacy || {};
+      if (!privacy.requested) return 'Disabled';
+      if (!privacy.enabled) return privacy.controlledCount > 0 ? 'Release incomplete' : 'Paused';
+      if (privacy.controlled && privacy.effective) return 'Active';
+      return privacy.blockedCount > 0 ? 'Controlled elsewhere' : 'Not fully applied';
+    }
+
+    function getBrowserPrivacyHardeningStatus(health) {
+      const privacy = health.browserPrivacy || {};
+      if (!privacy.enabled) return privacy.controlledCount > 0 ? 'warning' : 'disabled';
+      return privacy.controlled && privacy.effective ? 'ok' : 'warning';
     }
 
     function getFprProtectedSurfaceLabel(health) {
@@ -239,6 +337,7 @@ const ChromaHealthUI = (() => {
 
     function getRegisteredScriptletLabel(health) {
       const scriptlets = health.scriptlets || {};
+      if (health.master?.enabled === false && scriptlets.storedRuleCount > 0) return 'Paused';
       if (scriptlets.apiAvailable === false) return 'Unavailable';
       return scriptlets.registeredUserScriptCount === null
         ? 'Unknown'
@@ -247,6 +346,7 @@ const ChromaHealthUI = (() => {
 
     function getRegisteredScriptletStatus(health) {
       const scriptlets = health.scriptlets || {};
+      if (health.master?.enabled === false) return 'disabled';
       if (scriptlets.apiAvailable === false) {
         return scriptlets.storedRuleCount > 0 ? 'warning' : 'disabled';
       }
@@ -339,23 +439,44 @@ const ChromaHealthUI = (() => {
 
       addHealthSection(body, 'Core', [
         ['Network blocking', networkBlockingActive ? 'Active' : 'Disabled', networkBlockingActive ? 'ok' : 'disabled'],
-        ['Tracking URL cleanup', getTrackingUrlCleanupLabel(health, networkBlockingActive), getTrackingUrlCleanupStatus(health, networkBlockingActive)],
+        [
+          'Tracking URL cleanup',
+          getTrackingUrlCleanupLabel(health, networkBlockingActive),
+          getTrackingUrlCleanupStatus(health, networkBlockingActive)
+        ],
         ['De-AMP links', deAmpLinksActive ? 'Active' : 'Disabled', deAmpLinksActive ? 'ok' : 'disabled'],
-        ['Static rulesets', `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`, health.dnr?.staticRulesetsOk ? 'ok' : (health.master?.networkBlocking ? 'error' : 'disabled')],
+        [
+          'Static rulesets',
+          `${formatCount(health.dnr?.enabledStaticRulesets?.length)} / ${formatCount(health.dnr?.expectedStaticRulesets?.length)} enabled`,
+          health.dnr?.staticRulesetsOk ? 'ok' : (networkBlockingActive ? 'error' : 'disabled')
+        ],
         ['Dynamic rules', `${formatCount(health.dnr?.appliedNetworkRuleCount)} active`, ''],
         ['Whitelist rules', formatCount(health.dnr?.whitelistRuleCount), '']
       ]);
 
       addHealthSection(body, 'Subscriptions', [
-        ['Enabled lists', `${formatCount(health.subscriptions?.enabled)} / ${formatCount(health.subscriptions?.total)}`, health.subscriptions?.withErrors ? 'warning' : 'ok'],
+        [
+          'Requested lists',
+          `${formatCount(health.subscriptions?.enabled)} / ${formatCount(health.subscriptions?.total)}` +
+            (health.master?.enabled === false && health.subscriptions?.enabled ? ' (Paused)' : ''),
+          health.subscriptions?.withErrors
+            ? 'warning'
+            : (health.master?.enabled === false ? 'disabled' : 'ok')
+        ],
         ['Applied network rules', formatCount(health.subscriptions?.appliedNetwork), ''],
-        ['Cosmetic rules', formatCount(health.subscriptions?.cosmetic), ''],
-        ['Scriptlet rules', formatCount(health.subscriptions?.scriptlet), ''],
+        ['Stored cosmetic rules', formatCount(health.subscriptions?.cosmetic), ''],
+        ['Stored scriptlet rules', formatCount(health.subscriptions?.scriptlet), ''],
         ['Errors', health.subscriptions?.withErrors ? formatCount(health.subscriptions.withErrors) : 'None', health.subscriptions?.withErrors ? 'warning' : 'ok']
       ]);
 
       addHealthSection(body, 'Scriptlets', [
-        ['UserScripts API', health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable', health.scriptlets?.apiAvailable ? 'ok' : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')],
+        [
+          'UserScripts API',
+          health.scriptlets?.apiAvailable ? 'Available' : 'Unavailable',
+          health.scriptlets?.apiAvailable
+            ? 'ok'
+            : (health.scriptlets?.storedRuleCount > 0 ? 'warning' : 'disabled')
+        ],
         ['Registered scripts', getRegisteredScriptletLabel(health), getRegisteredScriptletStatus(health)],
         ['Stored scriptlet rules', formatCount(health.scriptlets?.storedRuleCount), ''],
         ['User resource rules', formatCount(health.scriptlets?.userStoredRuleCount), ''],
@@ -363,26 +484,47 @@ const ChromaHealthUI = (() => {
       ]);
 
       addHealthSection(body, 'Fingerprint', [
-        ['Fingerprint Randomization', health.fpr?.enabled ? (health.fpr?.active ? 'Active' : 'Not registered') : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
-        ['Protected surfaces', health.fpr?.enabled ? getFprProtectedSurfaceLabel(health) : 'Disabled', health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'],
+        [
+          'Fingerprint Randomization',
+          health.fpr?.enabled ? (health.fpr?.active ? 'Active' : 'Not registered') : 'Disabled',
+          health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'
+        ],
+        [
+          'Protected surfaces',
+          health.fpr?.enabled ? getFprProtectedSurfaceLabel(health) : 'Disabled',
+          health.fpr?.enabled ? (health.fpr?.active ? 'ok' : 'warning') : 'disabled'
+        ],
         ['FPR whitelist', `${formatCount(health.whitelist?.fprDomainCount)} domain(s)`, '']
       ]);
 
       addHealthSection(body, 'Cosmetic & Local', [
-        ['Subscription cosmetic rules', formatCount(health.cosmetic?.subscriptionCosmeticRuleCount), ''],
+        ['Stored subscription cosmetic rules', formatCount(health.cosmetic?.subscriptionCosmeticRuleCount), ''],
         ['Local zapper rules', `${formatCount(health.cosmetic?.enabledLocalZapperRuleCount)} / ${formatCount(health.cosmetic?.localZapperRuleCount)}`, '']
       ]);
 
       addHealthSection(body, 'Proxy', [
         ['Configured proxies', formatCount(health.proxy?.configuredCount), ''],
         ['Accepted proxies', formatCount(health.proxy?.acceptedCount), ''],
-        ['Routed domains', formatCount(health.proxy?.routedDomainCount), ''],
-        ['Global proxy', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'Enabled' : 'Misconfigured') : 'Disabled', health.proxy?.globalProxyEnabled ? (health.proxy?.globalProxyConfigured ? 'ok' : 'warning') : 'disabled'],
+        ['Requested domains', formatCount(health.proxy?.routedDomainCount), ''],
+        [
+          'Requested routing',
+          health.proxy?.requestedRouting
+            ? (health.master?.enabled === false ? 'Paused' : 'Enabled')
+            : 'Disabled',
+          health.proxy?.requestedRouting && health.master?.enabled !== false ? 'ok' : 'disabled'
+        ],
+        ['Effective routing', getEffectiveProxyRoutingLabel(health), getEffectiveProxyRoutingStatus(health)],
+        ['Proxy control', health.proxy?.levelOfControl || 'Unavailable', (health.proxy?.conflict || health.proxy?.error) ? 'warning' : ''],
+        ['Global proxy', getGlobalProxyLabel(health), getGlobalProxyStatus(health)],
         getWebRtcHealthMetric(health)
       ]);
 
       addHealthSection(body, 'Browser Privacy', [
-        ['Chrome Privacy Hardening', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'Active' : `${formatCount(health.browserPrivacy?.hardenedCount)} / ${formatCount(health.browserPrivacy?.totalCount)} active`) : 'Disabled', health.browserPrivacy?.enabled ? (health.browserPrivacy?.active ? 'ok' : 'warning') : 'disabled'],
+        [
+          'Chrome Privacy Hardening',
+          getBrowserPrivacyHardeningLabel(health),
+          getBrowserPrivacyHardeningStatus(health)
+        ],
         ['Geolocation Protection', getGeolocationProtectionLabel(health), getGeolocationProtectionStatus(health)],
         ['Third-party cookies', getBrowserPrivacySettingLabel(health, 'thirdPartyCookiesAllowed'), getBrowserPrivacySettingStatus(health, 'thirdPartyCookiesAllowed')],
         ['Do Not Track', getBrowserPrivacySettingLabel(health, 'doNotTrackEnabled'), getBrowserPrivacySettingStatus(health, 'doNotTrackEnabled')],

@@ -5,7 +5,7 @@
  * Known limitations (counted, not silently dropped):
  *   - Regex network rules (/pattern/)
  *   - Procedural cosmetic filters (#?#)
- *   - $redirect, $csp, $rewrite, $generichide, $genericblock
+ *   - Any network modifier not explicitly represented by DNR output below
  *   - Negated resource types (~$script etc.)
  */
 
@@ -30,11 +30,17 @@ const RESOURCE_TYPE_MAP = {
   'other':              'other'
 };
 
-// Options that have no DNR equivalent — rules containing these are dropped cleanly
-const SKIP_OPTIONS = new Set([
-  'popup', 'redirect', 'redirect-rule', 'csp', 'rewrite',
-  'generichide', 'genericblock', 'inline-script', 'inline-font',
-  'webrtc', 'mp4', 'empty', 'elemhide'
+// Network options are a trust boundary. Only options whose semantics are
+// represented below may survive parsing; ignoring an unknown option could turn a
+// constrained block or exception into a much broader DNR rule.
+const SUPPORTED_NETWORK_OPTIONS = new Set([
+  ...Object.keys(RESOURCE_TYPE_MAP),
+  'important',
+  'third-party', '3p',
+  'first-party', '1p',
+  '~third-party', '~3p',
+  '~first-party', '~1p',
+  'domain'
 ]);
 
 const DEFAULT_PARSE_BUDGET = Object.freeze({
@@ -52,6 +58,66 @@ function parseBudget(overrides = {}) {
 
 function assertWithinBudget(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+function normalizeFilterDomain(raw) {
+  if (typeof raw !== 'string') return null;
+  const domain = raw.trim().toLowerCase();
+  if (
+    domain.length === 0 ||
+    domain.length > 253 ||
+    !domain.includes('.') ||
+    domain.startsWith('.') ||
+    domain.endsWith('.') ||
+    !/^[a-z0-9.-]+$/.test(domain)
+  ) {
+    return null;
+  }
+
+  const labels = domain.split('.');
+  if (labels.some(label => (
+    label.length === 0 ||
+    label.length > 63 ||
+    label.startsWith('-') ||
+    label.endsWith('-')
+  ))) {
+    return null;
+  }
+
+  // Numeric dotted hosts must be valid IPv4 rather than merely passing the DNS
+  // label grammar (for example, 999.1.1.1).
+  if (/^[0-9.]+$/.test(domain)) {
+    if (labels.length !== 4 || labels.some(label => !/^\d{1,3}$/.test(label) || Number(label) > 255)) {
+      return null;
+    }
+  }
+
+  return domain;
+}
+
+function parseDomainList(domainPart, separator) {
+  const include = [];
+  const exclude = [];
+  const seenInclude = new Set();
+  const seenExclude = new Set();
+
+  for (const rawEntry of domainPart.split(separator)) {
+    const entry = rawEntry.trim();
+    if (!entry) return null;
+
+    const negated = entry.startsWith('~');
+    const domain = normalizeFilterDomain(negated ? entry.slice(1) : entry);
+    if (!domain) return null;
+
+    const target = negated ? exclude : include;
+    const seen = negated ? seenExclude : seenInclude;
+    if (!seen.has(domain)) {
+      seen.add(domain);
+      target.push(domain);
+    }
+  }
+
+  return { include, exclude };
 }
 
 // ─── LINE CLASSIFIER ─────
@@ -75,7 +141,15 @@ function classifyLine(line) {
 /**
  * Parses the options string from a network rule into structured modifiers.
  * @param {string} optionsStr
- * @returns {{ resourceTypes: string[]|null, domainType: string|null, initiatorDomains: string[]|null, excludedInitiatorDomains: string[]|null, isImportant: boolean, hasSkipOption: boolean }}
+ * @returns {{
+ *   resourceTypes: string[]|null,
+ *   domainType: string|null,
+ *   initiatorDomains: string[]|null,
+ *   excludedInitiatorDomains: string[]|null,
+ *   isImportant: boolean,
+ *   hasSkipOption: boolean,
+ *   malformed: boolean
+ * }}
  */
 function parseOptions(optionsStr) {
   const result = {
@@ -84,65 +158,88 @@ function parseOptions(optionsStr) {
     initiatorDomains: null,
     excludedInitiatorDomains: null,
     isImportant: false,
-    hasSkipOption: false
+    hasSkipOption: false,
+    malformed: false
   };
 
   if (!optionsStr) return result;
 
+  let sawPartyConstraint = false;
+  let sawDomainConstraint = false;
+
   for (const opt of optionsStr.split(',')) {
     const trimmed = opt.trim();
-    if (!trimmed) continue;
-    const optionName = trimmed.replace(/^~/, '').split('=')[0];
-
-    // Check skip options first (strip negation prefix before checking)
-    if (SKIP_OPTIONS.has(optionName)) {
-      result.hasSkipOption = true;
-      return result; // Early exit — entire rule is dropped
+    if (!trimmed) {
+      result.malformed = true;
+      return result;
     }
 
-    if (trimmed === 'important') {
+    const equalsIdx = trimmed.indexOf('=');
+    const rawName = equalsIdx === -1 ? trimmed : trimmed.slice(0, equalsIdx);
+    const optionName = rawName.toLowerCase();
+    if (!SUPPORTED_NETWORK_OPTIONS.has(optionName)) {
+      result.hasSkipOption = true;
+      return result;
+    }
+
+    if (optionName === 'important' && equalsIdx === -1) {
       result.isImportant = true;
       continue;
     }
 
-    if (trimmed === 'third-party' || trimmed === '3p') {
-      result.domainType = 'thirdParty';
-      continue;
-    }
-
-    if (trimmed === 'first-party' || trimmed === '1p' ||
-        trimmed === '~third-party' || trimmed === '~3p') {
-      result.domainType = 'firstParty';
-      continue;
-    }
-
-    if (trimmed.startsWith('domain=')) {
-      const domainList = trimmed.slice(7).split('|');
-      const include = [];
-      const exclude = [];
-      for (const d of domainList) {
-        if (d.startsWith('~')) exclude.push(d.slice(1));
-        else if (d) include.push(d);
+    if (equalsIdx === -1 && (
+      optionName === 'third-party' || optionName === '3p' ||
+      optionName === 'first-party' || optionName === '1p' ||
+      optionName === '~third-party' || optionName === '~3p' ||
+      optionName === '~first-party' || optionName === '~1p'
+    )) {
+      const nextDomainType = (
+        optionName === 'third-party' || optionName === '3p' ||
+        optionName === '~first-party' || optionName === '~1p'
+      ) ? 'thirdParty' : 'firstParty';
+      if (sawPartyConstraint && result.domainType !== nextDomainType) {
+        result.malformed = true;
+        return result;
       }
+      sawPartyConstraint = true;
+      result.domainType = nextDomainType;
+      continue;
+    }
+
+    if (optionName === 'domain' && equalsIdx !== -1) {
+      if (sawDomainConstraint) {
+        result.malformed = true;
+        return result;
+      }
+      sawDomainConstraint = true;
+      const parsedDomains = parseDomainList(trimmed.slice(equalsIdx + 1), '|');
+      if (!parsedDomains) {
+        result.malformed = true;
+        return result;
+      }
+      const { include, exclude } = parsedDomains;
       if (include.length > 0) result.initiatorDomains = include;
       if (exclude.length > 0) result.excludedInitiatorDomains = exclude;
       continue;
     }
 
-    // Negated resource types — no clean DNR equivalent, skipped
-    if (trimmed.startsWith('~')) {
-      if (RESOURCE_TYPE_MAP[trimmed.slice(1)]) {
-        result.hasSkipOption = true;
-        return result;
-      }
-      continue;
+    // Negated resource types and supported option names with unexpected values
+    // have no representation in the DNR rule built here.
+    if (optionName.startsWith('~') || equalsIdx !== -1) {
+      result.hasSkipOption = true;
+      return result;
     }
 
-    const mappedType = RESOURCE_TYPE_MAP[trimmed];
+    const mappedType = RESOURCE_TYPE_MAP[optionName];
     if (mappedType) {
       if (!result.resourceTypes) result.resourceTypes = [];
       if (!result.resourceTypes.includes(mappedType)) result.resourceTypes.push(mappedType);
+      continue;
     }
+
+    // Every supported branch must be handled explicitly above.
+    result.hasSkipOption = true;
+    return result;
   }
 
   return result;
@@ -283,7 +380,7 @@ function parseNetworkRule(line, isException = false) {
     // Pure wildcards — useless rules
     if (stripped === '*' || stripped === '*$*') return networkParseResult(null);
 
-    // Regex rules — Phase 1 skip
+    // Regex network rules are not supported by this parser.
     if (stripped.startsWith('/') && stripped.slice(1).lastIndexOf('/') > 0) return networkParseResult(null, 'regex');
 
     // Split pattern from options on first '$'
@@ -292,8 +389,10 @@ function parseNetworkRule(line, isException = false) {
     const optionsStr = dollarIdx === -1 ? ''        : stripped.slice(dollarIdx + 1);
 
     if (!pattern) return networkParseResult(null);
+    if (dollarIdx !== -1 && !optionsStr.trim()) return networkParseResult(null);
 
     const opts = parseOptions(optionsStr);
+    if (opts.malformed) return networkParseResult(null);
     if (opts.hasSkipOption) return networkParseResult(null, 'skipOption');
 
     const compiled = compileNetworkPattern(pattern);
@@ -327,7 +426,7 @@ function parseNetworkRule(line, isException = false) {
  * Parses a cosmetic rule line.
  * @param {string} line
  * @param {boolean} [isException=false]
- * @returns {{ domains: string[]|null, selector: string, isException: boolean }|null}
+ * @returns {{ domains: string[]|null, excludedDomains: string[]|null, selector: string, isException: boolean }|null}
  */
 function parseCosmeticRule(line, isException = false) {
   try {
@@ -340,7 +439,7 @@ function parseCosmeticRule(line, isException = false) {
 
     if (!selector) return null;
 
-    // Extended/procedural CSS — skip in Phase 1
+    // Extended/procedural CSS is not supported.
     if (selector.startsWith(':-abp-') || selector.includes(':xpath(') ||
         selector.includes(':-abp-has(') || selector.includes(':upward(') ||
         selector.includes(':nth-ancestor(') || selector.includes(':style(') ||
@@ -349,12 +448,12 @@ function parseCosmeticRule(line, isException = false) {
         selector.includes(':min-text-length(') || selector.includes(':others(') ||
         selector.includes(':watch-attr(')) return null;
 
-    const domains = domainPart
-      ? domainPart.split(',').map(d => d.trim()).filter(Boolean)
-      : null;
+    const parsedDomains = domainPart ? parseDomainList(domainPart, ',') : { include: [], exclude: [] };
+    if (!parsedDomains) return null;
 
     return {
-      domains: (domains && domains.length > 0) ? domains : null,
+      domains: parsedDomains.include.length > 0 ? parsedDomains.include : null,
+      excludedDomains: parsedDomains.exclude.length > 0 ? parsedDomains.exclude : null,
       selector,
       isException
     };
@@ -527,9 +626,9 @@ function unquoteScriptletArg(arg) {
 }
 
 /**
- * Parses a scriptlet rule line. Stored as opaque data — Phase 2 engine executes.
+ * Parses a scriptlet rule line. The scriptlet engine treats the result as data.
  * @param {string} line
- * @returns {{ domains: string[]|null, scriptlet: string, args: string[], runAt: string }|null}
+ * @returns {{ domains: string[]|null, excludedDomains: string[]|null, scriptlet: string, args: string[], runAt: string }|null}
  */
 export function parseScriptletRule(line) {
   try {
@@ -572,12 +671,12 @@ export function parseScriptletRule(line) {
     }
     if (!hasSafeScriptletRegexArgs(scriptletName, args)) return null;
 
-    const domains = domainPart
-      ? domainPart.split(',').map(d => d.trim()).filter(Boolean)
-      : null;
+    const parsedDomains = domainPart ? parseDomainList(domainPart, ',') : { include: [], exclude: [] };
+    if (!parsedDomains) return null;
 
     return {
-      domains: (domains && domains.length > 0) ? domains : null,
+      domains: parsedDomains.include.length > 0 ? parsedDomains.include : null,
+      excludedDomains: parsedDomains.exclude.length > 0 ? parsedDomains.exclude : null,
       scriptlet: scriptletName,
       args,
       runAt
@@ -627,13 +726,14 @@ export function parseList(text, budgetOverrides = {}) {
   let lineCount = 0;
   let start = 0;
 
-  for (let i = 0; i <= text.length; i++) {
-    if (i < text.length && text[i] !== '\n') continue;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '\n' && i !== text.length - 1) continue;
 
     lineCount++;
     assertWithinBudget(lineCount <= budget.maxLines, `Subscription list has too many lines; limit is ${budget.maxLines}`);
 
-    const rawLine = text.slice(start, i);
+    const lineEnd = text[i] === '\n' ? i : i + 1;
+    const rawLine = text.slice(start, lineEnd);
     start = i + 1;
     if (rawLine.length > budget.maxLineLength) {
       skipped.overlong++;

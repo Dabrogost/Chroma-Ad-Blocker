@@ -6,7 +6,7 @@ const vm = require('vm');
 
 const webrtcJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'webrtc.js'), 'utf8')
   .replace(/^export\s+/gm, '')
-  + '\nglobalThis.__webrtcExports = { resolveWebRtcPolicy, getWebRtcLeakProtectionStatus, syncWebRtcLeakProtection };\n';
+  + '\nglobalThis.__webrtcExports = { resolveWebRtcPolicy, getWebRtcLeakProtectionStatus, syncWebRtcLeakProtection, recoverWebRtcLeakProtection };\n';
 
 function plain(value) {
   return JSON.parse(JSON.stringify(value));
@@ -28,35 +28,62 @@ function createWebRtcSandbox({
   levelOfControl = 'controllable_by_this_extension',
   callbackApi = false,
   lastErrorMessage = null,
+  storageGetError = null,
+  emitOwnChanges = false,
   storage = {}
 } = {}) {
   const setCalls = [];
   const clearCalls = [];
   let storedValue = value;
+  let controlLevel = levelOfControl;
+  let settingChangeListener = null;
+  let storageChangeListener = null;
   const setting = hasPrivacyApi
     ? (callbackApi ? {
       get: (details, callback) => {
-        callback({ value: storedValue, levelOfControl });
+        callback({ value: storedValue, levelOfControl: controlLevel });
       },
       set: (args, callback) => {
         setCalls.push(args);
-        if (!lastErrorMessage) storedValue = args.value;
+        if (!lastErrorMessage) {
+          storedValue = args.value;
+          controlLevel = 'controlled_by_this_extension';
+          if (emitOwnChanges) settingChangeListener?.({ value: storedValue, levelOfControl: controlLevel });
+        }
         callback();
       },
       clear: (args, callback) => {
         clearCalls.push(args);
-        if (!lastErrorMessage) storedValue = 'default';
+        if (!lastErrorMessage) {
+          if (controlLevel !== 'controlled_by_other_extensions' && controlLevel !== 'not_controllable') {
+            storedValue = 'default';
+            controlLevel = 'controllable_by_this_extension';
+            if (emitOwnChanges) settingChangeListener?.({ value: storedValue, levelOfControl: controlLevel });
+          }
+        }
         callback();
+      },
+      onChange: {
+        addListener: listener => { settingChangeListener = listener; }
       }
     } : {
-      get: async () => ({ value: storedValue, levelOfControl }),
+      get: async () => ({ value: storedValue, levelOfControl: controlLevel }),
       set: async (args) => {
         setCalls.push(args);
         storedValue = args.value;
+        controlLevel = 'controlled_by_this_extension';
+        if (emitOwnChanges) settingChangeListener?.({ value: storedValue, levelOfControl: controlLevel });
       },
       clear: async (args) => {
         clearCalls.push(args);
-        storedValue = 'default';
+        if (controlLevel !== 'controlled_by_other_extensions' && controlLevel !== 'not_controllable') {
+          storedValue = 'default';
+          controlLevel = 'controllable_by_this_extension';
+          if (emitOwnChanges) settingChangeListener?.({ value: storedValue, levelOfControl: controlLevel });
+        }
+      },
+      onChange: {
+        addListener: listener => { settingChangeListener = listener; }
       }
     })
     : undefined;
@@ -72,6 +99,7 @@ function createWebRtcSandbox({
       storage: {
         local: {
           get: async (keys) => {
+            if (storageGetError) throw storageGetError;
             if (Array.isArray(keys)) {
               const out = {};
               for (const key of keys) out[key] = storage[key];
@@ -81,7 +109,7 @@ function createWebRtcSandbox({
           }
         },
         onChanged: {
-          addListener: () => {}
+          addListener: listener => { storageChangeListener = listener; }
         }
       }
     },
@@ -97,8 +125,26 @@ function createWebRtcSandbox({
     get storedValue() {
       return storedValue;
     },
+    get levelOfControl() {
+      return controlLevel;
+    },
+    storage,
+    emitSettingChange({ value: nextValue = storedValue, levelOfControl: nextLevel = controlLevel } = {}) {
+      storedValue = nextValue;
+      controlLevel = nextLevel;
+      settingChangeListener?.({ value: storedValue, levelOfControl: controlLevel });
+    },
+    emitStorageChange(changes) {
+      storageChangeListener?.(changes, 'local');
+    },
     ...sandbox.__webrtcExports
   };
+}
+
+async function flushAsyncWork(turns = 12) {
+  for (let index = 0; index < turns; index++) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
 }
 
 test('WebRTC policy resolution', async (t) => {
@@ -125,6 +171,14 @@ test('WebRTC policy resolution', async (t) => {
     assert.strictEqual(
       harness.resolveWebRtcPolicy({ webRtcLeakProtection: 'strict' }, []).value,
       'disable_non_proxied_udp'
+    );
+  });
+
+  await t.test('master off preserves the requested mode but resolves to clear', () => {
+    const harness = createWebRtcSandbox();
+    assert.deepStrictEqual(
+      plain(harness.resolveWebRtcPolicy({ enabled: false, webRtcLeakProtection: 'strict' }, [])),
+      { mode: 'strict', action: 'clear', value: null, recommended: true }
     );
   });
 
@@ -220,12 +274,12 @@ test('WebRTC privacy setting sync', async (t) => {
     assert.strictEqual(harness.clearCalls.length, 0);
   });
 
-  await t.test('not_controllable does not call set or clear', async () => {
+  await t.test('not_controllable clear removes any dormant Chroma preference without setting', async () => {
     const harness = createWebRtcSandbox({ levelOfControl: 'not_controllable' });
     const result = await harness.syncWebRtcLeakProtection({ webRtcLeakProtection: 'off' }, []);
-    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.ok, true);
     assert.strictEqual(harness.setCalls.length, 0);
-    assert.strictEqual(harness.clearCalls.length, 0);
+    assert.strictEqual(harness.clearCalls.length, 1);
   });
 
   await t.test('controllable strict sets disable_non_proxied_udp', async () => {
@@ -291,5 +345,165 @@ test('WebRTC privacy setting sync', async (t) => {
 
     assert.strictEqual(result.ok, false);
     assert.match(result.error, /set failed/);
+  });
+
+  await t.test('master off clears a requested strict policy and re-enable restores it', async () => {
+    const harness = createWebRtcSandbox({
+      value: 'disable_non_proxied_udp',
+      levelOfControl: 'controlled_by_this_extension'
+    });
+    const off = await harness.syncWebRtcLeakProtection({
+      enabled: false,
+      webRtcLeakProtection: 'strict'
+    }, []);
+    assert.strictEqual(off.requested, true);
+    assert.strictEqual(off.enabled, false);
+    assert.strictEqual(off.released, true);
+    assert.strictEqual(harness.storedValue, 'default');
+    assert.strictEqual(harness.clearCalls.length, 1);
+
+    const on = await harness.syncWebRtcLeakProtection({
+      enabled: true,
+      webRtcLeakProtection: 'strict'
+    }, []);
+    assert.strictEqual(on.ok, true);
+    assert.strictEqual(on.enabled, true);
+    assert.strictEqual(on.controlledByThisExtension, true);
+    assert.strictEqual(harness.storedValue, 'disable_non_proxied_udp');
+    assert.strictEqual(harness.setCalls.length, 1);
+  });
+
+  await t.test('status separates requested, controlled, and effective WebRTC state', async () => {
+    const harness = createWebRtcSandbox({
+      value: 'disable_non_proxied_udp',
+      levelOfControl: 'controlled_by_other_extensions'
+    });
+    const status = await harness.getWebRtcLeakProtectionStatus({
+      enabled: true,
+      webRtcLeakProtection: 'strict'
+    }, []);
+    assert.strictEqual(status.requested, true);
+    assert.strictEqual(status.enabled, true);
+    assert.strictEqual(status.effective, true);
+    assert.strictEqual(status.controlledByThisExtension, false);
+    assert.match(status.error, /controlled elsewhere/i);
+
+    const paused = await harness.getWebRtcLeakProtectionStatus({
+      enabled: false,
+      webRtcLeakProtection: 'strict'
+    }, []);
+    assert.strictEqual(paused.requested, true);
+    assert.strictEqual(paused.enabled, false);
+    assert.strictEqual(paused.effective, false);
+  });
+
+  await t.test('releasing external WebRTC control automatically reapplies stored policy', async () => {
+    const storage = {
+      config: { enabled: true, webRtcLeakProtection: 'strict' },
+      proxyConfigs: []
+    };
+    const harness = createWebRtcSandbox({
+      value: 'default',
+      levelOfControl: 'controlled_by_other_extensions',
+      storage
+    });
+    const blocked = await harness.syncWebRtcLeakProtection(storage.config, []);
+    assert.strictEqual(blocked.ok, false);
+    assert.strictEqual(harness.setCalls.length, 0);
+
+    harness.emitSettingChange({
+      value: 'default',
+      levelOfControl: 'controllable_by_this_extension'
+    });
+    await flushAsyncWork();
+
+    assert.strictEqual(harness.storedValue, 'disable_non_proxied_udp');
+    assert.strictEqual(harness.levelOfControl, 'controlled_by_this_extension');
+    assert.strictEqual(harness.setCalls.length, 1);
+
+    harness.emitSettingChange({
+      value: 'disable_non_proxied_udp',
+      levelOfControl: 'controlled_by_this_extension'
+    });
+    await flushAsyncWork();
+    assert.strictEqual(harness.setCalls.length, 1, 'own matching onChange event must be idempotent');
+  });
+
+  await t.test('master off clears a dormant WebRTC preference while another controller is active', async () => {
+    const storage = {
+      config: { enabled: false, webRtcLeakProtection: 'strict' },
+      proxyConfigs: []
+    };
+    const harness = createWebRtcSandbox({
+      value: 'default_public_interface_only',
+      levelOfControl: 'controlled_by_other_extensions',
+      storage
+    });
+
+    const result = await harness.syncWebRtcLeakProtection(storage.config, []);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.requested, true);
+    assert.strictEqual(result.enabled, false);
+    assert.strictEqual(harness.clearCalls.length, 1);
+
+    harness.emitSettingChange({
+      value: 'default',
+      levelOfControl: 'controllable_by_this_extension'
+    });
+    await flushAsyncWork();
+    assert.strictEqual(harness.setCalls.length, 0);
+    assert.strictEqual(harness.storedValue, 'default');
+  });
+
+  await t.test('own WebRTC onChange events do not stale the foreground reconciliation', async () => {
+    const storage = {
+      config: { enabled: true, webRtcLeakProtection: 'strict' },
+      proxyConfigs: []
+    };
+    const harness = createWebRtcSandbox({ storage, emitOwnChanges: true });
+    const result = await harness.syncWebRtcLeakProtection(storage.config, []);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.stale, false);
+    assert.strictEqual(result.controlledByThisExtension, true);
+    assert.strictEqual(harness.setCalls.length, 1);
+    await flushAsyncWork();
+    assert.strictEqual(harness.setCalls.length, 1);
+  });
+
+  await t.test('recovery storage failure cannot clear an existing requested policy', async () => {
+    const harness = createWebRtcSandbox({
+      value: 'disable_non_proxied_udp',
+      levelOfControl: 'controlled_by_this_extension',
+      storageGetError: new Error('storage unavailable')
+    });
+
+    await assert.rejects(() => harness.recoverWebRtcLeakProtection(), /storage unavailable/);
+    assert.strictEqual(harness.clearCalls.length, 0);
+    assert.strictEqual(harness.storedValue, 'disable_non_proxied_udp');
+  });
+
+  await t.test('rapid WebRTC toggles converge to the latest master state', async () => {
+    const harness = createWebRtcSandbox({
+      value: 'disable_non_proxied_udp',
+      levelOfControl: 'controlled_by_this_extension'
+    });
+    await Promise.all([
+      harness.syncWebRtcLeakProtection({ enabled: true, webRtcLeakProtection: 'strict' }, []),
+      harness.syncWebRtcLeakProtection({ enabled: false, webRtcLeakProtection: 'strict' }, [])
+    ]);
+    assert.strictEqual(harness.storedValue, 'default');
+    assert.strictEqual(harness.levelOfControl, 'controllable_by_this_extension');
+  });
+
+  await t.test('ordinary recovery reads stored state before reconciling', async () => {
+    const storage = {
+      config: { enabled: true, webRtcLeakProtection: 'balanced' },
+      proxyConfigs: []
+    };
+    const harness = createWebRtcSandbox({ storage });
+    const result = await harness.recoverWebRtcLeakProtection();
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(harness.storedValue, 'default_public_interface_only');
+    assert.strictEqual(harness.levelOfControl, 'controlled_by_this_extension');
   });
 });

@@ -19,6 +19,10 @@ const BY_RESOURCE_TYPE_CAP = 50;
 const FLUSH_DELAY_MS = 500;
 const QUEUE_CAP = 1000;
 const TIME_SAVED_SECONDS_PER_PROTECTION_EVENT = 0.005;
+const CONTENT_BATCH_CAP = 100;
+const CONTENT_TELEMETRY_WINDOW_MS = 60 * 1000;
+const CONTENT_TELEMETRY_PER_TAB_CAP = 60;
+const CONTENT_TELEMETRY_GLOBAL_CAP = 300;
 
 const MODE_VALUES = new Set(['basic', 'aggregated', 'debug']);
 
@@ -306,6 +310,121 @@ async function ensureStatsV2() {
 let statsQueue = [];
 let flushTimer = null;
 let flushChain = Promise.resolve();
+let contentTelemetryWindowStartedAt = 0;
+let contentTelemetryAcceptedGlobally = 0;
+const contentTelemetryAcceptedByTab = new Map();
+
+function queueStatsStorageOperation(task) {
+  const operation = flushChain.then(task);
+  flushChain = operation.catch(() => {});
+  return operation;
+}
+
+const CONTENT_EVENT_FACTORIES = new Map([
+  ['cosmetic_hide', () => ({ layer: 'cosmetic', type: 'hide' })],
+  ['warning_suppression', () => ({ layer: 'warning', type: 'suppression' })],
+  ['zapper_hit', () => ({ layer: 'zapper', type: 'hit' })],
+  ['scriptlet_hit', () => ({ layer: 'scriptlet', type: 'hit' })],
+  ['scriptlet_error', () => ({ layer: 'scriptlet', type: 'error' })],
+  ['youtube_payload_modified', () => ({
+    layer: 'youtube',
+    type: 'payload',
+    payloadsInspected: 1,
+    payloadsModified: 1,
+    cleans: 1
+  })]
+]);
+
+function getContentSenderContext(sender) {
+  const tabId = sender?.tab?.id;
+  if (!Number.isInteger(tabId) || tabId < 0) return null;
+
+  const url = sender?.tab?.url;
+  if (typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    const domain = normalizeDomain(parsed.hostname);
+    return domain ? { tabId, domain } : null;
+  } catch {
+    return null;
+  }
+}
+
+function isWhitelistedDomain(domain, whitelist) {
+  if (!domain || !Array.isArray(whitelist)) return false;
+  return whitelist.some(entry => {
+    const candidate = normalizeDomain(entry);
+    return candidate && (domain === candidate || domain.endsWith(`.${candidate}`));
+  });
+}
+
+function isContentEventEnabled(eventType, config) {
+  if (config?.enabled === false) return false;
+  if (eventType === 'cosmetic_hide' || eventType === 'zapper_hit') {
+    return config?.cosmetic !== false;
+  }
+  if (eventType === 'warning_suppression') return config?.suppressWarnings !== false;
+  if (eventType === 'youtube_payload_modified') return config?.stripping !== false;
+  // Subscription and advanced scriptlets have no separate feature toggle.
+  return eventType === 'scriptlet_hit' || eventType === 'scriptlet_error';
+}
+
+function takeContentTelemetryQuota(tabId, now) {
+  if (
+    contentTelemetryWindowStartedAt === 0 ||
+    now - contentTelemetryWindowStartedAt >= CONTENT_TELEMETRY_WINDOW_MS ||
+    now < contentTelemetryWindowStartedAt
+  ) {
+    contentTelemetryWindowStartedAt = now;
+    contentTelemetryAcceptedGlobally = 0;
+    contentTelemetryAcceptedByTab.clear();
+  }
+
+  if (contentTelemetryAcceptedGlobally >= CONTENT_TELEMETRY_GLOBAL_CAP) return false;
+  const tabCount = contentTelemetryAcceptedByTab.get(tabId) || 0;
+  if (tabCount >= CONTENT_TELEMETRY_PER_TAB_CAP) return false;
+
+  contentTelemetryAcceptedGlobally++;
+  contentTelemetryAcceptedByTab.set(tabId, tabCount + 1);
+  return true;
+}
+
+/**
+ * Records telemetry received from an isolated content script. Page-originated
+ * DOM events can reach that script, so the payload is treated only as a coarse
+ * enum: all counts, timestamps, URLs, rule metadata, and source labels are
+ * discarded. Tab/domain metadata comes from Chrome's authenticated sender.
+ */
+export async function recordContentStatsEvents(events, sender) {
+  const senderContext = getContentSenderContext(sender);
+  if (!senderContext || !Array.isArray(events)) return { ok: true, accepted: 0 };
+
+  const stored = await chrome.storage.local.get(['config', 'whitelist']);
+  const config = stored?.config || {};
+  if (config.enabled === false || isWhitelistedDomain(senderContext.domain, stored?.whitelist)) {
+    return { ok: true, accepted: 0 };
+  }
+
+  const now = Date.now();
+  let accepted = 0;
+  for (const rawEvent of events.slice(0, CONTENT_BATCH_CAP)) {
+    if (!rawEvent || typeof rawEvent !== 'object' || Array.isArray(rawEvent)) continue;
+    const eventType = rawEvent.eventType;
+    const createEvent = CONTENT_EVENT_FACTORIES.get(eventType);
+    if (!createEvent || !isContentEventEnabled(eventType, config)) continue;
+    if (!takeContentTelemetryQuota(senderContext.tabId, now)) break;
+
+    recordStatsEvent({
+      ...createEvent(),
+      ts: now,
+      domain: senderContext.domain
+    });
+    accepted++;
+  }
+
+  return { ok: true, accepted };
+}
 
 function scheduleFlush() {
   if (flushTimer) return;
@@ -324,11 +443,6 @@ export function recordStatsEvent(event) {
   scheduleFlush();
 }
 
-export function recordStatsEvents(events) {
-  if (!Array.isArray(events)) return;
-  for (const event of events) recordStatsEvent(event);
-}
-
 export async function flushStatsQueue(options = {}) {
   // Scheduled flushes process one batch and yield; user-triggered reads drain
   // fully so the dashboard/export sees everything recorded so far.
@@ -341,17 +455,20 @@ export async function flushStatsQueue(options = {}) {
 
   const batch = statsQueue.splice(0);
   if (batch.length === 0) {
+    // Another caller may already have removed its batch from memory and still
+    // be writing it. Reads/settings operations must observe that queued write.
+    await flushChain;
     await ensureStatsV2();
     return;
   }
 
-  flushChain = flushChain.then(async () => {
+  const operation = queueStatsStorageOperation(async () => {
     const stats = await readStoredStats();
     applyStatsBatch(stats, batch);
     await writeStoredStats(stats);
   });
 
-  await flushChain;
+  await operation;
 
   if (statsQueue.length > 0) {
     if (drain) return flushStatsQueue({ drain: true });
@@ -554,14 +671,6 @@ function pruneStats(stats) {
   stats.byResourceType = capObject(stats.byResourceType, BY_RESOURCE_TYPE_CAP);
 }
 
-function clearDetailedStats(stats) {
-  stats.byDay = {};
-  stats.bySite = {};
-  stats.byResourceType = {};
-  stats.byRule = {};
-  stats.recentEvents = [];
-}
-
 function pruneByDay(stats) {
   const retentionDays = stats.settings.retentionDays;
   const cutoff = Date.now() - (retentionDays - 1) * 24 * 60 * 60 * 1000;
@@ -654,8 +763,12 @@ export async function resetStats(scope = 'all') {
       flushTimer = null;
     }
     statsQueue = [];
-    const current = await ensureStatsV2();
-    await writeStoredStats(createDefaultStatsV2(current.settings));
+    // Enqueue the reset synchronously. A later explicit flush will then queue
+    // behind it instead of racing the reset against an older chain tail.
+    await queueStatsStorageOperation(async () => {
+      const current = await ensureStatsV2();
+      await writeStoredStats(createDefaultStatsV2(current.settings));
+    });
     return { ok: true };
   }
 

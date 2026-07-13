@@ -71,181 +71,404 @@
   // ─── PRISTINE CACHE ─────
   // Capture native APIs immediately to prevent host-page scripts from 
   // bypassing blockers by overwriting globals later.
-  const pristineSetInterval = window.setInterval.bind(window);
-  const pristineClearInterval = window.clearInterval.bind(window);
-  const pristineSetTimeout = window.setTimeout.bind(window);
-  const pristineClearTimeout = window.clearTimeout.bind(window);
-  const pristineRequestAnimationFrame = typeof window.requestAnimationFrame === 'function'
-    ? window.requestAnimationFrame.bind(window)
-    : (fn) => pristineSetTimeout(fn, 16);
-  const pristineCancelAnimationFrame = typeof window.cancelAnimationFrame === 'function'
-    ? window.cancelAnimationFrame.bind(window)
-    : pristineClearTimeout;
+  const rawCreateElement = document.createElement;
+  const rawDispatchEvent = document.dispatchEvent;
+  const rawFunctionToString = Function.prototype.toString;
+  const rawFunctionCall = Function.prototype.call;
+  const rawFunctionBind = Function.prototype.bind;
+  const rawReflectApply = Reflect.apply;
+  const rawStringIncludes = String.prototype.includes;
+  const rawHasOwnProperty = Object.prototype.hasOwnProperty;
+  const rawObjectCreate = Object.create;
+  const rawObjectAssign = Object.assign;
+  const rawObjectDefineProperty = Object.defineProperty;
+  const rawObjectDefineProperties = Object.defineProperties;
+  const rawObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+  const rawObjectFreeze = Object.freeze;
+  const rawArrayIsArray = Array.isArray;
+  const rawNumberIsFinite = Number.isFinite;
+  const rawNumberIsInteger = Number.isInteger;
 
-  const pristineCreateElement = document.createElement.bind(document);
-  const pristineQuerySelector = document.querySelector.bind(document);
-  const pristineQuerySelectorAll = typeof document.querySelectorAll === 'function'
-    ? document.querySelectorAll.bind(document)
-    : () => [];
-  const pristineGetElementsByClassName = typeof document.getElementsByClassName === 'function'
-    ? document.getElementsByClassName.bind(document)
-    : () => [];
-  const pristineAddEventListener = window.addEventListener.bind(window);
-  const pristineRemoveEventListener = window.removeEventListener.bind(window);
-  const pristineDispatchEvent = document.dispatchEvent.bind(document);
-  const pristineAddDocEventListener = document.addEventListener.bind(document);
-  const pristineRemoveDocEventListener = document.removeEventListener.bind(document);
-  const pristineFnToString = Function.prototype.toString.bind(Function.prototype);
-  const pristineCall = Function.prototype.call.bind(Function.prototype.call);
-  const pristineIncludes = String.prototype.includes.bind(String.prototype);
-  const PristineCSSStyleSheet = typeof CSSStyleSheet === 'function' ? CSSStyleSheet : null;
+  // Equivalent to Function.prototype.toString.call(fn), captured before page
+  // code can replace either operation.
+  const pristineFnToString = (fn) => rawReflectApply(rawFunctionToString, fn, []);
+  const pristineIncludes = (value, search) => rawReflectApply(rawStringIncludes, value, [search]);
+  const pristineHasOwn = (value, key) => rawReflectApply(rawHasOwnProperty, value, [key]);
 
-  // ─── YOUTUBE SCROLL LOCK PREVENTION ─────
-  // YouTube sets overflow:hidden on <html>/<body> and uses scroll event listeners
-  // to force the page back to the top when an adblocker is detected.
-  // This must run in the MAIN world, before YouTube's scripts, to intercept them.
-  if (window.location.hostname.includes('youtube.com')) {
-    const _origScrollTo = window.scrollTo.bind(window);
-    const _origScroll   = window.scroll.bind(window);
-
-    // Track the last time the user physically tried to scroll
-    let _chromaWheelTs = 0;
-    pristineAddDocEventListener('wheel', () => { _chromaWheelTs = performance.now(); },
-      { capture: true, passive: true });
-
-    function _chromaIsScrollReset(args) {
-      let x = 0, y = 0;
-      if (args[0] && typeof args[0] === 'object') {
-        x = args[0].left || 0;
-        y = args[0].top  || 0;
-      } else {
-        x = args[0] || 0;
-        y = args[1] || 0;
-      }
-      if (x !== 0 || y !== 0) return false;            // Not a to-top call
-      if (window.pageYOffset < 80) return false;        // Already near top — allow
-      return (performance.now() - _chromaWheelTs) < 400; // Happened right after a wheel event
-    }
-
-    window.scrollTo = function() {
-      if (_chromaIsScrollReset(arguments)) return;
-      return _origScrollTo.apply(window, arguments);
-    };
-    window.scroll = function() {
-      if (_chromaIsScrollReset(arguments)) return;
-      return _origScroll.apply(window, arguments);
-    };
-
-    // Also override scrollTop assignment on <html> (common YouTube pattern)
-    try {
-      const _htmlScrollTopDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop') ||
-                                  Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop');
-      if (_htmlScrollTopDesc && _htmlScrollTopDesc.set) {
-        const _origScrollTopSet = _htmlScrollTopDesc.set;
-        Object.defineProperty(document.documentElement, 'scrollTop', {
-          configurable: true,
-          get() { return _htmlScrollTopDesc.get ? _htmlScrollTopDesc.get.call(this) : 0; },
-          set(v) {
-            if (v === 0 && window.pageYOffset > 80 && (performance.now() - _chromaWheelTs) < 400) return;
-            _origScrollTopSet.call(this, v);
-          }
-        });
-      }
-    } catch (_) {}
-
-    // CSS belt-and-suspenders: override inline overflow:hidden that YouTube sets via JS
-    try {
-      const _scrollSheet = new CSSStyleSheet();
-      _scrollSheet.replaceSync(`
-        html[style*="overflow: hidden"], html[style*="overflow:hidden"],
-        html[style*="overflow-y: hidden"], html[style*="overflow-y:hidden"],
-        body[style*="overflow: hidden"], body[style*="overflow:hidden"],
-        body[style*="overflow-y: hidden"], body[style*="overflow-y:hidden"] {
-          overflow: auto !important;
-          overflow-y: auto !important;
-        }
-      `);
-      document.adoptedStyleSheets = [...document.adoptedStyleSheets, _scrollSheet];
-    } catch (_) {}
-  }
-
-  // Domains where the secure bridge and pristine API wrappers are provisioned.
-  const HOSTILE_DOMAINS = [
-    'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',
-    'amazon.co.jp', 'amazon.ca', 'amazon.fr', 'amazon.it',
-    'amazon.es', 'primevideo.com', 'twitch.tv'
-  ];
-  
-  const isHostileDomain = HOSTILE_DOMAINS.some(d => window.location.hostname.endsWith(d));
-
-  // ─── DEAD MAN'S SWITCH ─────
-  // Emergency disconnect: If core primitives are hijacked, the secure relay is
-  // disabled to prevent spoofing.
+  // Verify original, unbound primitives. Bound functions stringify as native
+  // regardless of their target, so checking the wrappers would be meaningless.
   let isEnvironmentCompromised = false;
   try {
-    const isNative = (fn) => {
-      try {
-        // SECURITY: Test Environment Pass-through
-        if (window.__CHROMA_TEST_ENVIRONMENT__ === true) return true;
-
-        return typeof fn === 'function' && 
-               pristineCall.call(pristineIncludes, pristineCall.call(pristineFnToString, fn), '[native code]');
-      } catch (e) {
-        return false;
+    const isNative = (fn) => typeof fn === 'function' &&
+      pristineIncludes(pristineFnToString(fn), '[native code]');
+    const criticalPrimitives = [
+      rawFunctionCall,
+      rawFunctionBind,
+      rawReflectApply,
+      rawStringIncludes,
+      rawHasOwnProperty,
+      rawObjectCreate,
+      rawObjectAssign,
+      rawObjectDefineProperty,
+      rawObjectDefineProperties,
+      rawObjectGetOwnPropertyDescriptor,
+      rawObjectFreeze,
+      rawArrayIsArray,
+      rawNumberIsFinite,
+      rawNumberIsInteger,
+      rawCreateElement,
+      rawDispatchEvent
+    ];
+    for (let index = 0; index < criticalPrimitives.length; index++) {
+      if (!isNative(criticalPrimitives[index])) {
+        isEnvironmentCompromised = true;
+        if (DEBUG) console.error('[Chroma Security] Environment compromised. Severing secure port.');
+        break;
       }
-    };
-    
-    if (!isNative(pristineCreateElement) || 
-        !isNative(pristineDispatchEvent)) {
-      isEnvironmentCompromised = true;
-      if (DEBUG) console.error("[Chroma Security] Environment compromised. Severing secure port.");
     }
   } catch (e) {
     isEnvironmentCompromised = true;
   }
 
-  // =========================================================================
+  // Do not invoke bind until its native source has passed the check above.
+  // A compromised environment receives inert API shims only.
+  const bindCaptured = (fn, receiver) => rawReflectApply(rawFunctionBind, fn, [receiver]);
+  const inertNoop = () => {};
+  const inertNull = () => null;
+  const inertList = () => [];
+  let pristineSetInterval = inertNull;
+  let pristineClearInterval = inertNoop;
+  let pristineSetTimeout = inertNull;
+  let pristineClearTimeout = inertNoop;
+  let pristineRequestAnimationFrame = inertNull;
+  let pristineCancelAnimationFrame = inertNoop;
+  let pristineCreateElement = inertNull;
+  let pristineQuerySelector = inertNull;
+  let pristineQuerySelectorAll = inertList;
+  let pristineGetElementsByClassName = inertList;
+  let pristineAddEventListener = inertNoop;
+  let pristineRemoveEventListener = inertNoop;
+  let pristineDispatchEvent = inertNoop;
+  let pristineAddDocEventListener = inertNoop;
+  let pristineRemoveDocEventListener = inertNoop;
+  let PristineCSSStyleSheet = null;
+
+  // A Proxy around a native function can retain a native-looking source while
+  // throwing when invoked. Treat any wrapper-construction failure as a
+  // compromised environment and retain the inert defaults above.
+  if (!isEnvironmentCompromised) {
+    try {
+      pristineSetInterval = bindCaptured(window.setInterval, window);
+      pristineClearInterval = bindCaptured(window.clearInterval, window);
+      pristineSetTimeout = bindCaptured(window.setTimeout, window);
+      pristineClearTimeout = bindCaptured(window.clearTimeout, window);
+      pristineRequestAnimationFrame = typeof window.requestAnimationFrame === 'function'
+        ? bindCaptured(window.requestAnimationFrame, window)
+        : (fn) => pristineSetTimeout(fn, 16);
+      pristineCancelAnimationFrame = typeof window.cancelAnimationFrame === 'function'
+        ? bindCaptured(window.cancelAnimationFrame, window)
+        : pristineClearTimeout;
+      pristineCreateElement = bindCaptured(rawCreateElement, document);
+      pristineQuerySelector = bindCaptured(document.querySelector, document);
+      pristineQuerySelectorAll = typeof document.querySelectorAll === 'function'
+        ? bindCaptured(document.querySelectorAll, document)
+        : inertList;
+      pristineGetElementsByClassName = typeof document.getElementsByClassName === 'function'
+        ? bindCaptured(document.getElementsByClassName, document)
+        : inertList;
+      pristineAddEventListener = bindCaptured(window.addEventListener, window);
+      pristineRemoveEventListener = bindCaptured(window.removeEventListener, window);
+      pristineDispatchEvent = bindCaptured(rawDispatchEvent, document);
+      pristineAddDocEventListener = bindCaptured(document.addEventListener, document);
+      pristineRemoveDocEventListener = bindCaptured(document.removeEventListener, document);
+      PristineCSSStyleSheet = typeof CSSStyleSheet === 'function' ? CSSStyleSheet : null;
+    } catch (e) {
+      isEnvironmentCompromised = true;
+      pristineSetInterval = inertNull;
+      pristineClearInterval = inertNoop;
+      pristineSetTimeout = inertNull;
+      pristineClearTimeout = inertNoop;
+      pristineRequestAnimationFrame = inertNull;
+      pristineCancelAnimationFrame = inertNoop;
+      pristineCreateElement = inertNull;
+      pristineQuerySelector = inertNull;
+      pristineQuerySelectorAll = inertList;
+      pristineGetElementsByClassName = inertList;
+      pristineAddEventListener = inertNoop;
+      pristineRemoveEventListener = inertNoop;
+      pristineDispatchEvent = inertNoop;
+      pristineAddDocEventListener = inertNoop;
+      pristineRemoveDocEventListener = inertNoop;
+      PristineCSSStyleSheet = null;
+    }
+  }
+
+  // One-time challenge used to reject a page-forged port delivery.
+  let readyToken = null;
+  if (!isEnvironmentCompromised) {
+    try {
+      const randomWords = crypto.getRandomValues(new Uint32Array(4));
+      readyToken = Array.from(randomWords, value => value.toString(36)).join('_');
+    } catch (e) {
+      isEnvironmentCompromised = true;
+    }
+  }
+
+  // ─── YOUTUBE SCROLL LOCK PREVENTION ─────
+  // Remain inert until the private port authenticates an active master config.
+  // Teardown uses identity checks so page replacements made later always win.
+  const isYouTubeHost = (() => {
+    const hostname = String(window.location?.hostname || '').toLowerCase().replace(/\.$/, '');
+    return hostname === 'youtube.com' || hostname.endsWith('.youtube.com');
+  })();
+  let youtubeScrollLifecycle = null;
+  let youtubeScrollSheet = null;
+
+  function isRecentYouTubeScrollReset(args, lifecycle) {
+    let x = 0;
+    let y = 0;
+    if (args[0] && typeof args[0] === 'object') {
+      x = args[0].left || 0;
+      y = args[0].top || 0;
+    } else {
+      x = args[0] || 0;
+      y = args[1] || 0;
+    }
+    if (x !== 0 || y !== 0 || window.pageYOffset < 80) return false;
+    return lifecycle.active && (performance.now() - lifecycle.wheelTimestamp) < 400;
+  }
+
+  function hasYouTubeScrollSheet(sheets) {
+    if (!sheets || !youtubeScrollSheet) return false;
+    for (let index = 0; index < sheets.length; index++) {
+      if (sheets[index] === youtubeScrollSheet) return true;
+    }
+    return false;
+  }
+
+  function addYouTubeScrollSheet() {
+    if (!PristineCSSStyleSheet) return;
+    try {
+      if (!youtubeScrollSheet) {
+        youtubeScrollSheet = new PristineCSSStyleSheet();
+        youtubeScrollSheet.replaceSync(`
+          html[style*="overflow: hidden"], html[style*="overflow:hidden"],
+          html[style*="overflow-y: hidden"], html[style*="overflow-y:hidden"],
+          body[style*="overflow: hidden"], body[style*="overflow:hidden"],
+          body[style*="overflow-y: hidden"], body[style*="overflow-y:hidden"] {
+            overflow: auto !important;
+            overflow-y: auto !important;
+          }
+        `);
+      }
+      const sheets = document.adoptedStyleSheets || [];
+      if (!hasYouTubeScrollSheet(sheets)) document.adoptedStyleSheets = [...sheets, youtubeScrollSheet];
+    } catch (_) {}
+  }
+
+  function removeYouTubeScrollSheet() {
+    if (!youtubeScrollSheet) return;
+    try {
+      const sheets = document.adoptedStyleSheets || [];
+      if (!hasYouTubeScrollSheet(sheets)) return;
+      const nextSheets = [];
+      for (let index = 0; index < sheets.length; index++) {
+        if (sheets[index] !== youtubeScrollSheet) nextSheets[nextSheets.length] = sheets[index];
+      }
+      document.adoptedStyleSheets = nextSheets;
+    } catch (_) {}
+  }
+
+  function activateYouTubeScrollProtection() {
+    if (!isYouTubeHost || isEnvironmentCompromised || youtubeScrollLifecycle?.active) return;
+    const lifecycle = {
+      active: true,
+      wheelTimestamp: 0,
+      onWheel: null,
+      scrollToOriginal: window.scrollTo,
+      scrollOriginal: window.scroll,
+      scrollToWrapper: null,
+      scrollWrapper: null,
+      scrollTopPreviousDescriptor: null,
+      scrollTopWrapperDescriptor: null
+    };
+    youtubeScrollLifecycle = lifecycle;
+    lifecycle.onWheel = () => {
+      if (lifecycle.active) lifecycle.wheelTimestamp = performance.now();
+    };
+    try {
+      pristineAddDocEventListener('wheel', lifecycle.onWheel, { capture: true, passive: true });
+    } catch (_) {}
+
+    lifecycle.scrollToWrapper = function(...args) {
+      if (lifecycle.active && isRecentYouTubeScrollReset(args, lifecycle)) return;
+      if (typeof lifecycle.scrollToOriginal === 'function') {
+        return rawReflectApply(lifecycle.scrollToOriginal, window, args);
+      }
+    };
+    lifecycle.scrollWrapper = function(...args) {
+      if (lifecycle.active && isRecentYouTubeScrollReset(args, lifecycle)) return;
+      if (typeof lifecycle.scrollOriginal === 'function') {
+        return rawReflectApply(lifecycle.scrollOriginal, window, args);
+      }
+    };
+    try { window.scrollTo = lifecycle.scrollToWrapper; } catch (_) {}
+    try { window.scroll = lifecycle.scrollWrapper; } catch (_) {}
+
+    try {
+      const documentElement = document.documentElement;
+      lifecycle.scrollTopPreviousDescriptor = rawObjectGetOwnPropertyDescriptor(documentElement, 'scrollTop') || null;
+      const scrollTopDescriptor = lifecycle.scrollTopPreviousDescriptor?.set
+        ? lifecycle.scrollTopPreviousDescriptor
+        : (!lifecycle.scrollTopPreviousDescriptor
+            ? rawObjectGetOwnPropertyDescriptor(Element.prototype, 'scrollTop') ||
+              rawObjectGetOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTop')
+            : null);
+      if (scrollTopDescriptor?.set) {
+        const originalGet = scrollTopDescriptor.get;
+        const originalSet = scrollTopDescriptor.set;
+        lifecycle.scrollTopWrapperDescriptor = {
+          configurable: true,
+          enumerable: scrollTopDescriptor.enumerable === true,
+          get() { return originalGet ? rawReflectApply(originalGet, this, []) : 0; },
+          set(value) {
+            if (lifecycle.active && value === 0 && window.pageYOffset > 80 &&
+                (performance.now() - lifecycle.wheelTimestamp) < 400) return;
+            rawReflectApply(originalSet, this, [value]);
+          }
+        };
+        rawObjectDefineProperty(documentElement, 'scrollTop', lifecycle.scrollTopWrapperDescriptor);
+      }
+    } catch (_) {
+      lifecycle.scrollTopPreviousDescriptor = null;
+      lifecycle.scrollTopWrapperDescriptor = null;
+    }
+
+    addYouTubeScrollSheet();
+  }
+
+  function deactivateYouTubeScrollProtection() {
+    const lifecycle = youtubeScrollLifecycle;
+    if (!lifecycle?.active) return;
+    lifecycle.active = false;
+    try { pristineRemoveDocEventListener('wheel', lifecycle.onWheel, true); } catch (_) {}
+
+    try {
+      if (window.scrollTo === lifecycle.scrollToWrapper) window.scrollTo = lifecycle.scrollToOriginal;
+    } catch (_) {}
+    try {
+      if (window.scroll === lifecycle.scrollWrapper) window.scroll = lifecycle.scrollOriginal;
+    } catch (_) {}
+
+    try {
+      const documentElement = document.documentElement;
+      const currentDescriptor = rawObjectGetOwnPropertyDescriptor(documentElement, 'scrollTop');
+      const wrapperDescriptor = lifecycle.scrollTopWrapperDescriptor;
+      const stillOwned = !!currentDescriptor && !!wrapperDescriptor &&
+        currentDescriptor.configurable === wrapperDescriptor.configurable &&
+        currentDescriptor.enumerable === wrapperDescriptor.enumerable &&
+        currentDescriptor.get === wrapperDescriptor.get &&
+        currentDescriptor.set === wrapperDescriptor.set;
+      if (stillOwned) {
+        if (lifecycle.scrollTopPreviousDescriptor) {
+          rawObjectDefineProperty(documentElement, 'scrollTop', lifecycle.scrollTopPreviousDescriptor);
+        } else {
+          delete documentElement.scrollTop;
+        }
+      }
+    } catch (_) {}
+
+    removeYouTubeScrollSheet();
+    youtubeScrollLifecycle = null;
+  }
+
+  function syncYouTubeScrollProtection() {
+    if (localConfig?.enabled === true) activateYouTubeScrollProtection();
+    else deactivateYouTubeScrollProtection();
+  }
+
+  // Domains where the secure bridge and pristine API wrappers are provisioned.
+  const BRIDGE_DOMAINS = [
+    'youtube.com', 'amazon.com', 'amazon.de', 'amazon.co.uk',
+    'amazon.co.jp', 'amazon.ca', 'amazon.fr', 'amazon.it',
+    'amazon.es', 'primevideo.com',
+    'bellyfull.net', 'allrecipes.com', 'foodnetwork.com', 'epicurious.com',
+    'bbcgoodfood.com', 'thekitchn.com', 'seriouseats.com', 'recipetineats.com',
+    'smittenkitchen.com', 'budgetbytes.com', 'pinchofyum.com',
+    'sallysbakingaddiction.com', 'minimalistbaker.com', 'thewoksoflife.com',
+    'americastestkitchen.com', 'cooking.nytimes.com', 'weelicious.com',
+    'therecipecritic.com', 'acozykitchen.com', 'twopeasandtheirpod.com',
+    'halfbakedharvest.com', 'pcgamer.com'
+  ];
+  const bridgeHostname = String(window.location?.hostname || '').toLowerCase().replace(/\.$/, '');
+  const isBridgeDomain = BRIDGE_DOMAINS.some(domain =>
+    bridgeHostname === domain || bridgeHostname.endsWith('.' + domain)
+  );
+
   // ─── SECURE PORT ─────
   let chromaPort;
   let pingInterval;
 
   // ─── INTERCEPTOR ─────
   let isInitialized = false;
-  let localConfig = null;
+  const CONFIG_KEYS = rawObjectFreeze([
+    'enabled',
+    'stripping',
+    'acceleration',
+    'accelerationSpeed',
+    'checkIntervalMs'
+  ]);
+  const CONFIG_VALIDATORS = rawObjectFreeze({
+    enabled:           (value) => typeof value === 'boolean',
+    stripping:         (value) => typeof value === 'boolean',
+    acceleration:      (value) => typeof value === 'boolean',
+    accelerationSpeed: (value) => typeof value === 'number' && rawNumberIsFinite(value) && value > 0 && value <= 16,
+    checkIntervalMs:   (value) => typeof value === 'number' && rawNumberIsInteger(value) && value >= 100 && value <= 5000
+  });
+  const localConfig = rawObjectAssign(rawObjectCreate(null), {
+    enabled: false,
+    stripping: false,
+    acceleration: false
+  });
+  let configRevision = 0;
 
-  function applyBridgeConfig(selectors = {}) {
-    const isInitial = !localConfig;
-    if (!localConfig) localConfig = Object.create(null);
-    Object.assign(localConfig, selectors);
-    if (isInitial || Object.prototype.hasOwnProperty.call(selectors, 'enabled')) {
-      localConfig.enabled = selectors.enabled !== false;
+  function applyBridgeConfig(config) {
+    if (!config || typeof config !== 'object' || rawArrayIsArray(config)) return false;
+    let changed = false;
+    for (let index = 0; index < CONFIG_KEYS.length; index++) {
+      const key = CONFIG_KEYS[index];
+      if (!pristineHasOwn(config, key)) continue;
+      const value = config[key];
+      if (!CONFIG_VALIDATORS[key](value)) continue;
+      if (localConfig[key] === value) continue;
+      localConfig[key] = value;
+      changed = true;
     }
+    if (changed) configRevision++;
+    return changed;
   }
 
   function getBridgeConfigSnapshot() {
-    return Object.freeze({ ...(localConfig || {}) });
+    return rawObjectFreeze({ ...localConfig });
   }
 
-  /**
-   * @param {Object} [selectors]
-   */
-  function initChromaInterceptor(selectors = {}) {
-    if (isInitialized) return;
-    isInitialized = true;
-
-    // Secure Config State: Use local variables to prevent host-page tampering.
-    applyBridgeConfig(selectors);
-    // SECURITY: Provisioning of secure messaging for authorized domains.
-    if (isHostileDomain) {
-      const internalBridge = Object.create(null); // SECURITY: Property Lookup Prevention via Prototype Chain
-      Object.defineProperties(internalBridge, {
+  function provisionInternalBridge() {
+    // Reserve the public name synchronously with an inert snapshot. This runs
+    // before asynchronous storage work and before page scripts can preclaim it.
+    if (isBridgeDomain) {
+      const internalBridge = rawObjectCreate(null); // SECURITY: Property Lookup Prevention via Prototype Chain
+      rawObjectDefineProperties(internalBridge, {
         config: {
           get: getBridgeConfigSnapshot,
           enumerable: true
         },
+        revision: {
+          get: () => configRevision,
+          enumerable: true
+        },
         // Integrity Layer: API Passthrough
         api: {
-          value: Object.freeze({
+          value: rawObjectFreeze({
             querySelector: pristineQuerySelector,
             querySelectorAll: pristineQuerySelectorAll,
             getElementsByClassName: pristineGetElementsByClassName,
@@ -271,33 +494,47 @@
 
       // SECURITY: Immutable Bridge
       try {
-        Object.defineProperty(window, '__CHROMA_INTERNAL__', {
-          value: Object.freeze(internalBridge),
+        rawObjectDefineProperty(window, '__CHROMA_INTERNAL__', {
+          value: rawObjectFreeze(internalBridge),
           writable: false,
           configurable: false
         });
       } catch (e) {
-        // Fallback for non-configurable scenarios
-        window.__CHROMA_INTERNAL__ = Object.freeze(internalBridge);
+        // A page-owned non-configurable property cannot become a trusted
+        // bridge. Leave handlers on their inert local defaults.
+        return;
       }
-      pristineDispatchEvent(new CustomEvent('__CHROMA_BRIDGE_READY__', { detail: { ready: true } }));
+      pristineDispatchEvent(new CustomEvent('__CHROMA_BRIDGE_READY__'));
     }
 
-    if (DEBUG) console.log(`[Chroma Ad-Blocker] Interceptor active. Hostile Domain: ${isHostileDomain}`);
-
-    pristineAddDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
-      if (e.detail) {
-        applyBridgeConfig(e.detail);
-      }
-    }, true);
-
+    if (DEBUG) console.log(`[Chroma Ad-Blocker] Bridge reserved. Bridge Domain: ${isBridgeDomain}`);
   }
+
+  /** @param {Object} [config] */
+  function initChromaInterceptor(config = {}) {
+    if (isInitialized) return;
+    isInitialized = true;
+    applyBridgeConfig(config);
+    syncYouTubeScrollProtection();
+  }
+
+  provisionInternalBridge();
 
   // ─── SECURE SYNCHRONIZATION ─────
   /** @param {Event} e */
   const handleConfigDelivery = (e) => {
     if (typeof e.stopImmediatePropagation === 'function') {
       e.stopImmediatePropagation();
+    }
+
+    // Accept delivery only when it echoes the one-time MAIN challenge. The
+    // isolated listener is installed before storage I/O and prevents the page
+    // from observing the challenge event.
+    const portNonce = e.detail && e.detail.portNonce;
+    const echoedReadyToken = e.detail && e.detail.readyToken;
+    if (typeof portNonce !== 'string' || portNonce.length < 16 || portNonce.length > 160 ||
+        typeof echoedReadyToken !== 'string' || echoedReadyToken !== readyToken) {
+      return;
     }
     
     if (pingInterval) {
@@ -310,9 +547,6 @@
     // SECURITY: Read per-session nonce from delivery event.
     // Port transfer event name is randomized per page load — page scripts
     // cannot pre-register for an event name they don't know yet.
-    const portNonce = e.detail && e.detail.portNonce;
-    if (!portNonce) return;
-
     // SECURITY: Capture Phase Port Transfer (VULN-01 Hardening)
     pristineAddEventListener(portNonce, function portCatcher(e) {
       if (typeof e.stopImmediatePropagation === 'function') {
@@ -329,18 +563,25 @@
       
       if (!chromaPort) return;
 
+      let portInitialized = false;
       chromaPort.onmessage = (msgEvent) => {
         if (msgEvent.data?.type === 'INIT_CHROMA') {
-           const initData = msgEvent.data;
-           initChromaInterceptor(initData.selectors || {});
-           document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: initData.selectors }));
-           if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port initialized via inner channel.');
-        } else if (msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
+          if (portInitialized) return;
+          portInitialized = true;
+          initChromaInterceptor(msgEvent.data.config || {});
+          // Notification only: authoritative values stay in the private port
+          // closure and are read through the immutable bridge snapshot.
+          pristineDispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__'));
+          if (typeof chromaPort.postMessage === 'function') {
+            chromaPort.postMessage({ type: 'CHROMA_READY' });
+          }
+          if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port initialized via inner channel.');
+        } else if (portInitialized && msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
           const resp = msgEvent.data.data;
           if (resp && resp.type === 'CONFIG_UPDATE') {
-            applyBridgeConfig(resp.config || {});
-            // Internal state is locked, use CustomEvent for reactive components
-            document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__', { detail: resp.config }));
+            const changed = applyBridgeConfig(resp.config || {});
+            if (changed) syncYouTubeScrollProtection();
+            pristineDispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__'));
           }
         }
       };
@@ -349,19 +590,20 @@
     }, true); // MUST be true for Capture Phase!
   };
 
-  pristineAddDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
-  
-  // DO NOT ping if the environment is compromised
+  // A compromised environment gets an immutable inert snapshot and no
+  // delivery listener or ready signal. Page events cannot reactivate it.
   if (!isEnvironmentCompromised) {
-    
-    const pingRate = isHostileDomain ? 5 : 50; // 5ms aggressive polling for hostile domains; 50ms relaxed for general web
+    pristineAddDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
+    const pingRate = isBridgeDomain ? 5 : 50; // 5ms on bridge domains; 50ms relaxed for general web
     
     pingInterval = pristineSetInterval(() => {
       // SECURITY: Secure Handshake Initiation
-      pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__'));
+      pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__', {
+        detail: { readyToken }
+      }));
     }, pingRate);
   } else {
-    initChromaInterceptor({});
+    initChromaInterceptor({ enabled: false, stripping: false, acceleration: false });
   }
   // ─── TESTING EXPORTS ─────
   if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
