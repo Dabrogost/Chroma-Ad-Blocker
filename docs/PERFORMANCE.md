@@ -34,12 +34,12 @@ Manifest V3 service workers are ephemeral. Chroma stores persistent state in `ch
 
 On install, update, startup, or wake, the worker may:
 
-- Sync static and dynamic DNR state.
-- Rebuild whitelist allow rules.
+- Reconcile static and dynamic DNR state with the current master/network request, removing inactive rules or restoring cached rules as needed.
+- Rebuild whitelist allow rules only while network protection is active.
 - Ensure subscription refresh alarms exist.
 - Refresh stale subscriptions.
-- Register or recover `userScripts`.
-- Sync browser privacy, geolocation, WebRTC, and proxy-related browser settings.
+- Register, recover, or unregister `userScripts` according to master state.
+- Apply or release browser privacy, geolocation, WebRTC, and proxy-related browser settings according to master and feature state.
 - Re-broadcast configuration to open tabs where possible.
 
 That startup work happens during lifecycle and settings events instead of the request path. If the worker was asleep, opening the popup or changing settings may pay the wake cost before showing fresh state.
@@ -93,6 +93,8 @@ These hooks add checks around page APIs such as `fetch`, `XMLHttpRequest`, `JSON
 
 Chroma registers supported subscription scriptlets and explicit user scriptlets through Chrome's `userScripts` API. Registration is synchronized from stored rules, chunked so one bad entry does not reject the whole batch, and retried per script when a chunk fails.
 
+The 100-script registration chunk is not a total resource limit. Advanced resource files may contain any number of resources that fit the documented response and per-resource byte limits; only resources referenced by valid user rules become registrations.
+
 Performance implications:
 
 - More scriptlet rules mean more match patterns for Chrome to manage.
@@ -121,6 +123,8 @@ Chroma batches stats and request-log writes to avoid writing to storage for ever
 - Proxy authentication challenge stats are batched before being recorded.
 - DNR request-log feedback is buffered before writing to `chrome.storage.local`.
 - Background stats are queued, flushed, and pruned under retention caps.
+
+MAIN-world page-event diagnostics are additionally enum-gated and rate-limited. They are approximate local counters rather than authenticated enforcement evidence; their transport does not affect the blocking path.
 
 Debug request logging can still add overhead on very noisy pages because it records recent full URLs when available. Use Debug mode only when you need that detail.
 

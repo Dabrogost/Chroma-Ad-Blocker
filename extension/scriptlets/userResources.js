@@ -15,7 +15,6 @@ import { validateRemoteHttpsUrl } from '../core/remoteUrl.js';
 const FETCH_TIMEOUT = 30000;
 const MAX_RESOURCE_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_RESOURCE_CODE_BYTES = 512 * 1024;
-const MAX_RESOURCE_COUNT = 100;
 const MAX_USER_SOURCES = 20;
 const MAX_RULE_TEXT_BYTES = 256 * 1024;
 const MAX_USER_RULES = 1000;
@@ -102,8 +101,7 @@ export function parseUserScriptletResourceText(text, options = {}) {
     unsupportedMime: 0,
     empty: 0,
     duplicate: 0,
-    overlong: 0,
-    limit: 0
+    overlong: 0
   };
   const seen = new Set();
   let current = null;
@@ -123,11 +121,6 @@ export function parseUserScriptletResourceText(text, options = {}) {
       skipped.overlong++;
       return;
     }
-    if (resources.length >= MAX_RESOURCE_COUNT) {
-      skipped.limit++;
-      return;
-    }
-
     const canonicalName = normalizeUserScriptletName(pending.name);
     if (!canonicalName || !RESOURCE_NAME_RE.test(canonicalName)) {
       skipped.malformed++;
@@ -348,7 +341,7 @@ function sourceSafeView(source) {
     lastError: item.lastError || null,
     sha256: item.sha256 || null,
     resourceCount: Number(item.resourceCount) || 0,
-    resourceNames: asArray(item.resourceNames).slice(0, MAX_RESOURCE_COUNT)
+    resourceNames: asArray(item.resourceNames).slice()
   };
 }
 

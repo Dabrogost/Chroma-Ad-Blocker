@@ -13,7 +13,7 @@ Thanks for your interest. Here's what you need to know.
 
 - This project is licensed under the **GNU General Public License v3 (GPLv3)**. By contributing, you agree your changes fall under the same terms.
 - Keep PRs focused. One fix or feature per PR.
-- Don't break the security model. The `MessageChannel` handshake, per-session nonces, origin checks, config validation, and MAIN-world safety boundaries exist for a reason - changes that weaken these will not be accepted.
+- Don't break the security model. The private `MessageChannel` config authority, per-session nonce/challenge handshake, origin checks, config validation, fail-closed initialization, and MAIN-world ownership boundaries exist for a reason - changes that weaken these will not be accepted.
 - AI-assisted contributions are fine, but you are responsible for reviewing and understanding what you submit.
 
 ## Before Opening a PR

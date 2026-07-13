@@ -44,13 +44,13 @@ This limitation is specific to browser-level proxy routing in Chromium. It does 
 
 ## Security
 
-Your proxy credentials, username and password, are stored locally in an obfuscated form using a bundled extension key. They are decoded in memory only when the proxy server challenges the browser for authentication.
+Your proxy credentials, username and password, are stored locally in an obfuscated form using a bundled extension key. They are decoded in memory only for a genuine proxy-authentication challenge. Chroma requires the exact normalized host, port, and HTTP/HTTPS proxy type to match the route currently effective in Chrome. Disabled, deleted, stale, unrouted, master-paused, test-inactive, or externally controlled proxy records receive no credentials. Authentication attempts are bounded per request to prevent challenge loops.
 
 This can reduce casual readability in extension storage, but it is not strong encryption and is not a substitute for operating-system or browser-profile security.
 
 ## Connection Verification
 
-The Chroma popup includes a live **Connection Verification** system. When a proxy is active, the extension verifies connectivity when the proxy card loads or when you manually refresh it, then displays a status indicator, connected or offline, along with the detected proxied IP address when available.
+The Chroma popup includes a **Connection Verification** system. When you request a test, Chroma first makes the selected test route its desired Chrome route and verifies that Chroma actually controls the matching PAC state. If another extension or browser policy owns proxy settings, the test is reported as unavailable/degraded rather than healthy. A successful test displays the detected proxied IP address when available and is cached briefly for that exact proxy connection definition.
 
 ## Global Proxy Fallback
 
@@ -63,6 +63,12 @@ The main switch on each proxy card is a per-proxy enabled/disabled control:
 - **Switch ON**: The proxy can route its enabled domain rules and can act as the selected global fallback if its **GLOBAL** button is active.
 - **Switch OFF**: The proxy routes nothing while disabled. Its domain rows are kept, and if it was selected as **GLOBAL**, that global selection is preserved but inactive until the switch is turned back on.
 - **GLOBAL button**: Selects or clears the global fallback independently from the main switch. The active **GLOBAL** button is highlighted. The selected global card hides its domain add/list controls while it is global; non-global proxy cards keep their domain controls visible.
+
+### Master Protection Lifecycle
+
+The global Chroma master switch is authoritative over every proxy route. Master off releases `chrome.proxy.settings` and pauses domain-specific, global-fallback, and test routing while preserving proxy records, enabled flags, domains, and the selected global ID. Master on rebuilds the requested PAC route from that stored intent.
+
+Chrome allows only one extension or policy controller to own proxy settings at a time. If another controller wins, Chroma separates **requested** from **effective** routing, withholds credentials, reports the conflict in Health, and removes dormant Chroma PAC state so an obsolete route cannot reactivate later. When Chrome reports that control is available again, Chroma automatically reconciles the latest stored intent.
 
 ## Chrome Browser Services Bypass
 
@@ -83,14 +89,18 @@ Modes:
 - **Strict**: Disables non-proxied UDP. This offers the strongest protection but may affect browser calls or video chat quality.
 - **Off**: Releases Chroma's WebRTC routing control.
 
+Auto, Balanced, and Strict describe stored intent only while master protection is enabled. Master off releases Chroma's WebRTC setting without erasing the selected mode; master on restores it. If another extension or policy controls the setting, Health reports the request as degraded and Chroma retries automatically when control is released.
+
 ## Dynamic Routing Status
 
-The Chroma popup provides real-time feedback on your routing state. The status line on each proxy card updates to show exactly what it is doing:
+Proxy cards summarize saved route intent and the latest connection-test result:
 
 - **GLOBAL PROXY ACTIVE**: The server is handling all browser traffic.
 - **ROUTING [X] DOMAINS**: The server is only handling the specific domains you have listed.
 - **CONNECTED**: The server is ready but has no current routing assignments.
 - **DISABLED**: The proxy is saved but paused. Its domain rows and global selection, if any, are preserved.
+
+These card labels are not proof that Chrome accepted Chroma's PAC settings. The **Health** panel is authoritative for requested, master-paused, effective, externally controlled, and incomplete-release state. In particular, a saved GLOBAL selection is not effective while master protection is off or another controller owns Chrome's proxy setting.
 
 ## Example: Setting Up NordVPN
 

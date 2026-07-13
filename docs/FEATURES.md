@@ -2,6 +2,12 @@
 
 This guide expands the feature summary from the root README. For implementation diagrams and module-level layering, see [Architecture Deep Dive](ARCHITECTURE.md).
 
+## Master Protection Lifecycle
+
+The global master switch controls active protection rather than erasing requested settings. Master off removes active network and whitelist DNR, unregisters Chroma-managed subscription and advanced `userScripts`, releases proxy PAC routing, clears Chroma-owned WebRTC/browser-privacy/geolocation settings, and keeps recipe/platform MAIN behavior inert. Cached subscription rules, proxy records, feature toggles, and user resources remain stored.
+
+Master on restores the latest requested state from those caches and settings. Startup and service-worker recovery use the same reconciliation paths, and generation checks prevent an older refresh or registration operation from overwriting a newer toggle. A subscription refresh may update cached data while protection is off, but it cannot reactivate an inactive runtime layer.
+
 ## YouTube Ad Stripping
 
 Chroma's primary YouTube defense intercepts and cleans ad-related metadata from JSON payloads before they reach the player. This includes sponsored Shorts overlay payloads and player ad metadata. The goal is a seamless, high-performance viewing experience without relying on playback acceleration.
@@ -26,6 +32,8 @@ The router includes:
 - Chrome browser services bypass for Global Fallback mode.
 - WebRTC leak protection controls.
 
+Master off pauses every proxy route and releases Chrome proxy control while preserving the configured routes. Health separates requested routes from effective Chrome routing, reports another extension or policy as **Controlled elsewhere**, and automatically reconciles after control is released.
+
 For the full proxy manual, see [Media Proxy Router](MEDIA_PROXY_ROUTER.md).
 
 ## Source-Generated DNR Network Blocking
@@ -44,7 +52,7 @@ De-AMP Links is optional and disabled by default. When enabled, Chroma redirects
 
 ## Live Filter List Subscriptions
 
-Chroma subscribes to Hagezi Pro Mini, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library. Subscription rules are parsed locally, deduplicated where appropriate, and routed to the layer that can enforce them:
+Chroma subscribes to Hagezi Pro Mini, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library. Subscription rules are parsed locally, cached for restoration, deduplicated where appropriate, and routed to an active layer that can enforce them:
 
 - Network rules can become DNR dynamic rules.
 - Cosmetic rules feed the cosmetic filtering layer.
@@ -60,6 +68,8 @@ Chroma's scriptlet layer uses Chrome's `userScripts` API to run supported script
 Capabilities include JSON pruning, property-read aborts, constant setting, fetch prevention, regex translation, and explicit timing flags such as `document_start`, `document_idle`, and `document_end`.
 
 Advanced users can also add their own uBO-style scriptlet resource URLs in settings, then save matching rules such as `example.com##+js(resource-name)`. These user-provided resources are not bundled with Chroma and are separate from normal filter list subscriptions; add only resources you trust. For setup examples and linked-resource troubleshooting, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md).
+
+Subscription and advanced scripts require master protection. Turning it off unregisters all Chroma-managed `userScripts` for future documents while retaining their rules and resources for restoration. Whitelisted domains are excluded when registrations are active. Already-executed arbitrary page code may require a tab reload to remove its effects.
 
 ### Quiet Console
 
@@ -102,6 +112,8 @@ Chroma provides specialized protection for high-clutter recipe and lifestyle sit
 
 The layer includes style protection, semantic recipe content preservation, anti-adblock containment, scroll-lock recovery, and site-specific cosmetic overrides for major recipe platforms.
 
+Recipe behavior waits for authenticated configuration and remains inert while master protection is off or the site is whitelisted. Live deactivation disconnects observers, cancels sweeps, removes Chroma-owned styles, and restores only API slots and page styles Chroma still owns, preserving later page changes. Re-enabling does not stack duplicate wrappers or stylesheets.
+
 ## Dynamic Ad Acceleration
 
 Dynamic Ad Acceleration automatically identifies and accelerates video ads at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) on YouTube and Amazon Prime Video. It is a fallback for cases where stripping is disabled or platform behavior changes.
@@ -123,11 +135,13 @@ Chroma includes optional browser privacy controls:
 
 Fingerprint Randomization covers surfaces such as canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. It uses fresh non-persisted salts and full-hostname domain separation.
 
+Browser Privacy Hardening, Geolocation Protection, WebRTC modes, and Fingerprint Randomization require master protection in addition to their own feature settings. Master off releases or unregisters Chroma-owned runtime controls without erasing requested values; master on restores them. Health distinguishes requested, controlled, and effective Chrome state and automatically retries when an external controller releases a setting.
+
 These features are optional because browser privacy hardening and fingerprint changes can affect site compatibility.
 
 ## Local Event Tracker
 
-The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event details. It distinguishes network blocks from allow/whitelist matches and keeps payload details in the tracker instead of promoting platform-specific badges.
+The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event summaries. It distinguishes network blocks from allow/whitelist matches. MAIN-world YouTube and scriptlet diagnostics accept only coarse, bounded event types, so those page-layer totals are approximate rather than authenticated enforcement evidence.
 
 <div align="center">
   <img src="assets/docs-settings-protection-intelligence.png" alt="Chroma Protection Intelligence dashboard" width="760">

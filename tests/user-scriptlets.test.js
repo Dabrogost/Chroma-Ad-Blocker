@@ -302,6 +302,31 @@ test('user scriptlet resource storage manager', async (t) => {
     assert.match(storage.userScriptletSources[0].lastError, /HTTP 503/);
   });
 
+  await t.test('refresh preserves all resources beyond one registration batch', async () => {
+    const storage = {};
+    const first = loadUserResources({ storage, fetchText: resourceText });
+    const added = await first.api.addUserScriptletSource({ url: 'https://cdn.example.com/resources.js' });
+    assert.strictEqual(added.ok, true);
+    const id = storage.userScriptletSources[0].id;
+    const resourceBundle = Array.from({ length: 101 }, (_, index) => (
+      `resource-${index}.js text/javascript (() => { globalThis.__resource${index} = true; })();`
+    )).join('\n');
+
+    const second = loadUserResources({ storage, fetchText: resourceBundle });
+    const refreshed = await second.api.refreshUserScriptletSource(id);
+
+    assert.strictEqual(refreshed.ok, true);
+    assert.strictEqual(refreshed.resourceCount, 101);
+    assert.strictEqual(storage.userScriptletSources[0].resourceCount, 101);
+    assert.strictEqual(storage.userScriptletSources[0].resourceNames.length, 101);
+    assert.strictEqual(Object.keys(storage.userScriptletResources).length, 101);
+    assert.match(storage.userScriptletResources['resource-100'].code, /__resource100/);
+
+    const settings = await second.api.getUserScriptletSettings();
+    assert.strictEqual(settings.sources[0].resourceNames.length, 101);
+    assert.ok(settings.availableResourceNames.includes('resource-100.js'));
+  });
+
   await t.test('not-modified refresh preserves cached resources', async () => {
     const storage = {};
     const first = loadUserResources({ storage, fetchText: resourceText });

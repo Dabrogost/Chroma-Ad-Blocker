@@ -997,6 +997,58 @@ test('scriptlet engine whitelist hardening', async (t) => {
   });
 });
 
+test('scriptlet engine isolates failures within 100-script registration batches', async () => {
+  const userScriptletRules = [];
+  const userScriptletResources = {};
+  for (let index = 1; index <= 101; index++) {
+    const name = `advanced-resource-${index}`;
+    userScriptletRules.push({
+      scriptlet: name,
+      args: [],
+      domains: [`site-${index}.example`]
+    });
+    userScriptletResources[name] = {
+      name,
+      code: `globalThis.__advancedResource${index} = true;`
+    };
+  }
+
+  const accepted = [];
+  const registrationCalls = [];
+  const failingId = 'user_scriptlet_50';
+  const { sandbox } = loadScriptletEngine({
+    subscriptionScriptletRules: [],
+    userScriptletRules,
+    userScriptletResources,
+    whitelist: [],
+    config: { enabled: true },
+    fprWhitelist: []
+  }, {
+    userScripts: {
+      getScripts: async () => [],
+      unregister: async () => {},
+      register: async scripts => {
+        registrationCalls.push(scripts.map(script => script.id));
+        if (scripts.some(script => script.id === failingId)) {
+          throw new Error('malformed registration');
+        }
+        accepted.push(...scripts);
+      }
+    }
+  });
+
+  const result = await sandbox.syncUserScripts();
+
+  assert.strictEqual(registrationCalls[0].length, 100);
+  assert.ok(registrationCalls.slice(1).every(batch => batch.length === 1));
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.registered, 100);
+  assert.strictEqual(result.expected, 101);
+  assert.strictEqual(accepted.length, 100);
+  assert.strictEqual(accepted.some(script => script.id === failingId), false);
+  assert.strictEqual(accepted.some(script => script.id === 'user_scriptlet_101'), true);
+});
+
 test('scriptlet engine master lifecycle', async (t) => {
   function lifecycleStorage(enabled) {
     return {
