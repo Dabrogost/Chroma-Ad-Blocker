@@ -33,9 +33,9 @@ Acceleration is most useful when stripping is disabled, temporarily degraded by 
 
 ## Privacy Boundary
 
-Session state is private to the handler closure. Host-page scripts cannot read or modify acceleration state, session flags, ad counters, or stripping internals.
+Session state is private to the handler closure. Host-page scripts cannot directly read or write acceleration state, session flags, or stripping internals, although they can observe visible player behavior and infer that cleanup occurred. Stripping, acceleration, and scroll behavior start inert until authenticated configuration arrives over the private bridge; page-dispatched config notifications carry no authoritative values.
 
-Payload cleanup details may appear in the local Event Tracker for transparency, but they are kept local and folded into broader cleanup statistics instead of being promoted as platform-specific telemetry.
+Coarse payload-modified events may appear in the local Event Tracker and are folded into broader cleanup statistics instead of being promoted as platform-specific telemetry. Caller-provided field counts or object details are discarded. Because the MAIN-world signal crosses a page-visible event, a hostile page can forge the coarse event within fixed rate limits; these approximate diagnostics do not affect enforcement or privileged state.
 
 ## Twitch And Server-Side Ad Insertion
 

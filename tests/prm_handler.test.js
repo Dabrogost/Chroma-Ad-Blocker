@@ -573,7 +573,7 @@ test('Amazon Prime Video ad acceleration', async (t) => {
   });
 });
 
-test('Prime Event-Driven Initialization Flow', async (t) => {
+test('Prime secure bridge initialization flow', async (t) => {
   const createInitSandbox = () => {
     let listeners = {};
     const sandbox = {
@@ -633,33 +633,62 @@ test('Prime Event-Driven Initialization Flow', async (t) => {
     return sandbox;
   };
 
-  await t.test('aborts initialization when __EXT_INIT__ activates kill switch', async () => {
-    let intervalFns = [];
+  await t.test('starts inert and ignores forged public config/init details', async () => {
     const sandbox = createInitSandbox();
-    sandbox.setInterval = (fn) => intervalFns.push(fn);
+    sandbox.setInterval = () => 1;
 
     vm.createContext(sandbox);
     vm.runInContext(messagingJsCode, sandbox);
     vm.runInContext(primeJsCode, sandbox);
 
-    sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: false } });
-    intervalFns.forEach(fn => fn());
+    sandbox.document.dispatchEvent({
+      type: '__EXT_INIT__',
+      detail: { active: true, acceleration: true }
+    });
+    sandbox.document.dispatchEvent({
+      type: '__CHROMA_CONFIG_UPDATE__',
+      detail: { enabled: true, acceleration: true, accelerationSpeed: 16 }
+    });
 
-    assert.strictEqual(sandbox.CONFIG.enabled, false, 'Kill switch should prevent enabling');
+    assert.strictEqual(sandbox.CONFIG.enabled, false);
+    assert.strictEqual(sandbox.CONFIG.acceleration, false);
+    assert.strictEqual(sandbox.CONFIG.accelerationSpeed, 8);
   });
 
-  await t.test('wakes up normally when __EXT_INIT__ fires true', async () => {
-    let intervalFns = [];
+  await t.test('a protected bridge snapshot activates on a detail-free notification', async () => {
     const sandbox = createInitSandbox();
-    sandbox.setInterval = (fn) => intervalFns.push(fn);
+    sandbox.setInterval = () => 1;
 
     vm.createContext(sandbox);
     vm.runInContext(messagingJsCode, sandbox);
     vm.runInContext(primeJsCode, sandbox);
 
-    sandbox.document.dispatchEvent({ type: '__EXT_INIT__', detail: { active: true } });
-    intervalFns.forEach(fn => fn());
+    sandbox.window.__CHROMA_INTERNAL__.config = {
+      enabled: true,
+      acceleration: true,
+      accelerationSpeed: 12
+    };
+    sandbox.window.__CHROMA_INTERNAL__.revision = 1;
+    sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
 
-    assert.strictEqual(sandbox.CONFIG.enabled, true, 'Should enable when active');
+    assert.strictEqual(sandbox.CONFIG.enabled, true);
+    assert.strictEqual(sandbox.CONFIG.acceleration, true);
+    assert.strictEqual(sandbox.CONFIG.accelerationSpeed, 12);
+
+    sandbox.window.__CHROMA_INTERNAL__.config = {
+      enabled: false,
+      acceleration: false,
+      accelerationSpeed: 12
+    };
+    sandbox.window.__CHROMA_INTERNAL__.revision = 2;
+    sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
+    assert.strictEqual(sandbox.CONFIG.enabled, false);
+    assert.strictEqual(sandbox.CONFIG.acceleration, false);
+
+    sandbox.document.dispatchEvent({
+      type: '__CHROMA_CONFIG_UPDATE__',
+      detail: { enabled: true, acceleration: true }
+    });
+    assert.strictEqual(sandbox.CONFIG.enabled, false, 'same-revision forged signals are ignored');
   });
 });

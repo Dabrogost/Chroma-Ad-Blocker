@@ -2037,6 +2037,342 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(failure.dom.window.document.querySelector('#healthPanelBody').textContent, /Could not load health diagnostics/);
   });
 
+  await t.test('health panel distinguishes proxy intent, effective routing, conflicts, and incomplete release', async () => {
+    const makeHealth = proxy => ({
+      overall: { status: proxy.error || proxy.conflict ? 'degraded' : 'healthy', issues: [] },
+      manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+      master: { enabled: true, networkBlocking: true },
+      dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true },
+      subscriptions: { enabled: 0, total: 0, withErrors: 0 },
+      scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 0 },
+      fpr: { enabled: false, active: false },
+      cosmetic: {},
+      whitelist: {},
+      proxy,
+      webrtc: { available: true, mode: 'auto', controllable: true, protected: false, recommended: proxy.effectiveGlobalProxy === true },
+      requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+    });
+    const scenarios = [
+      {
+        name: 'paused global selection',
+        proxy: {
+          configuredCount: 1, acceptedCount: 1, routedDomainCount: 0,
+          globalProxyEnabled: true, globalProxyConfigured: true, globalProxyRouteEnabled: false,
+          requestedRouting: false, effectiveRouting: false, effectiveGlobalProxy: false,
+          levelOfControl: 'controllable_by_this_extension', conflict: false, error: null
+        },
+        summary: 'Paused',
+        global: 'Paused'
+      },
+      {
+        name: 'external conflict',
+        proxy: {
+          configuredCount: 1, acceptedCount: 1, routedDomainCount: 0,
+          globalProxyEnabled: true, globalProxyConfigured: true, globalProxyRouteEnabled: true,
+          requestedRouting: true, effectiveRouting: false, effectiveGlobalProxy: false,
+          levelOfControl: 'controlled_by_other_extensions', conflict: true, error: null
+        },
+        summary: 'Controlled elsewhere',
+        global: 'Requested'
+      },
+      {
+        name: 'effective global route',
+        proxy: {
+          configuredCount: 1, acceptedCount: 1, routedDomainCount: 0,
+          globalProxyEnabled: true, globalProxyConfigured: true, globalProxyRouteEnabled: true,
+          requestedRouting: true, effectiveRouting: true, effectiveGlobalProxy: true,
+          levelOfControl: 'controlled_by_this_extension', conflict: false, error: null
+        },
+        summary: 'Global',
+        global: 'Requested'
+      },
+      {
+        name: 'effective domain routes',
+        proxy: {
+          configuredCount: 1, acceptedCount: 1, routedDomainCount: 2,
+          globalProxyEnabled: false, globalProxyConfigured: false, globalProxyRouteEnabled: false,
+          requestedRouting: true, effectiveRouting: true, effectiveGlobalProxy: false,
+          levelOfControl: 'controlled_by_this_extension', conflict: false, error: null
+        },
+        summary: '2 routed',
+        global: 'Disabled'
+      },
+      {
+        name: 'incomplete release',
+        proxy: {
+          configuredCount: 1, acceptedCount: 1, routedDomainCount: 0,
+          globalProxyEnabled: false, globalProxyConfigured: false, globalProxyRouteEnabled: false,
+          requestedRouting: false, effectiveRouting: false, effectiveGlobalProxy: false,
+          levelOfControl: 'controlled_by_this_extension', conflict: false,
+          error: 'Proxy routing status mismatch'
+        },
+        summary: 'Release incomplete',
+        global: 'Disabled'
+      },
+      {
+        name: 'irrelevant external control',
+        proxy: {
+          configuredCount: 0, acceptedCount: 0, routedDomainCount: 0,
+          globalProxyEnabled: false, globalProxyConfigured: false, globalProxyRouteEnabled: false,
+          requestedRouting: false, effectiveRouting: false, effectiveGlobalProxy: false,
+          levelOfControl: 'controlled_by_other_extensions', conflict: false, error: null
+        },
+        summary: 'Off',
+        global: 'Disabled'
+      }
+    ];
+
+    for (const scenario of scenarios) {
+      const harness = createSettingsHarness({ responses: { HEALTH_GET: makeHealth(scenario.proxy) } });
+      await harness.sandbox.ChromaApp.initSharedUI();
+      await settleDomAsyncWork();
+
+      const proxyChip = [...harness.dom.window.document.querySelectorAll('.health-summary-chip')]
+        .find(chip => chip.querySelector('.health-summary-chip__label')?.textContent === 'Proxy');
+      assert.ok(proxyChip, scenario.name);
+      assert.strictEqual(proxyChip.querySelector('.health-summary-chip__value').textContent, scenario.summary, scenario.name);
+
+      const globalMetric = [...harness.dom.window.document.querySelectorAll('.health-metric')]
+        .find(row => row.querySelector('.health-metric__label')?.textContent === 'Global proxy');
+      assert.ok(globalMetric, scenario.name);
+      assert.strictEqual(globalMetric.querySelector('.health-metric__value').textContent, scenario.global, scenario.name);
+
+      if (scenario.proxy.error) {
+        assert.ok(proxyChip.classList.contains('health-summary-chip--warning'), scenario.name);
+        const controlMetric = [...harness.dom.window.document.querySelectorAll('.health-metric')]
+          .find(row => row.querySelector('.health-metric__label')?.textContent === 'Proxy control');
+        assert.ok(controlMetric.querySelector('.health-metric__value').classList.contains('health-metric__value--warning'), scenario.name);
+      }
+    }
+  });
+
+  await t.test('health panel presents preserved proxy, list, and scriptlet requests as paused while master is off', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          overall: { status: 'disabled', issues: [{ severity: 'info', area: 'master', message: 'Chroma protection is disabled.' }] },
+          manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+          master: { enabled: false, networkBlocking: true },
+          dnr: {
+            enabledStaticRulesets: [],
+            expectedStaticRulesets: ['a'],
+            staticRulesetsOk: false,
+            appliedNetworkRuleCount: 0,
+            whitelistRuleCount: 0
+          },
+          subscriptions: {
+            enabled: 2,
+            total: 3,
+            appliedNetwork: 0,
+            cosmetic: 40,
+            scriptlet: 5,
+            withErrors: 0
+          },
+          scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 5 },
+          fpr: { enabled: false, active: false },
+          cosmetic: { subscriptionCosmeticRuleCount: 40 },
+          whitelist: {},
+          proxy: {
+            configuredCount: 1,
+            acceptedCount: 1,
+            routedDomainCount: 2,
+            globalProxyEnabled: true,
+            globalProxyConfigured: true,
+            globalProxyRouteEnabled: true,
+            requestedRouting: true,
+            effectiveRouting: false,
+            effectiveGlobalProxy: false,
+            levelOfControl: 'controllable_by_this_extension',
+            conflict: false,
+            error: null
+          },
+          webrtc: { requested: false, enabled: false },
+          browserPrivacy: { requested: false, enabled: false },
+          geolocation: { requested: false, enabled: false },
+          requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const summaryValue = label => {
+      const chip = [...harness.dom.window.document.querySelectorAll('.health-summary-chip')]
+        .find(candidate => candidate.querySelector('.health-summary-chip__label')?.textContent === label);
+      assert.ok(chip, label);
+      assert.ok(chip.classList.contains('health-summary-chip--disabled'), label);
+      return chip.querySelector('.health-summary-chip__value').textContent;
+    };
+    const metricValue = label => {
+      const row = [...harness.dom.window.document.querySelectorAll('.health-metric')]
+        .find(candidate => candidate.querySelector('.health-metric__label')?.textContent === label);
+      assert.ok(row, label);
+      return row.querySelector('.health-metric__value');
+    };
+
+    assert.strictEqual(summaryValue('Lists'), '2 / 3 paused');
+    assert.strictEqual(summaryValue('Scriptlets'), 'Paused');
+    assert.strictEqual(summaryValue('Proxy'), 'Paused');
+    assert.strictEqual(metricValue('Requested lists').textContent, '2 / 3 (Paused)');
+    assert.strictEqual(metricValue('Requested routing').textContent, 'Paused');
+    assert.strictEqual(metricValue('Effective routing').textContent, 'Paused');
+    assert.strictEqual(metricValue('Global proxy').textContent, 'Paused');
+    assert.ok(metricValue('Static rulesets').classList.contains('health-metric__value--disabled'));
+  });
+
+  await t.test('health panel distinguishes paused, externally controlled, and effective Chrome privacy state', async () => {
+    const baseHealth = {
+      overall: { status: 'healthy', issues: [] },
+      manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+      master: { enabled: true, networkBlocking: true },
+      dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true },
+      subscriptions: { enabled: 0, total: 0, withErrors: 0 },
+      scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 0 },
+      fpr: { enabled: false, active: false },
+      cosmetic: {},
+      whitelist: {},
+      proxy: {
+        configuredCount: 0, acceptedCount: 0, routedDomainCount: 0,
+        globalProxyEnabled: false, globalProxyConfigured: false, globalProxyRouteEnabled: false,
+        requestedRouting: false, effectiveRouting: false, effectiveGlobalProxy: false,
+        conflict: false, error: null
+      },
+      requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+    };
+    const settingKeys = ['thirdPartyCookiesAllowed', 'doNotTrackEnabled', 'adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled'];
+    const metricValue = (document, label) => {
+      const row = [...document.querySelectorAll('.health-metric')]
+        .find(candidate => candidate.querySelector('.health-metric__label')?.textContent === label);
+      assert.ok(row, label);
+      return row.querySelector('.health-metric__value');
+    };
+
+    const paused = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          master: { enabled: false, networkBlocking: true },
+          webrtc: {
+            available: true, requestedMode: 'strict', requested: true, enabled: false,
+            controlledByThisExtension: false, effective: false, released: true
+          },
+          browserPrivacy: {
+            requested: true, enabled: false, available: true, controlled: false,
+            effective: false, hardenedCount: 0, totalCount: 5, settings: []
+          },
+          geolocation: { requested: true, enabled: false, available: true, effective: false }
+        }
+      }
+    });
+    await paused.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    assert.strictEqual(metricValue(paused.dom.window.document, 'WebRTC leak protection').textContent, 'Strict (Paused)');
+    assert.strictEqual(metricValue(paused.dom.window.document, 'Chrome Privacy Hardening').textContent, 'Paused');
+    assert.strictEqual(metricValue(paused.dom.window.document, 'Geolocation Protection').textContent, 'Paused');
+
+    const externalSettings = settingKeys.map(key => ({
+      key,
+      available: true,
+      levelOfControl: 'controlled_by_other_extensions',
+      controllable: false,
+      controlledByThisExtension: false,
+      effective: true,
+      hardened: true,
+      error: 'Chrome privacy setting is controlled elsewhere'
+    }));
+    const external = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          overall: { status: 'degraded', issues: [] },
+          webrtc: {
+            available: true, requestedMode: 'strict', requested: true, enabled: true,
+            levelOfControl: 'controlled_by_other_extensions', controllable: false,
+            controlledByThisExtension: false, effective: true, protected: true,
+            error: 'WebRTC privacy setting is controlled elsewhere'
+          },
+          browserPrivacy: {
+            requested: true, enabled: true, available: true, controlled: false,
+            effective: true, hardenedCount: 5, totalCount: 5, blockedCount: 5, settings: externalSettings
+          },
+          geolocation: { requested: true, enabled: true, available: true, effective: false, setting: 'ask' }
+        }
+      }
+    });
+    await external.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    assert.match(metricValue(external.dom.window.document, 'WebRTC leak protection').textContent, /Controlled elsewhere/);
+    assert.ok(metricValue(external.dom.window.document, 'WebRTC leak protection').classList.contains('health-metric__value--warning'));
+    assert.strictEqual(metricValue(external.dom.window.document, 'Third-party cookies').textContent, 'Controlled elsewhere');
+    assert.strictEqual(metricValue(external.dom.window.document, 'Geolocation Protection').textContent, 'Not blocked');
+
+    const controllableSettings = settingKeys.map(key => ({
+      key,
+      available: true,
+      levelOfControl: 'controllable_by_this_extension',
+      controllable: true,
+      controlledByThisExtension: false,
+      effective: true,
+      hardened: true,
+      error: null
+    }));
+    const notApplied = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          overall: { status: 'degraded', issues: [] },
+          webrtc: {
+            available: true, requestedMode: 'strict', requested: true, enabled: true,
+            levelOfControl: 'controllable_by_this_extension', controllable: true,
+            controlledByThisExtension: false, effective: false, protected: false, error: null
+          },
+          browserPrivacy: {
+            requested: true, enabled: true, available: true, controlled: false,
+            effective: true, hardenedCount: 5, controlledCount: 0, totalCount: 5,
+            blockedCount: 0, settings: controllableSettings
+          },
+          geolocation: { requested: false, enabled: false, available: true, effective: false }
+        }
+      }
+    });
+    await notApplied.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    assert.match(metricValue(notApplied.dom.window.document, 'WebRTC leak protection').textContent, /Not applied/);
+    assert.strictEqual(metricValue(notApplied.dom.window.document, 'Chrome Privacy Hardening').textContent, 'Not fully applied');
+    assert.strictEqual(metricValue(notApplied.dom.window.document, 'Third-party cookies').textContent, 'Not applied');
+
+    const effectiveSettings = settingKeys.map(key => ({
+      key,
+      available: true,
+      controlledByThisExtension: true,
+      effective: true,
+      hardened: true,
+      error: null
+    }));
+    const effective = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          webrtc: {
+            available: true, requestedMode: 'strict', requested: true, enabled: true,
+            controlledByThisExtension: true, effective: true, protected: true, error: null
+          },
+          browserPrivacy: {
+            requested: true, enabled: true, available: true, controlled: true,
+            effective: true, hardenedCount: 5, totalCount: 5, settings: effectiveSettings
+          },
+          geolocation: { requested: true, enabled: true, available: true, effective: true, setting: 'block' }
+        }
+      }
+    });
+    await effective.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    assert.strictEqual(metricValue(effective.dom.window.document, 'WebRTC leak protection').textContent, 'Strict');
+    assert.strictEqual(metricValue(effective.dom.window.document, 'Chrome Privacy Hardening').textContent, 'Active');
+    assert.strictEqual(metricValue(effective.dom.window.document, 'Geolocation Protection').textContent, 'Blocked');
+  });
+
   await t.test('health panel loads once on settings init and refresh button reloads it', async () => {
     const harness = createSettingsHarness();
 

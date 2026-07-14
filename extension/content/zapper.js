@@ -332,13 +332,7 @@
     try {
       chrome.runtime.sendMessage({
         type: 'STATS_EVENT_BATCH',
-        events: [{
-          layer: 'zapper',
-          type: 'hit',
-          action,
-          domain: window.location.hostname,
-          ts: Date.now()
-        }]
+        events: [{ eventType: 'zapper_hit' }]
       }).catch(() => {});
     } catch (_) {}
   }

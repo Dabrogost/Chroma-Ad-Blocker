@@ -28,13 +28,14 @@ graph TD
     LOAD --> CONTENT["content.js<br/>all URLs, isolated world"]:::ext
     CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
 
-    LOAD --> MEDIA{"YouTube or Amazon/Prime?"}:::actor
-    MEDIA -->|"yes"| BRIDGE["protection.js + interceptor.js<br/>secure config bridge"]:::main
-    BRIDGE --> HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
+    LOAD --> BRIDGEHOST{"YouTube, Amazon/Prime,<br/>or supported recipe host?"}:::actor
+    BRIDGEHOST -->|"yes"| BRIDGE["protection.js + interceptor.js<br/>fail-closed private config bridge"]:::main
+    BRIDGE --> MEDIA{"Media platform?"}:::actor
+    MEDIA -->|"yes"| HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
     HANDLERS --> PAGE
 
-    LOAD --> RECIPES{"Recipe/blog allowlist?"}:::actor
-    RECIPES -->|"yes"| RECIPE["recipes.js<br/>layout protection + anti-adblock containment"]:::main
+    BRIDGE --> RECIPES{"Supported recipe/blog host?"}:::actor
+    RECIPES -->|"active and not whitelisted"| RECIPE["recipes.js<br/>reversible layout protection + containment"]:::main
     RECIPE --> PAGE
 
     LOAD --> SCRIPTLETS["Registered scriptlets / optional FPR<br/>MAIN world, matched by rule"]:::main
@@ -100,6 +101,8 @@ Users often wonder how static rules can operate without moving every request thr
 - **Low JS Request-Path Overhead**: Because the matching logic lives outside of the extension's execution context, Chroma avoids waking its own service worker for every blocked request.
 - **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This reserves the dynamic rule budget for unique, high-priority threats.
 
+All dynamic network application flows through one serialized, generation-checked reconciliation coordinator. The coordinator derives desired state from the master and Network Blocking settings, rechecks that state immediately before committing to Chrome, and lets the newest requested state win over older refresh work. Turning protection back on, worker recovery, and `304 Not Modified` refreshes rebuild active subscription DNR from cached per-list rules rather than depending on a new download.
+
 ### Layer 1b: URL Cleanup & De-AMP (defaultDynamicRules.js, content.js)
 
 Chroma can clean common tracking URLs without routing requests through extension JavaScript. **Tracking URL Cleanup** uses dynamic DNR redirect rules to remove known attribution parameters such as `utm_*`, `fbclid`, `gclid`, and similar campaign IDs from top-level navigations. The cleanup rule set is split into small Chrome-compatible matchers so it stays within DNR regex limits while each matched rule still removes the full known tracking-parameter set.
@@ -109,6 +112,8 @@ Chroma can clean common tracking URLs without routing requests through extension
 ### Layer 2: Scriptlet Injection (scriptlets/engine.js)
 
 The advanced surgical layer of the extension is powered by the high-performance `chrome.userScripts` API. This engine registers supported scriptlet rules from filter list subscriptions and explicit user-added scriptlet resources. Subscription scriptlet rules can only call implementations shipped in Chroma's bundled library; user-added resources live in a separate advanced settings lane and run only after the user adds both a resource URL and matching rules.
+
+Both sources are synchronized as desired runtime state. Master protection off unregisters all Chroma-managed subscription and advanced `userScripts` while retaining stored rules and resources. Storage changes while off update caches only. Re-enable and worker recovery reconstruct the expected registry, and active whitelist domains become `excludeMatches`. Synchronization is serialized and generation-checked so rapid changes cannot leave stale or duplicate registrations.
 
 Key capabilities include:
 
@@ -127,11 +132,13 @@ The Element Zapper is an on-demand cosmetic rule builder for elements that are t
 
 ### Layer 4: Universal Protection (protection.js, interceptor.js)
 
-This proactive security layer maintains extension integrity across execution contexts. `interceptor.js` runs in the MAIN world to shadow sensitive browser APIs and expose the secure `__CHROMA_INTERNAL__` bridge. `protection.js` reads stored configuration at page load, dispatches the `__EXT_INIT__` document event to signal MAIN-world handlers, and relays live config updates from the background to MAIN-world handlers via `CustomEvent`.
+This proactive security layer maintains extension integrity across execution contexts. `protection.js` reads stored configuration and the whitelist in the isolated world, derives an effective fail-closed configuration, and transfers it through a short-lived private `MessagePort`. `interceptor.js` validates supported keys into closure-owned state and exposes frozen snapshots with a monotonic revision through `__CHROMA_INTERNAL__`.
+
+Public bridge events are notification-only: handlers re-read the protected snapshot, and a page-dispatched notification cannot change configuration or advance its revision. Before authenticated state arrives, or when native-integrity checks fail, MAIN handlers remain inert.
 
 ### Layer 5: YouTube Ad Stripping (yt_handler.js)
 
-This specialized platform layer intercepts raw JSON responses from the YouTube API and surgically removes ad metadata, such as `adPlacements` and `playerAds`, before the player reads them. The goal is a seamless ad-free experience without countdowns, black screens, pauses, or playback acceleration. Session state is fully private to the handler closure, so host-page scripts cannot observe or tamper with internal state.
+This specialized platform layer intercepts raw JSON responses from the YouTube API and surgically removes ad metadata, such as `adPlacements` and `playerAds`, before the player reads them. The goal is a seamless ad-free experience without countdowns, black screens, pauses, or playback acceleration. Session state is closure-owned, so host-page scripts cannot directly read or write it; pages can still observe visible player behavior and infer that cleanup occurred.
 
 ### Layer 6: Recipe & Blog Protection (recipes.js)
 
@@ -145,6 +152,8 @@ It implements:
 - **Scroll Lock Recovery**: Dynamically detects and reverses scroll locks such as `overflow: hidden` and body-hiding tactics used by ad-block walls.
 - **Site-Specific Rules**: Includes cosmetic overrides for major platforms like AllRecipes, Food Network, NYT Cooking, and Serious Eats.
 
+Recipe behavior loads inert and activates only after the trusted bridge reports master protection active and the current site not whitelisted. A disable or whitelist change in an already-open tab disconnects observers, cancels scheduled sweeps, removes Chroma-owned styles, restores Chroma-hidden inline styles when still unchanged, and deactivates API patches. API properties are restored only while Chroma's wrapper still owns the slot, so later page-owned replacements are preserved. Re-enabling does not accumulate wrappers, observers, or stylesheets.
+
 ### Layer 7: Dynamic Ad Acceleration (prm_handler.js, yt_handler.js)
 
 Dynamic Ad Acceleration is a fallback and specialized layer for Amazon Prime Video and YouTube when stripping is disabled. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition.
@@ -153,11 +162,13 @@ Twitch uses server-side ad insertion and does not support this acceleration path
 
 ### Layer 8: Browser Privacy & Fingerprint Hardening (browserPrivacy.js, fingerprintRandomization.js)
 
-Chrome Privacy Hardening is optional and off by default. When enabled, Chroma uses Chrome's `privacy` API to block third-party cookies, keep Do Not Track disabled, and disable supported Privacy Sandbox ad APIs including Topics, Protected Audience, and ad measurement.
+Chrome Privacy Hardening is optional and off by default. When it and master protection are enabled, Chroma uses Chrome's `privacy` API to block third-party cookies, keep Do Not Track disabled, and disable supported Privacy Sandbox ad APIs including Topics, Protected Audience, and ad measurement.
 
-Geolocation Protection is also optional and off by default. When enabled, Chroma uses Chrome's `contentSettings.location` API to block sites from accessing your real physical location. It does not spoof or synthesize fake coordinates. Turning it off clears Chroma's rule so Chrome returns to the user's normal location setting.
+Geolocation Protection is also optional and off by default. When it and master protection are enabled, Chroma uses Chrome's `contentSettings.location` API to block sites from accessing your real physical location. It does not spoof or synthesize fake coordinates.
 
-Fingerprint Randomization is optional and off by default because some sites can be sensitive to fingerprint changes. When enabled, Chroma registers a MAIN-world script that randomizes or farbles supported fingerprint surfaces per document with a fresh non-persisted salt, including canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. The full hostname is included only as domain separation, so two sites cannot share the same salt-derived surface by accident.
+Master off clears Chroma-owned browser privacy, geolocation, and WebRTC settings without erasing their requested feature values; master on restores them. Health keeps requested, controlled, and effective state separate. When another extension or browser policy owns a Chrome setting, Chroma reports degraded state instead of claiming success and automatically reconciles after control is released.
+
+Fingerprint Randomization is optional and off by default because some sites can be sensitive to fingerprint changes. It requires both its feature toggle and master protection. When active, Chroma registers a MAIN-world script that randomizes or farbles supported fingerprint surfaces per document with a fresh non-persisted salt, including canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. Master off unregisters it for future documents while preserving the requested toggle; existing documents may require reload because already-executed page code cannot always be reversed. The global whitelist and FPR-only whitelist both exclude matching sites.
 
 ## Design Principles
 
@@ -179,12 +190,13 @@ Chroma assumes that extension APIs, browser feedback paths, network refreshes, a
 | Service worker sleeps or restarts | Browser-managed DNR rules continue to apply while the worker is asleep. On wake/startup, Chroma registers handlers and resyncs DNR state, privacy controls, scriptlets, alarms, and open-tab config where possible. | Open the popup/settings page, reload the affected tab, or reload the extension if Health continues to show stale state. |
 | UserScripts API unavailable | Subscription scriptlet rules and advanced user scriptlet resources are parsed and stored, but not registered. Network DNR, cosmetics, proxy routing, and other non-`userScripts` layers can continue. | Enable **Allow User Scripts** on Chrome 138+, or use a Chromium build/version that exposes `chrome.userScripts`. |
 | Scriptlet registration failure | Chroma registers what it can, chunks registrations, retries within failed chunks, and records a scriptlet health diagnostic if only part of the set registers. | Review Health, remove malformed/broad custom rules, confirm Allow User Scripts, then reload affected tabs. |
-| PAC/proxy sync failure | Existing browser proxy settings may remain stale, or proxy routing may release routes depending on the failure point. DNR blocking is separate and can continue. | Review the proxy card, turn the route off/on, fix invalid proxy fields, or reload the extension. |
+| PAC/proxy sync failure or external ownership | Chroma distinguishes requested routes from effective Chrome routing. Another extension or policy makes Chroma routing ineffective and prevents credential release; Chrome control changes trigger automatic reconciliation. DNR blocking is separate and can continue. | Review Health for **Controlled elsewhere**. Release the other controller; toggle the route or reload only if automatic recovery does not converge. |
+| Browser privacy/WebRTC control conflict | Requested privacy, geolocation, or WebRTC settings remain stored, but Chroma does not claim them effective while another controller owns the Chrome setting. Control changes trigger automatic reconciliation. | Review Health, release the other extension or policy, and let Chroma retry. |
 | Subscription refresh failure | Last-known parsed rules remain available if already stored. The failed subscription records `lastError`; other subscriptions can still refresh. | Refresh the affected list manually, check HTTPS reachability and list format, or disable the subscription. |
 | DNR dynamic rule budget exhaustion | Subscription network rules are allocated by priority and trimmed to fit the MV3 dynamic-rule budget. Cosmetic rules and supported scriptlets are handled by their own layers. | Reduce large or overlapping custom subscriptions, then refresh subscriptions. |
 | MAIN-world handshake failure | Platform handlers that require the isolated-to-MAIN bridge may fall back to safe defaults or skip activation for that page load. Isolated-world cosmetics and DNR can still operate. | Reload the tab. If the page is hostile or changed its startup timing, the MAIN-world layer may remain degraded until Chroma is updated. |
 | Request-log feedback API unavailable | DNR blocking can still work, but local request-log/debug feedback and some match classification detail are unavailable. | Treat this as a diagnostics limitation. Use Health to confirm the request-log status; blocking does not depend on feedback events. |
-| Whitelisted site behavior | Whitelist allow rules are synchronized into DNR, local cleanup is suppressed where applicable, and scriptlet registrations exclude whitelisted domains. | Remove the site from the whitelist and reload the tab to restore Chroma protection. |
+| Whitelisted site behavior | While network protection is active, destination-based main-frame and initiator-based subresource allow rules are synchronized into DNR. Local cleanup, recipes/platform behavior, and scriptlet injection are suppressed where applicable, including live deactivation in already-open tabs. | Remove the site from the whitelist. Runtime-reversible layers reactivate live; reload when already-executed arbitrary scriptlets or FPR code must be replaced. |
 
 ---
 

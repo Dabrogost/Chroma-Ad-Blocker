@@ -12,7 +12,8 @@ globalThis.__statsExports = {
   extractDomainFromUrl,
   sanitizeErrorText,
   recordStatsEvent,
-  recordStatsEvents,
+  recordStatsEvents: events => events.forEach(recordStatsEvent),
+  recordContentStatsEvents,
   getStatsSnapshot,
   resetStats,
   exportStats,
@@ -64,7 +65,7 @@ function loadStatsSandbox(initialStorage = {}) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(statsCode, sandbox);
-  return { storage, writes, ...sandbox.__statsExports };
+  return { storage, writes, chrome, ...sandbox.__statsExports };
 }
 
 function plain(value) {
@@ -184,6 +185,127 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(payloadEvent.payloadsModified, 1);
     assert.strictEqual(payloadEvent.fieldsPruned, 2);
     assert.strictEqual(payloadEvent.adObjectsRemoved, 1);
+  });
+
+  await t.test('content telemetry accepts only coarse enums and derives metadata from the sender', async () => {
+    const stats = loadStatsSandbox({
+      config: { enabled: true, cosmetic: true, stripping: true },
+      whitelist: []
+    });
+    const sender = {
+      tab: { id: 17, url: 'https://Trusted.Example/page' },
+      url: 'https://untrusted-frame.example/frame'
+    };
+
+    const result = await stats.recordContentStatsEvents([
+      {
+        eventType: 'cosmetic_hide',
+        count: 100000,
+        ts: 1,
+        domain: 'spoofed.example',
+        url: 'https://spoofed.example/private',
+        source: 'forged-source',
+        ruleId: 999,
+        ruleSource: 'forged-rule-source'
+      },
+      {
+        eventType: 'youtube_payload_modified',
+        count: 100000,
+        payloadsInspected: 100000,
+        payloadsModified: 100000,
+        fieldsPruned: 100000,
+        adObjectsRemoved: 100000
+      },
+      { eventType: 'network_block', count: 100000 }
+    ], sender);
+
+    assert.deepStrictEqual(plain(result), { ok: true, accepted: 2 });
+    await stats.flushStatsQueue();
+    const snapshot = await stats.getStatsSnapshot();
+    const serialized = JSON.stringify(snapshot);
+
+    assert.strictEqual(snapshot.totals.cosmeticHides, 1);
+    assert.strictEqual(snapshot.totals.youtubePayloadInspections, 1);
+    assert.strictEqual(snapshot.totals.youtubePayloadsModified, 1);
+    assert.strictEqual(snapshot.totals.youtubePayloadCleans, 1);
+    assert.strictEqual(snapshot.totals.youtubeFieldsPruned, 0);
+    assert.strictEqual(snapshot.totals.youtubeAdObjectsRemoved, 0);
+    assert.strictEqual(snapshot.totals.networkBlocks, 0);
+    assert.strictEqual(snapshot.totals.protectionEvents, 2);
+    assert.strictEqual(snapshot.bySite['trusted.example'].protectionEvents, 2);
+    assert.strictEqual(snapshot.bySite['spoofed.example'], undefined);
+    assert.doesNotMatch(serialized, /spoofed|forged|private|999/);
+  });
+
+  await t.test('content telemetry follows master, feature, whitelist, and sender gates', async () => {
+    const sender = { tab: { id: 18, url: 'https://sub.example.com/page' } };
+
+    for (const initialStorage of [
+      { config: { enabled: false }, whitelist: [] },
+      { config: { enabled: true }, whitelist: ['example.com'] }
+    ]) {
+      const stats = loadStatsSandbox(initialStorage);
+      const result = await stats.recordContentStatsEvents([
+        { eventType: 'cosmetic_hide' },
+        { eventType: 'scriptlet_hit' }
+      ], sender);
+      assert.deepStrictEqual(plain(result), { ok: true, accepted: 0 });
+      await stats.flushStatsQueue();
+      assert.strictEqual((await stats.getStatsSnapshot()).totals.protectionEvents, 0);
+    }
+
+    const disabledFeatures = loadStatsSandbox({
+      config: {
+        enabled: true,
+        cosmetic: false,
+        suppressWarnings: false,
+        stripping: false
+      },
+      whitelist: []
+    });
+    const featureResult = await disabledFeatures.recordContentStatsEvents([
+      { eventType: 'cosmetic_hide' },
+      { eventType: 'zapper_hit' },
+      { eventType: 'warning_suppression' },
+      { eventType: 'youtube_payload_modified' },
+      { eventType: 'scriptlet_hit' }
+    ], sender);
+    assert.deepStrictEqual(plain(featureResult), { ok: true, accepted: 1 });
+
+    const invalidSender = await disabledFeatures.recordContentStatsEvents(
+      [{ eventType: 'scriptlet_hit' }],
+      { tab: { id: 18, url: 'chrome-extension://extension-id/page.html' } }
+    );
+    assert.deepStrictEqual(plain(invalidSender), { ok: true, accepted: 0 });
+  });
+
+  await t.test('content telemetry flooding stays within per-tab and global event budgets', async () => {
+    const stats = loadStatsSandbox({ config: { enabled: true, cosmetic: true }, whitelist: [] });
+    const flood = Array.from({ length: 100 }, () => ({
+      eventType: 'cosmetic_hide',
+      count: 100000
+    }));
+
+    for (let tabId = 1; tabId <= 5; tabId++) {
+      const result = await stats.recordContentStatsEvents(flood, {
+        tab: { id: tabId, url: `https://tab${tabId}.example/` }
+      });
+      assert.strictEqual(result.accepted, 60);
+    }
+    const perTabLimited = await stats.recordContentStatsEvents(flood, {
+      tab: { id: 1, url: 'https://tab1.example/' }
+    });
+    const globallyLimited = await stats.recordContentStatsEvents(flood, {
+      tab: { id: 6, url: 'https://tab6.example/' }
+    });
+
+    assert.strictEqual(perTabLimited.accepted, 0);
+    assert.strictEqual(globallyLimited.accepted, 0);
+    await stats.flushStatsQueue();
+    const snapshot = await stats.getStatsSnapshot();
+    assert.strictEqual(snapshot.totals.cosmeticHides, 300);
+    assert.strictEqual(snapshot.totals.protectionEvents, 300);
+    assert.strictEqual(stats.writes.length, 1);
   });
 
   await t.test('fingerprint activation is diagnostic and not a protection event', async () => {
@@ -465,6 +587,116 @@ test('statsV2 core aggregation and privacy', async (t) => {
     snapshot = await stats.getStatsSnapshot();
     assert.strictEqual(snapshot.totals.networkBlocks, 0);
     assert.deepStrictEqual(plain(snapshot.byRule), {});
+  });
+
+  await t.test('a failed storage flush does not poison later stats writes', async () => {
+    const stats = loadStatsSandbox();
+    const originalSet = stats.chrome.storage.local.set;
+    let failNextWrite = true;
+    stats.chrome.storage.local.set = async value => {
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error('simulated stats write failure');
+      }
+      return originalSet(value);
+    };
+
+    stats.recordStatsEvent({ layer: 'network', type: 'block' });
+    await assert.rejects(stats.flushStatsQueue(), /simulated stats write failure/);
+
+    stats.recordStatsEvent({ layer: 'network', type: 'allow' });
+    await stats.flushStatsQueue();
+    const snapshot = await stats.getStatsSnapshot();
+    assert.strictEqual(snapshot.totals.networkBlocks, 0);
+    assert.strictEqual(snapshot.totals.networkAllows, 1);
+  });
+
+  await t.test('reset waits for an already-started stats flush', async () => {
+    const stats = loadStatsSandbox();
+    const originalSet = stats.chrome.storage.local.set;
+    let releaseFirstWrite;
+    let firstWriteStarted;
+    const firstWriteReached = new Promise(resolve => { firstWriteStarted = resolve; });
+    const firstWriteGate = new Promise(resolve => { releaseFirstWrite = resolve; });
+    let intercepted = false;
+    stats.chrome.storage.local.set = async value => {
+      if (!intercepted) {
+        intercepted = true;
+        firstWriteStarted();
+        await firstWriteGate;
+      }
+      return originalSet(value);
+    };
+
+    stats.recordStatsEvent({ layer: 'network', type: 'block' });
+    const flush = stats.flushStatsQueue();
+    await firstWriteReached;
+    const reset = stats.resetStats('all');
+    releaseFirstWrite();
+    await Promise.all([flush, reset]);
+
+    const snapshot = await stats.getStatsSnapshot();
+    assert.strictEqual(snapshot.totals.networkBlocks, 0);
+    assert.strictEqual(snapshot.totals.protectionEvents, 0);
+  });
+
+  await t.test('an event flushed after reset starts is applied after the reset image', async () => {
+    const stats = loadStatsSandbox();
+    const originalSet = stats.chrome.storage.local.set;
+    let releaseFirstWrite;
+    let signalFirstWrite;
+    const firstWriteStarted = new Promise(resolve => { signalFirstWrite = resolve; });
+    const firstWriteGate = new Promise(resolve => { releaseFirstWrite = resolve; });
+    let intercepted = false;
+    stats.chrome.storage.local.set = async value => {
+      if (!intercepted) {
+        intercepted = true;
+        signalFirstWrite();
+        await firstWriteGate;
+      }
+      return originalSet(value);
+    };
+
+    stats.recordStatsEvent({ layer: 'network', type: 'block' });
+    const oldFlush = stats.flushStatsQueue();
+    await firstWriteStarted;
+    const reset = stats.resetStats('all');
+    stats.recordStatsEvent({ layer: 'network', type: 'allow' });
+    const newFlush = stats.flushStatsQueue();
+    releaseFirstWrite();
+    await Promise.all([oldFlush, reset, newFlush]);
+
+    const snapshot = await stats.getStatsSnapshot();
+    assert.strictEqual(snapshot.totals.networkBlocks, 0);
+    assert.strictEqual(snapshot.totals.networkAllows, 1);
+  });
+
+  await t.test('a concurrent snapshot waits for an in-flight stats flush', async () => {
+    const stats = loadStatsSandbox();
+    const originalSet = stats.chrome.storage.local.set;
+    let releaseFirstWrite;
+    let signalFirstWrite;
+    const firstWriteStarted = new Promise(resolve => { signalFirstWrite = resolve; });
+    const firstWriteGate = new Promise(resolve => { releaseFirstWrite = resolve; });
+    let intercepted = false;
+    stats.chrome.storage.local.set = async value => {
+      if (!intercepted) {
+        intercepted = true;
+        signalFirstWrite();
+        await firstWriteGate;
+      }
+      return originalSet(value);
+    };
+
+    stats.recordStatsEvent({ layer: 'network', type: 'block' });
+    const flush = stats.flushStatsQueue();
+    await firstWriteStarted;
+    const snapshotPromise = stats.getStatsSnapshot();
+    releaseFirstWrite();
+    const [, snapshot] = await Promise.all([flush, snapshotPromise]);
+
+    assert.strictEqual(snapshot.totals.networkBlocks, 1);
+    assert.strictEqual(snapshot.totals.protectionEvents, 1);
   });
 
   await t.test('export returns sanitized JSON-safe data', async () => {

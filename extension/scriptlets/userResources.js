@@ -10,11 +10,11 @@
 'use strict';
 
 import { parseScriptletRule } from '../subscriptions/parser.js';
+import { validateRemoteHttpsUrl } from '../core/remoteUrl.js';
 
 const FETCH_TIMEOUT = 30000;
 const MAX_RESOURCE_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_RESOURCE_CODE_BYTES = 512 * 1024;
-const MAX_RESOURCE_COUNT = 100;
 const MAX_USER_SOURCES = 20;
 const MAX_RULE_TEXT_BYTES = 256 * 1024;
 const MAX_USER_RULES = 1000;
@@ -58,64 +58,8 @@ function safeString(value, maxLength) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
 }
 
-function isBlockedIpv4(host) {
-  const parts = host.split('.');
-  if (parts.length !== 4) return false;
-  const nums = parts.map(part => Number(part));
-  if (nums.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
-  return (
-    nums[0] === 0 ||
-    nums[0] === 10 ||
-    nums[0] === 127 ||
-    (nums[0] === 100 && nums[1] >= 64 && nums[1] <= 127) ||
-    (nums[0] === 172 && nums[1] >= 16 && nums[1] <= 31) ||
-    (nums[0] === 192 && nums[1] === 168) ||
-    (nums[0] === 169 && nums[1] === 254) ||
-    (nums[0] === 198 && (nums[1] === 18 || nums[1] === 19)) ||
-    nums[0] >= 224
-  );
-}
-
-function isBlockedUserResourceHost(hostname) {
-  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
-  const isIpv6 = host.includes(':');
-  return (
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    isBlockedIpv4(host) ||
-    (isIpv6 && (
-      host === '::' ||
-      host === '::1' ||
-      host.startsWith('::ffff:') ||
-      host.startsWith('fc') ||
-      host.startsWith('fd') ||
-      host.startsWith('fe8') ||
-      host.startsWith('fe9') ||
-      host.startsWith('fea') ||
-      host.startsWith('feb')
-    ))
-  );
-}
-
 export function validateUserScriptletSourceUrl(input) {
-  if (typeof input !== 'string' || input.trim() === '') {
-    return { ok: false, error: 'URL required' };
-  }
-
-  let parsed;
-  try {
-    parsed = new URL(input.trim());
-  } catch {
-    return { ok: false, error: 'Invalid URL' };
-  }
-
-  if (parsed.protocol !== 'https:') return { ok: false, error: 'Only https:// URLs are allowed' };
-  if (parsed.username || parsed.password) return { ok: false, error: 'Resource URLs cannot include credentials' };
-  if (parsed.port && parsed.port !== '443') return { ok: false, error: 'Resource URL must use the default HTTPS port' };
-  if (isBlockedUserResourceHost(parsed.hostname)) return { ok: false, error: 'Local or private resource URLs are not allowed' };
-
-  parsed.hash = '';
-  return { ok: true, url: parsed.href, hostname: parsed.hostname };
+  return validateRemoteHttpsUrl(input, { label: 'Resource', stripHash: true });
 }
 
 export function normalizeUserScriptletName(name) {
@@ -157,8 +101,7 @@ export function parseUserScriptletResourceText(text, options = {}) {
     unsupportedMime: 0,
     empty: 0,
     duplicate: 0,
-    overlong: 0,
-    limit: 0
+    overlong: 0
   };
   const seen = new Set();
   let current = null;
@@ -178,11 +121,6 @@ export function parseUserScriptletResourceText(text, options = {}) {
       skipped.overlong++;
       return;
     }
-    if (resources.length >= MAX_RESOURCE_COUNT) {
-      skipped.limit++;
-      return;
-    }
-
     const canonicalName = normalizeUserScriptletName(pending.name);
     if (!canonicalName || !RESOURCE_NAME_RE.test(canonicalName)) {
       skipped.malformed++;
@@ -359,6 +297,9 @@ function makeSourceId() {
 }
 
 async function fetchUserScriptletSource(source) {
+  const requestedUrl = validateUserScriptletSourceUrl(source?.url);
+  if (!requestedUrl.ok) throw new Error(`Unsafe resource URL: ${requestedUrl.error}`);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   const headers = {};
@@ -367,6 +308,8 @@ async function fetchUserScriptletSource(source) {
 
   try {
     const res = await fetch(source.url, { signal: controller.signal, cache: 'no-cache', headers });
+    const finalUrl = validateUserScriptletSourceUrl(res.url || source.url);
+    if (!finalUrl.ok) throw new Error(`Unsafe resource redirect: ${finalUrl.error}`);
     const etag = getHeader(res, 'etag');
     const lastModified = getHeader(res, 'last-modified');
     if (res.status === 304) {
@@ -398,7 +341,7 @@ function sourceSafeView(source) {
     lastError: item.lastError || null,
     sha256: item.sha256 || null,
     resourceCount: Number(item.resourceCount) || 0,
-    resourceNames: asArray(item.resourceNames).slice(0, MAX_RESOURCE_COUNT)
+    resourceNames: asArray(item.resourceNames).slice()
   };
 }
 
@@ -685,22 +628,98 @@ export async function exportUserScriptletSettings() {
   };
 }
 
-export async function importUserScriptletSettings(payload) {
+function makeImportedSourceId(url, index) {
+  // Imported sources replace the complete user-source collection, so a stable
+  // ID derived from their normalized URL and position is sufficient and keeps
+  // staging free of clocks, randomness, storage, and other external state.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < url.length; i++) {
+    hash ^= url.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `usr_import_${index.toString(36)}_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function userScriptletValidationFailure(message, errors = []) {
+  return {
+    ok: false,
+    error: message,
+    errors: errors.length > 0 ? errors : [{ path: 'userScriptlets', message }]
+  };
+}
+
+/**
+ * Validate and construct the complete user-scriptlet storage image for a
+ * settings import. This function performs no storage or network operations.
+ */
+export function stageUserScriptletSettings(payload, options = {}) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return { ok: true, importedSources: 0, importedRules: 0 };
+    return userScriptletValidationFailure('Invalid user-scriptlet settings');
+  }
+
+  if (payload.sources !== undefined && !Array.isArray(payload.sources)) {
+    return userScriptletValidationFailure('User-scriptlet sources must be an array', [{
+      path: 'userScriptlets.sources',
+      message: 'Sources must be an array'
+    }]);
+  }
+
+  const candidates = payload.sources || [];
+  if (candidates.length > MAX_USER_SOURCES) {
+    return userScriptletValidationFailure(`User resource limit is ${MAX_USER_SOURCES}`, [{
+      path: 'userScriptlets.sources',
+      message: `Source count exceeds the ${MAX_USER_SOURCES} source limit`
+    }]);
   }
 
   const sources = [];
   const usedUrls = new Set();
-  for (const candidate of asArray(payload.sources).slice(0, MAX_USER_SOURCES)) {
-    const validation = validateUserScriptletSourceUrl(candidate?.url);
-    if (!validation.ok || usedUrls.has(validation.url)) continue;
+  const importedAt = Number.isFinite(options?.importedAt)
+    ? Math.max(0, Math.trunc(options.importedAt))
+    : 0;
+
+  for (let index = 0; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    const path = `userScriptlets.sources[${index}]`;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      return userScriptletValidationFailure(`Invalid user-scriptlet source at index ${index}`, [{
+        path,
+        message: 'Source must be an object'
+      }]);
+    }
+    if (candidate.name !== undefined && typeof candidate.name !== 'string') {
+      return userScriptletValidationFailure(`Invalid user-scriptlet source name at index ${index}`, [{
+        path: `${path}.name`,
+        message: 'Source name must be text'
+      }]);
+    }
+    if (typeof candidate.name === 'string' && candidate.name.trim().length > MAX_SOURCE_NAME_LEN) {
+      return userScriptletValidationFailure(`User-scriptlet source name is too long at index ${index}`, [{
+        path: `${path}.name`,
+        message: `Source name exceeds the ${MAX_SOURCE_NAME_LEN} character limit`
+      }]);
+    }
+
+    const validation = validateUserScriptletSourceUrl(candidate.url);
+    if (!validation.ok) {
+      return userScriptletValidationFailure(`Invalid user-scriptlet source URL at index ${index}: ${validation.error}`, [{
+        path: `${path}.url`,
+        message: validation.error
+      }]);
+    }
+    if (usedUrls.has(validation.url)) {
+      return userScriptletValidationFailure(`Duplicate user-scriptlet source URL at index ${index}`, [{
+        path: `${path}.url`,
+        message: 'Source URL is duplicated'
+      }]);
+    }
     usedUrls.add(validation.url);
+
     sources.push({
-      id: makeSourceId(),
-      name: safeString(candidate?.name, MAX_SOURCE_NAME_LEN) || validation.hostname,
+      id: makeImportedSourceId(validation.url, index),
+      name: safeString(candidate.name, MAX_SOURCE_NAME_LEN) || validation.hostname,
       url: validation.url,
-      addedAt: Date.now(),
+      addedAt: importedAt,
       lastUpdated: 0,
       lastError: null,
       etag: null,
@@ -711,21 +730,39 @@ export async function importUserScriptletSettings(payload) {
     });
   }
 
-  const ruleText = typeof payload.ruleText === 'string' ? payload.ruleText : '';
-  const parsed = parseUserScriptletRuleText(ruleText);
-  const safeRuleText = parsed.ok ? ruleText : '';
-  const rules = parsed.ok ? parsed.rules : [];
+  if (payload.ruleText !== undefined && typeof payload.ruleText !== 'string') {
+    return userScriptletValidationFailure('User-scriptlet rules must be text', [{
+      path: 'userScriptlets.ruleText',
+      message: 'Rules must be text'
+    }]);
+  }
 
-  await chrome.storage.local.set({
-    [USER_SCRIPTLET_STORAGE_KEYS.sources]: sources,
-    [USER_SCRIPTLET_STORAGE_KEYS.resources]: {},
-    [USER_SCRIPTLET_STORAGE_KEYS.ruleText]: safeRuleText,
-    [USER_SCRIPTLET_STORAGE_KEYS.rules]: rules
-  });
+  const ruleText = payload.ruleText || '';
+  const parsed = parseUserScriptletRuleText(ruleText);
+  if (!parsed.ok) {
+    const errors = parsed.errors.slice(0, 20).map(error => ({
+      path: error.line
+        ? `userScriptlets.ruleText:${error.line}`
+        : 'userScriptlets.ruleText',
+      line: error.line,
+      message: error.message
+    }));
+    const first = parsed.errors[0];
+    const message = first?.line
+      ? `Invalid user-scriptlet rule at line ${first.line}: ${first.message}`
+      : (first?.message || 'Invalid user-scriptlet rules');
+    return userScriptletValidationFailure(message, errors);
+  }
 
   return {
     ok: true,
+    storage: {
+      [USER_SCRIPTLET_STORAGE_KEYS.sources]: sources,
+      [USER_SCRIPTLET_STORAGE_KEYS.resources]: {},
+      [USER_SCRIPTLET_STORAGE_KEYS.ruleText]: ruleText,
+      [USER_SCRIPTLET_STORAGE_KEYS.rules]: parsed.rules
+    },
     importedSources: sources.length,
-    importedRules: rules.length
+    importedRules: parsed.rules.length
   };
 }

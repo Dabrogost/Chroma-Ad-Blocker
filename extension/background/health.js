@@ -18,6 +18,7 @@ import {
   syncGeolocationProtection
 } from './browserPrivacy.js';
 import { syncUserScripts } from '../scriptlets/engine.js';
+import { getProxyRoutingStatus } from './proxy.js';
 
 const DEFAULT_RULE_ID_START = 1000;
 const DEFAULT_RULE_ID_END = 99999;
@@ -66,6 +67,17 @@ function sumRuleCount(subscriptions, key) {
   return asArray(subscriptions).reduce((sum, sub) => sum + (Number(sub?.ruleCount?.[key]) || 0), 0);
 }
 
+function countEnabledCachedRules(subscriptions, perSubscriptionRules) {
+  const cache = perSubscriptionRules && typeof perSubscriptionRules === 'object' &&
+    !Array.isArray(perSubscriptionRules)
+    ? perSubscriptionRules
+    : {};
+  return asArray(subscriptions).reduce((sum, subscription) => {
+    if (subscription?.enabled !== true) return sum;
+    return sum + asArray(cache[subscription.id]).length;
+  }, 0);
+}
+
 function getLastUpdatedBounds(subscriptions) {
   const updated = asArray(subscriptions)
     .map(sub => Number(sub?.lastUpdated) || 0)
@@ -109,13 +121,21 @@ function summarizeWebRtcStatus(status, config) {
 
   return {
     available: status?.available === true,
-    mode,
+    mode: status?.mode || mode,
+    requestedMode: status?.requestedMode || mode,
+    requested: status?.requested === true,
+    enabled: status?.enabled === true,
+    masterEnabled: status?.masterEnabled !== false,
+    desiredAction: status?.desiredAction || null,
     value: status?.value ?? null,
     levelOfControl: status?.levelOfControl ?? null,
     controllable: status?.controllable === true,
+    controlledByThisExtension: status?.controlledByThisExtension === true,
+    effective: status?.effective === true,
+    released: status?.released === true,
     protected: status?.protected === true,
     partial: status?.partial === true,
-    recommended: config?.globalProxyEnabled === true,
+    recommended: status?.recommended === true,
     error: status?.error || null
   };
 }
@@ -231,7 +251,10 @@ function scriptletUnavailableMessage(storedRuleCount, userRuleCount = 0) {
   const count = Number(storedRuleCount) || 0;
   const label = count === 1 ? 'rule' : 'rules';
   const sourceLabel = Number(userRuleCount) > 0 ? 'scriptlet' : 'subscription scriptlet';
-  return `Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details; ${count.toLocaleString()} ${sourceLabel} ${label} cannot be registered until then.`;
+  return [
+    'Scriptlet protection unavailable. Enable Allow User Scripts for this extension in Chrome extension details;',
+    `${count.toLocaleString()} ${sourceLabel} ${label} cannot be registered until then.`
+  ].join(' ');
 }
 
 async function getFprStatus(fprEnabled) {
@@ -281,8 +304,8 @@ function computeOverall({
   subscriptionErrors,
   debugLoggingAvailable,
   webrtc,
-  globalProxyEnabled,
-  globalProxyConfigured,
+  effectiveGlobalProxy,
+  proxyRouting,
   fpr,
   browserPrivacy,
   geolocation,
@@ -322,14 +345,14 @@ function computeOverall({
     ));
   }
 
-  if (userScriptsUnavailableWithRules) {
+  if (masterEnabled && userScriptsUnavailableWithRules) {
     issues.push(makeIssue(
       'warning',
       'scriptlets',
       scriptletUnavailableMessage(storedScriptletRuleCount, storedUserScriptletRuleCount),
       USER_SCRIPTS_ACTION
     ));
-  } else if (shouldRetryScriptletRegistration(scriptlets, storedScriptletRuleCount)) {
+  } else if (masterEnabled && shouldRetryScriptletRegistration(scriptlets, storedScriptletRuleCount)) {
     issues.push(makeIssue(
       'warning',
       'scriptlets',
@@ -353,33 +376,93 @@ function computeOverall({
   }
 
   if (subscriptionErrors.length > 0) {
-    issues.push(makeIssue('warning', 'subscriptions', `${subscriptionErrors.length} subscription list(s) have refresh errors.`, 'Refresh the affected lists or disable broken lists.'));
+    issues.push(makeIssue(
+      'warning',
+      'subscriptions',
+      `${subscriptionErrors.length} subscription list(s) have refresh errors.`,
+      'Refresh the affected lists or disable broken lists.'
+    ));
   }
 
   if (userScriptletResourceErrorCount > 0) {
     const label = userScriptletResourceErrorCount === 1 ? 'resource has' : 'resources have';
-    issues.push(makeIssue('warning', 'scriptlets', `${userScriptletResourceErrorCount} user scriptlet ${label} refresh errors.`, 'Refresh or remove the affected user scriptlet resources.'));
+    issues.push(makeIssue(
+      'warning',
+      'scriptlets',
+      `${userScriptletResourceErrorCount} user scriptlet ${label} refresh errors.`,
+      'Refresh or remove the affected user scriptlet resources.'
+    ));
   }
 
-  if (globalProxyEnabled && !webrtc?.available) {
-    issues.push(makeIssue('warning', 'webrtc', 'WebRTC leak protection could not inspect Chrome privacy settings.', 'Check browser support for Chrome privacy settings.'));
-  } else if (globalProxyEnabled && webrtc?.levelOfControl && !webrtc.controllable) {
+  if (proxyRouting?.error) {
     issues.push(makeIssue(
       'warning',
-      'webrtc',
-      'WebRTC leak protection is controlled by another extension or browser policy.',
-      'Disable the conflicting extension or browser policy if you want Chroma to control WebRTC leak protection.'
+      'proxy',
+      masterEnabled
+        ? 'Chrome proxy settings do not match Chroma’s requested routing state.'
+        : 'Chroma could not verify that proxy routing was fully released.',
+      masterEnabled
+        ? 'Disable and re-enable the requested proxy route, or release conflicting proxy control.'
+        : 'Reload the extension, then turn the main protection switch on and off again.'
     ));
-  } else if (globalProxyEnabled && globalProxyConfigured && !webrtc?.protected) {
+  } else if (masterEnabled && proxyRouting?.requested === true && proxyRouting?.effective !== true) {
+    issues.push(makeIssue(
+      'warning',
+      'proxy',
+      proxyRouting.conflict
+        ? 'Proxy routing is requested, but Chrome proxy settings are controlled elsewhere.'
+        : 'Proxy routing is requested, but the requested PAC route is not effective.',
+      proxyRouting.conflict
+        ? 'Release proxy control from the other extension or browser policy.'
+        : 'Disable and re-enable the requested proxy route.'
+    ));
+  }
+
+  if (!webrtc?.enabled && webrtc?.controlledByThisExtension) {
     issues.push(makeIssue(
       'warning',
       'webrtc',
-      'Global proxy is enabled, but WebRTC leak protection is not fully active.',
+      'WebRTC leak protection remains controlled by Chroma while its effective request is off.',
+      'Reload the extension, then turn WebRTC Leak Protection off and on.'
+    ));
+  } else if ((webrtc?.enabled || effectiveGlobalProxy) && !webrtc?.available) {
+    issues.push(makeIssue('warning', 'webrtc', 'WebRTC leak protection could not inspect Chrome privacy settings.', 'Check browser support for Chrome privacy settings.'));
+  } else if (webrtc?.enabled && (!webrtc?.controlledByThisExtension || webrtc?.error)) {
+    const externallyControlled = webrtc?.levelOfControl && webrtc?.controllable === false;
+    issues.push(makeIssue(
+      'warning',
+      'webrtc',
+      externallyControlled
+        ? 'WebRTC leak protection is controlled by another extension or browser policy.'
+        : 'WebRTC leak protection is requested but is not controlled by Chroma.',
+      externallyControlled
+        ? 'Disable the conflicting extension or browser policy if you want Chroma to control WebRTC leak protection.'
+        : 'Turn WebRTC Leak Protection off and on, or reload the extension.'
+    ));
+  } else if (webrtc?.enabled && !webrtc?.effective) {
+    issues.push(makeIssue(
+      'warning',
+      'webrtc',
+      'WebRTC leak protection is requested, but Chrome has not applied the requested policy.',
+      'Turn WebRTC Leak Protection off and on, or reload the extension.'
+    ));
+  } else if (effectiveGlobalProxy && !webrtc?.protected) {
+    issues.push(makeIssue(
+      'warning',
+      'webrtc',
+      'Global proxy is effective, but WebRTC leak protection is not fully active.',
       'Set WebRTC Leak Protection to Auto or Strict.'
     ));
   }
 
-  if (browserPrivacy?.enabled && !browserPrivacy.available) {
+  if (!browserPrivacy?.enabled && browserPrivacy?.controlledCount > 0) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy settings remain controlled by Chroma while protection is paused.',
+      'Reload the extension, then turn Browser Privacy Hardening off and on.'
+    ));
+  } else if (browserPrivacy?.enabled && !browserPrivacy.available) {
     issues.push(makeIssue(
       'warning',
       'browserPrivacy',
@@ -393,7 +476,14 @@ function computeOverall({
       'Browser privacy hardening is partially controlled by another extension or browser policy.',
       'Disable the conflicting extension or browser policy if you want Chroma to control these settings.'
     ));
-  } else if (browserPrivacy?.enabled && !browserPrivacy.active) {
+  } else if (browserPrivacy?.enabled && !browserPrivacy.controlled) {
+    issues.push(makeIssue(
+      'warning',
+      'browserPrivacy',
+      'Browser privacy hardening is requested but is not fully controlled by Chroma.',
+      'Turn Browser Privacy Hardening off and on, or reload the extension.'
+    ));
+  } else if (browserPrivacy?.enabled && !browserPrivacy.effective) {
     issues.push(makeIssue(
       'warning',
       'browserPrivacy',
@@ -402,14 +492,21 @@ function computeOverall({
     ));
   }
 
-  if (geolocation?.enabled && !geolocation.available) {
+  if (!geolocation?.enabled && geolocation?.reconciliationError) {
+    issues.push(makeIssue(
+      'warning',
+      'geolocation',
+      'Geolocation protection could not release its Chrome content setting.',
+      'Reload the extension, then turn Geolocation Protection off and on.'
+    ));
+  } else if (geolocation?.enabled && !geolocation.available) {
     issues.push(makeIssue(
       'warning',
       'geolocation',
       'Geolocation protection could not inspect Chrome location settings.',
       'Check browser support for Chrome content settings.'
     ));
-  } else if (geolocation?.enabled && !geolocation.active) {
+  } else if (geolocation?.enabled && !geolocation.effective) {
     issues.push(makeIssue(
       'warning',
       'geolocation',
@@ -455,12 +552,13 @@ function computeOverall({
   return { status: 'healthy', issues };
 }
 
-export async function getHealthStatus() {
+export async function getHealthStatus(consistencyAttempt = 0) {
   const manifestData = chrome.runtime.getManifest();
   const storage = await chrome.storage.local.get([
     'config',
     'subscriptions',
     'subscriptionCosmeticRules',
+    'sub_scriptlet_rules',
     'localCosmeticRules',
     'subscriptionScriptletRules',
     'userScriptletRules',
@@ -500,6 +598,14 @@ export async function getHealthStatus() {
     }));
   const lastUpdated = getLastUpdatedBounds(subscriptions);
   const subscriptionScriptletRules = asArray(storage.subscriptionScriptletRules);
+  const cachedSubscriptionScriptletRuleCount = countEnabledCachedRules(
+    subscriptions,
+    storage.sub_scriptlet_rules
+  );
+  const storedSubscriptionScriptletRuleCount = Math.max(
+    cachedSubscriptionScriptletRuleCount,
+    subscriptionScriptletRules.length
+  );
   const userScriptletRules = asArray(storage.userScriptletRules);
   const userScriptletResourceCount = Object.keys(
     storage.userScriptletResources && typeof storage.userScriptletResources === 'object'
@@ -508,31 +614,66 @@ export async function getHealthStatus() {
   ).length;
   const userScriptletSourceErrors = asArray(storage.userScriptletSources)
     .filter(source => source?.lastError);
-  const totalScriptletRuleCount = subscriptionScriptletRules.length + userScriptletRules.length;
+  const totalScriptletRuleCount = storedSubscriptionScriptletRuleCount + userScriptletRules.length;
   const localCosmeticRules = asArray(storage.localCosmeticRules);
   const proxyConfigs = asArray(storage.proxyConfigs);
   const configuredProxies = proxyConfigs.filter(isConfiguredProxy);
   const acceptedProxies = configuredProxies.filter(pc => pc.accepted === true);
-  const activeProxies = configuredProxies.filter(isActiveProxy);
   const globalProxyId = config.globalProxyId;
-  const globalProxyConfigured = globalProxyId != null && activeProxies.some(pc => pc.id === globalProxyId);
+  const selectedGlobalProxy = globalProxyId != null
+    ? configuredProxies.find(pc => pc.id === globalProxyId) || null
+    : null;
+  const globalProxyConfigured = selectedGlobalProxy?.accepted === true;
+  const globalProxyRouteEnabled = globalProxyConfigured && selectedGlobalProxy.enabled !== false;
+  const routedDomainCount = countEnabledProxyDomains(proxyConfigs);
+  const proxyRuntime = await getProxyRoutingStatus({ refresh: true });
+  const requestedRouting = proxyRuntime?.requested?.active === true ||
+    routedDomainCount > 0 ||
+    (config.globalProxyEnabled === true && globalProxyRouteEnabled);
+  const effectiveRouting = proxyRuntime?.effective?.active === true;
+  const effectiveGlobalProxy = proxyRuntime?.effective?.global === true;
+  const proxyLevel = proxyRuntime?.levelOfControl || null;
+  const proxyConflict = masterEnabled && requestedRouting && !!proxyLevel && ![
+    'controllable_by_this_extension',
+    'controlled_by_this_extension'
+  ].includes(proxyLevel);
   let scriptlets = await getScriptletStatus(totalScriptletRuleCount);
-  if (shouldRetryScriptletRegistration(scriptlets, totalScriptletRuleCount)) {
+  if (masterEnabled && shouldRetryScriptletRegistration(scriptlets, totalScriptletRuleCount)) {
     await syncUserScripts();
     scriptlets = await getScriptletStatus(totalScriptletRuleCount);
   }
   const fpr = await getFprStatus(masterEnabled && config.fingerprintRandomization === true);
-  const diagnostics = normalizeHealthDiagnostics(storage.healthDiagnostics);
+  // proxyControl is a cached mirror of the runtime state refreshed above.
+  // Suppress it here so one ownership mismatch cannot appear twice.
+  const diagnostics = normalizeHealthDiagnostics(storage.healthDiagnostics)
+    .filter(diagnostic => diagnostic.id !== 'proxyControl');
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
   await syncWebRtcLeakProtection(config, proxyConfigs);
   await syncBrowserPrivacyHardening(config);
-  await syncGeolocationProtection(config);
+  const geolocationReconciliation = await syncGeolocationProtection(config);
+  const latestPrivacyState = await chrome.storage.local.get(['config', 'proxyConfigs']);
+  const latestConfig = latestPrivacyState.config || {};
+  const latestProxyConfigs = asArray(latestPrivacyState.proxyConfigs);
+  if (
+    consistencyAttempt < 2 &&
+    (JSON.stringify(latestConfig) !== JSON.stringify(config) ||
+      JSON.stringify(latestProxyConfigs) !== JSON.stringify(proxyConfigs))
+  ) {
+    return getHealthStatus(consistencyAttempt + 1);
+  }
   const webrtc = summarizeWebRtcStatus(
-    await getWebRtcLeakProtectionStatus(config, proxyConfigs),
+    await getWebRtcLeakProtectionStatus(config, proxyConfigs, { authoritative: false }),
     config
   );
-  const browserPrivacy = await getBrowserPrivacyHardeningStatus(config);
-  const geolocation = await getGeolocationProtectionStatus(config);
+  const browserPrivacy = await getBrowserPrivacyHardeningStatus(config, { authoritative: false });
+  const geolocationStatus = await getGeolocationProtectionStatus(config, { authoritative: false });
+  const geolocation = {
+    ...geolocationStatus,
+    released: !geolocationStatus.enabled && geolocationReconciliation?.ok === true,
+    reconciliationError: geolocationReconciliation?.ok === false && geolocationReconciliation?.stale !== true
+      ? 'Geolocation reconciliation failed'
+      : null
+  };
 
   const health = {
     generatedAt: Date.now(),
@@ -575,7 +716,9 @@ export async function getHealthStatus() {
       cosmeticOnly: subscriptions.filter(sub => sub?.cosmeticOnly === true).length,
       withErrors: subscriptionErrors.length,
       parsedNetwork: sumRuleCount(subscriptions, 'network'),
-      appliedNetwork: Number(storage.appliedNetworkRuleCount) || subscriptionDynamicRuleCount,
+      appliedNetwork: masterEnabled && networkBlocking
+        ? (Number(storage.appliedNetworkRuleCount) || subscriptionDynamicRuleCount)
+        : 0,
       cosmetic: sumRuleCount(subscriptions, 'cosmetic'),
       scriptlet: sumRuleCount(subscriptions, 'scriptlet'),
       lastUpdatedNewest: lastUpdated.newest,
@@ -590,7 +733,8 @@ export async function getHealthStatus() {
     scriptlets: {
       apiAvailable: scriptlets.apiAvailable,
       storedRuleCount: totalScriptletRuleCount,
-      subscriptionStoredRuleCount: subscriptionScriptletRules.length,
+      subscriptionStoredRuleCount: storedSubscriptionScriptletRuleCount,
+      subscriptionRuntimeRuleCount: subscriptionScriptletRules.length,
       userStoredRuleCount: userScriptletRules.length,
       userResourceCount: userScriptletResourceCount,
       userResourceErrorCount: userScriptletSourceErrors.length,
@@ -602,9 +746,18 @@ export async function getHealthStatus() {
     proxy: {
       configuredCount: configuredProxies.length,
       acceptedCount: acceptedProxies.length,
-      routedDomainCount: countEnabledProxyDomains(proxyConfigs),
+      routedDomainCount,
       globalProxyEnabled: config.globalProxyEnabled === true,
-      globalProxyConfigured
+      globalProxyConfigured,
+      globalProxyRouteEnabled,
+      requestedRouting,
+      effectiveRouting,
+      effectiveGlobalProxy,
+      effectiveRouteCount: Number(proxyRuntime?.effective?.routeCount) || 0,
+      levelOfControl: proxyLevel,
+      controlledByThisExtension: proxyRuntime?.controlledByThisExtension === true,
+      conflict: masterEnabled && (proxyRuntime?.conflict === true || proxyConflict),
+      error: proxyRuntime?.error ? 'Proxy routing status mismatch' : null
     },
     webrtc,
     browserPrivacy,
@@ -642,8 +795,13 @@ export async function getHealthStatus() {
     subscriptionErrors,
     debugLoggingAvailable: requestLogAvailable,
     webrtc,
-    globalProxyEnabled: health.proxy.globalProxyEnabled,
-    globalProxyConfigured,
+    effectiveGlobalProxy,
+    proxyRouting: {
+      requested: health.proxy.requestedRouting,
+      effective: health.proxy.effectiveRouting,
+      conflict: health.proxy.conflict,
+      error: health.proxy.error
+    },
     fpr,
     browserPrivacy,
     geolocation,

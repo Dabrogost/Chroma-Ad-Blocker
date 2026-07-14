@@ -4,13 +4,20 @@
 
 'use strict';
 
+export const CONFIG_KEYS = Object.freeze([
+  'networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts',
+  'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled',
+  'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass',
+  'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening',
+  'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks', 'quietConsole'
+]);
+const WEBRTC_MODES = new Set(['off', 'auto', 'balanced', 'strict']);
+
 export function validateConfig(inputConfig) {
-  const allowed = ['networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts', 'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled', 'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass', 'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening', 'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks', 'quietConsole'];
-  const webRtcModes = new Set(['off', 'auto', 'balanced', 'strict']);
   const validatedConfig = {};
 
   if (inputConfig && typeof inputConfig === 'object') {
-    for (const key of allowed) {
+    for (const key of CONFIG_KEYS) {
       if (Object.prototype.hasOwnProperty.call(inputConfig, key)) {
         const val = inputConfig[key];
         if (key === 'accelerationSpeed') {
@@ -22,7 +29,7 @@ export function validateConfig(inputConfig) {
             validatedConfig[key] = val;
           }
         } else if (key === 'webRtcLeakProtection') {
-          if (webRtcModes.has(val)) {
+          if (WEBRTC_MODES.has(val)) {
             validatedConfig[key] = val;
           }
         } else if (typeof val === 'boolean') {

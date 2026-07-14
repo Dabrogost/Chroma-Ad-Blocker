@@ -12,12 +12,12 @@ Chroma requests the following permissions. Each is required for a specific, docu
 | `alarms` | Powers periodic subscription refresh checks. Chrome MV3 service workers are ephemeral and cannot use `setInterval`; `chrome.alarms` is the reliable timer mechanism available. |
 | `userScripts` | The primary API for the scriptlet engine. Allows bundled subscription scriptlets and explicit user-added scriptlet resources to execute in the page's MAIN world context with native lifecycle management. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
 | `scripting` | Used for extension-controlled script work, including Element Zapper injection and optional Fingerprint Randomization content-script registration. |
-| `proxy` | Enables the split-tunnel proxy router and PAC script generation for domain-specific routing. |
-| `privacy` | Allows Chroma to apply optional browser-level privacy controls, including WebRTC leak protection and Chrome Privacy Hardening. |
-| `contentSettings` | Allows Chroma to provide an optional Geolocation Protection toggle that blocks website location access through Chrome's native site setting. |
-| `webRequest` | Used to intercept authentication challenges from proxy servers. |
-| `webRequestAuthProvider` | Required to provide credentials to proxy servers through the `onAuthRequired` listener. |
-| Host permission: `<all_urls>` | Allows the always-on isolated content script, cosmetic filtering, DNR rules, subscription scriptlets, and optional proxy/site controls to operate across visited websites. This broad scope is why Chroma keeps sensitive settings, stats, proxy credentials, and health diagnostics local and validates privileged messages at the extension boundary. |
+| `proxy` | Enables the split-tunnel proxy router, Chrome ownership inspection, and PAC script generation for domain-specific routing while master protection is active. |
+| `privacy` | Allows Chroma to apply optional WebRTC leak protection and Chrome Privacy Hardening while master protection is active, and to release Chroma-owned settings when inactive. |
+| `contentSettings` | Allows Chroma to apply optional Geolocation Protection while master protection is active and clear Chroma's location rule when inactive. |
+| `webRequest` | Observes genuine proxy authentication challenges so Chroma can compare them with the currently effective route. |
+| `webRequestAuthProvider` | Provides credentials only to an exact active HTTP/HTTPS proxy route through the `onAuthRequired` listener. |
+| Host permission: `<all_urls>` | Allows the always-on isolated content script, cosmetic filtering, DNR rules, subscription scriptlets, optional proxy/site controls, and configured remote list/resource fetches to operate across required origins. This broad scope is why Chroma keeps sensitive settings, stats, proxy credentials, and health diagnostics local and validates privileged messages at the extension boundary. |
 
 Chroma does not request Chrome's `downloads` permission for guided updates. The updater uses the standard File System Access folder picker from the settings page after the user clicks **Choose Chroma Folder**, and it fetches verified release assets into memory rather than sending files through Chrome's Downloads shelf.
 

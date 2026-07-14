@@ -213,6 +213,35 @@ test('privacy and security docs document remote list behavior', () => {
   assert.match(threatModel, /private update-signing key/i);
 });
 
+test('docs disclose remote DNS limits and private MAIN config authority', () => {
+  const filterLists = fs.readFileSync(path.join(__dirname, '..', 'docs', 'FILTER_LISTS.md'), 'utf8');
+  const userScriptlets = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ADVANCED_USER_SCRIPTLETS.md'), 'utf8');
+  const security = fs.readFileSync(path.join(__dirname, '..', 'docs', 'SECURITY.md'), 'utf8');
+  const architecture = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ARCHITECTURE.md'), 'utf8');
+
+  assert.match(filterLists, /public-looking hostname could resolve or rebind to a private address/i);
+  assert.match(userScriptlets, /Chromium performs DNS resolution/i);
+  assert.match(security, /cannot inspect or pin the connection's peer IP/i);
+  assert.match(security, /__CHROMA_CONFIG_UPDATE__[^\n]*no authoritative values/i);
+  assert.match(architecture, /short-lived private `MessagePort`/i);
+  assert.doesNotMatch(architecture, /__EXT_INIT__/);
+});
+
+test('docs describe reconciled master lifecycle, import rollback, and bounded diagnostics', () => {
+  const features = fs.readFileSync(path.join(__dirname, '..', 'docs', 'FEATURES.md'), 'utf8');
+  const proxy = fs.readFileSync(path.join(__dirname, '..', 'docs', 'MEDIA_PROXY_ROUTER.md'), 'utf8');
+  const install = fs.readFileSync(path.join(__dirname, '..', 'docs', 'INSTALL.md'), 'utf8');
+  const stats = fs.readFileSync(path.join(__dirname, '..', 'docs', 'STATISTICS.md'), 'utf8');
+  const userScriptlets = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ADVANCED_USER_SCRIPTLETS.md'), 'utf8');
+
+  assert.match(features, /Master off removes active network and whitelist DNR/i);
+  assert.match(proxy, /Master off releases `chrome\.proxy\.settings`/i);
+  assert.match(install, /Import is transactional/i);
+  assert.match(install, /rollback is incomplete/i);
+  assert.match(stats, /approximate diagnostics rather than an audit log/i);
+  assert.match(userScriptlets, /100 is a registration batch size, not a resource ceiling/i);
+});
+
 test('docs document guided updater requirements and fallback', () => {
   const install = fs.readFileSync(path.join(__dirname, '..', 'docs', 'INSTALL.md'), 'utf8');
   const distribution = fs.readFileSync(path.join(__dirname, '..', 'docs', 'DISTRIBUTION.md'), 'utf8');

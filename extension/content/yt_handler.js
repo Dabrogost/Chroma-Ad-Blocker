@@ -28,8 +28,8 @@
   // Use Object.create(null) to protect against Prototype Pollution
   const CONFIG = Object.create(null);
   Object.assign(CONFIG, {
-    enabled: true, // Default to active; handshake will synchronize with user settings
-    stripping: true,  // Primary: strip ad data from YouTube API responses before the player reads it
+    enabled: false, // Fail closed until the private bridge authenticates config
+    stripping: false,
     acceleration: false,
     accelerationSpeed: 8, // Default playback rate supported for ad acceleration
     checkIntervalMs: 300,  // Interval between ad state checks (ms)
@@ -45,7 +45,7 @@
     enabled:           (v) => typeof v === 'boolean',
     stripping:         (v) => typeof v === 'boolean',
     acceleration:      (v) => typeof v === 'boolean',
-    accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 16,
+    accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 16,
     checkIntervalMs:   (v) => typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 5000
   });
 
@@ -69,17 +69,20 @@
   // Deletes ad payload fields from YouTube API responses before the player reads them.
   // Native APIs are captured here — before the beacon suppression IIFE below patches XHR —
   // so the wrap order is: beacon suppression → our wrapper → native (correct chain).
-  function emitStatsEvent(detail) {
+  // This is the entire page-to-isolated telemetry contract. Keep these two
+  // constants aligned with protection.js; no payload metadata crosses worlds.
+  const MAIN_STATS_EVENT = '__CHROMA_STATS_EVENT__';
+  const YOUTUBE_PAYLOAD_MODIFIED = 'youtube_payload_modified';
+
+  function emitStatsEvent(eventType) {
+    if (eventType !== YOUTUBE_PAYLOAD_MODIFIED) return;
     try {
-      document.dispatchEvent(new CustomEvent('__CHROMA_STATS_EVENT__', { detail }));
+      document.dispatchEvent(new CustomEvent(MAIN_STATS_EVENT, { detail: eventType }));
     } catch (_) {}
   }
 
-  function createPayloadStats(source) {
+  function createPayloadStats() {
     return {
-      source,
-      payloadsInspected: 1,
-      payloadsModified: 0,
       fieldsPruned: 0,
       adObjectsRemoved: 0
     };
@@ -87,27 +90,15 @@
 
   function finishPayloadStats(stats) {
     if (!stats) return;
-    if (stats.fieldsPruned > 0 || stats.adObjectsRemoved > 0) {
-      stats.payloadsModified = 1;
-    }
     // Keep YouTube playback hot paths quiet: unmodified player/next/browse
     // payload inspections can be frequent, especially while streaming through
     // an authenticated proxy, and they do not represent useful protection work.
-    if (stats.payloadsModified === 0) return;
-    emitStatsEvent({
-      layer: 'youtube',
-      type: 'payload',
-      source: stats.source,
-      payloadsInspected: stats.payloadsInspected,
-      payloadsModified: stats.payloadsModified,
-      fieldsPruned: stats.fieldsPruned,
-      adObjectsRemoved: stats.adObjectsRemoved,
-      cleans: stats.payloadsModified
-    });
+    if (stats.fieldsPruned === 0 && stats.adObjectsRemoved === 0) return;
+    emitStatsEvent(YOUTUBE_PAYLOAD_MODIFIED);
   }
 
-  function cleanYoutubePayload(data, source) {
-    const stats = createPayloadStats(source);
+  function cleanYoutubePayload(data) {
+    const stats = createPayloadStats();
     let modified = false;
     if (stripAdFields(data, stats)) modified = true;
     if (data?.playerResponse && stripAdFields(data.playerResponse, stats)) modified = true;
@@ -286,7 +277,7 @@
       get() { return _ytInitialPlayerResponse; },
       set(value) {
         if (CONFIG.enabled && CONFIG.stripping && value && typeof value === 'object') {
-          cleanYoutubePayload(value, 'initial_player_response');
+          cleanYoutubePayload(value);
         }
         _ytInitialPlayerResponse = value;
       }
@@ -301,7 +292,7 @@
       get() { return _ytInitialData; },
       set(value) {
         if (CONFIG.enabled && CONFIG.stripping && value && typeof value === 'object') {
-          cleanYoutubePayload(value, 'initial_data');
+          cleanYoutubePayload(value);
         }
         _ytInitialData = value;
       }
@@ -333,7 +324,7 @@
       try {
         const clone = response.clone();
         const json = await clone.json();
-        const modified = cleanYoutubePayload(json, 'fetch');
+        const modified = cleanYoutubePayload(json);
         if (modified) {
           return new Response(JSON.stringify(json), {
             status: response.status,
@@ -367,7 +358,7 @@
           if (rt && rt !== '' && rt !== 'text' && rt !== 'json') return;
           const text = rt === 'json' ? JSON.stringify(this.response) : this.responseText;
           const json = _nativeJSONParse(text);
-          const modified = cleanYoutubePayload(json, 'xhr');
+          const modified = cleanYoutubePayload(json);
           if (modified) {
             const stripped = JSON.stringify(json);
             Object.defineProperty(this, 'responseText', { value: stripped, writable: false });
@@ -390,7 +381,7 @@
     if (!mightContainYoutubeAdPayloadSignal(text)) return result;
     try {
       if (result && typeof result === 'object') {
-        cleanYoutubePayload(result, 'json_parse');
+        cleanYoutubePayload(result);
       }
     } catch (_) {}
     return result;
@@ -416,6 +407,12 @@
 
   const getBridgeApi = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api;
   const getBridgeConfig = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config;
+  const getBridgeRevision = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.revision;
+  let lastBridgeRevision = -1;
+  function rememberBridgeRevision() {
+    const revision = getBridgeRevision();
+    if (Number.isSafeInteger(revision) && revision >= 0) lastBridgeRevision = revision;
+  }
   const API = new Proxy(FALLBACK_API, {
     get(target, key) {
       const bridgeApi = getBridgeApi();
@@ -424,7 +421,6 @@
   });
 
   const safeQuery = (s) => API.querySelector(s);
-  const safeQueryAll = (s) => API.querySelectorAll(s);
   const safeGetElementsByClassName = (s) => API.getElementsByClassName(s);
   const safeCreate = (t) => API.createElement(t);
   const safeSetInterval = (f, t) => {
@@ -440,37 +436,6 @@
   const safeCreateStyleSheet = () => API.createCssStyleSheet();
   const safeGetAdoptedStyleSheets = () => API.getAdoptedStyleSheets();
   const safeSetAdoptedStyleSheets = (sheets) => API.setAdoptedStyleSheets(sheets);
-
-  let _chromaExtInitActive = true;
-  let _extInitFired = false;
-  API.addDocEventListener('__EXT_INIT__', (e) => {
-    _extInitFired = true;
-    const bridgeConfig = getBridgeConfig();
-    if (bridgeConfig) applyConfig(bridgeConfig);
-    if (e && e.detail) {
-      if (e.detail.active === false) {
-        _chromaExtInitActive = false;
-        CONFIG.enabled = false;
-      }
-      if (!bridgeConfig) {
-        if (e.detail.stripping !== undefined) CONFIG.stripping = e.detail.stripping;
-        if (e.detail.acceleration !== undefined) CONFIG.acceleration = e.detail.acceleration;
-      }
-    }
-
-    // Late-arrival activation: If the init polling loop already timed out
-    // (cold browser start where chrome.storage was slow), activate now.
-    if (!pollingInterval && _chromaExtInitActive) {
-      const config = getBridgeConfig();
-      if (config) applyConfig(config);
-      
-      if (CONFIG.enabled && shouldAccelerate()) {
-        injectChromaCSS();
-        startPolling();
-        initSkipButtonListener();
-      }
-    }
-  }, true);
 
   // ─── STATE ─────
   let targetAdVideo = null;
@@ -491,10 +456,32 @@
   function getVideoState(video) {
     let s = videoState.get(video);
     if (!s) {
-      s = { listenersAdded: false, chromaMuted: false, savedVolume: null };
+      s = {
+        listenersAdded: false,
+        chromaMuted: false,
+        savedVolume: null,
+        savedPlaybackRate: null,
+        appliedPlaybackRate: null
+      };
       videoState.set(video, s);
     }
     return s;
+  }
+
+  function applyAcceleratedPlaybackRate(video, state) {
+    if (state.appliedPlaybackRate == null) state.savedPlaybackRate = video.playbackRate;
+    if (video.playbackRate !== CONFIG.accelerationSpeed) {
+      video.playbackRate = CONFIG.accelerationSpeed;
+    }
+    state.appliedPlaybackRate = CONFIG.accelerationSpeed;
+  }
+
+  function restorePlaybackRate(video, state) {
+    if (state.appliedPlaybackRate != null && video.playbackRate === state.appliedPlaybackRate) {
+      video.playbackRate = state.savedPlaybackRate ?? 1;
+    }
+    state.savedPlaybackRate = null;
+    state.appliedPlaybackRate = null;
   }
 
   // Anti-Detection: Session stylesheet toggle (replaces observable body class mutations)
@@ -873,6 +860,11 @@
 
       const state = videoState.get(targetAdVideo);
       if (state) {
+        restorePlaybackRate(targetAdVideo, state);
+        if (state.chromaMuted && targetAdVideo.muted) targetAdVideo.muted = false;
+        if (state.savedVolume != null && targetAdVideo.volume === 0) {
+          targetAdVideo.volume = state.savedVolume;
+        }
         state.listenersAdded = false;
         state.chromaMuted = false;
         state.savedVolume = null;
@@ -963,10 +955,9 @@
         video.volume = 0;
       }
       
-      if (rawAdShowing && video.playbackRate !== CONFIG.accelerationSpeed) {
-        video.playbackRate = CONFIG.accelerationSpeed;
-      }
-      getVideoState(video).chromaMuted = true;
+      const state = getVideoState(video);
+      if (rawAdShowing) applyAcceleratedPlaybackRate(video, state);
+      state.chromaMuted = true;
     } else {
       if (video.muted && getVideoState(video).chromaMuted) {
         video.muted = false;
@@ -978,10 +969,9 @@
         }
         getVideoState(video).savedVolume = null;
       }
-      if (video.playbackRate === CONFIG.accelerationSpeed) {
-        video.playbackRate = 1;
-      }
-      getVideoState(video).chromaMuted = false;
+      const state = getVideoState(video);
+      restorePlaybackRate(video, state);
+      state.chromaMuted = false;
     }
   }
 
@@ -1017,48 +1007,27 @@
   API.addDocEventListener('yt-navigate-finish', onYTNavigate);
   API.addDocEventListener('yt-page-data-updated', onYTNavigate);
 
-  API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
-    if (e.detail) {
-      // SECURITY: Configuration Validation Allowlist
-      applyConfig(getBridgeConfig() || e.detail);
+  API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', () => {
+    const revision = getBridgeRevision();
+    if (!Number.isSafeInteger(revision) || revision <= lastBridgeRevision) return;
+    const bridgeConfig = getBridgeConfig();
+    if (!bridgeConfig) return;
+    applyConfig(bridgeConfig);
+    lastBridgeRevision = revision;
 
-      if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
-      
-      if (!CONFIG.enabled) {
-        stopPolling();
-        
-        if (targetAdVideo) {
-          if (targetAdVideo.playbackRate === CONFIG.accelerationSpeed) {
-            targetAdVideo.playbackRate = 1;
-          }
-          if (targetAdVideo.muted && getVideoState(targetAdVideo).chromaMuted) {
-            targetAdVideo.muted = false;
-            const savedVol = getVideoState(targetAdVideo).savedVolume;
-            if (savedVol != null) {
-              targetAdVideo.volume = savedVol > 0 ? savedVol : 1;
-            }
-          }
-        }
-        
-        const overlay = adOverlayHost;
-        if (overlay) overlay.classList.remove('active');
-        
-        chromaAdSessionActive = false;
-        _chromaFastWatcher = false;
-        deactivateSessionSheet();
-        cleanupVideoState();
-        
-      }
-      
-      if (CONFIG.enabled && shouldAccelerate()) {
-        injectChromaCSS();
-        startPolling();
-        initSkipButtonListener();
-      } else if (pollingInterval) {
-        stopPolling();
-        if (adOverlayHost) adOverlayHost.classList.remove('active');
-        deactivateSessionSheet();
-      }
+    if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
+
+    if (CONFIG.enabled && shouldAccelerate()) {
+      injectChromaCSS();
+      startPolling();
+      initSkipButtonListener();
+    } else {
+      stopPolling();
+      if (adOverlayHost) adOverlayHost.classList.remove('active');
+      chromaAdSessionActive = false;
+      _chromaFastWatcher = false;
+      deactivateSessionSheet();
+      cleanupVideoState();
     }
   });
 
@@ -1118,6 +1087,7 @@
     if (hasInitialConfig) {
       // SECURITY: Handshake Configuration Validation
       applyConfig(getBridgeConfig());
+      rememberBridgeRevision();
     }
 
     // If config is already available, start immediately. Otherwise, poll for handshake.
@@ -1125,18 +1095,17 @@
       injectChromaCSS();
       startPolling();
       initSkipButtonListener();
-    } else if (!hasInitialConfig && !_extInitFired) {
+    } else if (!hasInitialConfig) {
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = safeSetInterval(() => {
-        const initDone = !!getBridgeConfig() || _extInitFired;
+        const config = getBridgeConfig();
         _pollCount++;
 
-        if (initDone) {
+        if (config) {
           safeClearInterval(_pollId);
-          const config = getBridgeConfig();
-          if (config) applyConfig(config);
-          if (!_chromaExtInitActive) return;
+          applyConfig(config);
+          rememberBridgeRevision();
           if (CONFIG.enabled && shouldAccelerate()) {
             injectChromaCSS();
             startPolling();

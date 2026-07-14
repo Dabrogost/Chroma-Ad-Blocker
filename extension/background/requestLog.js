@@ -4,13 +4,27 @@
 
 'use strict';
 
-import { classifyDnrMatch } from './dnrState.js';
+import {
+  classifyDnrMatch,
+  hydrateDynamicRuleClassifications,
+  isDynamicRuleClassificationReady
+} from './dnrState.js';
 import { recordStatsEvent } from './stats.js';
 
 const DEBUG = false;
 const LOG_MAX_ENTRIES = 500; // Cap to bound chrome.storage.local write size per flush
+const EARLY_MATCH_BUFFER_CAP = 500;
 let _logBuffer = [];
 let _flushTimer = null;
+let _flushChain = Promise.resolve();
+let _earlyMatchBuffer = [];
+let _classificationInitialization = null;
+
+function queueLogStorageOperation(task) {
+  const operation = _flushChain.then(task);
+  _flushChain = operation.catch(() => {});
+  return operation;
+}
 
 // State Bridge: Exposes in-memory log access for automated testing.
 // Without this, background request log tests would be slow and timing-dependent
@@ -27,13 +41,20 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
 
 export async function resetRequestLog() {
   _logBuffer = [];
+  _earlyMatchBuffer = [];
   if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
-  await chrome.storage.local.set({ requestLog: [] });
+  // Serialize the reset with any already-started write. A new match flush will
+  // queue behind this operation, so it cannot resurrect pre-reset entries.
+  await queueLogStorageOperation(() => chrome.storage.local.set({ requestLog: [] }));
 }
 
 export async function getMergedLog() {
-  const { requestLog: storedLog = [] } = await chrome.storage.local.get('requestLog');
-  return [..._logBuffer, ...storedLog].slice(0, LOG_MAX_ENTRIES);
+  // Entries already spliced from memory belong to the in-flight flush. Queue
+  // the read on the same chain so it cannot temporarily omit them.
+  return queueLogStorageOperation(async () => {
+    const { requestLog: storedLog = [] } = await chrome.storage.local.get('requestLog');
+    return [..._logBuffer, ...storedLog].slice(0, LOG_MAX_ENTRIES);
+  });
 }
 
 async function flushLog() {
@@ -43,45 +64,89 @@ async function flushLog() {
   if (batch.length === 0) return;
 
   try {
-    const { requestLog = [] } = await chrome.storage.local.get('requestLog');
-    const updates = {};
-    if (batch.length > 0) {
-      updates.requestLog = [...batch, ...requestLog].slice(0, LOG_MAX_ENTRIES);
-    }
-    await chrome.storage.local.set(updates);
+    await queueLogStorageOperation(async () => {
+      const { requestLog = [] } = await chrome.storage.local.get('requestLog');
+      await chrome.storage.local.set({
+        requestLog: [...batch, ...requestLog].slice(0, LOG_MAX_ENTRIES)
+      });
+    });
   } catch (err) {
     if (DEBUG) console.error('[Chroma] Log flush failed:', err);
   }
 }
 
+function recordMatchedRule(info) {
+  const classification = classifyDnrMatch(info);
+  const ts = Date.now();
+  const url = typeof info?.request?.url === 'string' ? info.request.url : '';
+  const resourceType = typeof info?.request?.type === 'string' ? info.request.type : 'other';
+  _logBuffer.push({
+    ts,
+    url,
+    rt: resourceType,
+    rid: classification.ruleId,
+    action: classification.type,
+    source: classification.ruleSource,
+    rulesetId: classification.rulesetId
+  });
+  if (_logBuffer.length > LOG_MAX_ENTRIES) {
+    _logBuffer = _logBuffer.slice(-LOG_MAX_ENTRIES);
+  }
+
+  recordStatsEvent({
+    layer: 'network',
+    type: classification.type,
+    url,
+    resourceType,
+    ruleId: classification.ruleId,
+    rulesetId: classification.rulesetId,
+    ruleSource: classification.ruleSource,
+    ts
+  });
+
+  if (!_flushTimer) {
+    _flushTimer = setTimeout(flushLog, 500); // 500ms batch window to coalesce rapid rule-match events
+  }
+}
+
+function finishClassificationInitialization() {
+  const pending = _earlyMatchBuffer.splice(0);
+  for (const info of pending) recordMatchedRule(info);
+}
+
+function ensureClassificationInitialization() {
+  if (isDynamicRuleClassificationReady()) {
+    finishClassificationInitialization();
+    return Promise.resolve();
+  }
+  if (_classificationInitialization) return _classificationInitialization;
+
+  _classificationInitialization = hydrateDynamicRuleClassifications()
+    .catch(() => ({ ok: false }))
+    .then(finishClassificationInitialization)
+    .finally(() => {
+      _classificationInitialization = null;
+    });
+  return _classificationInitialization;
+}
+
 export function initRequestLogListener() {
+  // Start hydration on every worker evaluation, even when Chrome's optional
+  // developer-mode match event is unavailable in this profile.
+  ensureClassificationInitialization();
   if (!chrome.declarativeNetRequest.onRuleMatchedDebug) return;
 
   chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
-    const classification = classifyDnrMatch(info);
-    _logBuffer.push({
-      ts:  Date.now(),
-      url: info.request.url,
-      rt:  info.request.type,
-      rid: info.rule.ruleId,
-      action: classification.type,
-      source: classification.ruleSource,
-      rulesetId: classification.rulesetId
-    });
-
-    recordStatsEvent({
-      layer: 'network',
-      type: classification.type,
-      url: info.request.url,
-      resourceType: info.request.type,
-      ruleId: classification.ruleId,
-      rulesetId: classification.rulesetId,
-      ruleSource: classification.ruleSource,
-      ts: Date.now()
-    });
-
-    if (!_flushTimer) {
-      _flushTimer = setTimeout(flushLog, 500); // 500ms batch window to coalesce rapid rule-match events
+    if (isDynamicRuleClassificationReady()) {
+      recordMatchedRule(info);
+      return;
     }
+
+    // Diagnostics are non-enforcement data. Bound the early queue and drop
+    // excess events instead of risking unbounded service-worker memory.
+    if (_earlyMatchBuffer.length < EARLY_MATCH_BUFFER_CAP) {
+      _earlyMatchBuffer.push(info);
+    }
+    ensureClassificationInitialization();
   });
 }

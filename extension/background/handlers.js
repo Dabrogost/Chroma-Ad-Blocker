@@ -9,37 +9,44 @@
 
 import { MSG } from '../core/messageTypes.js';
 import { encryptAuth } from '../core/crypto.js';
+import { validateRemoteHttpsUrl } from '../core/remoteUrl.js';
 import {
   getSubscriptions,
   setSubscriptionEnabled,
   refreshSubscription,
   addSubscription,
   removeSubscription,
-  importCustomSubscriptions
+  stageCustomSubscriptions,
+  reconcileSubscriptionRuntimeState
 } from '../subscriptions/manager.js';
 import {
   addUserScriptletSource,
   exportUserScriptletSettings,
   getUserScriptletSettings,
-  importUserScriptletSettings,
   refreshUserScriptletSource,
   removeUserScriptletSource,
-  setUserScriptletRuleText
+  setUserScriptletRuleText,
+  stageUserScriptletSettings
 } from '../scriptlets/userResources.js';
 import { syncUserScripts } from '../scriptlets/engine.js';
-import { validateConfig } from './configState.js';
-import { updateDNRState, syncDynamicRules, syncWhitelistRules } from './dnrState.js';
+import { CONFIG_KEYS, validateConfig } from './configState.js';
+import { serializeConfigMutation } from './configCoordinator.js';
+import {
+  isNetworkProtectionActive,
+  updateDNRState,
+  syncWhitelistRules
+} from './dnrState.js';
 import { checkForUpdate } from './updateCheck.js';
 import { inspectLatestUpdatePackage } from './updatePackage.js';
 import { resetRequestLog, getMergedLog } from './requestLog.js';
-import { runProxyTest } from './proxy.js';
+import { runProxyTest, syncProxyState } from './proxy.js';
 import { getHealthStatus } from './health.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';
 import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';
 import {
   exportStats,
   getStatsSnapshot,
-  recordStatsEvents,
+  recordContentStatsEvents,
   resetStats,
   setStatsSettings
 } from './stats.js';
@@ -60,7 +67,35 @@ const ZAPPER_MAX_RULES = 500;
 const ZAPPER_MAX_SELECTOR_LEN = 512;
 const ZAPPER_MAX_MATCHES = 5;
 const SETTINGS_IMPORT_VERSION = 1;
+const SETTINGS_IMPORT_COMMIT_KEYS = Object.freeze([
+  'config',
+  'whitelist',
+  'fprWhitelist',
+  'proxyConfigs',
+  'subscriptions',
+  'sub_network_rules',
+  'sub_cosmetic_rules',
+  'sub_scriptlet_rules',
+  'subscriptionCosmeticRules',
+  'subscriptionScriptletRules',
+  'userScriptletSources',
+  'userScriptletResources',
+  'userScriptletRuleText',
+  'userScriptletRules'
+]);
+const SETTINGS_IMPORT_SNAPSHOT_KEYS = Object.freeze([
+  ...SETTINGS_IMPORT_COMMIT_KEYS,
+  'appliedNetworkRuleCount',
+  'appliedNetworkRulesPerSub'
+]);
 const zapperSessions = new Map();
+let whitelistMutationTail = Promise.resolve();
+
+function serializeWhitelistMutation(task) {
+  const run = whitelistMutationTail.then(task);
+  whitelistMutationTail = run.catch(() => {});
+  return run;
+}
 
 function isValidHostname(host) {
   if (typeof host !== 'string' || host.length < 1 || host.length > 253) return false;
@@ -396,39 +431,6 @@ function isValidSubscriptionId(id) {
   return typeof id === 'string' && SUBSCRIPTION_ID_RE.test(id);
 }
 
-function isPrivateIpv4(host) {
-  const parts = host.split('.');
-  if (parts.length !== 4) return false;
-  const nums = parts.map(p => Number(p));
-  if (nums.some(n => !Number.isInteger(n) || n < 0 || n > 255)) return false;
-  return (
-    nums[0] === 10 ||
-    nums[0] === 127 ||
-    (nums[0] === 172 && nums[1] >= 16 && nums[1] <= 31) ||
-    (nums[0] === 192 && nums[1] === 168) ||
-    (nums[0] === 169 && nums[1] === 254)
-  );
-}
-
-function isBlockedSubscriptionHost(hostname) {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  const isIpv6 = host.includes(':');
-  return (
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    isPrivateIpv4(host) ||
-    (isIpv6 && (
-      host === '::1' ||
-      host.startsWith('fc') ||
-      host.startsWith('fd') ||
-      host.startsWith('fe8') ||
-      host.startsWith('fe9') ||
-      host.startsWith('fea') ||
-      host.startsWith('feb')
-    ))
-  );
-}
-
 function validateCustomSubscriptionInput(sub) {
   if (!sub || typeof sub !== 'object' || Array.isArray(sub)) {
     return { ok: false, error: 'Invalid subscription' };
@@ -437,17 +439,9 @@ function validateCustomSubscriptionInput(sub) {
     return { ok: false, error: 'Invalid subscription ID' };
   }
 
-  let parsed;
-  try {
-    parsed = new URL(sub.url);
-  } catch {
-    return { ok: false, error: 'Invalid URL' };
-  }
-
-  if (parsed.protocol !== 'https:') return { ok: false, error: 'Only https:// URLs are allowed' };
-  if (parsed.username || parsed.password) return { ok: false, error: 'Subscription URLs cannot include credentials' };
-  if (parsed.port && parsed.port !== '443') return { ok: false, error: 'Subscription URL must use the default HTTPS port' };
-  if (isBlockedSubscriptionHost(parsed.hostname)) return { ok: false, error: 'Local or private subscription URLs are not allowed' };
+  const validatedUrl = validateRemoteHttpsUrl(sub.url, { label: 'Subscription' });
+  if (!validatedUrl.ok) return validatedUrl;
+  const parsed = new URL(validatedUrl.url);
 
   const name = typeof sub.name === 'string' ? sub.name.trim().slice(0, MAX_SUBSCRIPTION_NAME_LEN) : parsed.hostname;
   const intervalHours = sub.intervalHours === undefined
@@ -478,32 +472,48 @@ async function handleConfigGet() {
   return config;
 }
 
-async function handleConfigSet(msg) {
-  const { config: currentConfig, proxyConfigs = [] } = await chrome.storage.local.get(['config', 'proxyConfigs']);
-  const validated = validateConfig(msg.config);
-  const newConfig = { ...currentConfig, ...validated };
-  await chrome.storage.local.set({ config: newConfig });
-  await syncWebRtcLeakProtection(newConfig, proxyConfigs);
-  await syncBrowserPrivacyHardening(newConfig);
-  await syncGeolocationProtection(newConfig);
+function handleConfigSet(msg) {
+  // Queue config writes in request order as well as DNR commits. Otherwise two
+  // concurrent toggles can overwrite storage before the DNR generation guard
+  // has an authoritative state to read.
+  return serializeConfigMutation(async () => {
+    const { config: currentConfig = {} } = await chrome.storage.local.get('config');
+    const validated = validateConfig(msg.config);
+    const newConfig = { ...currentConfig, ...validated };
+    await chrome.storage.local.set({ config: newConfig });
+    const { proxyConfigs = [] } = await chrome.storage.local.get('proxyConfigs');
 
-  const wasDNRActive = currentConfig.enabled !== false && currentConfig.networkBlocking !== false;
-  const isDNRActive = newConfig.enabled !== false && newConfig.networkBlocking !== false;
-  if (isDNRActive !== wasDNRActive) {
-    await updateDNRState(isDNRActive);
-  } else if (
-    isDNRActive &&
-    (currentConfig.acceleration !== newConfig.acceleration ||
-     currentConfig.trackingUrlCleanup !== newConfig.trackingUrlCleanup)
-  ) {
-    await syncDynamicRules();
-  }
+    // Reconcile immediately after the authoritative config write. The shared
+    // predicate is evaluated again at the coordinator's final commit gate.
+    const networkStateChanged = isNetworkProtectionActive(currentConfig) !==
+      isNetworkProtectionActive(newConfig);
+    const masterStateChanged = currentConfig.enabled !== newConfig.enabled;
+    const proxyStateChanged = masterStateChanged ||
+      currentConfig.globalProxyEnabled !== newConfig.globalProxyEnabled ||
+      currentConfig.globalProxyId !== newConfig.globalProxyId ||
+      currentConfig.chromeServiceProxyBypass !== newConfig.chromeServiceProxyBypass;
+    const dynamicBehaviorChanged = currentConfig.acceleration !== newConfig.acceleration ||
+      currentConfig.trackingUrlCleanup !== newConfig.trackingUrlCleanup;
+    if (networkStateChanged || dynamicBehaviorChanged) {
+      await updateDNRState();
+    }
+    if (masterStateChanged) {
+      await reconcileSubscriptionRuntimeState();
+      await syncUserScripts();
+    }
+    if (proxyStateChanged) {
+      await syncProxyState(proxyConfigs);
+    }
+    await syncWebRtcLeakProtection(newConfig, proxyConfigs);
+    await syncBrowserPrivacyHardening(newConfig);
+    await syncGeolocationProtection(newConfig);
 
-  const tabs = await chrome.tabs.query({});
-  await Promise.all(tabs.map(t =>
-    chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})
-  ));
-  return { ok: true };
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(tabs.map(t =>
+      chrome.tabs.sendMessage(t.id, { type: MSG.CONFIG_UPDATE, config: newConfig }).catch(() => {})
+    ));
+    return { ok: true };
+  });
 }
 
 // ─── WHITELIST ─────
@@ -513,25 +523,18 @@ async function handleWhitelistGet() {
   return { whitelist };
 }
 
-async function syncDynamicRulesIfNetworkBlockingActive() {
-  const { config = {} } = await chrome.storage.local.get('config');
-  if (config.enabled !== false && config.networkBlocking !== false) {
-    await syncDynamicRules();
-  }
-}
+function handleWhitelistAdd(msg) {
+  return serializeWhitelistMutation(async () => {
+    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
+    const domain = normalizeDomain(msg.domain);
+    const valid = domain && !whitelist.includes(domain);
 
-async function handleWhitelistAdd(msg) {
-  const { whitelist = [] } = await chrome.storage.local.get('whitelist');
-  const domain = normalizeDomain(msg.domain);
-  const valid = domain && !whitelist.includes(domain);
-
-  if (valid) {
-    whitelist.push(domain);
-    await chrome.storage.local.set({ whitelist });
-    await syncWhitelistRules();
-    await syncDynamicRulesIfNetworkBlockingActive();
-  }
-  return { ok: true };
+    if (valid) {
+      await chrome.storage.local.set({ whitelist: [...whitelist, domain] });
+      await syncWhitelistRules();
+    }
+    return { ok: true };
+  });
 }
 
 function sanitizeDomainList(value) {
@@ -571,11 +574,8 @@ function exportSubscription(sub) {
   };
 }
 
-function sanitizeImportedSubscription(sub, index) {
-  const validation = validateCustomSubscriptionInput({
-    ...sub,
-    id: sub?.id || `custom_import_${index}_${Date.now()}`
-  });
+function sanitizeImportedSubscription(sub) {
+  const validation = validateCustomSubscriptionInput(sub);
   if (!validation.ok) return null;
   return {
     ...validation.subscription,
@@ -586,6 +586,249 @@ function sanitizeImportedSubscription(sub, index) {
     lastError: null,
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
     compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
+  };
+}
+
+function isImportObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function importErrorMessage(error) {
+  if (error && typeof error === 'object' && typeof error.message === 'string' && error.message) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error) return error;
+  return 'Unknown import failure';
+}
+
+function importValidationFailure(error, step = 'backup') {
+  return {
+    ok: false,
+    phase: 'validation',
+    step,
+    error,
+    rollback: {
+      attempted: false,
+      succeeded: true,
+      storageRestored: true,
+      runtimeRestored: true,
+      errors: []
+    }
+  };
+}
+
+function validateImportDomainList(value, path) {
+  if (!Array.isArray(value)) {
+    return { ok: false, error: `${path} must be an array` };
+  }
+  for (let index = 0; index < value.length; index++) {
+    if (!normalizeDomain(value[index])) {
+      return { ok: false, error: `${path}[${index}] is invalid` };
+    }
+  }
+  return { ok: true, value: sanitizeDomainList(value) };
+}
+
+async function validateSettingsImportPayload(payload) {
+  if (!isImportObject(payload)) {
+    return importValidationFailure('Invalid settings backup');
+  }
+  if (payload.schema !== 'chroma-settings') {
+    return importValidationFailure('Unsupported settings backup schema', 'schema');
+  }
+  if (!Number.isSafeInteger(payload.version) || payload.version !== SETTINGS_IMPORT_VERSION) {
+    return importValidationFailure('Unsupported settings backup version', 'version');
+  }
+  if (!isImportObject(payload.config)) {
+    return importValidationFailure('Settings backup config must be an object', 'config');
+  }
+  const config = validateConfig(payload.config);
+  const allowedConfigKeys = new Set(CONFIG_KEYS);
+  for (const key of Object.keys(payload.config)) {
+    if (!allowedConfigKeys.has(key)) {
+      return importValidationFailure(`Unknown config key in settings backup: ${key}`, 'config');
+    }
+    if (!Object.prototype.hasOwnProperty.call(config, key) || !Object.is(config[key], payload.config[key])) {
+      return importValidationFailure(`Invalid config value in settings backup: ${key}`, 'config');
+    }
+  }
+
+  const whitelist = validateImportDomainList(payload.whitelist, 'whitelist');
+  if (!whitelist.ok) return importValidationFailure(whitelist.error, 'whitelist');
+  const fprWhitelist = validateImportDomainList(payload.fprWhitelist, 'fprWhitelist');
+  if (!fprWhitelist.ok) return importValidationFailure(fprWhitelist.error, 'fprWhitelist');
+
+  if (!Array.isArray(payload.proxyConfigs)) {
+    return importValidationFailure('proxyConfigs must be an array', 'proxyConfigs');
+  }
+  if (payload.proxyConfigs.length > 100) {
+    return importValidationFailure('Proxy config limit is 100', 'proxyConfigs');
+  }
+  const proxyValidation = await validateProxyConfigsForStorage(
+    payload.proxyConfigs.map(pc => ({ ...pc, credentialAction: 'clear' })),
+    []
+  );
+  if (!proxyValidation.ok || proxyValidation.droppedCount > 0 || proxyValidation.errors.length > 0) {
+    return importValidationFailure(
+      proxyValidation.errors[0] || 'Invalid proxy configuration in settings backup',
+      'proxyConfigs'
+    );
+  }
+
+  if (!Array.isArray(payload.subscriptions)) {
+    return importValidationFailure('subscriptions must be an array', 'subscriptions');
+  }
+  if (payload.subscriptions.length > 50) {
+    return importValidationFailure('Subscription import limit is 50', 'subscriptions');
+  }
+  const subscriptions = [];
+  for (let index = 0; index < payload.subscriptions.length; index++) {
+    const candidate = payload.subscriptions[index];
+    if (!isImportObject(candidate) || !isValidSubscriptionId(candidate.id)) {
+      return importValidationFailure(`Invalid subscription at index ${index}`, 'subscriptions');
+    }
+    if (candidate.name !== undefined && typeof candidate.name !== 'string') {
+      return importValidationFailure(`Invalid subscription name at index ${index}`, 'subscriptions');
+    }
+    if (candidate.enabled !== undefined && typeof candidate.enabled !== 'boolean') {
+      return importValidationFailure(`Invalid subscription enabled state at index ${index}`, 'subscriptions');
+    }
+    const sanitized = sanitizeImportedSubscription(candidate);
+    if (!sanitized) {
+      return importValidationFailure(`Invalid subscription at index ${index}`, 'subscriptions');
+    }
+    subscriptions.push(sanitized);
+  }
+
+  const userScriptlets = stageUserScriptletSettings(payload.userScriptlets, { importedAt: Date.now() });
+  if (!userScriptlets.ok) {
+    return importValidationFailure(userScriptlets.error || 'Invalid user-scriptlet settings', 'userScriptlets');
+  }
+
+  return {
+    ok: true,
+    config,
+    whitelist: whitelist.value,
+    fprWhitelist: fprWhitelist.value,
+    proxyValidation,
+    subscriptions,
+    userScriptlets
+  };
+}
+
+async function reconcileSettingsImportRuntime(config, proxyConfigs, options = {}) {
+  const steps = [
+    ['dnr', () => updateDNRState()],
+    ['subscription-runtime', () => reconcileSubscriptionRuntimeState()],
+    ['user-scripts', () => syncUserScripts()],
+    ['proxy', () => syncProxyState(proxyConfigs)],
+    ['webrtc', () => syncWebRtcLeakProtection(config, proxyConfigs)],
+    ['browser-privacy', () => syncBrowserPrivacyHardening(config)],
+    ['geolocation', () => syncGeolocationProtection(config)]
+  ];
+  const errors = [];
+  for (const [step, task] of steps) {
+    try {
+      let result;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        result = await task();
+        if (result?.stale !== true) break;
+      }
+      if (result && typeof result === 'object' && (result.ok === false || result.stale === true)) {
+        const nestedError = Array.isArray(result.results)
+          ? result.results.find(item => item?.error)?.error
+          : null;
+        throw new Error(result.error || nestedError || `${step} did not reach the requested state`);
+      }
+    } catch (error) {
+      errors.push({ step, error: importErrorMessage(error) });
+      if (options.continueOnError !== true) break;
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+async function restoreSettingsImportSnapshot(snapshot) {
+  const restoreValues = {};
+  const removeKeys = [];
+  for (const key of SETTINGS_IMPORT_SNAPSHOT_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(snapshot, key)) restoreValues[key] = snapshot[key];
+    else removeKeys.push(key);
+  }
+
+  const storageErrors = [];
+  if (Object.keys(restoreValues).length > 0) {
+    try {
+      await chrome.storage.local.set(restoreValues);
+    } catch (error) {
+      storageErrors.push({ step: 'storage-set', error: importErrorMessage(error) });
+    }
+  }
+  if (removeKeys.length > 0) {
+    try {
+      await chrome.storage.local.remove(removeKeys);
+    } catch (error) {
+      storageErrors.push({ step: 'storage-remove', error: importErrorMessage(error) });
+    }
+  }
+
+  const oldConfig = isImportObject(snapshot.config) ? snapshot.config : {};
+  const oldProxyConfigs = Array.isArray(snapshot.proxyConfigs) ? snapshot.proxyConfigs : [];
+  const runtime = await reconcileSettingsImportRuntime(oldConfig, oldProxyConfigs, { continueOnError: true });
+
+  // DNR reconciliation refreshes these derived counters. Restore their exact
+  // prior presence/value after runtime recovery so rollback matches the
+  // original storage image even when those keys were previously absent.
+  const derivedValues = {};
+  const derivedRemovals = [];
+  for (const key of ['appliedNetworkRuleCount', 'appliedNetworkRulesPerSub']) {
+    if (Object.prototype.hasOwnProperty.call(snapshot, key)) derivedValues[key] = snapshot[key];
+    else derivedRemovals.push(key);
+  }
+  if (Object.keys(derivedValues).length > 0) {
+    try {
+      await chrome.storage.local.set(derivedValues);
+    } catch (error) {
+      storageErrors.push({ step: 'storage-finalize-set', error: importErrorMessage(error) });
+    }
+  }
+  if (derivedRemovals.length > 0) {
+    try {
+      await chrome.storage.local.remove(derivedRemovals);
+    } catch (error) {
+      storageErrors.push({ step: 'storage-finalize-remove', error: importErrorMessage(error) });
+    }
+  }
+
+  const errors = [...storageErrors, ...runtime.errors];
+  return {
+    attempted: true,
+    succeeded: errors.length === 0,
+    storageRestored: storageErrors.length === 0,
+    runtimeRestored: storageErrors.length === 0 && runtime.ok,
+    errors
+  };
+}
+
+async function settingsImportFailure(phase, step, error, snapshot) {
+  const rollback = await restoreSettingsImportSnapshot(snapshot);
+  if (!rollback.succeeded) {
+    return {
+      ok: false,
+      phase: 'rollback',
+      failedPhase: phase,
+      step,
+      error: 'Settings import failed and rollback was incomplete',
+      cause: importErrorMessage(error),
+      rollback
+    };
+  }
+  return {
+    ok: false,
+    phase,
+    step,
+    error: `Settings import ${phase} failed: ${importErrorMessage(error)}`,
+    rollback
   };
 }
 
@@ -619,79 +862,104 @@ async function handleConfigExport() {
   };
 }
 
-async function handleConfigImport(msg) {
+function handleConfigImport(msg) {
+  return serializeConfigMutation(() => performConfigImport(msg));
+}
+
+async function performConfigImport(msg) {
   const payload = msg?.settings;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-    return { ok: false, error: 'Invalid settings backup' };
+  let validation;
+  try {
+    validation = await validateSettingsImportPayload(payload);
+  } catch (error) {
+    return importValidationFailure(`Settings backup validation failed: ${importErrorMessage(error)}`);
   }
-  if (payload.schema !== 'chroma-settings') {
-    return { ok: false, error: 'Unsupported settings backup' };
+  if (!validation.ok) return validation;
+
+  let snapshot;
+  try {
+    snapshot = await chrome.storage.local.get(SETTINGS_IMPORT_SNAPSHOT_KEYS);
+  } catch (error) {
+    return {
+      ok: false,
+      phase: 'commit',
+      step: 'storage-snapshot',
+      error: `Settings import snapshot failed: ${importErrorMessage(error)}`,
+      rollback: { attempted: false, succeeded: true, storageRestored: true, runtimeRestored: true, errors: [] }
+    };
   }
 
-  const config = validateConfig(payload.config || {});
-  const whitelist = sanitizeDomainList(payload.whitelist);
-  const fprWhitelist = sanitizeDomainList(payload.fprWhitelist);
-  const existing = await chrome.storage.local.get(['config', 'proxyConfigs']);
-  const proxyValidation = await validateProxyConfigsForStorage(
-    Array.isArray(payload.proxyConfigs)
-      ? payload.proxyConfigs.slice(0, 100).map(pc => ({ ...pc, credentialAction: 'clear' }))
-      : [],
-    existing.proxyConfigs || []
-  );
-  if (!proxyValidation.ok) return { ok: false, error: proxyValidation.errors[0] };
+  let subscriptionImport;
+  try {
+    subscriptionImport = stageCustomSubscriptions(
+      validation.subscriptions,
+      snapshot,
+      validation.config
+    );
+  } catch (error) {
+    return importValidationFailure(`Subscription staging failed: ${importErrorMessage(error)}`, 'subscriptions');
+  }
+  if (!subscriptionImport.ok) {
+    return importValidationFailure(subscriptionImport.error || 'Invalid subscription settings', 'subscriptions');
+  }
 
-  const importedCustomSubs = Array.isArray(payload.subscriptions)
-    ? payload.subscriptions.slice(0, 50).map(sanitizeImportedSubscription).filter(Boolean)
-    : [];
-  const subscriptionImport = await importCustomSubscriptions(importedCustomSubs);
-  const userScriptletImport = await importUserScriptletSettings(payload.userScriptlets);
-
-  await chrome.storage.local.set({
+  const config = validation.config;
+  const proxyConfigs = validation.proxyValidation.configs;
+  const stagedStorage = {
     config,
-    whitelist,
-    fprWhitelist,
-    proxyConfigs: proxyValidation.configs
-  });
-  await syncUserScripts();
-  const wasDNRActive = existing.config?.enabled !== false && existing.config?.networkBlocking !== false;
-  const isDNRActive = config.enabled !== false && config.networkBlocking !== false;
-  if (isDNRActive !== wasDNRActive) {
-    await updateDNRState(isDNRActive);
-  } else if (isDNRActive) {
-    await syncWhitelistRules();
-    await syncDynamicRules();
+    whitelist: validation.whitelist,
+    fprWhitelist: validation.fprWhitelist,
+    proxyConfigs,
+    ...subscriptionImport.storage,
+    ...validation.userScriptlets.storage
+  };
+
+  try {
+    await chrome.storage.local.set(stagedStorage);
+  } catch (error) {
+    return settingsImportFailure('commit', 'storage-commit', error, snapshot);
   }
-  await syncWebRtcLeakProtection(config, proxyValidation.configs);
-  await syncBrowserPrivacyHardening(config);
-  await syncGeolocationProtection(config);
-  await notifyConfigChanged(config);
+
+  const reconciliation = await reconcileSettingsImportRuntime(config, proxyConfigs);
+  if (!reconciliation.ok) {
+    const failure = reconciliation.errors[0];
+    return settingsImportFailure('reconciliation', failure.step, failure.error, snapshot);
+  }
+
+  try {
+    await notifyConfigChanged(config);
+  } catch {
+    // Content notifications are best-effort. Stored state and authoritative
+    // background runtime have already reconciled successfully.
+  }
 
   return {
     ok: true,
     imported: {
       configKeys: Object.keys(config).length,
-      whitelist: whitelist.length,
-      fprWhitelist: fprWhitelist.length,
-      proxyConfigs: proxyValidation.configs.length,
+      whitelist: validation.whitelist.length,
+      fprWhitelist: validation.fprWhitelist.length,
+      proxyConfigs: proxyConfigs.length,
       subscriptions: subscriptionImport.importedCount || 0,
-      userScriptletSources: userScriptletImport.importedSources || 0,
-      userScriptletRules: userScriptletImport.importedRules || 0
+      userScriptletSources: validation.userScriptlets.importedSources || 0,
+      userScriptletRules: validation.userScriptlets.importedRules || 0
     },
-    droppedProxyCount: proxyValidation.droppedCount,
-    proxyErrors: proxyValidation.errors
+    droppedProxyCount: validation.proxyValidation.droppedCount,
+    proxyErrors: validation.proxyValidation.errors
   };
 }
 
-async function handleWhitelistRemove(msg) {
-  const { whitelist = [] } = await chrome.storage.local.get('whitelist');
-  const domain = normalizeDomain(msg.domain);
-  const next = domain ? whitelist.filter(d => d !== domain) : whitelist;
-  if (next.length !== whitelist.length) {
-    await chrome.storage.local.set({ whitelist: next });
-    await syncWhitelistRules();
-    await syncDynamicRulesIfNetworkBlockingActive();
-  }
-  return { ok: true };
+function handleWhitelistRemove(msg) {
+  return serializeWhitelistMutation(async () => {
+    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
+    const domain = normalizeDomain(msg.domain);
+    const next = domain ? whitelist.filter(d => d !== domain) : whitelist;
+    if (next.length !== whitelist.length) {
+      await chrome.storage.local.set({ whitelist: next });
+      await syncWhitelistRules();
+    }
+    return { ok: true };
+  });
 }
 
 // ─── FPR WHITELIST ─────
@@ -941,30 +1209,12 @@ async function handleUserScriptletRulesSet(msg) {
 
 // ─── STATS / LOG ─────
 
-function getSenderDomain(sender) {
-  const url = sender?.tab?.url || sender?.url || '';
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.hostname : null;
-  } catch {
-    return null;
-  }
-}
-
 async function handleStatsGet(msg) {
   return getStatsSnapshot(msg?.options || {});
 }
 
 async function handleStatsEventBatch(msg, sender) {
-  const events = Array.isArray(msg?.events)
-    ? msg.events.filter(event => event && typeof event === 'object').slice(0, 100)
-    : [];
-  const senderDomain = getSenderDomain(sender);
-  recordStatsEvents(events.map(event => ({
-    ...event,
-    domain: senderDomain || event.domain
-  })));
-  return { ok: true, accepted: events.length };
+  return recordContentStatsEvents(msg?.events, sender);
 }
 
 async function handleStatsReset(msg) {

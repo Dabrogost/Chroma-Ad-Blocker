@@ -18,7 +18,7 @@ const backgroundJsCode = backgroundJsCodeRaw
     var setSubscriptionEnabled  = async () => ({ ok: true });
     var addSubscription         = async () => ({ ok: true });
     var removeSubscription      = async () => ({ ok: true });
-    var importCustomSubscriptions = async () => ({ ok: true, importedCount: 0 });
+    var reconcileSubscriptionRuntimeState = async () => ({ ok: true });
   `)
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
@@ -35,8 +35,126 @@ const backgroundJsCode = backgroundJsCodeRaw
 
 const plain = value => JSON.parse(JSON.stringify(value));
 
+const SETTINGS_IMPORT_STORAGE_KEYS = [
+  'config',
+  'whitelist',
+  'fprWhitelist',
+  'proxyConfigs',
+  'subscriptions',
+  'sub_network_rules',
+  'sub_cosmetic_rules',
+  'sub_scriptlet_rules',
+  'subscriptionCosmeticRules',
+  'subscriptionScriptletRules',
+  'userScriptletSources',
+  'userScriptletResources',
+  'userScriptletRuleText',
+  'userScriptletRules'
+];
+const CONFIG_KEYS = [
+  'networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts',
+  'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled',
+  'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass',
+  'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening',
+  'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks', 'quietConsole'
+];
+
+function defaultStageCustomSubscriptions(subscriptions, current = {}) {
+  const imported = Array.isArray(subscriptions) ? subscriptions : [];
+  return {
+    ok: true,
+    importedCount: imported.length,
+    changed: true,
+    storage: {
+      subscriptions: imported,
+      sub_network_rules: {},
+      sub_cosmetic_rules: {},
+      sub_scriptlet_rules: {},
+      subscriptionCosmeticRules: [],
+      subscriptionScriptletRules: []
+    }
+  };
+}
+
+function defaultStageUserScriptletSettings(payload = {}) {
+  const sources = Array.isArray(payload?.sources)
+    ? payload.sources.map((source, index) => ({
+        id: `imported-${index}`,
+        name: source.name || '',
+        url: source.url
+      }))
+    : [];
+  const ruleText = typeof payload?.ruleText === 'string' ? payload.ruleText : '';
+  const rules = ruleText ? [{ scriptlet: 'imported-scriptlet' }] : [];
+  return {
+    ok: true,
+    importedSources: sources.length,
+    importedRules: rules.length,
+    storage: {
+      userScriptletSources: sources,
+      userScriptletResources: {},
+      userScriptletRuleText: ruleText,
+      userScriptletRules: rules
+    }
+  };
+}
+
+function makeSettingsImportPayload(overrides = {}) {
+  return {
+    schema: 'chroma-settings',
+    version: 1,
+    config: { enabled: false, networkBlocking: true, acceleration: true },
+    whitelist: ['imported.example'],
+    fprWhitelist: ['login.imported.example'],
+    proxyConfigs: [],
+    subscriptions: [{
+      id: 'custom-imported',
+      name: 'Imported list',
+      url: 'https://lists.example.com/imported.txt',
+      enabled: true,
+      isCustom: true
+    }],
+    userScriptlets: {
+      sources: [{ name: 'Imported', url: 'https://cdn.example.com/imported.js' }],
+      ruleText: 'imported.example##+js(imported-scriptlet)'
+    },
+    ...overrides
+  };
+}
+
+function makeSettingsImportStorage({ omit = [] } = {}) {
+  const storage = {
+    config: { enabled: true, networkBlocking: true, acceleration: false },
+    whitelist: ['old.example'],
+    fprWhitelist: ['login.old.example'],
+    proxyConfigs: [],
+    subscriptions: [{
+      id: 'custom-old',
+      name: 'Old list',
+      url: 'https://lists.example.com/old.txt',
+      enabled: true,
+      isCustom: true
+    }],
+    sub_network_rules: { 'custom-old': [{ id: 'old-network' }] },
+    sub_cosmetic_rules: { 'custom-old': [{ selector: '.old-ad' }] },
+    sub_scriptlet_rules: { 'custom-old': [{ scriptlet: 'old-scriptlet' }] },
+    subscriptionCosmeticRules: [{ selector: '.old-ad', sourceId: 'custom-old' }],
+    subscriptionScriptletRules: [{ scriptlet: 'old-scriptlet', sourceId: 'custom-old' }],
+    userScriptletSources: [{ id: 'old-source', url: 'https://cdn.example.com/old.js' }],
+    userScriptletResources: { old: { code: 'old executable code' } },
+    userScriptletRuleText: 'old.example##+js(old-scriptlet)',
+    userScriptletRules: [{ scriptlet: 'old-scriptlet' }],
+    unrelatedSetting: { preserve: true }
+  };
+  for (const key of omit) delete storage[key];
+  return storage;
+}
+
 const handlersJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'handlers.js'), 'utf8')
   .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?\s*/g, '')
+  .replace(/^export\s+/gm, '');
+
+const remoteUrlJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'remoteUrl.js'), 'utf8')
   .replace(/^export\s+/gm, '');
 
 const parserJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'subscriptions', 'parser.js'), 'utf8')
@@ -85,36 +203,42 @@ const MSG = {
 
 function loadHandlers(options = {}) {
   const storage = options.storage || {};
+  let configMutationTail = Promise.resolve();
   const sandbox = {
     MSG,
+    CONFIG_KEYS,
     URL,
     Number,
     encryptAuth: options.encryptAuth || (async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })),
     validateConfig: options.validateConfig || ((config) => config || {}),
+    serializeConfigMutation: task => {
+      const run = configMutationTail.then(task);
+      configMutationTail = run.catch(() => {});
+      return run;
+    },
+    isNetworkProtectionActive: options.isNetworkProtectionActive || (config => config?.enabled !== false && config?.networkBlocking !== false),
     updateDNRState: options.updateDNRState || (async () => {}),
     syncWhitelistRules: options.syncWhitelistRules || (async () => {}),
-    syncDynamicRules: options.syncDynamicRules || (async () => {}),
     checkForUpdate: options.checkForUpdate || (async () => ({ updateAvailable: false })),
     resetRequestLog: options.resetRequestLog || (async () => {}),
     getMergedLog: options.getMergedLog || (async () => []),
     runProxyTest: options.runProxyTest || (async () => ({ ok: true })),
+    syncProxyState: options.syncProxyState || (async () => ({ ok: true })),
     getHealthStatus: options.getHealthStatus || (async () => ({ ok: true })),
     exportStats: options.exportStats || (async () => ({})),
     getSubscriptions: options.getSubscriptions || (async () => []),
-    importCustomSubscriptions: options.importCustomSubscriptions || (async (subscriptions) => {
-      storage.subscriptions = subscriptions;
-      return { ok: true, importedCount: subscriptions.length };
-    }),
+    stageCustomSubscriptions: options.stageCustomSubscriptions || defaultStageCustomSubscriptions,
+    reconcileSubscriptionRuntimeState: options.reconcileSubscriptionRuntimeState || (async () => ({ ok: true })),
     getUserScriptletSettings: options.getUserScriptletSettings || (async () => ({ sources: [], ruleText: '', parsedRuleCount: 0 })),
     addUserScriptletSource: options.addUserScriptletSource || (async () => ({ ok: true })),
     refreshUserScriptletSource: options.refreshUserScriptletSource || (async () => ({ ok: true })),
     removeUserScriptletSource: options.removeUserScriptletSource || (async () => ({ ok: true })),
     setUserScriptletRuleText: options.setUserScriptletRuleText || (async () => ({ ok: true, parsedRuleCount: 0 })),
     exportUserScriptletSettings: options.exportUserScriptletSettings || (async () => ({ sources: [], ruleText: '' })),
-    importUserScriptletSettings: options.importUserScriptletSettings || (async () => ({ ok: true, importedSources: 0, importedRules: 0 })),
+    stageUserScriptletSettings: options.stageUserScriptletSettings || defaultStageUserScriptletSettings,
     syncUserScripts: options.syncUserScripts || (async () => {}),
     getStatsSnapshot: options.getStatsSnapshot || (async () => ({})),
-    recordStatsEvents: options.recordStatsEvents || (async () => {}),
+    recordContentStatsEvents: options.recordContentStatsEvents || (async () => ({ ok: true, accepted: 0 })),
     resetStats: options.resetStats || (async () => {}),
     setStatsSettings: options.setStatsSettings || (async () => ({})),
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
@@ -125,11 +249,20 @@ function loadHandlers(options = {}) {
       storage: {
         local: {
           get: options.storageGet || (async (key) => {
-            if (typeof key === 'string') return { [key]: storage[key] };
-            if (Array.isArray(key)) return Object.fromEntries(key.map(name => [name, storage[name]]));
-            return {};
+            if (typeof key === 'string') {
+              return Object.prototype.hasOwnProperty.call(storage, key) ? { [key]: storage[key] } : {};
+            }
+            if (Array.isArray(key)) {
+              return Object.fromEntries(key
+                .filter(name => Object.prototype.hasOwnProperty.call(storage, name))
+                .map(name => [name, storage[name]]));
+            }
+            return { ...storage };
           }),
-          set: options.storageSet || (async (values) => Object.assign(storage, values))
+          set: options.storageSet || (async (values) => Object.assign(storage, values)),
+          remove: options.storageRemove || (async (keys) => {
+            for (const key of Array.isArray(keys) ? keys : [keys]) delete storage[key];
+          })
         }
       },
       tabs: { query: async () => [], sendMessage: async () => {} }
@@ -139,8 +272,113 @@ function loadHandlers(options = {}) {
   sandbox._storage = storage;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(remoteUrlJsCode, sandbox);
   vm.runInContext(handlersJsCode, sandbox);
   return sandbox;
+}
+
+function loadTransactionalImportHarness(options = {}) {
+  const storage = options.storage || makeSettingsImportStorage({ omit: options.omit || [] });
+  const calls = {
+    get: 0,
+    set: 0,
+    remove: 0,
+    dnr: 0,
+    subscriptionRuntime: 0,
+    userScripts: 0,
+    proxy: 0,
+    webRtc: 0,
+    browserPrivacy: 0,
+    geolocation: 0
+  };
+  const commitImages = [];
+  const runtimeSnapshots = [];
+  const runtimeState = {
+    dnr: 'custom-old',
+    subscriptionRuntime: 'custom-old',
+    userScripts: 'custom-old',
+    proxy: 'custom-old',
+    webRtc: 'custom-old',
+    browserPrivacy: 'custom-old',
+    geolocation: 'custom-old'
+  };
+  let rollbackBegan = false;
+  const staleReturned = new Set();
+
+  const runtimeStep = name => async () => {
+    calls[name]++;
+    runtimeSnapshots.push({
+      name,
+      rollback: rollbackBegan,
+      config: plain(storage.config || null),
+      subscriptions: plain(storage.subscriptions || null),
+      userScriptletRuleText: storage.userScriptletRuleText
+    });
+    const forwardFailure = !rollbackBegan && options.failRuntime === name;
+    if (!rollbackBegan && options.staleRuntimeOnce === name && !staleReturned.has(name)) {
+      staleReturned.add(name);
+      return { ok: false, stale: true };
+    }
+    if (!rollbackBegan && options.failRuntimeResult === name) {
+      return { ok: false, error: `${name} semantic failure` };
+    }
+    if (forwardFailure && options.failRuntimeTiming !== 'after') {
+      throw new Error(`${name} forward failure`);
+    }
+    if (rollbackBegan && options.failRollbackRuntime === name) {
+      throw new Error(`${name} rollback failure`);
+    }
+    runtimeState[name] = storage.subscriptions?.[0]?.id || 'none';
+    if (forwardFailure) throw new Error(`${name} forward failure after mutation`);
+  };
+
+  const sandbox = loadHandlers({
+    storage,
+    validateConfig: options.validateConfig,
+    stageCustomSubscriptions: options.stageCustomSubscriptions || defaultStageCustomSubscriptions,
+    stageUserScriptletSettings: options.stageUserScriptletSettings || defaultStageUserScriptletSettings,
+    storageGet: async keys => {
+      calls.get++;
+      if (options.failSnapshotRead) throw new Error('snapshot read failed');
+      if (typeof keys === 'string') {
+        return Object.prototype.hasOwnProperty.call(storage, keys) ? { [keys]: storage[keys] } : {};
+      }
+      if (Array.isArray(keys)) {
+        return Object.fromEntries(keys
+          .filter(key => Object.prototype.hasOwnProperty.call(storage, key))
+          .map(key => [key, storage[key]]));
+      }
+      return { ...storage };
+    },
+    storageSet: async values => {
+      calls.set++;
+      if (calls.set === 1) {
+        commitImages.push(plain(values));
+        if (options.commitFailure === 'before') throw new Error('commit failed before write');
+        Object.assign(storage, values);
+        if (options.commitFailure === 'after') throw new Error('commit failed after write');
+        return;
+      }
+      rollbackBegan = true;
+      if (options.failRollbackStorage === 'set') throw new Error('rollback set failed');
+      Object.assign(storage, values);
+    },
+    storageRemove: async keys => {
+      calls.remove++;
+      rollbackBegan = true;
+      if (options.failRollbackStorage === 'remove') throw new Error('rollback remove failed');
+      for (const key of Array.isArray(keys) ? keys : [keys]) delete storage[key];
+    },
+    updateDNRState: runtimeStep('dnr'),
+    reconcileSubscriptionRuntimeState: runtimeStep('subscriptionRuntime'),
+    syncUserScripts: runtimeStep('userScripts'),
+    syncProxyState: runtimeStep('proxy'),
+    syncWebRtcLeakProtection: runtimeStep('webRtc'),
+    syncBrowserPrivacyHardening: runtimeStep('browserPrivacy'),
+    syncGeolocationProtection: runtimeStep('geolocation')
+  });
+
+  return { sandbox, storage, calls, commitImages, runtimeSnapshots, runtimeState };
 }
 
 function loadParser() {
@@ -310,9 +548,26 @@ test('Security Hardening - handlers.js', async (t) => {
     }
   });
 
+  await t.test('delegates content telemetry to the authoritative stats ingress', async () => {
+    let captured = null;
+    const sandbox = loadHandlers({
+      recordContentStatsEvents: async (events, sender) => {
+        captured = { events, sender };
+        return { ok: true, accepted: 1 };
+      }
+    });
+    const events = [{ eventType: 'cosmetic_hide', count: 100000 }];
+    const sender = { tab: { id: 7, url: 'https://example.test/' } };
+
+    const result = await sandbox.handleStatsEventBatch({ events }, sender);
+
+    assert.deepStrictEqual(plain(result), { ok: true, accepted: 1 });
+    assert.strictEqual(captured.events, events);
+    assert.strictEqual(captured.sender, sender);
+  });
+
   await t.test('normalizes whitelist and FPR whitelist additions', async () => {
     let syncCount = 0;
-    let dynamicSyncCount = 0;
     const sandbox = loadHandlers({
       storage: {
         whitelist: [],
@@ -320,9 +575,6 @@ test('Security Hardening - handlers.js', async (t) => {
       },
       syncWhitelistRules: async () => {
         syncCount++;
-      },
-      syncDynamicRules: async () => {
-        dynamicSyncCount++;
       }
     });
 
@@ -334,12 +586,10 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['example.com']);
     assert.deepStrictEqual(plain(sandbox._storage.fprWhitelist), ['login.example.com']);
     assert.strictEqual(syncCount, 1);
-    assert.strictEqual(dynamicSyncCount, 1);
   });
 
-  await t.test('whitelist changes do not re-sync dynamic rules when network blocking is disabled', async () => {
+  await t.test('whitelist changes use one gated reconciliation when network blocking is disabled', async () => {
     let syncCount = 0;
-    let dynamicSyncCount = 0;
     const sandbox = loadHandlers({
       storage: {
         config: { networkBlocking: false },
@@ -347,9 +597,6 @@ test('Security Hardening - handlers.js', async (t) => {
       },
       syncWhitelistRules: async () => {
         syncCount++;
-      },
-      syncDynamicRules: async () => {
-        dynamicSyncCount++;
       }
     });
 
@@ -357,7 +604,115 @@ test('Security Hardening - handlers.js', async (t) => {
 
     assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['example.com']);
     assert.strictEqual(syncCount, 1);
-    assert.strictEqual(dynamicSyncCount, 0);
+  });
+
+  await t.test('concurrent whitelist mutations preserve every requested edit', async () => {
+    const sandbox = loadHandlers({ storage: { whitelist: ['remove.example'] } });
+
+    await Promise.all([
+      sandbox.handleWhitelistAdd({ domain: 'first.example' }),
+      sandbox.handleWhitelistAdd({ domain: 'second.example' }),
+      sandbox.handleWhitelistRemove({ domain: 'remove.example' })
+    ]);
+
+    assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['first.example', 'second.example']);
+  });
+
+  await t.test('rapid config toggles are stored and reconciled in request order', async () => {
+    const storage = { config: { enabled: true, networkBlocking: true } };
+    const reconciledStates = [];
+    const sandbox = loadHandlers({
+      storage,
+      updateDNRState: async () => {
+        reconciledStates.push(storage.config.enabled !== false && storage.config.networkBlocking !== false);
+      }
+    });
+
+    await Promise.all([
+      sandbox.handleConfigSet({ config: { networkBlocking: false } }),
+      sandbox.handleConfigSet({ config: { networkBlocking: true } })
+    ]);
+    assert.strictEqual(storage.config.networkBlocking, true);
+    assert.deepStrictEqual(reconciledStates, [false, true]);
+
+    reconciledStates.length = 0;
+    await Promise.all([
+      sandbox.handleConfigSet({ config: { networkBlocking: false } }),
+      sandbox.handleConfigSet({ config: { networkBlocking: true } }),
+      sandbox.handleConfigSet({ config: { networkBlocking: false } })
+    ]);
+    assert.strictEqual(storage.config.networkBlocking, false);
+    assert.deepStrictEqual(reconciledStates, [false, true, false]);
+  });
+
+  await t.test('master config changes await subscription, userScripts, and proxy synchronization', async () => {
+    const storage = { config: { enabled: true, networkBlocking: true } };
+    const subscriptionRuntimeStates = [];
+    const scriptletSyncStates = [];
+    const proxySyncStates = [];
+    const webRtcSyncStates = [];
+    const browserPrivacySyncStates = [];
+    const geolocationSyncStates = [];
+    const sandbox = loadHandlers({
+      storage,
+      reconcileSubscriptionRuntimeState: async () => {
+        subscriptionRuntimeStates.push(storage.config.enabled !== false);
+      },
+      syncUserScripts: async () => {
+        scriptletSyncStates.push(storage.config.enabled !== false);
+      },
+      syncProxyState: async () => {
+        proxySyncStates.push(storage.config.enabled !== false);
+      },
+      syncWebRtcLeakProtection: async config => { webRtcSyncStates.push(config.enabled !== false); },
+      syncBrowserPrivacyHardening: async config => { browserPrivacySyncStates.push(config.enabled !== false); },
+      syncGeolocationProtection: async config => { geolocationSyncStates.push(config.enabled !== false); }
+    });
+
+    await Promise.all([
+      sandbox.handleConfigSet({ config: { enabled: false } }),
+      sandbox.handleConfigSet({ config: { enabled: true } })
+    ]);
+
+    assert.strictEqual(storage.config.enabled, true);
+    assert.deepStrictEqual(subscriptionRuntimeStates, [false, true]);
+    assert.deepStrictEqual(scriptletSyncStates, [false, true]);
+    assert.deepStrictEqual(proxySyncStates, [false, true]);
+    assert.deepStrictEqual(webRtcSyncStates, [false, true]);
+    assert.deepStrictEqual(browserPrivacySyncStates, [false, true]);
+    assert.deepStrictEqual(geolocationSyncStates, [false, true]);
+  });
+
+  await t.test('settings import stores the global gate before subscription reconciliation', async () => {
+    const storage = { config: { enabled: true, networkBlocking: true }, proxyConfigs: [] };
+    let activeWhenDnrReconciled = null;
+    const sandbox = loadHandlers({
+      storage,
+      updateDNRState: async () => {
+        activeWhenDnrReconciled = storage.config.enabled !== false && storage.config.networkBlocking !== false;
+      }
+    });
+
+    const result = await sandbox.handleConfigImport({
+      settings: {
+        schema: 'chroma-settings',
+        version: 1,
+        config: { enabled: false, networkBlocking: true },
+        whitelist: [],
+        fprWhitelist: [],
+        proxyConfigs: [],
+        subscriptions: [{
+          id: 'custom-off',
+          name: 'Custom Off',
+          url: 'https://lists.example.com/off.txt',
+          enabled: true
+        }],
+        userScriptlets: { sources: [], ruleText: '' }
+      }
+    });
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(activeWhenDnrReconciled, false);
   });
 
   await t.test('normalizes valid proxy configs and drops invalid entries', async () => {
@@ -564,11 +919,7 @@ test('Security Hardening - handlers.js', async (t) => {
       exportUserScriptletSettings: async () => ({
         sources: [{ name: 'Custom', url: 'https://cdn.example.com/resources.js' }],
         ruleText: 'example.com##+js(custom-scriptlet)'
-      }),
-      importUserScriptletSettings: async (payload) => {
-        storage.userScriptlets = payload;
-        return { ok: true, importedSources: payload?.sources?.length || 0, importedRules: payload?.ruleText ? 1 : 0 };
-      }
+      })
     });
     sandbox.registerAll({
       markSensitive: () => {},
@@ -592,7 +943,8 @@ test('Security Hardening - handlers.js', async (t) => {
     const imported = await handlers.CONFIG_IMPORT({
       settings: {
         schema: 'chroma-settings',
-        config: { enabled: false, accelerationSpeed: 12, unknown: true },
+        version: 1,
+        config: { enabled: false, accelerationSpeed: 12 },
         whitelist: ['example.org'],
         fprWhitelist: ['login.example.org'],
         proxyConfigs: [{
@@ -626,8 +978,298 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual(storage.proxyConfigs[0].authCipher, undefined);
     assert.deepStrictEqual(plain(storage.whitelist), ['example.org']);
     assert.strictEqual(storage.subscriptions.some(sub => sub.id === 'custom_import'), true);
-    assert.strictEqual(storage.userScriptlets.ruleText, 'example.org##+js(imported-scriptlet)');
-    assert.deepStrictEqual(dnrUpdates, [false]);
+    assert.strictEqual(storage.userScriptletRuleText, 'example.org##+js(imported-scriptlet)');
+    assert.strictEqual(storage.userScriptletRules.length, 1);
+    assert.deepStrictEqual(dnrUpdates, [undefined]);
+  });
+
+  await t.test('settings import rejects unsupported versions and malformed staged sections before mutation', async () => {
+    for (const version of [undefined, 0, 2, '1']) {
+      const stageCalls = { subscriptions: 0, userScriptlets: 0 };
+      const { sandbox, storage, calls } = loadTransactionalImportHarness({
+        stageCustomSubscriptions: (...args) => {
+          stageCalls.subscriptions++;
+          return defaultStageCustomSubscriptions(...args);
+        },
+        stageUserScriptletSettings: (...args) => {
+          stageCalls.userScriptlets++;
+          return defaultStageUserScriptletSettings(...args);
+        }
+      });
+      const before = plain(storage);
+      const result = await sandbox.handleConfigImport({
+        settings: makeSettingsImportPayload({ version })
+      });
+
+      assert.strictEqual(result.ok, false, String(version));
+      assert.strictEqual(result.phase, 'validation', String(version));
+      assert.strictEqual(result.rollback?.attempted, false, String(version));
+      assert.deepStrictEqual(stageCalls, { subscriptions: 0, userScriptlets: 0 }, String(version));
+      assert.strictEqual(calls.get, 0, String(version));
+      assert.strictEqual(calls.set, 0, String(version));
+      assert.strictEqual(calls.remove, 0, String(version));
+      assert.strictEqual(calls.dnr + calls.userScripts, 0, String(version));
+      assert.deepStrictEqual(plain(storage), before, String(version));
+    }
+
+    for (const scenario of [
+      {
+        name: 'malformed config value',
+        options: { validateConfig: () => ({}) },
+        payload: makeSettingsImportPayload({ config: { enabled: 'false' } })
+      },
+      {
+        name: 'unknown config key',
+        options: {},
+        payload: makeSettingsImportPayload({ config: { enabled: false, futureToggle: true } })
+      },
+      {
+        name: 'subscription staging',
+        options: {
+          stageCustomSubscriptions: () => ({ ok: false, error: 'Malformed subscriptions' })
+        },
+        payload: makeSettingsImportPayload()
+      },
+      {
+        name: 'user-scriptlet parsing',
+        options: {
+          stageUserScriptletSettings: () => ({
+            ok: false,
+            error: 'Invalid user-scriptlet rule at line 1',
+            errors: [{ line: 1, message: 'Invalid scriptlet rule' }]
+          })
+        },
+        payload: makeSettingsImportPayload({
+          userScriptlets: { sources: [], ruleText: 'example.test##+js(' }
+        })
+      }
+    ]) {
+      const { sandbox, storage, calls } = loadTransactionalImportHarness(scenario.options);
+      const before = plain(storage);
+      const result = await sandbox.handleConfigImport({ settings: scenario.payload });
+
+      assert.strictEqual(result.ok, false, scenario.name);
+      assert.strictEqual(result.phase, 'validation', scenario.name);
+      assert.strictEqual(result.rollback?.attempted, false, scenario.name);
+      assert.strictEqual(calls.set, 0, scenario.name);
+      assert.strictEqual(calls.remove, 0, scenario.name);
+      assert.strictEqual(calls.dnr + calls.userScripts, 0, scenario.name);
+      assert.deepStrictEqual(plain(storage), before, scenario.name);
+    }
+  });
+
+  await t.test('settings import commits one complete storage image before reconciling runtime state', async () => {
+    const { sandbox, storage, calls, commitImages, runtimeSnapshots } = loadTransactionalImportHarness();
+    const result = await sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(calls.set, 1);
+    assert.strictEqual(calls.remove, 0);
+    assert.strictEqual(commitImages.length, 1);
+    assert.deepStrictEqual(
+      Object.keys(commitImages[0]).sort(),
+      SETTINGS_IMPORT_STORAGE_KEYS.slice().sort()
+    );
+    assert.deepStrictEqual(plain(storage.config), {
+      enabled: false,
+      networkBlocking: true,
+      acceleration: true
+    });
+    assert.deepStrictEqual(plain(storage.whitelist), ['imported.example']);
+    assert.deepStrictEqual(plain(storage.subscriptions.map(sub => sub.id)), ['custom-imported']);
+    assert.deepStrictEqual(plain(storage.sub_network_rules), {});
+    assert.strictEqual(storage.userScriptletRuleText, 'imported.example##+js(imported-scriptlet)');
+    assert.deepStrictEqual(plain(storage.userScriptletResources), {});
+    assert.deepStrictEqual(plain(storage.unrelatedSetting), { preserve: true });
+    assert.deepStrictEqual(
+      plain({
+        dnr: calls.dnr,
+        subscriptionRuntime: calls.subscriptionRuntime,
+        userScripts: calls.userScripts,
+        proxy: calls.proxy,
+        webRtc: calls.webRtc,
+        browserPrivacy: calls.browserPrivacy,
+        geolocation: calls.geolocation
+      }),
+      {
+        dnr: 1,
+        subscriptionRuntime: 1,
+        userScripts: 1,
+        proxy: 1,
+        webRtc: 1,
+        browserPrivacy: 1,
+        geolocation: 1
+      }
+    );
+    assert.strictEqual(runtimeSnapshots.every(snapshot => (
+      snapshot.config?.enabled === false &&
+      snapshot.subscriptions?.[0]?.id === 'custom-imported' &&
+      snapshot.userScriptletRuleText === 'imported.example##+js(imported-scriptlet)'
+    )), true);
+  });
+
+  await t.test('settings import reports snapshot read failures without mutation or rollback', async () => {
+    const { sandbox, storage, calls } = loadTransactionalImportHarness({ failSnapshotRead: true });
+    const before = plain(storage);
+    const result = await sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.phase, 'commit');
+    assert.strictEqual(result.step, 'storage-snapshot');
+    assert.strictEqual(result.rollback?.attempted, false);
+    assert.strictEqual(result.rollback?.succeeded, true);
+    assert.strictEqual(calls.set, 0);
+    assert.strictEqual(calls.remove, 0);
+    assert.strictEqual(calls.dnr + calls.userScripts, 0);
+    assert.deepStrictEqual(plain(storage), before);
+  });
+
+  await t.test('settings import restores the exact snapshot when the commit fails before or after mutation', async () => {
+    for (const commitFailure of ['before', 'after']) {
+      const { sandbox, storage, calls, runtimeSnapshots } = loadTransactionalImportHarness({
+        commitFailure,
+        omit: ['subscriptionScriptletRules', 'userScriptletResources']
+      });
+      const before = plain(storage);
+      const result = await sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+
+      assert.strictEqual(result.ok, false, commitFailure);
+      assert.strictEqual(result.phase, 'commit', commitFailure);
+      assert.strictEqual(typeof result.step, 'string', commitFailure);
+      assert.strictEqual(result.rollback?.attempted, true, commitFailure);
+      assert.strictEqual(result.rollback?.succeeded, true, commitFailure);
+      assert.strictEqual(result.rollback?.storageRestored, true, commitFailure);
+      assert.strictEqual(result.rollback?.runtimeRestored, true, commitFailure);
+      assert.deepStrictEqual(plain(result.rollback?.errors), [], commitFailure);
+      assert.strictEqual(calls.set >= 2, true, commitFailure);
+      assert.strictEqual(calls.remove >= 1, true, commitFailure);
+      assert.deepStrictEqual(plain(storage), before, commitFailure);
+      assert.strictEqual(runtimeSnapshots.filter(snapshot => snapshot.rollback).every(snapshot => (
+        snapshot.config?.enabled === true &&
+        snapshot.subscriptions?.[0]?.id === 'custom-old' &&
+        snapshot.userScriptletRuleText === 'old.example##+js(old-scriptlet)'
+      )), true, commitFailure);
+    }
+  });
+
+  await t.test('every failed runtime reconciliation rolls storage and runtime back to the prior image', async () => {
+    for (const failRuntime of [
+      'dnr',
+      'subscriptionRuntime',
+      'userScripts',
+      'proxy',
+      'webRtc',
+      'browserPrivacy',
+      'geolocation'
+    ]) {
+      for (const failRuntimeTiming of ['before', 'after']) {
+        const label = `${failRuntime}:${failRuntimeTiming}`;
+        const { sandbox, storage, calls, runtimeSnapshots, runtimeState } = loadTransactionalImportHarness({
+          failRuntime,
+          failRuntimeTiming,
+          omit: ['subscriptionCosmeticRules', 'userScriptletResources', 'userScriptletRules']
+        });
+        const before = plain(storage);
+        const result = await sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+
+        assert.strictEqual(result.ok, false, label);
+        assert.strictEqual(result.phase, 'reconciliation', label);
+        assert.strictEqual(typeof result.step, 'string', label);
+        assert.strictEqual(result.rollback?.attempted, true, label);
+        assert.strictEqual(result.rollback?.succeeded, true, label);
+        assert.strictEqual(result.rollback?.storageRestored, true, label);
+        assert.strictEqual(result.rollback?.runtimeRestored, true, label);
+        assert.deepStrictEqual(plain(result.rollback?.errors), [], label);
+        assert.deepStrictEqual(plain(storage), before, label);
+        assert.strictEqual(calls.remove >= 1, true, label);
+        assert.strictEqual(Object.values(runtimeState).every(value => value === 'custom-old'), true, label);
+
+        const rollbackSnapshots = runtimeSnapshots.filter(snapshot => snapshot.rollback);
+        assert.strictEqual(rollbackSnapshots.length >= 7, true, label);
+        assert.strictEqual(rollbackSnapshots.every(snapshot => (
+          snapshot.config?.enabled === true &&
+          snapshot.subscriptions?.[0]?.id === 'custom-old' &&
+          snapshot.userScriptletRuleText === 'old.example##+js(old-scriptlet)'
+        )), true, label);
+      }
+    }
+  });
+
+  await t.test('fulfilled semantic reconciliation failures also trigger rollback', async () => {
+    for (const failRuntimeResult of [
+      'dnr',
+      'subscriptionRuntime',
+      'userScripts',
+      'proxy',
+      'webRtc',
+      'browserPrivacy',
+      'geolocation'
+    ]) {
+      const { sandbox, storage } = loadTransactionalImportHarness({ failRuntimeResult });
+      const before = plain(storage);
+      const result = await sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+
+      assert.strictEqual(result.ok, false, failRuntimeResult);
+      assert.strictEqual(result.phase, 'reconciliation', failRuntimeResult);
+      assert.strictEqual(result.rollback?.succeeded, true, failRuntimeResult);
+      assert.deepStrictEqual(plain(storage), before, failRuntimeResult);
+    }
+  });
+
+  await t.test('stale reconciliations retry against the committed authoritative image', async () => {
+    for (const staleRuntimeOnce of [
+      'dnr',
+      'subscriptionRuntime',
+      'userScripts',
+      'proxy',
+      'webRtc',
+      'browserPrivacy',
+      'geolocation'
+    ]) {
+      const { sandbox, storage, calls } = loadTransactionalImportHarness({ staleRuntimeOnce });
+      const result = await sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+
+      assert.strictEqual(result.ok, true, staleRuntimeOnce);
+      assert.strictEqual(calls[staleRuntimeOnce], 2, staleRuntimeOnce);
+      assert.strictEqual(storage.config.enabled, false, staleRuntimeOnce);
+    }
+  });
+
+  await t.test('settings import surfaces storage and runtime rollback failures', async () => {
+    const storageRollback = loadTransactionalImportHarness({
+      failRuntime: 'dnr',
+      failRollbackStorage: 'set'
+    });
+    const storageResult = await storageRollback.sandbox.handleConfigImport({
+      settings: makeSettingsImportPayload()
+    });
+    assert.strictEqual(storageResult.ok, false);
+    assert.strictEqual(storageResult.phase, 'rollback');
+    assert.strictEqual(storageResult.failedPhase, 'reconciliation');
+    assert.strictEqual(storageResult.rollback?.attempted, true);
+    assert.strictEqual(storageResult.rollback?.succeeded, false);
+    assert.strictEqual(storageResult.rollback?.storageRestored, false);
+    assert.strictEqual(storageResult.rollback?.errors.some(error => /rollback set failed/i.test(
+      typeof error === 'string' ? error : (error?.error || error?.message || '')
+    )), true);
+
+    const runtimeRollback = loadTransactionalImportHarness({
+      failRuntime: 'dnr',
+      failRollbackRuntime: 'userScripts'
+    });
+    const runtimeResult = await runtimeRollback.sandbox.handleConfigImport({
+      settings: makeSettingsImportPayload()
+    });
+    assert.strictEqual(runtimeResult.ok, false);
+    assert.strictEqual(runtimeResult.phase, 'rollback');
+    assert.strictEqual(runtimeResult.failedPhase, 'reconciliation');
+    assert.strictEqual(runtimeResult.rollback?.attempted, true);
+    assert.strictEqual(runtimeResult.rollback?.succeeded, false);
+    assert.strictEqual(runtimeResult.rollback?.storageRestored, true);
+    assert.strictEqual(runtimeResult.rollback?.runtimeRestored, false);
+    assert.strictEqual(runtimeResult.rollback?.errors.some(error => /userScripts rollback failure/i.test(
+      typeof error === 'string' ? error : (error?.error || error?.message || '')
+    )), true);
   });
 
   await t.test('advanced user scriptlet mutations sync registered scripts after successful changes', async () => {
@@ -854,11 +1496,13 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.strictEqual(parsed.cosmeticRules.length, 2);
     assert.deepStrictEqual(plain(parsed.cosmeticRules[0]), {
       domains: null,
+      excludedDomains: null,
       selector: '.ad-banner',
       isException: false
     });
     assert.deepStrictEqual(plain(parsed.cosmeticRules[1]), {
       domains: null,
+      excludedDomains: null,
       selector: '.sponsored',
       isException: true
     });

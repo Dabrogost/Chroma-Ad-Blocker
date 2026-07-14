@@ -2,7 +2,7 @@
  * Chroma Ad-Blocker - Service Worker (MV3 Background)
  * Coordinates lifecycle startup, alarms, and message routing.
  *
- * MV3 NOTE: This service worker is ephemeral and may restart at any time. 
+ * MV3 NOTE: This service worker is ephemeral and may restart at any time.
  * All persistent state must be stored in chrome.storage.
  */
 
@@ -11,7 +11,8 @@
 import {
   initSubscriptions,
   ensureAlarm,
-  refreshAllStale
+  refreshAllStale,
+  reconcileSubscriptionRuntimeState
 } from '../subscriptions/manager.js';
 import { initScriptletEngine, recoverUserScriptsIfNeeded } from '../scriptlets/engine.js';
 import { MSG } from '../core/messageTypes.js';
@@ -92,13 +93,11 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   }
 
   const { config: storedConfig, proxyConfigs: storedProxyConfigs = [] } = await chrome.storage.local.get(['config', 'proxyConfigs']);
-  const isEnabled = storedConfig ? storedConfig.enabled : true;
-  const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await syncBrowserPrivacyHardening(storedConfig || {});
   await syncGeolocationProtection(storedConfig || {});
-  await updateDNRState(isEnabled && isNetworkBlocking);
   await initSubscriptions();
+  await updateDNRState();
   await refreshAllStale();
   await initScriptletEngine();
   
@@ -112,12 +111,11 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
 chrome.runtime.onStartup.addListener(async () => {
   const { config: storedConfig, proxyConfigs: storedProxyConfigs = [] } = await chrome.storage.local.get(['config', 'proxyConfigs']);
-  const isEnabled = storedConfig ? storedConfig.enabled : true;
-  const isNetworkBlocking = storedConfig && storedConfig.networkBlocking !== undefined ? storedConfig.networkBlocking : true;
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await syncBrowserPrivacyHardening(storedConfig || {});
   await syncGeolocationProtection(storedConfig || {});
-  await updateDNRState(isEnabled && isNetworkBlocking);
+  await updateDNRState();
+  await reconcileSubscriptionRuntimeState();
   await chrome.storage.local.set({ requestLog: [] });
   await ensureAlarm();
   await initScriptletEngine();
@@ -149,7 +147,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
-// --- TESTING EXPORTS -----
+// --- TESTING EXPORTS ---
 if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRICT__ === true) {
   globalThis.syncDynamicRules = syncDynamicRules;
 }
@@ -160,10 +158,10 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
 registerAll(router);
 router.attachListener();
 
-// MV3 service workers wake without firing runtime.onStartup. If the user
-// enables Chrome's Allow User Scripts toggle after install, a normal worker
-// wake should be enough to register already-parsed subscription scriptlets.
-recoverUserScriptsIfNeeded().catch(err => {
+// MV3 service workers wake without firing runtime.onStartup. Restore the flat
+// subscription runtime image from per-list caches before checking the persisted
+// userScripts registry, including tabs and workers first opened while master-off.
+reconcileSubscriptionRuntimeState().then(() => recoverUserScriptsIfNeeded()).catch(err => {
   recordHealthDiagnostic('userScriptsRecovery', {
     area: 'scriptlets',
     severity: 'warning',
@@ -172,4 +170,38 @@ recoverUserScriptsIfNeeded().catch(err => {
     error: err?.message || err
   });
   if (DEBUG) console.error('[Chroma Scriptlets] Wake sync failed:', err);
+});
+
+// runtime.onStartup does not fire for every MV3 service-worker recreation.
+// Reconcile on ordinary worker evaluation so cached subscription rules and all
+// other DNR state recover after eviction or browser-side rule loss.
+updateDNRState().catch(err => {
+  recordHealthDiagnostic('dnrWakeRecovery', {
+    area: 'dnr',
+    severity: 'warning',
+    message: 'Stored network protection state could not be recovered on worker wake.',
+    action: 'Reload the extension, then turn Network Blocking off and on.',
+    error: err?.message || err
+  });
+  if (DEBUG) console.error('[Chroma DNR] Wake recovery failed:', err);
+});
+
+// Browser-level ChromeSetting values also outlive an MV3 worker. Reconcile
+// them on every ordinary worker wake because runtime.onStartup is not emitted
+// for service-worker eviction/recreation.
+chrome.storage.local.get(['config', 'proxyConfigs']).then(({ config, proxyConfigs }) =>
+  Promise.all([
+    syncWebRtcLeakProtection(config || {}, proxyConfigs || []),
+    syncBrowserPrivacyHardening(config || {}),
+    syncGeolocationProtection(config || {})
+  ])
+).catch(err => {
+  recordHealthDiagnostic('privacyWakeRecovery', {
+    area: 'browserPrivacy',
+    severity: 'warning',
+    message: 'Stored browser privacy controls could not be recovered on worker wake.',
+    action: 'Reload the extension, then turn the affected privacy setting off and on.',
+    error: err?.message || err
+  });
+  if (DEBUG) console.error('[Chroma Privacy] Wake recovery failed:', err);
 });

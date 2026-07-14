@@ -23,6 +23,11 @@ const BLOCKED_LEVELS = new Set([
   'not_controllable',
   'controlled_by_other_extensions'
 ]);
+let _webRtcGeneration = 0;
+let _webRtcQueue = Promise.resolve();
+let _webRtcRecoveryQueued = false;
+let _webRtcRecoveryDirty = false;
+let _webRtcPreferenceReleased = false;
 
 function getWebRtcSetting() {
   return typeof chrome !== 'undefined'
@@ -89,7 +94,11 @@ function hasValidGlobalProxy(config, proxyConfigs) {
   });
 }
 
-export function resolveWebRtcPolicy(config = {}, proxyConfigs = []) {
+function isMasterProtectionEnabled(config) {
+  return config?.enabled !== false;
+}
+
+function resolveRequestedWebRtcPolicy(config = {}, proxyConfigs = []) {
   const storedMode = config?.webRtcLeakProtection;
   const mode = MODES.has(storedMode) ? storedMode : 'auto';
 
@@ -112,32 +121,73 @@ export function resolveWebRtcPolicy(config = {}, proxyConfigs = []) {
   return { mode, action: 'clear', value: null, recommended: false };
 }
 
-async function readStoredState(config, proxyConfigs) {
-  if (config !== undefined && proxyConfigs !== undefined) {
-    return { config: config || {}, proxyConfigs: Array.isArray(proxyConfigs) ? proxyConfigs : [] };
-  }
+export function resolveWebRtcPolicy(config = {}, proxyConfigs = []) {
+  const requested = resolveRequestedWebRtcPolicy(config, proxyConfigs);
+  return isMasterProtectionEnabled(config)
+    ? requested
+    : { ...requested, action: 'clear', value: null };
+}
 
-  const stored = await chrome.storage.local.get(['config', 'proxyConfigs']);
+async function readStoredState(config, proxyConfigs) {
+  const fallbackConfig = config || {};
+  const fallbackProxyConfigs = Array.isArray(proxyConfigs) ? proxyConfigs : [];
+  if (typeof chrome === 'undefined' || typeof chrome.storage?.local?.get !== 'function') {
+    return { config: fallbackConfig, proxyConfigs: fallbackProxyConfigs };
+  }
+  let stored;
+  try {
+    stored = await chrome.storage.local.get(['config', 'proxyConfigs']);
+  } catch {
+    return { config: fallbackConfig, proxyConfigs: fallbackProxyConfigs };
+  }
   return {
-    config: stored.config || {},
-    proxyConfigs: Array.isArray(stored.proxyConfigs) ? stored.proxyConfigs : []
+    config: stored?.config && typeof stored.config === 'object' ? stored.config : fallbackConfig,
+    proxyConfigs: Array.isArray(stored?.proxyConfigs) ? stored.proxyConfigs : fallbackProxyConfigs
   };
 }
 
-export async function getWebRtcLeakProtectionStatus(config, proxyConfigs) {
+async function readStoredStateStrict() {
+  if (typeof chrome === 'undefined' || typeof chrome.storage?.local?.get !== 'function') {
+    throw new Error('Chrome storage is unavailable');
+  }
+  const stored = await chrome.storage.local.get(['config', 'proxyConfigs']);
+  return {
+    config: stored?.config && typeof stored.config === 'object' ? stored.config : {},
+    proxyConfigs: Array.isArray(stored?.proxyConfigs) ? stored.proxyConfigs : []
+  };
+}
+
+export async function getWebRtcLeakProtectionStatus(config, proxyConfigs, { authoritative = true } = {}) {
   const setting = getWebRtcSetting();
-  const { config: storedConfig, proxyConfigs: storedProxyConfigs } = await readStoredState(config, proxyConfigs);
+  const { config: storedConfig, proxyConfigs: storedProxyConfigs } = authoritative
+    ? await readStoredState(config, proxyConfigs)
+    : {
+        config: config || {},
+        proxyConfigs: Array.isArray(proxyConfigs) ? proxyConfigs : []
+      };
+  const requestedPolicy = resolveRequestedWebRtcPolicy(storedConfig, storedProxyConfigs);
   const desired = resolveWebRtcPolicy(storedConfig, storedProxyConfigs);
+  const requested = requestedPolicy.action === 'set';
+  const enabled = desired.action === 'set';
   const base = {
     available: !!setting,
     mode: desired.mode,
+    requestedMode: requestedPolicy.mode,
+    requested,
+    enabled,
+    masterEnabled: isMasterProtectionEnabled(storedConfig),
+    desiredAction: desired.action,
+    desiredValue: desired.value,
     value: null,
     levelOfControl: null,
     controllable: false,
+    controlledByThisExtension: false,
+    effective: false,
+    released: false,
     active: false,
     protected: false,
     partial: false,
-    recommended: storedConfig.globalProxyEnabled === true,
+    recommended: requestedPolicy.recommended,
     error: null
   };
 
@@ -152,32 +202,63 @@ export async function getWebRtcLeakProtectionStatus(config, proxyConfigs) {
     const protectedState = value === POLICY.STRICT;
     const partial = value === POLICY.BALANCED;
     const blocked = BLOCKED_LEVELS.has(levelOfControl);
+    const controlledByThisExtension = levelOfControl === 'controlled_by_this_extension';
+    const effective = enabled && value === desired.value;
+    const released = !enabled && !controlledByThisExtension;
 
     return {
       ...base,
       value,
       levelOfControl,
       controllable: CONTROLLABLE_LEVELS.has(levelOfControl),
+      controlledByThisExtension,
+      effective,
+      released,
       active: protectedState || partial,
       protected: protectedState,
       partial,
-      error: blocked ? 'WebRTC privacy setting is controlled elsewhere' : null
+      error: enabled && blocked
+        ? 'WebRTC privacy setting is controlled elsewhere'
+        : (!enabled && controlledByThisExtension
+            ? 'WebRTC privacy setting remains controlled after release'
+            : null)
     };
   } catch (err) {
     return { ...base, error: sanitizeError(err) };
   }
 }
 
-export async function syncWebRtcLeakProtection(config = {}, proxyConfigs = []) {
+export function syncWebRtcLeakProtection(config = {}, proxyConfigs = []) {
+  const generation = ++_webRtcGeneration;
+  const fallbackConfig = { ...config };
+  const fallbackProxyConfigs = Array.isArray(proxyConfigs) ? [...proxyConfigs] : [];
+  const operation = _webRtcQueue.then(async () => {
+    const stored = await readStoredState(fallbackConfig, fallbackProxyConfigs);
+    if (generation !== _webRtcGeneration) {
+      return { ok: false, stale: true, available: !!getWebRtcSetting() };
+    }
+    return syncWebRtcLeakProtectionImpl(stored.config, stored.proxyConfigs, generation);
+  });
+  _webRtcQueue = operation.then(() => {}, () => {});
+  return operation;
+}
+
+async function syncWebRtcLeakProtectionImpl(config, proxyConfigs, generation) {
   const setting = getWebRtcSetting();
+  const requestedPolicy = resolveRequestedWebRtcPolicy(config, proxyConfigs);
   const desired = resolveWebRtcPolicy(config, proxyConfigs);
+  const requested = requestedPolicy.action === 'set';
+  const enabled = desired.action === 'set';
 
   if (!setting || typeof setting.get !== 'function') {
     return {
       ok: false,
+      stale: false,
       available: false,
       controllable: false,
       mode: desired.mode,
+      requested,
+      enabled,
       action: desired.action,
       value: null,
       levelOfControl: null,
@@ -187,14 +268,54 @@ export async function syncWebRtcLeakProtection(config = {}, proxyConfigs = []) {
 
   try {
     const details = await chromeSettingCall(setting, 'get', WEBRTC_GET_DETAILS);
+    if (generation !== _webRtcGeneration) {
+      return { ok: false, stale: true, available: true, requested, enabled };
+    }
     const levelOfControl = details?.levelOfControl || null;
     const controllable = CONTROLLABLE_LEVELS.has(levelOfControl);
+    const controlledByThisExtension = levelOfControl === 'controlled_by_this_extension';
+
+    if (desired.action === 'clear') {
+      if (controlledByThisExtension || (BLOCKED_LEVELS.has(levelOfControl) && !_webRtcPreferenceReleased)) {
+        await chromeSettingCall(setting, 'clear', WEBRTC_SCOPE);
+        _webRtcPreferenceReleased = true;
+      }
+      if (generation !== _webRtcGeneration) {
+        return { ok: false, stale: true, available: true, requested, enabled };
+      }
+      const afterClear = await chromeSettingCall(setting, 'get', WEBRTC_GET_DETAILS);
+      const afterLevel = afterClear?.levelOfControl || null;
+      const released = afterLevel !== 'controlled_by_this_extension';
+      if (!released) _webRtcPreferenceReleased = false;
+      return {
+        ok: released,
+        stale: false,
+        available: true,
+        controllable: CONTROLLABLE_LEVELS.has(afterLevel),
+        controlledByThisExtension: !released,
+        requested,
+        enabled,
+        mode: desired.mode,
+        action: 'clear',
+        value: afterClear?.value ?? null,
+        levelOfControl: afterLevel,
+        effective: false,
+        released,
+        error: released ? null : 'WebRTC privacy setting could not be released'
+      };
+    }
+
+    _webRtcPreferenceReleased = false;
 
     if (!controllable) {
       return {
         ok: false,
+        stale: false,
         available: true,
         controllable: false,
+        controlledByThisExtension: false,
+        requested,
+        enabled,
         mode: desired.mode,
         action: desired.action,
         value: details?.value ?? null,
@@ -205,38 +326,46 @@ export async function syncWebRtcLeakProtection(config = {}, proxyConfigs = []) {
       };
     }
 
-    if (desired.action === 'clear') {
-      await chromeSettingCall(setting, 'clear', WEBRTC_SCOPE);
-      return {
-        ok: true,
-        available: true,
-        controllable: true,
-        mode: desired.mode,
-        action: 'clear',
-        value: null,
-        levelOfControl
-      };
-    }
-
-    if (details?.value !== desired.value) {
+    if (details?.value !== desired.value || !controlledByThisExtension) {
+      if (generation !== _webRtcGeneration) {
+        return { ok: false, stale: true, available: true, requested, enabled };
+      }
       await chromeSettingCall(setting, 'set', { ...WEBRTC_SCOPE, value: desired.value });
     }
 
+    if (generation !== _webRtcGeneration) {
+      return { ok: false, stale: true, available: true, requested, enabled };
+    }
+    const afterSet = await chromeSettingCall(setting, 'get', WEBRTC_GET_DETAILS);
+    const afterLevel = afterSet?.levelOfControl || null;
+    const ownsSetting = afterLevel === 'controlled_by_this_extension';
+    const effective = afterSet?.value === desired.value;
+
     return {
-      ok: true,
+      ok: ownsSetting && effective,
+      stale: false,
       available: true,
-      controllable: true,
+      controllable: CONTROLLABLE_LEVELS.has(afterLevel),
+      controlledByThisExtension: ownsSetting,
+      requested,
+      enabled,
       mode: desired.mode,
       action: 'set',
-      value: desired.value,
-      levelOfControl
+      value: afterSet?.value ?? null,
+      levelOfControl: afterLevel,
+      effective,
+      released: false,
+      error: ownsSetting && effective ? null : 'WebRTC privacy setting did not reach the requested state'
     };
   } catch (err) {
     return {
       ok: false,
+      stale: false,
       available: true,
       controllable: false,
       mode: desired.mode,
+      requested,
+      enabled,
       action: desired.action,
       value: null,
       levelOfControl: null,
@@ -245,12 +374,31 @@ export async function syncWebRtcLeakProtection(config = {}, proxyConfigs = []) {
   }
 }
 
-if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || (!changes.config && !changes.proxyConfigs)) return;
+export async function recoverWebRtcLeakProtection() {
+  const stored = await readStoredStateStrict();
+  return syncWebRtcLeakProtection(stored.config, stored.proxyConfigs);
+}
 
-    chrome.storage.local.get(['config', 'proxyConfigs'])
-      .then(({ config, proxyConfigs }) => syncWebRtcLeakProtection(config || {}, proxyConfigs || []))
-      .catch(() => {});
+function scheduleWebRtcRecovery() {
+  _webRtcRecoveryDirty = true;
+  if (_webRtcRecoveryQueued) return;
+  _webRtcRecoveryQueued = true;
+  Promise.resolve().then(async () => {
+    while (_webRtcRecoveryDirty) {
+      await _webRtcQueue;
+      _webRtcRecoveryDirty = false;
+      await recoverWebRtcLeakProtection();
+    }
+  }).catch(() => {}).finally(() => {
+    _webRtcRecoveryQueued = false;
+    if (_webRtcRecoveryDirty) scheduleWebRtcRecovery();
+  });
+}
+
+if (typeof chrome !== 'undefined') {
+  getWebRtcSetting()?.onChange?.addListener?.(scheduleWebRtcRecovery);
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area !== 'local' || (!changes.config && !changes.proxyConfigs)) return;
+    scheduleWebRtcRecovery();
   });
 }

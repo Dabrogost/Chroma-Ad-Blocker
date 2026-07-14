@@ -20,10 +20,16 @@ The **Events** section in settings shows recent local activity from the protecti
 - Cosmetic cleanup and warning-suppression events.
 - Scriptlet hits and sanitized scriptlet errors.
 - Local zapper actions.
-- Payload cleanup or inspection details, including modified payload counts, fields pruned, and ad objects removed.
+- Coarse payload-modified events from supported platform handling.
 - Proxy test and proxy authentication activity.
 
 Payload cleanup remains visible in the Event Tracker for transparency, but it is folded into the broader **Ad Cleanups** stat instead of being promoted as a platform-specific headline badge.
+
+### Page-Event Trust Boundary
+
+MAIN-world YouTube and registered-scriptlet signals cross page-visible DOM notifications and are therefore not authenticated enforcement evidence. Chroma accepts only strict coarse event types; discards caller-supplied counts, timestamps, URLs, domains, sources, and rule identifiers; and derives tab/domain context from Chrome's authenticated message sender. Events are gated by master state, the corresponding feature, and the whitelist, then bounded per document, per tab, and globally.
+
+A hostile page can still forge an allowed coarse event within those limits. Page-layer totals are approximate diagnostics rather than an audit log. These signals do not affect blocking, DNR, configuration, or other privileged enforcement state.
 
 ## Privacy Modes
 
@@ -62,13 +68,17 @@ The settings page includes a **Health** panel for diagnostics. It shows whether 
 - Scriptlets.
 - Fingerprint randomization.
 - Browser privacy hardening.
+- Geolocation protection.
+- WebRTC protection.
 - Proxy routing.
 - Whitelists.
 - Request-log/debug availability.
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.
 
-DNR match logging is shown separately because it depends on Chrome exposing `chrome.declarativeNetRequest.onRuleMatchedDebug` to the unpacked extension. When that feedback API is unavailable, blocking can still work normally.
+For proxy, WebRTC, browser privacy, and geolocation, Health separates stored/requested intent, whether Chroma controls the relevant Chrome setting, and the observed effective state. Master-off requests appear paused rather than mismatched; another controller appears degraded or **Controlled elsewhere**.
+
+DNR match logging is shown separately because it depends on Chrome exposing `chrome.declarativeNetRequest.onRuleMatchedDebug` to the unpacked extension. Dynamic-rule action classification is rebuilt from Chrome's installed rules after each worker evaluation. Early matches wait in a bounded buffer until hydration completes; if action recovery fails, they remain neutral/unknown rather than being mislabeled as blocks. The compact action map stores rule IDs and action types, not URLs or subscription bodies. When the feedback API is unavailable, blocking can still work normally.
 
 ---
 

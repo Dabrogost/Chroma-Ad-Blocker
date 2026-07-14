@@ -538,16 +538,34 @@ test('reddit-promoted-ads', async (t) => {
 });
 
 function loadScriptletEngine(storageState, options = {}) {
-  const registered = [];
+  const registered = plain(options.initialUserScripts || []);
+  const userScriptRegisterCalls = [];
+  const userScriptUnregisterCalls = [];
+  let duplicateRegistrationAttempts = 0;
   const registeredContentScripts = [];
   const unregisteredContentScriptIds = [];
   let changeListener = null;
   const userScripts = Object.prototype.hasOwnProperty.call(options, 'userScripts')
     ? options.userScripts
     : {
-      getScripts: async () => [],
-      unregister: async () => {},
-      register: async scripts => { registered.push(...scripts); }
+      getScripts: async () => registered.slice(),
+      unregister: async ({ ids } = {}) => {
+        const removeIds = Array.isArray(ids) ? ids : registered.map(script => script.id);
+        userScriptUnregisterCalls.push(removeIds.slice());
+        for (const id of removeIds) {
+          const index = registered.findIndex(script => script.id === id);
+          if (index !== -1) registered.splice(index, 1);
+        }
+      },
+      register: async scripts => {
+        userScriptRegisterCalls.push(plain(scripts));
+        const ids = scripts.map(script => script.id);
+        if (new Set(ids).size !== ids.length || ids.some(id => registered.some(existing => existing.id === id))) {
+          duplicateRegistrationAttempts++;
+          throw new Error(`Duplicate userScript id in batch: ${ids.join(',')}`);
+        }
+        registered.push(...scripts);
+      }
     };
   const sandbox = {
     SCRIPTLET_MAP: new Map([
@@ -558,7 +576,8 @@ function loadScriptletEngine(storageState, options = {}) {
         local: {
           get: async (keys) => {
             const out = {};
-            for (const key of keys) out[key] = storageState[key];
+            const requested = Array.isArray(keys) ? keys : [keys];
+            for (const key of requested) out[key] = storageState[key];
             return out;
           }
         },
@@ -600,7 +619,16 @@ function loadScriptletEngine(storageState, options = {}) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(engineCode, sandbox);
-  return { sandbox, registered, registeredContentScripts, unregisteredContentScriptIds, getChangeListener: () => changeListener };
+  return {
+    sandbox,
+    registered,
+    registeredContentScripts,
+    unregisteredContentScriptIds,
+    userScriptRegisterCalls,
+    userScriptUnregisterCalls,
+    get duplicateRegistrationAttempts() { return duplicateRegistrationAttempts; },
+    getChangeListener: () => changeListener
+  };
 }
 
 test('scriptlet engine whitelist hardening', async (t) => {
@@ -618,6 +646,73 @@ test('scriptlet engine whitelist hardening', async (t) => {
     assert.deepStrictEqual(plain(registered[0].excludeMatches), [
       '*://example.com/*',
       '*://*.example.com/*'
+    ]);
+  });
+
+  await t.test('exclusion-only subscription scriptlets run globally except on negated domains', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [null, {
+        scriptlet: 'set-constant',
+        args: ['foo', 'true'],
+        domains: null,
+        excludedDomains: ['example.org']
+      }],
+      whitelist: ['whitelisted.example'],
+      config: {},
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registered.length, 1);
+    assert.deepStrictEqual(plain(registered[0].matches), ['<all_urls>']);
+    assert.deepStrictEqual(plain(registered[0].excludeMatches), [
+      '*://whitelisted.example/*',
+      '*://*.whitelisted.example/*',
+      '*://example.org/*',
+      '*://*.example.org/*'
+    ]);
+  });
+
+  await t.test('malformed cached scriptlet exclusions fail closed instead of broadening', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [{
+        scriptlet: 'set-constant',
+        args: ['foo', 'true'],
+        domains: null,
+        excludedDomains: ['bad/domain']
+      }, {
+        scriptlet: 'set-constant',
+        args: ['bar', 'true'],
+        domains: null,
+        excludedDomains: 'example.com'
+      }, {
+        scriptlet: 'set-constant',
+        args: ['baz', 'true'],
+        domains: null,
+        excludedDomains: [123]
+      }, {
+        scriptlet: 'set-constant',
+        args: ['empty', 'true'],
+        domains: [],
+        excludedDomains: null
+      }, {
+        scriptlet: 'set-constant',
+        args: ['valid', 'true'],
+        domains: ['VALID.EXAMPLE'],
+        excludedDomains: null
+      }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registered.length, 1);
+    assert.deepStrictEqual(plain(registered[0].matches), [
+      '*://valid.example/*',
+      '*://*.valid.example/*'
     ]);
   });
 
@@ -779,7 +874,7 @@ test('scriptlet engine whitelist hardening', async (t) => {
         config: { enabled: true, quietConsole: false }
       };
       const out = {};
-      for (const key of keys) out[key] = source[key];
+      for (const key of (Array.isArray(keys) ? keys : [keys])) out[key] = source[key];
       return out;
     };
     getChangeListener()({
@@ -816,7 +911,7 @@ test('scriptlet engine whitelist hardening', async (t) => {
         config: { enabled: false, quietConsole: true }
       };
       const out = {};
-      for (const key of keys) out[key] = source[key];
+      for (const key of (Array.isArray(keys) ? keys : [keys])) out[key] = source[key];
       return out;
     };
     getChangeListener()({
@@ -837,7 +932,8 @@ test('scriptlet engine whitelist hardening', async (t) => {
       userScriptletRules: [{
         scriptlet: 'resource-name.js',
         args: ['needle'],
-        domains: ['example.net']
+        domains: ['example.net'],
+        excludedDomains: ['ads.example.net']
       }],
       userScriptletResources: {
         'resource-name': {
@@ -859,7 +955,12 @@ test('scriptlet engine whitelist hardening', async (t) => {
     assert.strictEqual(registered[0].world, 'MAIN');
     assert.strictEqual(registered[0].allFrames, true);
     assert.deepStrictEqual(plain(registered[0].matches), ['*://example.net/*', '*://*.example.net/*']);
-    assert.deepStrictEqual(plain(registered[0].excludeMatches), ['*://excluded.example/*', '*://*.excluded.example/*']);
+    assert.deepStrictEqual(plain(registered[0].excludeMatches), [
+      '*://excluded.example/*',
+      '*://*.excluded.example/*',
+      '*://ads.example.net/*',
+      '*://*.ads.example.net/*'
+    ]);
     const code = registered[0].js[0].code;
     assert.match(code, /window\.__needle = "needle"/);
     assert.match(code, /__CHROMA_SCRIPTLET_STATS__/);
@@ -867,24 +968,341 @@ test('scriptlet engine whitelist hardening', async (t) => {
     assert.doesNotMatch(code, /sourceId|scriptlet:/);
   });
 
-  await t.test('whitelist changes re-sync subscription userScripts', async () => {
+  await t.test('whitelist changes update subscription and advanced exclusions while enabled', async () => {
     const storageState = {
       subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      userScriptletRules: [{ scriptlet: 'custom-resource', args: [] }],
+      userScriptletResources: {
+        'custom-resource': { code: '(function() { window.__custom = true; })();' }
+      },
       whitelist: [],
-      config: {},
+      config: { enabled: true },
       fprWhitelist: []
     };
-    const { registered, getChangeListener } = loadScriptletEngine(storageState);
+    const { sandbox, registered, getChangeListener } = loadScriptletEngine(storageState);
+    await sandbox.initScriptletEngine();
+    assert.deepStrictEqual(registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1']);
 
     storageState.whitelist = ['example.com'];
     getChangeListener()({ whitelist: { oldValue: [], newValue: ['example.com'] } }, 'local');
     await new Promise(resolve => setTimeout(resolve, 20));
 
-    assert.strictEqual(registered.length, 1);
-    assert.deepStrictEqual(plain(registered[0].excludeMatches), [
-      '*://example.com/*',
-      '*://*.example.com/*'
+    assert.strictEqual(registered.length, 2);
+    for (const script of registered) {
+      assert.deepStrictEqual(plain(script.excludeMatches), [
+        '*://example.com/*',
+        '*://*.example.com/*'
+      ]);
+    }
+  });
+});
+
+test('scriptlet engine isolates failures within 100-script registration batches', async () => {
+  const userScriptletRules = [];
+  const userScriptletResources = {};
+  for (let index = 1; index <= 101; index++) {
+    const name = `advanced-resource-${index}`;
+    userScriptletRules.push({
+      scriptlet: name,
+      args: [],
+      domains: [`site-${index}.example`]
+    });
+    userScriptletResources[name] = {
+      name,
+      code: `globalThis.__advancedResource${index} = true;`
+    };
+  }
+
+  const accepted = [];
+  const registrationCalls = [];
+  const failingId = 'user_scriptlet_50';
+  const { sandbox } = loadScriptletEngine({
+    subscriptionScriptletRules: [],
+    userScriptletRules,
+    userScriptletResources,
+    whitelist: [],
+    config: { enabled: true },
+    fprWhitelist: []
+  }, {
+    userScripts: {
+      getScripts: async () => [],
+      unregister: async () => {},
+      register: async scripts => {
+        registrationCalls.push(scripts.map(script => script.id));
+        if (scripts.some(script => script.id === failingId)) {
+          throw new Error('malformed registration');
+        }
+        accepted.push(...scripts);
+      }
+    }
+  });
+
+  const result = await sandbox.syncUserScripts();
+
+  assert.strictEqual(registrationCalls[0].length, 100);
+  assert.ok(registrationCalls.slice(1).every(batch => batch.length === 1));
+  assert.strictEqual(result.ok, false);
+  assert.strictEqual(result.registered, 100);
+  assert.strictEqual(result.expected, 101);
+  assert.strictEqual(accepted.length, 100);
+  assert.strictEqual(accepted.some(script => script.id === failingId), false);
+  assert.strictEqual(accepted.some(script => script.id === 'user_scriptlet_101'), true);
+});
+
+test('scriptlet engine master lifecycle', async (t) => {
+  function lifecycleStorage(enabled) {
+    return {
+      subscriptionScriptletRules: [{
+        scriptlet: 'set-constant',
+        args: ['subscriptionFlag', 'true'],
+        domains: ['subscription.example']
+      }],
+      userScriptletRules: [{
+        scriptlet: 'advanced-resource.js',
+        args: ['advanced'],
+        domains: ['advanced.example']
+      }],
+      userScriptletResources: {
+        'advanced-resource': {
+          name: 'advanced-resource',
+          code: '(function() { window.__advanced = "{{1}}"; })();'
+        }
+      },
+      whitelist: ['excluded.example'],
+      fprWhitelist: [],
+      config: { enabled }
+    };
+  }
+
+  const waitForSync = () => new Promise(resolve => setTimeout(resolve, 25));
+
+  await t.test('existing subscription and advanced registrations are removed when master turns off', async () => {
+    const storageState = lifecycleStorage(true);
+    const harness = loadScriptletEngine(storageState);
+    await harness.sandbox.initScriptletEngine();
+    assert.deepStrictEqual(harness.registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1']);
+
+    storageState.config = { enabled: false };
+    harness.getChangeListener()({
+      config: { oldValue: { enabled: true }, newValue: { enabled: false } }
+    }, 'local');
+    await waitForSync();
+
+    assert.deepStrictEqual(harness.registered, []);
+    assert.deepStrictEqual(harness.userScriptUnregisterCalls.at(-1), ['scriptlet_1', 'user_scriptlet_1']);
+  });
+
+  await t.test('stored rule and resource changes while off never register scripts', async () => {
+    const storageState = lifecycleStorage(false);
+    storageState.subscriptionScriptletRules = [];
+    storageState.userScriptletRules = [];
+    storageState.userScriptletResources = {};
+    const harness = loadScriptletEngine(storageState);
+    await harness.sandbox.initScriptletEngine();
+
+    storageState.subscriptionScriptletRules = [{ scriptlet: 'set-constant', args: ['offFlag', 'true'] }];
+    harness.getChangeListener()({ subscriptionScriptletRules: { oldValue: [], newValue: storageState.subscriptionScriptletRules } }, 'local');
+    storageState.userScriptletResources = lifecycleStorage(false).userScriptletResources;
+    storageState.userScriptletRules = lifecycleStorage(false).userScriptletRules;
+    harness.getChangeListener()({
+      userScriptletResources: { oldValue: {}, newValue: storageState.userScriptletResources },
+      userScriptletRules: { oldValue: [], newValue: storageState.userScriptletRules }
+    }, 'local');
+    await waitForSync();
+
+    assert.deepStrictEqual(harness.registered, []);
+    assert.strictEqual(harness.userScriptRegisterCalls.length, 0);
+  });
+
+  await t.test('worker recovery with master off purges only stale managed registrations', async () => {
+    const storageState = lifecycleStorage(false);
+    const harness = loadScriptletEngine(storageState, {
+      initialUserScripts: [
+        { id: 'scriptlet_1' },
+        { id: 'user_scriptlet_1' },
+        { id: 'unmanaged_helper' }
+      ]
+    });
+
+    assert.strictEqual(await harness.sandbox.recoverUserScriptsIfNeeded(), true);
+    assert.deepStrictEqual(harness.registered.map(script => script.id), ['unmanaged_helper']);
+    assert.deepStrictEqual(harness.userScriptUnregisterCalls, [[
+      'scriptlet_1',
+      'user_scriptlet_1'
+    ]]);
+    assert.strictEqual(harness.userScriptRegisterCalls.length, 0);
+
+    const emptyHarness = loadScriptletEngine(storageState);
+    assert.strictEqual(await emptyHarness.sandbox.recoverUserScriptsIfNeeded(), false);
+    assert.deepStrictEqual(emptyHarness.registered, []);
+    assert.strictEqual(emptyHarness.userScriptRegisterCalls.length, 0);
+  });
+
+  await t.test('worker recovery clears orphaned managed registrations with an empty active cache', async () => {
+    const storageState = lifecycleStorage(true);
+    storageState.subscriptionScriptletRules = [];
+    storageState.userScriptletRules = [];
+    const harness = loadScriptletEngine(storageState, {
+      initialUserScripts: [{ id: 'scriptlet_1' }, { id: 'unmanaged_helper' }]
+    });
+
+    assert.strictEqual(await harness.sandbox.recoverUserScriptsIfNeeded(), true);
+    assert.deepStrictEqual(harness.registered.map(script => script.id), ['unmanaged_helper']);
+    assert.strictEqual(harness.userScriptRegisterCalls.length, 0);
+  });
+
+  await t.test('worker recovery repairs a partial active subscription and advanced registry', async () => {
+    const storageState = lifecycleStorage(true);
+    const expectedHarness = loadScriptletEngine(storageState);
+    await expectedHarness.sandbox.initScriptletEngine();
+    const partialRegistry = plain([expectedHarness.registered[0]]);
+    const harness = loadScriptletEngine(storageState, {
+      initialUserScripts: [...partialRegistry, { id: 'unmanaged_helper' }]
+    });
+
+    assert.strictEqual(await harness.sandbox.recoverUserScriptsIfNeeded(), true);
+    assert.deepStrictEqual(harness.registered.map(script => script.id), [
+      'unmanaged_helper',
+      'scriptlet_1',
+      'user_scriptlet_1'
     ]);
+    assert.deepStrictEqual(harness.userScriptUnregisterCalls, [['scriptlet_1']]);
+    assert.strictEqual(harness.duplicateRegistrationAttempts, 0);
+  });
+
+  await t.test('re-enable restores the exact cached subscription and advanced registry', async () => {
+    const storageState = lifecycleStorage(false);
+    const harness = loadScriptletEngine(storageState);
+    await harness.sandbox.initScriptletEngine();
+    assert.deepStrictEqual(harness.registered, []);
+
+    storageState.config = { enabled: true };
+    harness.getChangeListener()({
+      config: { oldValue: { enabled: false }, newValue: { enabled: true } }
+    }, 'local');
+    await waitForSync();
+
+    assert.deepStrictEqual(harness.registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1']);
+    const [subscription, advanced] = harness.registered;
+    assert.deepStrictEqual(plain(subscription.matches), [
+      '*://subscription.example/*',
+      '*://*.subscription.example/*'
+    ]);
+    assert.strictEqual(subscription.runAt, 'document_start');
+    assert.strictEqual(subscription.world, 'MAIN');
+    assert.strictEqual(subscription.allFrames, undefined);
+    assert.match(subscription.js[0].code, /subscriptionFlag/);
+
+    assert.deepStrictEqual(plain(advanced.matches), [
+      '*://advanced.example/*',
+      '*://*.advanced.example/*'
+    ]);
+    assert.strictEqual(advanced.runAt, 'document_start');
+    assert.strictEqual(advanced.world, 'MAIN');
+    assert.strictEqual(advanced.allFrames, true);
+    assert.match(advanced.js[0].code, /window\.__advanced = \"advanced\"/);
+
+    for (const script of [subscription, advanced]) {
+      assert.deepStrictEqual(plain(script.excludeMatches), [
+        '*://excluded.example/*',
+        '*://*.excluded.example/*'
+      ]);
+    }
+  });
+
+  await t.test('rapid repeated toggles converge without duplicate registrations', async () => {
+    const storageState = lifecycleStorage(true);
+    const harness = loadScriptletEngine(storageState);
+    await harness.sandbox.initScriptletEngine();
+
+    for (const enabled of [false, true, false, true]) {
+      const oldValue = storageState.config;
+      storageState.config = { enabled };
+      harness.getChangeListener()({ config: { oldValue, newValue: storageState.config } }, 'local');
+    }
+    await waitForSync();
+    assert.deepStrictEqual(harness.registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1']);
+    assert.strictEqual(new Set(harness.registered.map(script => script.id)).size, 2);
+    assert.strictEqual(harness.duplicateRegistrationAttempts, 0);
+
+    for (const enabled of [false, true, false]) {
+      const oldValue = storageState.config;
+      storageState.config = { enabled };
+      harness.getChangeListener()({ config: { oldValue, newValue: storageState.config } }, 'local');
+    }
+    await waitForSync();
+    assert.deepStrictEqual(harness.registered, []);
+    assert.strictEqual(harness.duplicateRegistrationAttempts, 0);
+  });
+
+  await t.test('an in-flight active sync drains a newer off request before its callers resolve', async () => {
+    const storageState = lifecycleStorage(true);
+    const registry = [];
+    let releaseRegistration;
+    let registrationReached;
+    let firstRegistration = true;
+    const registrationBlocked = new Promise(resolve => { releaseRegistration = resolve; });
+    const reachedRegistration = new Promise(resolve => { registrationReached = resolve; });
+    const userScripts = {
+      getScripts: async () => registry.slice(),
+      unregister: async ({ ids }) => {
+        for (const id of ids) {
+          const index = registry.findIndex(script => script.id === id);
+          if (index !== -1) registry.splice(index, 1);
+        }
+      },
+      register: async scripts => {
+        if (firstRegistration) {
+          firstRegistration = false;
+          registrationReached();
+          await registrationBlocked;
+        }
+        registry.push(...plain(scripts));
+      }
+    };
+    const harness = loadScriptletEngine(storageState, { userScripts });
+
+    const activeSync = harness.sandbox.syncUserScripts();
+    await reachedRegistration;
+    storageState.config = { enabled: false };
+    const offSync = harness.sandbox.syncUserScripts();
+    assert.strictEqual(activeSync, offSync);
+
+    releaseRegistration();
+    await activeSync;
+    assert.deepStrictEqual(registry, []);
+  });
+
+  await t.test('FPR and Quiet Console retain their documented master lifecycle', async () => {
+    const storageState = lifecycleStorage(true);
+    storageState.config = { enabled: true, fingerprintRandomization: true, quietConsole: true };
+    const harness = loadScriptletEngine(storageState);
+    await harness.sandbox.initScriptletEngine();
+    assert.deepStrictEqual(
+      harness.registeredContentScripts.map(script => script.id).sort(),
+      ['chroma_fpr', 'chroma_quiet_console']
+    );
+
+    storageState.config = { enabled: false, fingerprintRandomization: true, quietConsole: true };
+    harness.getChangeListener()({
+      config: {
+        oldValue: { enabled: true, fingerprintRandomization: true, quietConsole: true },
+        newValue: storageState.config
+      }
+    }, 'local');
+    await waitForSync();
+    assert.deepStrictEqual(harness.registered, []);
+    assert.deepStrictEqual(harness.registeredContentScripts, []);
+
+    const oldValue = storageState.config;
+    storageState.config = { enabled: true, fingerprintRandomization: true, quietConsole: true };
+    harness.getChangeListener()({ config: { oldValue, newValue: storageState.config } }, 'local');
+    await waitForSync();
+    assert.deepStrictEqual(harness.registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1']);
+    assert.deepStrictEqual(
+      harness.registeredContentScripts.map(script => script.id).sort(),
+      ['chroma_fpr', 'chroma_quiet_console']
+    );
   });
 });
 
@@ -964,6 +1382,37 @@ test('scriptlet engine userScripts API availability', async (t) => {
     assert.strictEqual(registered[0].id, 'scriptlet_1');
   });
 
+  await t.test('syncUserScripts reports unavailable and partial registry failures', async () => {
+    const unavailable = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    }, { userScripts: undefined });
+
+    const unavailableResult = await unavailable.sandbox.syncUserScripts();
+    assert.strictEqual(unavailableResult.ok, false);
+    assert.match(unavailableResult.error, /unavailable/i);
+
+    const partial = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    }, {
+      userScripts: {
+        getScripts: async () => [],
+        unregister: async () => {},
+        register: async () => { throw new Error('registration rejected'); }
+      }
+    });
+
+    const partialResult = await partial.sandbox.syncUserScripts();
+    assert.strictEqual(partialResult.ok, false);
+    assert.strictEqual(partialResult.registered, 0);
+    assert.strictEqual(partialResult.expected, 1);
+  });
+
   await t.test('recoverUserScriptsIfNeeded only syncs an empty registry with stored rules', async () => {
     const { sandbox, registered } = loadScriptletEngine({
       subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
@@ -978,25 +1427,22 @@ test('scriptlet engine userScripts API availability', async (t) => {
     assert.strictEqual(registered.length, 1);
   });
 
-  await t.test('recoverUserScriptsIfNeeded skips when scripts are already registered', async () => {
-    let registerCalled = false;
-    const { sandbox } = loadScriptletEngine({
+  await t.test('recoverUserScriptsIfNeeded skips an exact healthy registry', async () => {
+    const harness = loadScriptletEngine({
       subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
       whitelist: [],
       config: {},
       fprWhitelist: []
-    }, {
-      userScripts: {
-        getScripts: async () => [{ id: 'scriptlet_1' }],
-        unregister: async () => {},
-        register: async () => { registerCalled = true; }
-      }
     });
+    await harness.sandbox.initScriptletEngine();
+    const registerCallCount = harness.userScriptRegisterCalls.length;
+    const unregisterCallCount = harness.userScriptUnregisterCalls.length;
 
-    const recovered = await sandbox.recoverUserScriptsIfNeeded();
+    const recovered = await harness.sandbox.recoverUserScriptsIfNeeded();
 
     assert.strictEqual(recovered, false);
-    assert.strictEqual(registerCalled, false);
+    assert.strictEqual(harness.userScriptRegisterCalls.length, registerCallCount);
+    assert.strictEqual(harness.userScriptUnregisterCalls.length, unregisterCallCount);
   });
 });
 

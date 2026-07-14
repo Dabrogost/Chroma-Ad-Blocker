@@ -31,6 +31,16 @@ const USER_SCRIPTLET_RESOURCES_KEY = 'userScriptletResources';
 const SUBSCRIPTION_SCRIPTLET_ID_PREFIX = 'scriptlet_';
 const USER_SCRIPTLET_ID_PREFIX = 'user_scriptlet_';
 
+function isMasterProtectionEnabled(config) {
+  return config?.enabled !== false;
+}
+
+function isManagedUserScript(script) {
+  const id = String(script?.id || '');
+  return id.startsWith(SUBSCRIPTION_SCRIPTLET_ID_PREFIX) ||
+    id.startsWith(USER_SCRIPTLET_ID_PREFIX);
+}
+
 function hasUserScriptsApi() {
   return !!(
     chrome.userScripts &&
@@ -43,44 +53,68 @@ function hasUserScriptsApi() {
 /**
  * Synchronizes the chrome.userScripts registry with the current rules in storage.
  */
-// Serialize sync calls. storage.onChanged can fire multiple times in rapid
-// succession (once per subscription refresh); concurrent syncs race on the
-// unregister/register pair and collide on script IDs.
-let _syncInFlight = null;
-let _syncPending = false;
+// Serialize sync calls and invalidate queued stale snapshots. Storage changes
+// often arrive in bursts; only the newest queued desired state should run.
+let _userScriptGeneration = 0;
+let _userScriptSyncInFlight = null;
 
 export function syncUserScripts() {
-  if (_syncInFlight) {
-    _syncPending = true;
-    return _syncInFlight;
-  }
-  _syncInFlight = (async () => {
+  _userScriptGeneration++;
+  if (_userScriptSyncInFlight) return _userScriptSyncInFlight;
+
+  _userScriptSyncInFlight = (async () => {
     try {
-      await _syncUserScriptsImpl();
-    } finally {
-      _syncInFlight = null;
-      if (_syncPending) {
-        _syncPending = false;
-        syncUserScripts();
+      let result = false;
+      while (true) {
+        const generation = _userScriptGeneration;
+        result = await _syncUserScriptsImpl(generation);
+        if (generation === _userScriptGeneration) return result;
       }
+    } finally {
+      _userScriptSyncInFlight = null;
     }
   })();
-  return _syncInFlight;
+  return _userScriptSyncInFlight;
 }
 
 export async function recoverUserScriptsIfNeeded() {
   if (!hasUserScriptsApi()) return false;
   const {
     subscriptionScriptletRules = [],
-    userScriptletRules = []
-  } = await chrome.storage.local.get(['subscriptionScriptletRules', USER_SCRIPTLET_RULES_KEY]);
-  const storedRuleCount =
-    (Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules.length : 0) +
-    (Array.isArray(userScriptletRules) ? userScriptletRules.length : 0);
-  if (storedRuleCount === 0) return false;
-
+    userScriptletRules = [],
+    userScriptletResources = {},
+    whitelist = [],
+    config = {}
+  } = await chrome.storage.local.get([
+    'subscriptionScriptletRules',
+    USER_SCRIPTLET_RULES_KEY,
+    USER_SCRIPTLET_RESOURCES_KEY,
+    'whitelist',
+    'config'
+  ]);
   const registered = await chrome.userScripts.getScripts();
-  if (Array.isArray(registered) && registered.length > 0) return false;
+  const managedRegistered = Array.isArray(registered)
+    ? registered.filter(isManagedUserScript)
+    : [];
+
+  // Worker recovery must converge an off-state by removing persisted Chroma
+  // registrations, never by treating stored rules as a registration request.
+  if (!isMasterProtectionEnabled(config)) {
+    if (managedRegistered.length === 0) return false;
+    await syncUserScripts();
+    return true;
+  }
+
+  const { userScripts: desired } = buildManagedUserScripts({
+    subscriptionRules: Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules : [],
+    userRules: Array.isArray(userScriptletRules) ? userScriptletRules : [],
+    userResources: userScriptletResources && typeof userScriptletResources === 'object'
+      ? userScriptletResources
+      : {},
+    whitelist,
+    quietConsole: config.quietConsole === true
+  });
+  if (managedRegistriesMatch(managedRegistered, desired)) return false;
 
   await syncUserScripts();
   return true;
@@ -92,14 +126,31 @@ export async function recoverUserScriptsIfNeeded() {
 // whole register() batch, so we sanitize aggressively and drop the rule
 // if nothing usable remains.
 function sanitizeDomain(d) {
-  if (!d) return null;
+  if (typeof d !== 'string' || !d) return null;
+  d = d.toLowerCase();
   if (d.startsWith('~')) return null;          // negation — not supported
   if (d.endsWith('.*')) return null;           // TLD wildcard
   if (d.includes('/') || d.includes(':') || d.includes('?') || d.includes('#')) return null;
   if (d.includes(' ')) return null;
   if (!d.includes('.')) return null;           // entity / bare label
   if (d.startsWith('*.')) d = d.slice(2);      // we'll add the wildcard ourselves
-  if (!/^[a-z0-9.-]+$/i.test(d)) return null;
+  if (
+    d.length > 253 ||
+    d.startsWith('.') ||
+    d.endsWith('.') ||
+    !/^[a-z0-9.-]+$/i.test(d)
+  ) return null;
+  const labels = d.split('.');
+  if (labels.some(label => (
+    label.length === 0 ||
+    label.length > 63 ||
+    label.startsWith('-') ||
+    label.endsWith('-')
+  ))) return null;
+  if (/^[0-9.]+$/.test(d) && (
+    labels.length !== 4 ||
+    labels.some(label => !/^\d{1,3}$/.test(label) || Number(label) > 255)
+  )) return null;
   return d;
 }
 
@@ -117,6 +168,25 @@ function whitelistToExcludeMatches(whitelist) {
   return out;
 }
 
+function domainListToMatches(domains) {
+  const matches = [];
+  let droppedDomains = 0;
+  for (const raw of domains) {
+    const domain = sanitizeDomain(raw);
+    if (!domain) {
+      droppedDomains++;
+      continue;
+    }
+    matches.push(`*://${domain}/*`);
+    matches.push(`*://*.${domain}/*`);
+  }
+  return { matches, droppedDomains };
+}
+
+function mergeMatchPatterns(...groups) {
+  return [...new Set(groups.flat())];
+}
+
 const CHUNK_SIZE = 100;
 
 function normalizeUserScriptletName(name) {
@@ -125,25 +195,38 @@ function normalizeUserScriptletName(name) {
 }
 
 function getRuleMatches(rule) {
+  if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+    return { matches: [], excludeMatches: [], droppedDomains: 1, droppedRule: true };
+  }
   let matches = ['<all_urls>'];
   let droppedDomains = 0;
   let droppedRule = false;
+  let excludeMatches = [];
 
-  if (rule.domains && rule.domains.length > 0) {
-    matches = [];
-    for (const raw of rule.domains) {
-      const d = sanitizeDomain(raw);
-      if (!d) {
-        droppedDomains++;
-        continue;
-      }
-      matches.push(`*://${d}/*`);
-      matches.push(`*://*.${d}/*`);
-    }
+  if (rule.domains != null && (!Array.isArray(rule.domains) || rule.domains.length === 0)) {
+    return { matches: [], excludeMatches: [], droppedDomains: 1, droppedRule: true };
+  }
+  if (Array.isArray(rule.domains)) {
+    const included = domainListToMatches(rule.domains);
+    matches = included.matches;
+    droppedDomains += included.droppedDomains;
     if (matches.length === 0) droppedRule = true;
   }
 
-  return { matches, droppedDomains, droppedRule };
+  if (rule.excludedDomains != null &&
+      (!Array.isArray(rule.excludedDomains) || rule.excludedDomains.length === 0)) {
+    return { matches: [], excludeMatches: [], droppedDomains: droppedDomains + 1, droppedRule: true };
+  }
+  if (Array.isArray(rule.excludedDomains)) {
+    const excluded = domainListToMatches(rule.excludedDomains);
+    excludeMatches = excluded.matches;
+    droppedDomains += excluded.droppedDomains;
+    // Ignoring a malformed exclusion would broaden the rule. Fail closed even
+    // for legacy/corrupted cached rules that bypassed the current parser.
+    if (excluded.droppedDomains > 0) droppedRule = true;
+  }
+
+  return { matches, excludeMatches, droppedDomains, droppedRule };
 }
 
 function normalizeRunAt(value) {
@@ -194,6 +277,8 @@ function buildUserResourceCode(resource, args, quietConsole = false) {
         try {
           (function() {
             const scriptletArgs = ${argsStr};
+            // Public alias for dynamically inserted resource code; static
+            // analysis cannot see references inside the inserted payload.
             const chromaScriptletArgs = scriptletArgs;
             ${code}
           })();
@@ -205,17 +290,132 @@ function buildUserResourceCode(resource, args, quietConsole = false) {
       `;
 }
 
-async function _syncUserScriptsImpl() {
+function buildManagedUserScripts({
+  subscriptionRules,
+  userRules,
+  userResources,
+  whitelist,
+  quietConsole
+}) {
+  const excludeMatches = whitelistToExcludeMatches(whitelist);
+  const userScripts = [];
+  let scriptCounter = 0;
+  let userScriptCounter = 0;
+  let droppedDomains = 0;
+  let droppedRules = 0;
+
+  for (const rule of subscriptionRules) {
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+      droppedRules++;
+      continue;
+    }
+    const fn = SCRIPTLET_MAP.get(rule.scriptlet);
+    if (!fn) {
+      if (DEBUG) console.warn(`[Chroma Scriptlets] Unknown scriptlet: ${rule.scriptlet}`);
+      continue;
+    }
+
+    const matchResult = getRuleMatches(rule);
+    droppedDomains += matchResult.droppedDomains;
+    if (matchResult.droppedRule) {
+      droppedRules++;
+      continue;
+    }
+
+    const script = {
+      id: `${SUBSCRIPTION_SCRIPTLET_ID_PREFIX}${++scriptCounter}`,
+      matches: matchResult.matches,
+      js: [{ code: buildSubscriptionScriptletCode(fn, rule.args, quietConsole) }],
+      runAt: normalizeRunAt(rule.runAt),
+      world: 'MAIN'
+    };
+    const combinedExclusions = mergeMatchPatterns(excludeMatches, matchResult.excludeMatches);
+    if (combinedExclusions.length > 0) script.excludeMatches = combinedExclusions;
+    userScripts.push(script);
+  }
+
+  for (const rule of userRules) {
+    const resource = userResources[normalizeUserScriptletName(rule?.scriptlet)];
+    if (!resource?.code) {
+      if (DEBUG) console.warn(`[Chroma Scriptlets] Missing user resource: ${rule?.scriptlet}`);
+      continue;
+    }
+
+    const matchResult = getRuleMatches(rule);
+    droppedDomains += matchResult.droppedDomains;
+    if (matchResult.droppedRule) {
+      droppedRules++;
+      continue;
+    }
+
+    const script = {
+      id: `${USER_SCRIPTLET_ID_PREFIX}${++userScriptCounter}`,
+      matches: matchResult.matches,
+      js: [{ code: buildUserResourceCode(resource, rule.args, quietConsole) }],
+      runAt: normalizeRunAt(rule.runAt),
+      world: 'MAIN',
+      allFrames: true
+    };
+    const combinedExclusions = mergeMatchPatterns(excludeMatches, matchResult.excludeMatches);
+    if (combinedExclusions.length > 0) script.excludeMatches = combinedExclusions;
+    userScripts.push(script);
+  }
+
+  return { userScripts, droppedDomains, droppedRules };
+}
+
+function comparableUserScript(script) {
+  const sortedStrings = value => Array.isArray(value)
+    ? value.map(String).sort()
+    : [];
+  return {
+    id: String(script?.id || ''),
+    matches: sortedStrings(script?.matches),
+    excludeMatches: sortedStrings(script?.excludeMatches),
+    js: Array.isArray(script?.js)
+      ? script.js.map(source => ({
+        code: typeof source?.code === 'string' ? source.code : '',
+        file: typeof source?.file === 'string' ? source.file : ''
+      }))
+      : [],
+    runAt: String(script?.runAt || ''),
+    world: String(script?.world || ''),
+    allFrames: script?.allFrames === true
+  };
+}
+
+function managedRegistriesMatch(actual, desired) {
+  if (actual.length !== desired.length) return false;
+  const desiredById = new Map(desired.map(script => [script.id, comparableUserScript(script)]));
+  if (desiredById.size !== desired.length) return false;
+  return actual.every(script => {
+    const expected = desiredById.get(script.id);
+    return expected && JSON.stringify(comparableUserScript(script)) === JSON.stringify(expected);
+  });
+}
+
+async function _syncUserScriptsImpl(generation) {
   try {
+    const {
+      subscriptionScriptletRules = [],
+      userScriptletRules = [],
+      userScriptletResources = {},
+      whitelist = [],
+      config = {}
+    } = await chrome.storage.local.get([
+      'subscriptionScriptletRules',
+      USER_SCRIPTLET_RULES_KEY,
+      USER_SCRIPTLET_RESOURCES_KEY,
+      'whitelist',
+      'config'
+    ]);
+    const masterEnabled = isMasterProtectionEnabled(config);
+    const subscriptionRules = Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules : [];
+    const userRules = Array.isArray(userScriptletRules) ? userScriptletRules : [];
+    const storedRuleCount = subscriptionRules.length + userRules.length;
+
     if (!hasUserScriptsApi()) {
-      const {
-        subscriptionScriptletRules = [],
-        userScriptletRules = []
-      } = await chrome.storage.local.get(['subscriptionScriptletRules', USER_SCRIPTLET_RULES_KEY]);
-      const storedRuleCount =
-        (Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules.length : 0) +
-        (Array.isArray(userScriptletRules) ? userScriptletRules.length : 0);
-      if (storedRuleCount > 0) {
+      if (masterEnabled && storedRuleCount > 0) {
         if (typeof recordHealthDiagnostic === 'function') {
           await recordHealthDiagnostic('scriptletRegistration', {
             area: 'scriptlets',
@@ -231,33 +431,29 @@ async function _syncUserScriptsImpl() {
       if (DEBUG) {
         console.warn('[Chroma Scriptlets] userScripts API unavailable. Enable Allow User Scripts in Chrome extension details.');
       }
-      return;
+      return masterEnabled && storedRuleCount > 0
+        ? { ok: false, error: 'UserScripts API unavailable' }
+        : { ok: true, registered: 0 };
     }
 
-    const {
-      subscriptionScriptletRules = [],
-      userScriptletRules = [],
-      userScriptletResources = {},
-      whitelist = [],
-      config = {}
-    } = await chrome.storage.local.get([
-      'subscriptionScriptletRules',
-      USER_SCRIPTLET_RULES_KEY,
-      USER_SCRIPTLET_RESOURCES_KEY,
-      'whitelist',
-      'config'
-    ]);
     const quietConsole = config.quietConsole === true;
-    const excludeMatches = whitelistToExcludeMatches(whitelist);
 
-    // Clear existing registered scripts
+    // Clear only registrations owned by this engine. When master protection is
+    // off this is the terminal action; stored rules remain cached for restore.
     const existing = await chrome.userScripts.getScripts();
-    if (existing.length > 0) {
-      await chrome.userScripts.unregister({ ids: existing.map(s => s.id) });
+    const managedExisting = Array.isArray(existing) ? existing.filter(isManagedUserScript) : [];
+    if (generation !== _userScriptGeneration) return { ok: false, stale: true };
+    if (managedExisting.length > 0) {
+      await chrome.userScripts.unregister({ ids: managedExisting.map(script => script.id) });
     }
 
-    const subscriptionRules = Array.isArray(subscriptionScriptletRules) ? subscriptionScriptletRules : [];
-    const userRules = Array.isArray(userScriptletRules) ? userScriptletRules : [];
+    if (!masterEnabled) {
+      if (typeof clearHealthDiagnostic === 'function') {
+        await clearHealthDiagnostic('scriptletRegistration');
+      }
+      return { ok: true, registered: 0 };
+    }
+
     const userResources = userScriptletResources && typeof userScriptletResources === 'object'
       ? userScriptletResources
       : {};
@@ -266,72 +462,31 @@ async function _syncUserScriptsImpl() {
       if (typeof clearHealthDiagnostic === 'function') {
         await clearHealthDiagnostic('scriptletRegistration');
       }
-      return;
+      return { ok: true, registered: 0 };
     }
 
-    const userScripts = [];
-    let scriptCounter = 0;
-    let userScriptCounter = 0;
-    let droppedDomains = 0;
-    let droppedRules = 0;
+    const { userScripts, droppedDomains, droppedRules } = buildManagedUserScripts({
+      subscriptionRules,
+      userRules,
+      userResources,
+      whitelist,
+      quietConsole
+    });
 
-    for (const rule of subscriptionRules) {
-      const fn = SCRIPTLET_MAP.get(rule.scriptlet);
-      if (!fn) {
-        if (DEBUG) console.warn(`[Chroma Scriptlets] Unknown scriptlet: ${rule.scriptlet}`);
-        continue;
-      }
+    if (userScripts.length === 0) return { ok: true, registered: 0 };
 
-      const matchResult = getRuleMatches(rule);
-      droppedDomains += matchResult.droppedDomains;
-      if (matchResult.droppedRule) {
-        droppedRules++;
-        continue;
-      }
-
-      const script = {
-        id: `${SUBSCRIPTION_SCRIPTLET_ID_PREFIX}${++scriptCounter}`,
-        matches: matchResult.matches,
-        js: [{ code: buildSubscriptionScriptletCode(fn, rule.args, quietConsole) }],
-        runAt: normalizeRunAt(rule.runAt),
-        world: 'MAIN'
-      };
-      if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
-      userScripts.push(script);
+    // Re-read master state immediately before registration. A storage change
+    // can arrive while the registry is being inspected or scripts are built.
+    const { config: latestConfig = {} } = await chrome.storage.local.get('config');
+    if (generation !== _userScriptGeneration || !isMasterProtectionEnabled(latestConfig)) {
+      return { ok: false, stale: true };
     }
-
-    for (const rule of userRules) {
-      const resource = userResources[normalizeUserScriptletName(rule?.scriptlet)];
-      if (!resource?.code) {
-        if (DEBUG) console.warn(`[Chroma Scriptlets] Missing user resource: ${rule?.scriptlet}`);
-        continue;
-      }
-
-      const matchResult = getRuleMatches(rule);
-      droppedDomains += matchResult.droppedDomains;
-      if (matchResult.droppedRule) {
-        droppedRules++;
-        continue;
-      }
-
-      const script = {
-        id: `${USER_SCRIPTLET_ID_PREFIX}${++userScriptCounter}`,
-        matches: matchResult.matches,
-        js: [{ code: buildUserResourceCode(resource, rule.args, quietConsole) }],
-        runAt: normalizeRunAt(rule.runAt),
-        world: 'MAIN',
-        allFrames: true
-      };
-      if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
-      userScripts.push(script);
-    }
-
-    if (userScripts.length === 0) return;
 
     // Register in chunks so one malformed entry can't poison the whole batch.
     let registered = 0;
     let failedChunks = 0;
     for (let i = 0; i < userScripts.length; i += CHUNK_SIZE) {
+      if (generation !== _userScriptGeneration) return { ok: false, stale: true };
       const chunk = userScripts.slice(i, i + CHUNK_SIZE);
       try {
         await chrome.userScripts.register(chunk);
@@ -340,6 +495,7 @@ async function _syncUserScriptsImpl() {
         // Fall back to one-by-one within the failing chunk so we keep the good ones.
         let chunkOk = 0;
         for (const script of chunk) {
+          if (generation !== _userScriptGeneration) return { ok: false, stale: true };
           try {
             await chrome.userScripts.register([script]);
             chunkOk++;
@@ -372,6 +528,14 @@ async function _syncUserScriptsImpl() {
         `(dropped ${droppedRules} rules, ${droppedDomains} domains; ${failedChunks} chunks needed retry).`
       );
     }
+    return registered === userScripts.length
+      ? { ok: true, registered }
+      : {
+          ok: false,
+          registered,
+          expected: userScripts.length,
+          error: `${userScripts.length - registered} userScript registration(s) failed`
+        };
   } catch (err) {
     if (typeof recordHealthDiagnostic === 'function') {
       await recordHealthDiagnostic('scriptletRegistration', {
@@ -383,6 +547,7 @@ async function _syncUserScriptsImpl() {
       });
     }
     if (DEBUG) console.error('[Chroma Scriptlets] Failed to sync userScripts:', err);
+    return { ok: false, error: err?.message || 'UserScripts synchronization failed' };
   }
 }
 
@@ -600,45 +765,47 @@ async function _syncQuietConsoleImpl() {
 }
 
 // Re-sync when inputs change.
-// - subscriptionScriptletRules → userScripts only
+// - subscription/user-resource rules and config.enabled → userScripts
 // - config.fingerprintRandomization / config.enabled → FPR
 // - config.quietConsole / config.enabled → Quiet Console
 // - whitelist → userScripts, FPR, and Quiet Console excludeMatches
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
+
   if (changes.subscriptionScriptletRules || changes.userScriptletRules || changes.userScriptletResources) {
     if (DEBUG) console.log('[Chroma Scriptlets] Rule change detected, re-syncing userScripts.');
     syncUserScripts();
   }
+
   if (changes.config) {
     const oldC = changes.config.oldValue || {};
     const newC = changes.config.newValue || {};
-    if (oldC.fingerprintRandomization !== newC.fingerprintRandomization ||
-        oldC.quietConsole !== newC.quietConsole ||
-        oldC.enabled !== newC.enabled) {
+    const masterChanged = oldC.enabled !== newC.enabled;
+    const quietConsoleChanged = oldC.quietConsole !== newC.quietConsole;
+    const fingerprintRandomizationChanged =
+      oldC.fingerprintRandomization !== newC.fingerprintRandomization;
+
+    if (fingerprintRandomizationChanged || quietConsoleChanged || masterChanged) {
       if (DEBUG) console.log('[Chroma FPR] Config changed, re-syncing.');
       syncFpr();
     }
-    if (oldC.quietConsole !== newC.quietConsole) {
+    if (quietConsoleChanged || masterChanged) {
+      if (DEBUG) console.log('[Chroma Scriptlets] Master/Quiet Console state changed, re-syncing userScripts.');
       syncUserScripts();
-    }
-    if (oldC.quietConsole !== newC.quietConsole ||
-        oldC.enabled !== newC.enabled) {
       if (DEBUG) console.log('[Chroma Quiet Console] Config changed, re-syncing.');
       syncQuietConsole();
     }
   }
+
   if (changes.whitelist) {
     if (DEBUG) console.log('[Chroma Scriptlets] Whitelist changed, re-syncing userScripts.');
     syncUserScripts();
+    if (DEBUG) console.log('[Chroma Quiet Console] Whitelist changed, re-syncing.');
+    syncQuietConsole();
   }
   if (changes.whitelist || changes.fprWhitelist) {
     if (DEBUG) console.log('[Chroma FPR] Whitelist changed, re-syncing.');
     syncFpr();
-  }
-  if (changes.whitelist) {
-    if (DEBUG) console.log('[Chroma Quiet Console] Whitelist changed, re-syncing.');
-    syncQuietConsole();
   }
 });
 

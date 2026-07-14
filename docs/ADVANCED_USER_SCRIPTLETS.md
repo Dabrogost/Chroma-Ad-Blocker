@@ -27,12 +27,17 @@ User scriptlet resources are executable code. Chroma does not bundle them, audit
 
 They run only when all of these are true:
 
-1. You add a trusted HTTPS resource URL in settings.
-2. Chroma successfully parses one or more JavaScript resources from that file.
-3. You save a matching `domain##+js(resource-name)` rule.
-4. Chrome's **Allow User Scripts** setting is enabled for Chroma.
+1. Chroma's master protection switch is enabled.
+2. You add a trusted HTTPS resource URL in settings.
+3. Chroma successfully parses one or more JavaScript resources from that file.
+4. You save a matching `domain##+js(resource-name)` rule.
+5. Chrome's **Allow User Scripts** setting is enabled for Chroma.
 
-Resource URLs must be public `https://` URLs using the default HTTPS port, with no username or password in the URL. Localhost and private-network hosts are rejected.
+Turning master protection off unregisters advanced user scriptlets while keeping
+their cached resources and rules available for restoration when protection is
+enabled again.
+
+Resource URLs must use `https://` on the default port and cannot contain a username or password. Chroma rejects literal localhost and private/special-use IP addresses, but Chromium performs DNS resolution and Chroma cannot guarantee that a public-looking hostname will not resolve or rebind to a private address. Add only sources you trust; see [Remote URL Network Boundary](SECURITY.md#remote-url-network-boundary).
 
 ## Setup Flow
 
@@ -98,6 +103,21 @@ Then activate them only where needed:
 example.com##+js(restore-selection)
 news.example##+js(unlock-scroll)
 ```
+
+## Resource Count And Operational Bounds
+
+Chroma does not impose a total number-of-resources limit on an accepted resource file. Chrome registration is sent in groups of 100 so a rejected batch can be retried one script at a time; 100 is a registration batch size, not a resource ceiling.
+
+The advanced lane retains these operational safeguards:
+
+- 2 MiB maximum response per resource URL.
+- 512 KiB maximum code size for one parsed resource.
+- 20 configured resource URLs.
+- 256 KiB total user-rule text.
+- 1,000 parsed user rules.
+- 8,192 characters per rule line.
+
+Malformed, duplicate, unsupported-MIME, empty, or overlong resource entries are skipped while valid siblings remain available. Chrome registration failures are likewise isolated within their 100-script batch so one malformed registration does not discard later batches.
 
 ## Reading The Status Badges
 
@@ -183,7 +203,7 @@ twitch.tv##+js(twitch-videoad)
 |---|---|---|
 | Resource shows **Unused** | The resource parsed, but no saved rule references it. | Add or edit a `domain##+js(resource-name)` rule. |
 | Rule status shows **Missing** | A saved rule references a resource that is not available. | Check the resource name, refresh the URL, or remove the stale rule. |
-| Resource URL will not add | The URL is not a permitted public HTTPS URL. | Use a raw `https://` URL with no credentials, no custom port, and no local/private host. |
+| Resource URL will not add | The URL fails Chroma's literal URL checks. | Use a raw `https://` URL with no credentials, no custom port, and no literal localhost/private/special-use address. DNS-resolved addresses remain part of the trusted-source boundary. |
 | Nothing changes on the page | The tab loaded before the scriptlet was registered, or the domain rule does not match. | Reload the tab and check the rule domain. |
 | Scriptlet errors do not appear in DevTools | Quiet Console is enabled. | Turn off **Quiet Console** in settings while debugging, then reload the affected tab. |
 | A site stays broken after removal | The old script already ran in that page document. | Remove the rule/resource, then reload the affected tab. |
@@ -191,7 +211,9 @@ twitch.tv##+js(twitch-videoad)
 
 ## Backup Behavior
 
-Settings export stores resource URLs and saved rules, but not cached executable code. After importing settings on another browser profile, refresh the resource URLs, confirm the resources parse, and reload affected tabs before expecting the rules to run.
+Settings export stores resource URLs and saved rules, but not cached executable code. Import validates the complete versioned backup and all user-scriptlet rule text before changing storage. If runtime reconciliation fails after commit, Chroma attempts to restore the previous storage and runtime state and reports an incomplete rollback instead of hiding it.
+
+After importing settings on another browser profile, refresh the resource URLs, confirm the resources parse, and reload affected tabs before expecting the rules to run. See [Settings Backup And Import](INSTALL.md#settings-backup-and-import) for the complete transaction boundary.
 
 ## Safer Rule Habits
 

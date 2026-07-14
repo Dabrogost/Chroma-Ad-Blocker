@@ -72,10 +72,14 @@ Before sharing a build, complete this checklist from a clean working tree or rev
 - [ ] Prime Video test.
 - [ ] Proxy route on/off test.
 - [ ] Global proxy fallback test.
+- [ ] Master off/on releases and restores proxy routes without erasing saved route intent.
+- [ ] Master off/on releases and restores requested WebRTC, browser-privacy, and geolocation controls.
+- [ ] Health distinguishes paused requests, effective Chrome state, and **Controlled elsewhere**; releasing an external controller triggers automatic recovery.
 - [ ] Whitelist test.
+- [ ] Master off/on removes and restores cached subscription DNR and Chroma-managed `userScripts` without a network refresh.
 - [ ] Fingerprint randomization toggle test.
 - [ ] Health panel review.
-- [ ] Settings export/import smoke test.
+- [ ] Settings export/import smoke test, including malformed-backup rejection and rollback reporting.
 
 The E2E command needs Chrome for Testing or Chromium configured in the current shell. On non-Windows systems, use the equivalent `npm` commands.
 

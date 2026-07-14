@@ -26,7 +26,7 @@
   const CONFIG_VALIDATORS = Object.freeze({
     enabled:           (v) => typeof v === 'boolean',
     acceleration:      (v) => typeof v === 'boolean',
-    accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 16,
+    accelerationSpeed: (v) => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 16,
     checkIntervalMs:   (v) => typeof v === 'number' && Number.isInteger(v) && v >= 100 && v <= 5000
   });
 
@@ -61,6 +61,12 @@
 
   const getBridgeApi = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.api;
   const getBridgeConfig = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.config;
+  const getBridgeRevision = () => window.__CHROMA_INTERNAL__ && window.__CHROMA_INTERNAL__.revision;
+  let lastBridgeRevision = -1;
+  function rememberBridgeRevision() {
+    const revision = getBridgeRevision();
+    if (Number.isSafeInteger(revision) && revision >= 0) lastBridgeRevision = revision;
+  }
   const API = new Proxy(FALLBACK_API, {
     get(target, key) {
       const bridgeApi = getBridgeApi();
@@ -83,40 +89,6 @@
   const safeCreateStyleSheet = () => API.createCssStyleSheet();
   const safeGetAdoptedStyleSheets = () => API.getAdoptedStyleSheets();
   const safeSetAdoptedStyleSheets = (sheets) => API.setAdoptedStyleSheets(sheets);
-
-  let _chromaExtInitActive = true;
-  let _extInitFired = false;
-  API.addDocEventListener('__EXT_INIT__', (e) => {
-    _extInitFired = true;
-    const bridgeConfig = getBridgeConfig();
-    if (bridgeConfig) applyConfig(bridgeConfig);
-    if (bridgeConfig) {
-      _chromaExtInitActive = CONFIG.enabled !== false;
-    } else if (e && e.detail && e.detail.active === false) {
-      _chromaExtInitActive = false;
-      CONFIG.enabled = false;
-    } else {
-      CONFIG.enabled = true;
-    }
-    if (!bridgeConfig && e && e.detail && e.detail.acceleration !== undefined) {
-      CONFIG.acceleration = e.detail.acceleration;
-    }
-
-    // Late-arrival activation: If the init polling loop already timed out
-    // (cold browser start where chrome.storage was slow), activate now.
-    if (!pollingInterval && _chromaExtInitActive) {
-      const config = getBridgeConfig();
-      if (config) applyConfig(config);
-      if (CONFIG.enabled && CONFIG.acceleration) {
-        ensurePrimeSessionSheet();
-        startPolling();
-      } else if (_chromaExtInitActive) {
-        CONFIG.enabled = true;
-        ensurePrimeSessionSheet();
-        startPolling();
-      }
-    }
-  }, true);
 
   // Selectors that reliably indicate an active ad (state classes, skip buttons, overlays)
   const AD_SELECTORS_RELIABLE = [
@@ -678,7 +650,10 @@
   function init() {
     // 1. Initial check (might be ready if handshake was fast)
     const initialConfig = getBridgeConfig();
-    if (initialConfig) applyConfig(initialConfig);
+    if (initialConfig) {
+      applyConfig(initialConfig);
+      rememberBridgeRevision();
+    }
 
     // 2. Listen for the handshake completion (THE PRIMARY ACTIVATION TRIGGER)
 
@@ -695,19 +670,14 @@
       // Safety Fallback: Poll for isolated-world sentinel before activating.
       let _pollCount = 0;
       const _pollId = safeSetInterval(() => {
-        const initDone = !!getBridgeConfig() || _extInitFired;
+        const config = getBridgeConfig();
         _pollCount++;
 
-        if (initDone) {
+        if (config) {
           safeClearInterval(_pollId);
-          const config = getBridgeConfig();
-          if (config) applyConfig(config);
-          if (!_chromaExtInitActive) return;
+          applyConfig(config);
+          rememberBridgeRevision();
           if (CONFIG.enabled && CONFIG.acceleration) {
-            ensurePrimeSessionSheet();
-            startPolling();
-          } else if (_extInitFired && _chromaExtInitActive) {
-            CONFIG.enabled = true;
             ensurePrimeSessionSheet();
             startPolling();
           }
@@ -719,30 +689,32 @@
   }
 
   // Listen for config updates via custom event from handshake logic
-  API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', (e) => {
-    if (e.detail) {
-      // SECURITY: Validating update keys against a strict allowlist.
-      applyConfig(getBridgeConfig() || e.detail);
+  API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', () => {
+    const revision = getBridgeRevision();
+    if (!Number.isSafeInteger(revision) || revision <= lastBridgeRevision) return;
+    const bridgeConfig = getBridgeConfig();
+    if (!bridgeConfig) return;
+    applyConfig(bridgeConfig);
+    lastBridgeRevision = revision;
 
-      if (DEBUG) console.log('[Chroma] Prime handler updated config:', CONFIG);
+    if (DEBUG) console.log('[Chroma] Prime handler updated config:', CONFIG);
     
-      if (!CONFIG.enabled || !CONFIG.acceleration) {
-        if (pollingInterval) {
-          safeClearInterval(pollingInterval);
-          pollingInterval = null;
-        }
-        if (targetVideo && isAdActive) {
-          targetVideo.playbackRate = 1;
-          targetVideo.volume = savedVolume;
-          targetVideo.muted = false;
-        }
-        isAdActive = false;
-        deactivatePrimeSessionSheet();
-        if (adOverlayHost) adOverlayHost.classList.remove('active');
-      } else {
-        ensurePrimeSessionSheet();
-        startPolling();
+    if (!CONFIG.enabled || !CONFIG.acceleration) {
+      if (pollingInterval) {
+        safeClearInterval(pollingInterval);
+        pollingInterval = null;
       }
+      if (targetVideo && isAdActive) {
+        targetVideo.playbackRate = 1;
+        targetVideo.volume = savedVolume;
+        targetVideo.muted = false;
+      }
+      isAdActive = false;
+      deactivatePrimeSessionSheet();
+      if (adOverlayHost) adOverlayHost.classList.remove('active');
+    } else {
+      ensurePrimeSessionSheet();
+      startPolling();
     }
   });
 
