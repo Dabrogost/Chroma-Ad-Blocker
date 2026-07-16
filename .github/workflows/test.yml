@@ -2,9 +2,9 @@ name: Test
 
 on:
   push:
-    branches: [dev, main]
+    branches: [dev, master]
   pull_request:
-    branches: [dev, main]
+    branches: [dev, master]
   workflow_dispatch:
 
 jobs:
