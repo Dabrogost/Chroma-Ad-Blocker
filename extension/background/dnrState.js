@@ -27,6 +27,12 @@ const WHITELIST_RULE_ID_START = 9000000;
 const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
 const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
 const ACCELERATION_OFF_PRESERVED_ALLOW_RULE_IDS = new Set([1015]);
+const RECOVERED_DNR_DIAGNOSTIC_IDS = [
+  'dnrWakeRecovery',
+  'dnrState',
+  'dnrDynamicRules',
+  'whitelistSync'
+];
 const WHITELIST_SUBRESOURCE_TYPES = [
   'sub_frame',
   'stylesheet',
@@ -225,6 +231,14 @@ function updateClassificationCache(rules) {
   dynamicRuleClassificationsReady = true;
 }
 
+async function clearRecoveredDnrDiagnostics() {
+  // Each clear is a storage read-modify-write, so keep them sequential to
+  // prevent parallel writes from restoring a diagnostic cleared by a sibling.
+  for (const id of RECOVERED_DNR_DIAGNOSTIC_IDS) {
+    await clearHealthDiagnostic(id);
+  }
+}
+
 export function isDynamicRuleClassificationReady() {
   return dynamicRuleClassificationsReady;
 }
@@ -318,11 +332,7 @@ async function performReconciliation(generation, reason) {
     dynamicRuleClassifications.clear();
     dynamicRuleClassificationsReady = true;
     await storeAppliedSubscriptionCounts(generation, false, subscriptionApplication);
-    await Promise.all([
-      clearHealthDiagnostic('dnrState'),
-      clearHealthDiagnostic('dnrDynamicRules'),
-      clearHealthDiagnostic('whitelistSync')
-    ]);
+    await clearRecoveredDnrDiagnostics();
     if (DEBUG) console.log(`[Chroma DNR] Reconciled inactive state (${reason}).`);
     return { ok: true, active: false };
   }
@@ -363,11 +373,7 @@ async function performReconciliation(generation, reason) {
 
   if (generation !== requestedGeneration) return { ok: true, stale: true };
   await storeAppliedSubscriptionCounts(generation, true, subscriptionApplication);
-  await Promise.all([
-    clearHealthDiagnostic('dnrState'),
-    clearHealthDiagnostic('dnrDynamicRules'),
-    clearHealthDiagnostic('whitelistSync')
-  ]);
+  await clearRecoveredDnrDiagnostics();
   if (DEBUG) {
     console.log(`[Chroma DNR] Reconciled ${desiredRules.length} dynamic rules (${reason}).`);
   }

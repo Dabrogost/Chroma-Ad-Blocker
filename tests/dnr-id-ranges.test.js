@@ -23,7 +23,7 @@ const subscriptionDnrCode = '{\n' + fs.readFileSync(path.join(__dirname, '..', '
 const dnrStateCode = '{\n' + fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'dnrState.js'), 'utf8')
   .replace('const DEBUG = false;', 'var DEBUG = false;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", 'var getDefaultDynamicRules = globalThis._getDefaultDynamicRules;')
-  .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", 'var clearHealthDiagnostic = async () => {}; var recordHealthDiagnostic = async () => {};')
+  .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", 'var clearHealthDiagnostic = globalThis._clearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = async () => {};')
   .replace(/import\s*\{[\s\S]*?\}\s*from\s*['"]\.\.\/subscriptions\/dnr\.js['"];?/, `
     var buildSubscriptionRuleApplication = globalThis.__subscriptionDnr.buildSubscriptionRuleApplication;
     var prepareSubscriptionRules = globalThis.__subscriptionDnr.prepareSubscriptionRules;
@@ -63,6 +63,7 @@ function conditionMatchesRequest(condition, request) {
 
 function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } = {}) {
   let dynamicRules = plain(existingRules);
+  const clearedHealthDiagnostics = [];
   const updateDynamicRulesCalls = [];
   const updateEnabledRulesetsCalls = [];
   const chrome = {
@@ -100,6 +101,9 @@ function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } 
   const sandbox = {
     chrome,
     console,
+    _clearHealthDiagnostic: async id => {
+      clearedHealthDiagnostics.push(id);
+    },
     _getDefaultDynamicRules: ({ trackingUrlCleanup = true } = {}) => [
       { id: 1000, priority: 4, action: { type: 'allow' }, condition: { urlFilter: '||default.example^' } },
       ...(trackingUrlCleanup
@@ -117,6 +121,7 @@ function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } 
     ...sandbox.__dnrState,
     subscriptionDnr: sandbox.__subscriptionDnr,
     storage,
+    clearedHealthDiagnostics,
     getDynamicRules: () => plain(dynamicRules),
     updateDynamicRulesCalls,
     updateEnabledRulesetsCalls
@@ -196,6 +201,7 @@ test('Network DNR reconciliation', async (t) => {
     assert.deepStrictEqual(dnr.updateEnabledRulesetsCalls[0].disableRulesetIds, staticRulesetIds);
     assert.strictEqual(dnr.storage.appliedNetworkRuleCount, 0);
     assert.deepStrictEqual(dnr.storage.appliedNetworkRulesPerSub, {});
+    assert.ok(dnr.clearedHealthDiagnostics.includes('dnrWakeRecovery'));
   });
 
   await t.test('off to on restores exactly 25,000 cached subscription rules', async () => {
@@ -221,6 +227,7 @@ test('Network DNR reconciliation', async (t) => {
     assert.strictEqual(restored[0].condition.urlFilter, '||subscription-00000.example^');
     assert.strictEqual(restored[24999].condition.urlFilter, '||subscription-24999.example^');
     assert.strictEqual(storage.appliedNetworkRuleCount, 25000);
+    assert.ok(dnr.clearedHealthDiagnostics.includes('dnrWakeRecovery'));
   });
 
   await t.test('active reconciliation repairs missing runtime subscription rules from cache', async () => {
@@ -236,6 +243,24 @@ test('Network DNR reconciliation', async (t) => {
     const restored = dnr.getDynamicRules().find(rule => rule.id === 100000);
     assert.strictEqual(restored.condition.urlFilter, '||subscription-00007.example^');
     assert.strictEqual(storage.appliedNetworkRuleCount, 1);
+    assert.ok(dnr.clearedHealthDiagnostics.includes('dnrWakeRecovery'));
+  });
+
+  await t.test('failed active reconciliation preserves the wake recovery diagnostic', async () => {
+    const dnr = loadDnrState({
+      storage: {
+        config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false }
+      },
+      beforeDynamicUpdate: async () => {
+        throw new Error('Simulated DNR commit failure');
+      }
+    });
+
+    await assert.rejects(
+      dnr.updateDNRState(),
+      /Simulated DNR commit failure/
+    );
+    assert.strictEqual(dnr.clearedHealthDiagnostics.includes('dnrWakeRecovery'), false);
   });
 
   await t.test('whitelist uses destination main-frame and initiator subresource rules', async () => {
