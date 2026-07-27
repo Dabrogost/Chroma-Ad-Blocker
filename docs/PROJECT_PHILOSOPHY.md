@@ -55,10 +55,10 @@ Chroma uses advanced MV3 APIs such as the `userScripts` engine and high-volume `
 
 When YouTube or other platforms update their ad-delivery algorithms, Chroma can ship a reviewed GitHub release package quickly. Web Store reviews can take days or weeks. In ad blocking, that delay matters.
 
-Staying off the store helps keep the engine responsive to platform changes while keeping maintainer changes tied to inspectable releases.
+Staying off the store helps keep the engine responsive to platform changes while keeping updates tied to inspectable releases.
 
 > [!IMPORTANT]
-> Sideloading an extension requires a higher level of trust. Review [Permissions](PERMISSIONS.md), [Privacy Policy](PRIVACY_POLICY.md), and [Security Policy](SECURITY.md) before installing.
+> Sideloading an extension requires a higher level of trust. Review [Permissions](PERMISSIONS.md) and the [Privacy Policy](PRIVACY_POLICY.md) before installing.
 
 ## AI Usage & Quality Assurance Disclosure
 
@@ -74,4 +74,4 @@ This collaborative approach combines the efficiency of advanced tooling with foc
 
 ---
 
-Back to [Chroma Documentation](README.md)
+Next: [Terms of Service](ToS.md)

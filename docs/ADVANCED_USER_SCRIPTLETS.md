@@ -11,7 +11,6 @@ Good use cases:
 - Fix one site that blocks copy, paste, selection, or right-click.
 - Remove a scroll lock after a modal or interstitial closes.
 - Patch a niche video player behavior on a site you personally use.
-- Test a scriptlet locally before proposing it for Chroma's bundled scriptlet library.
 - Run a trusted third-party scriptlet resource, such as a specialized video-site fix, only on the domain you choose.
 
 Avoid this feature for:
@@ -37,7 +36,7 @@ Turning master protection off unregisters advanced user scriptlets while keeping
 their cached resources and rules available for restoration when protection is
 enabled again.
 
-Resource URLs must use `https://` on the default port and cannot contain a username or password. Chroma rejects literal localhost and private/special-use IP addresses, but Chromium performs DNS resolution and Chroma cannot guarantee that a public-looking hostname will not resolve or rebind to a private address. Add only sources you trust; see [Remote URL Network Boundary](SECURITY.md#remote-url-network-boundary).
+Resource URLs must use `https://` on the default port and cannot contain a username or password. Chroma rejects literal localhost and private/special-use IP addresses, but Chromium performs DNS resolution and Chroma cannot guarantee that a public-looking hostname will not resolve or rebind to a private address. Add only sources you trust.
 
 ## Setup Flow
 

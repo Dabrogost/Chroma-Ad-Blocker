@@ -161,4 +161,4 @@ When troubleshooting performance, change one layer at a time and check the Healt
 
 ---
 
-Next: [Testing Guide](TEST_GUIDE.md)
+Next: [Project Philosophy](PROJECT_PHILOSOPHY.md)

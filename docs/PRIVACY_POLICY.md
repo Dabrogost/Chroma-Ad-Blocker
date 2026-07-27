@@ -84,4 +84,4 @@ If you have any questions about this Privacy Policy, please contact the develope
 
 ---
 
-Next: [Security Policy](SECURITY.md)
+Next: [Performance Guide](PERFORMANCE.md)

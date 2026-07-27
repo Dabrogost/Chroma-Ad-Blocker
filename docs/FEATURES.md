@@ -1,6 +1,6 @@
 # Feature Guide
 
-This guide expands the feature summary from the root README. For implementation diagrams and module-level layering, see [Architecture Deep Dive](ARCHITECTURE.md).
+This guide expands the feature summary from the root README and explains how Chroma's user-facing protection layers behave.
 
 ## Master Protection Lifecycle
 
@@ -41,8 +41,6 @@ For the full proxy manual, see [Media Proxy Router](MEDIA_PROXY_ROUTER.md).
 Chroma uses generated OISD Big static rules, a protected custom static layer, a specialized recipe layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 
 DNR blocking is central to Chroma's MV3 design because request decisions can be enforced by Chromium without waking the extension service worker for every network request.
-
-For rule ownership and request flow, see [Architecture Deep Dive](ARCHITECTURE.md#layer-1-network-level-blocking-extensionrules-extensionbackgrounddnrstatejs-extensionsubscriptions).
 
 ## Tracking URL & AMP Cleanup
 
@@ -157,4 +155,4 @@ Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's ext
 
 ---
 
-Next: [Architecture Deep Dive](ARCHITECTURE.md)
+Next: [YouTube Protection](YOUTUBE.md)

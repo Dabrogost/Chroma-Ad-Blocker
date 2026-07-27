@@ -1,0 +1,237 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Advanced User Scriptlets · Chroma Guide</title>
+<meta name="description" content="Add trusted uBO-style scriptlet resources, connect rules to resources, and diagnose registration issues.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="advanced-user-scriptlets">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link is-active" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets" aria-current="page">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section><section class="guide-nav-group"><h2>Project Context</h2><ul><li><a class="guide-nav-link" href="project-philosophy.html" data-guide-slug="project-philosophy">Project Philosophy</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Protect &amp; Customize</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Protect &amp; Customize</p><h1 id="advanced-user-scriptlets" tabindex="-1">Advanced User Scriptlets</h1><p class="guide-article-summary">Add trusted uBO-style scriptlet resources, connect rules to resources, and diagnose registration issues.</p><a class="guide-settings-cta" href="../../ui/settings.html#userScriptletsSection" data-settings-path="ui/settings.html#userScriptletsSection"><span>Open Advanced User Scriptlets</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Advanced User Scriptlets let you run small, trusted, site-specific JavaScript patches through Chrome's <code>userScripts</code> API. This is for personal fixes and experiments that Chroma should not bundle for every user.</p>
+<p>Use this feature when a normal filter list, cosmetic rule, or Element Zapper rule is not enough.</p>
+<h2 id="when-to-use-this" tabindex="-1">When To Use This</h2>
+<p>Good use cases:</p>
+<ul>
+<li>Fix one site that blocks copy, paste, selection, or right-click.</li>
+<li>Remove a scroll lock after a modal or interstitial closes.</li>
+<li>Patch a niche video player behavior on a site you personally use.</li>
+<li>Run a trusted third-party scriptlet resource, such as a specialized video-site fix, only on the domain you choose.</li>
+</ul>
+<p>Avoid this feature for:</p>
+<ul>
+<li>Random code copied from comments, forums, or untrusted gists.</li>
+<li>Banking, medical, identity, work-admin, password-manager, or other high-risk pages.</li>
+<li>Broad rules such as <code>*##+js(...)</code> unless you fully understand the code.</li>
+<li>Problems that can be solved with Element Zapper or a cosmetic rule.</li>
+</ul>
+<h2 id="trust-model" tabindex="-1">Trust Model</h2>
+<p>User scriptlet resources are executable code. Chroma does not bundle them, audit them, or activate them automatically from remote filter lists.</p>
+<p>They run only when all of these are true:</p>
+<ol>
+<li>Chroma's master protection switch is enabled.</li>
+<li>You add a trusted HTTPS resource URL in settings.</li>
+<li>Chroma successfully parses one or more JavaScript resources from that file.</li>
+<li>You save a matching <code>domain##+js(resource-name)</code> rule.</li>
+<li>Chrome's <strong>Allow User Scripts</strong> setting is enabled for Chroma.</li>
+</ol>
+<p>Turning master protection off unregisters advanced user scriptlets while keeping
+their cached resources and rules available for restoration when protection is
+enabled again.</p>
+<p>Resource URLs must use <code>https://</code> on the default port and cannot contain a username or password. Chroma rejects literal localhost and private/special-use IP addresses, but Chromium performs DNS resolution and Chroma cannot guarantee that a public-looking hostname will not resolve or rebind to a private address. Add only sources you trust.</p>
+<h2 id="setup-flow" tabindex="-1">Setup Flow</h2>
+<ol>
+<li>Open Chroma settings.</li>
+<li>Go to <strong>User Scriptlets</strong>.</li>
+<li>Click <strong>Add URL</strong>.</li>
+<li>Paste a raw HTTPS resource URL.</li>
+<li>Confirm that Chroma shows parsed resources under <strong>Available Resources</strong>.</li>
+<li>Add rules in the <strong>Rules</strong> box.</li>
+<li>Click <strong>Save Rules</strong>.</li>
+<li>Reload affected tabs so newly registered scriptlets run with the intended page timing.</li>
+</ol>
+<h2 id="resource-file-format" tabindex="-1">Resource File Format</h2>
+<p>Resource files use uBlock Origin-style resource entries:</p>
+<div class="guide-code-block" data-language="text"><pre><code class="language-text">resource-name.js text/javascript (() =&gt; {
+  // trusted user-provided code
+})();
+</code></pre>
+</div><p>The <code>.js</code> suffix is normalized. If the resource is named <code>resource-name.js</code>, you call it as <code>resource-name</code> in a rule:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(resource-name)
+</code></pre>
+</div><p>Multiple resources can live in the same file:</p>
+<div class="guide-code-block" data-language="text"><pre><code class="language-text">restore-selection.js text/javascript (() =&gt; {
+  const stop = event =&gt; event.stopImmediatePropagation();
+  document.addEventListener('copy', stop, true);
+  document.addEventListener('cut', stop, true);
+  document.addEventListener('contextmenu', stop, true);
+  const style = document.createElement('style');
+  style.textContent = '* { user-select: text !important; -webkit-user-select: text !important; }';
+  document.documentElement.appendChild(style);
+})();
+
+unlock-scroll.js text/javascript (() =&gt; {
+  const unlock = () =&gt; {
+    for (const node of [document.documentElement, document.body]) {
+      if (!node) continue;
+      node.style.overflow = '';
+      node.style.position = '';
+      node.style.touchAction = '';
+    }
+  };
+  unlock();
+  new MutationObserver(unlock).observe(document.documentElement, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ['style', 'class']
+  });
+})();
+</code></pre>
+</div><p>Then activate them only where needed:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(restore-selection)
+news.example##+js(unlock-scroll)
+</code></pre>
+</div><h2 id="resource-count-and-operational-bounds" tabindex="-1">Resource Count And Operational Bounds</h2>
+<p>Chroma does not impose a total number-of-resources limit on an accepted resource file. Chrome registration is sent in groups of 100 so a rejected batch can be retried one script at a time; 100 is a registration batch size, not a resource ceiling.</p>
+<p>The advanced lane retains these operational safeguards:</p>
+<ul>
+<li>2 MiB maximum response per resource URL.</li>
+<li>512 KiB maximum code size for one parsed resource.</li>
+<li>20 configured resource URLs.</li>
+<li>256 KiB total user-rule text.</li>
+<li>1,000 parsed user rules.</li>
+<li>8,192 characters per rule line.</li>
+</ul>
+<p>Malformed, duplicate, unsupported-MIME, empty, or overlong resource entries are skipped while valid siblings remain available. Chrome registration failures are likewise isolated within their 100-script batch so one malformed registration does not discard later batches.</p>
+<h2 id="reading-the-status-badges" tabindex="-1">Reading The Status Badges</h2>
+<p>The <strong>Available Resources</strong> chips show whether saved rules are actually connected:</p>
+<ul>
+<li><strong>Linked</strong> means at least one saved rule references that parsed resource.</li>
+<li><strong>Unused</strong> means the resource was parsed, but no saved rule calls it.</li>
+<li><strong>Missing</strong> means a saved rule references a resource name that is not currently available.</li>
+</ul>
+<p>For example:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(restore-selection)
+</code></pre>
+</div><p>If <code>restore-selection.js</code> is available, the chip shows <strong>Linked</strong>. If the resource URL was removed, failed to parse, or renamed the resource, Chroma shows <strong>Missing</strong>.</p>
+<h2 id="real-examples" tabindex="-1">Real Examples</h2>
+<h3 id="restore-selection-on-one-site" tabindex="-1">Restore Selection On One Site</h3>
+<p>Resource:</p>
+<div class="guide-code-block" data-language="text"><pre><code class="language-text">restore-selection.js text/javascript (() =&gt; {
+  const stop = event =&gt; event.stopImmediatePropagation();
+  document.addEventListener('copy', stop, true);
+  document.addEventListener('contextmenu', stop, true);
+  const style = document.createElement('style');
+  style.textContent = '* { user-select: text !important; -webkit-user-select: text !important; }';
+  document.documentElement.appendChild(style);
+})();
+</code></pre>
+</div><p>Rule:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(restore-selection)
+</code></pre>
+</div><h3 id="remove-a-persistent-scroll-lock" tabindex="-1">Remove A Persistent Scroll Lock</h3>
+<p>Resource:</p>
+<div class="guide-code-block" data-language="text"><pre><code class="language-text">unlock-scroll.js text/javascript (() =&gt; {
+  const unlock = () =&gt; {
+    document.documentElement.style.overflow = '';
+    if (document.body) document.body.style.overflow = '';
+  };
+  unlock();
+  new MutationObserver(unlock).observe(document.documentElement, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ['style']
+  });
+})();
+</code></pre>
+</div><p>Rule:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(unlock-scroll)
+</code></pre>
+</div><p>If a patch needs the page body to exist first, use an explicit later timing flag:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(unlock-scroll, runAt=end)
+</code></pre>
+</div><h3 id="run-a-trusted-video-site-patch" tabindex="-1">Run A Trusted Video-Site Patch</h3>
+<p>If a project you personally trust publishes a uBO-style resource file, add its raw HTTPS URL, verify the parsed resource name, then save the narrowest matching rule possible:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">twitch.tv##+js(twitch-videoad)
+</code></pre>
+</div><h2 id="troubleshooting" tabindex="-1">Troubleshooting</h2>
+<div class="guide-table-wrap"><table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>What it usually means</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Resource shows <strong>Unused</strong></td>
+<td>The resource parsed, but no saved rule references it.</td>
+<td>Add or edit a <code>domain##+js(resource-name)</code> rule.</td>
+</tr>
+<tr>
+<td>Rule status shows <strong>Missing</strong></td>
+<td>A saved rule references a resource that is not available.</td>
+<td>Check the resource name, refresh the URL, or remove the stale rule.</td>
+</tr>
+<tr>
+<td>Resource URL will not add</td>
+<td>The URL fails Chroma's literal URL checks.</td>
+<td>Use a raw <code>https://</code> URL with no credentials, no custom port, and no literal localhost/private/special-use address. DNS-resolved addresses remain part of the trusted-source boundary.</td>
+</tr>
+<tr>
+<td>Nothing changes on the page</td>
+<td>The tab loaded before the scriptlet was registered, or the domain rule does not match.</td>
+<td>Reload the tab and check the rule domain.</td>
+</tr>
+<tr>
+<td>Scriptlet errors do not appear in DevTools</td>
+<td>Quiet Console is enabled.</td>
+<td>Turn off <strong>Quiet Console</strong> in settings while debugging, then reload the affected tab.</td>
+</tr>
+<tr>
+<td>A site stays broken after removal</td>
+<td>The old script already ran in that page document.</td>
+<td>Remove the rule/resource, then reload the affected tab.</td>
+</tr>
+<tr>
+<td>Health says UserScripts unavailable</td>
+<td>Chrome has not enabled Chroma's <code>userScripts</code> access.</td>
+<td>Open the extension details page and enable <strong>Allow User Scripts</strong>.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="backup-behavior" tabindex="-1">Backup Behavior</h2>
+<p>Settings export stores resource URLs and saved rules, but not cached executable code. Import validates the complete versioned backup and all user-scriptlet rule text before changing storage. If runtime reconciliation fails after commit, Chroma attempts to restore the previous storage and runtime state and reports an incomplete rollback instead of hiding it.</p>
+<p>After importing settings on another browser profile, refresh the resource URLs, confirm the resources parse, and reload affected tabs before expecting the rules to run. See <a href="install.html#settings-backup-and-import">Settings Backup And Import</a> for the complete transaction boundary.</p>
+<h2 id="safer-rule-habits" tabindex="-1">Safer Rule Habits</h2>
+<ul>
+<li>Prefer exact domains such as <code>example.com##+js(...)</code>.</li>
+<li>Avoid broad or global domains.</li>
+<li>Keep resource files small and readable.</li>
+<li>Remove unused resources.</li>
+<li>Review any third-party resource contents before adding them.</li>
+<li>Prefer code you can inspect and understand.</li>
+<li>Reload tabs after adding, refreshing, or removing user scriptlets.</li>
+</ul>
+<hr>
+<p>Next: <a href="filter-lists.html">Filter List Subscriptions</a></p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="filter-lists.html"><span>Previous</span><strong>Filter List Subscriptions</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="statistics.html"><span>Next</span><strong>Statistics &amp; Health</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#when-to-use-this">When To Use This</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#trust-model">Trust Model</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#setup-flow">Setup Flow</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-file-format">Resource File Format</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-count-and-operational-bounds">Resource Count And Operational Bounds</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#reading-the-status-badges">Reading The Status Badges</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#real-examples">Real Examples</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#restore-selection-on-one-site">Restore Selection On One Site</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#remove-a-persistent-scroll-lock">Remove A Persistent Scroll Lock</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#run-a-trusted-video-site-patch">Run A Trusted Video-Site Patch</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#troubleshooting">Troubleshooting</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#backup-behavior">Backup Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#safer-rule-habits">Safer Rule Habits</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>

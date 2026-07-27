@@ -30,8 +30,6 @@ The tradeoff is trust. Chroma addresses that by keeping sensitive state local, d
 Related docs:
 
 - [Privacy Policy](PRIVACY_POLICY.md)
-- [Security Policy](SECURITY.md)
-- [Architecture Deep Dive](ARCHITECTURE.md)
 
 ---
 

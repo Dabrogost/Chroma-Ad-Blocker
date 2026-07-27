@@ -51,4 +51,4 @@ For questions regarding these Terms, please contact the developer at dabrogost@g
 
 ---
 
-Next: [Project Philosophy](PROJECT_PHILOSOPHY.md)
+Back to [Project Philosophy](PROJECT_PHILOSOPHY.md)

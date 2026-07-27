@@ -33,6 +33,33 @@ The package script also accepts:
 
 Before signing, the package script validates that the private key matches the bundled public key. If no signing key is available, the script still writes `dist/updates.json` for local package smoke tests, but it logs that the manifest is unsigned. The guided updater rejects unsigned release manifests.
 
+## Guide Generation
+
+Selected Markdown files under `docs/` are the canonical source for Chroma's bundled user manual. `scripts/guide-manifest.js` explicitly selects user-facing documents, categories, tasks, settings links, and screenshot assets; repository-only and machine-specific notes are never discovered through a directory glob.
+
+Regenerate the static in-extension guide after changing a canonical document, guide metadata, or screenshot:
+
+```powershell
+npm.cmd run docs:build
+```
+
+This command generates:
+
+- `extension/guide/index.html`
+- the article pages under `extension/guide/pages/`
+- `extension/guide/search-index.json`
+- local screenshot copies under `extension/docs/assets/`
+
+The shared `extension/guide/guide.css` and `extension/guide/guide.js` files are maintained source files rather than generated outputs. Do not hand-edit the generated HTML, search index, or screenshot copies.
+
+To verify that checked-in guide artifacts exactly match their canonical inputs without writing files, run:
+
+```powershell
+npm.cmd run docs:check
+```
+
+`npm.cmd run package:extension` runs the guide build before packaging. Calling `node scripts/package-extension.js` directly is intentionally stricter and refuses to package stale or missing guide output.
+
 ## What Gets Packaged
 
 The zip contains the contents of `extension/` at the archive root, so `manifest.json` is directly inside the zip.
@@ -41,10 +68,19 @@ It also includes:
 
 - `README.md`
 - `LICENSE.md`
-- the public Markdown docs listed by `RELEASE_DOC_FILES` in `scripts/package-extension.js`
+- the user-facing Markdown docs selected by `USER_DOC_FILES` in `scripts/guide-manifest.js`
+- the offline guide home, static article pages, shared CSS and JavaScript, and local search index under `guide/`
+- the five generated screenshot copies under `docs/assets/`, so images resolve in both the raw packaged Markdown and the in-extension guide
 
-It excludes development and generated files, including:
+It excludes repository-only documentation, development files, and unrelated build output, including:
 
+- `docs/README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SECURITY.md`
+- `docs/THREAT_MODEL.md`
+- `docs/TEST_GUIDE.md`
+- `docs/DISTRIBUTION.md`
+- `docs/CONTRIBUTING.md`
 - `extension/_metadata/`
 - `tests/`
 - `node_modules/`
@@ -58,6 +94,7 @@ Before sharing a build, complete this checklist from a clean working tree or rev
 
 - [ ] `npm.cmd test`
 - [ ] `npm.cmd run test:rules`
+- [ ] `npm.cmd run docs:check`
 - [ ] `npm.cmd run test:e2e`
 - [ ] `npm.cmd run package:extension`
 - [ ] GitHub release contains the exact generated asset name, for example `chroma-ad-blocker-v1.5.3.zip`.

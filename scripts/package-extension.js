@@ -2,6 +2,11 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
+const { checkGuideFreshness, slugifyHeading } = require('./build-guide');
+const {
+  GUIDE_REQUIRED_RELEASE_FILES,
+  USER_DOC_FILES
+} = require('./guide-manifest');
 
 const repoRoot = path.join(__dirname, '..');
 const extensionRoot = path.join(repoRoot, 'extension');
@@ -17,33 +22,15 @@ const REQUIRE_SIGNED_UPDATES_ENV = 'CHROMA_REQUIRE_SIGNED_UPDATES';
 const DEFAULT_UPDATE_SIGNING_PRIVATE_KEY_FILE = path.join(repoRoot, 'secrets', 'chroma-update-signing-private-key.jwk');
 const updateTrustPath = path.join(extensionRoot, 'background', 'updateTrust.js');
 
-const RELEASE_DOC_FILES = [
-  'docs/README.md',
-  'docs/INSTALL.md',
-  'docs/FEATURES.md',
-  'docs/ARCHITECTURE.md',
-  'docs/PERFORMANCE.md',
-  'docs/MEDIA_PROXY_ROUTER.md',
-  'docs/YOUTUBE.md',
-  'docs/FILTER_LISTS.md',
-  'docs/PERMISSIONS.md',
-  'docs/STATISTICS.md',
-  'docs/PRIVACY_POLICY.md',
-  'docs/SECURITY.md',
-  'docs/THREAT_MODEL.md',
-  'docs/CONTRIBUTING.md',
-  'docs/TEST_GUIDE.md',
-  'docs/DISTRIBUTION.md',
-  'docs/ToS.md',
-  'docs/PROJECT_PHILOSOPHY.md'
-];
+const RELEASE_DOC_FILES = USER_DOC_FILES.slice();
 
 const REQUIRED_RELEASE_FILES = [
   'manifest.json',
   'README.md',
   'LICENSE.md',
   'content/quiet_console.js',
-  ...RELEASE_DOC_FILES
+  ...RELEASE_DOC_FILES,
+  ...GUIDE_REQUIRED_RELEASE_FILES
 ];
 
 const FORBIDDEN_RELEASE_PATH_PATTERNS = [
@@ -159,6 +146,108 @@ function verifyReleaseEntries(entries) {
   }
 
   return errors;
+}
+
+function markdownHeadingIds(source) {
+  const counts = new Map();
+  const ids = new Set();
+  for (const match of source.matchAll(/^#{1,6}\s+(.+?)\s*#*\s*$/gm)) {
+    const base = slugifyHeading(match[1]);
+    const occurrence = counts.get(base) || 0;
+    counts.set(base, occurrence + 1);
+    ids.add(occurrence === 0 ? base : `${base}-${occurrence}`);
+  }
+  return ids;
+}
+
+function htmlElementIds(source) {
+  const ids = new Set();
+  for (const match of source.matchAll(/\bid=(?:"([^"]+)"|'([^']+)')/gi)) {
+    ids.add(match[1] || match[2]);
+  }
+  return ids;
+}
+
+function releaseFileReferences(entryName, source) {
+  const references = [];
+  if (entryName.endsWith('.md')) {
+    const withoutFences = source.replace(/^```[^\n]*\n[\s\S]*?^```\s*$/gm, '');
+    for (const match of withoutFences.matchAll(/!?\[[^\]]*\]\(\s*([^\s)]+)(?:\s+[^)]*)?\)/g)) {
+      references.push(match[1]);
+    }
+    for (const match of withoutFences.matchAll(/\b(?:href|src)\s*=\s*(?:"([^"]+)"|'([^']+)')/gi)) {
+      references.push(match[1] || match[2]);
+    }
+  } else if (entryName.endsWith('.html')) {
+    for (const match of source.matchAll(/\b(?:href|src)\s*=\s*(?:"([^"]+)"|'([^']+)')/gi)) {
+      references.push(match[1] || match[2]);
+    }
+  }
+  return references;
+}
+
+function verifyReleaseFileReferences(files) {
+  const fileMap = new Map();
+  const textMap = new Map();
+  const idMap = new Map();
+  const errors = new Set();
+
+  for (const file of files) {
+    const entryName = normalizeZipEntry(file.zipName);
+    fileMap.set(entryName, file);
+    if (!entryName.endsWith('.md') && !entryName.endsWith('.html')) continue;
+    const source = fs.readFileSync(file.source, 'utf8');
+    textMap.set(entryName, source);
+    idMap.set(
+      entryName,
+      entryName.endsWith('.md') ? markdownHeadingIds(source) : htmlElementIds(source)
+    );
+  }
+
+  for (const [entryName, source] of textMap) {
+    for (const rawReference of releaseFileReferences(entryName, source)) {
+      const reference = rawReference.trim();
+      if (!reference) continue;
+      if (/^(?:https:\/\/|mailto:|data:)/i.test(reference)) continue;
+      if (/^(?:http:\/\/|javascript:|vbscript:|file:|\/\/)/i.test(reference)) {
+        errors.add(`${entryName} contains an unsafe or non-HTTPS reference: ${reference}`);
+        continue;
+      }
+
+      const hashIndex = reference.indexOf('#');
+      const rawPath = hashIndex === -1 ? reference : reference.slice(0, hashIndex);
+      const rawFragment = hashIndex === -1 ? '' : reference.slice(hashIndex + 1);
+      let decodedPath;
+      let fragment;
+      try {
+        decodedPath = decodeURIComponent(rawPath);
+        fragment = decodeURIComponent(rawFragment);
+      } catch {
+        errors.add(`${entryName} contains an invalid encoded reference: ${reference}`);
+        continue;
+      }
+
+      const target = decodedPath
+        ? path.posix.normalize(path.posix.join(path.posix.dirname(entryName), decodedPath))
+        : entryName;
+      if (path.posix.isAbsolute(target) || target === '..' || target.startsWith('../')) {
+        errors.add(`${entryName} contains an escaping reference: ${reference}`);
+        continue;
+      }
+      if (!fileMap.has(target)) {
+        errors.add(`${entryName} references a missing release file: ${target}`);
+        continue;
+      }
+
+      const shouldValidateAnchor = fragment
+        && (target.endsWith('.md') || target.startsWith('guide/'));
+      if (shouldValidateAnchor && !idMap.get(target)?.has(fragment)) {
+        errors.add(`${entryName} references a missing anchor: ${target}#${fragment}`);
+      }
+    }
+  }
+
+  return [...errors].sort();
 }
 
 function readZipEntries(zipBuffer) {
@@ -391,10 +480,20 @@ function main() {
   const zipPath = path.join(distDir, zipName);
   const updateManifestPath = path.join(distDir, UPDATE_MANIFEST_FILE);
 
+  const freshnessErrors = checkGuideFreshness();
+  if (freshnessErrors.length > 0) {
+    console.error('Generated guide is not current. Run `npm run docs:build`:');
+    freshnessErrors.forEach(error => console.error(`- ${error}`));
+    process.exit(1);
+  }
+
   fs.mkdirSync(distDir, { recursive: true });
   const files = releaseFiles();
   const zip = makeZip(files);
-  const verificationErrors = verifyZipContents(zip);
+  const verificationErrors = [
+    ...verifyZipContents(zip),
+    ...verifyReleaseFileReferences(files)
+  ];
   if (verificationErrors.length > 0) {
     console.error('Release ZIP verification failed:');
     verificationErrors.forEach(error => console.error(`- ${error}`));
@@ -447,9 +546,11 @@ module.exports = {
   canonicalizeUpdateManifest,
   publicKeyFromPrivateJwk,
   readBundledUpdatePublicKey,
+  releaseFiles,
   signUpdateManifest,
   validateUpdateSigningPrivateKey,
   readZipEntries,
   verifyReleaseEntries,
+  verifyReleaseFileReferences,
   verifyZipContents
 };

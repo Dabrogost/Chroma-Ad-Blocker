@@ -11,7 +11,7 @@ Chroma ships with a mix of bundled and remote filter sources. Requested-enabled 
 | **EasyList** | EasyList remote list | 24 hours | Cosmetic rules and supported scriptlets only; not allocated to network DNR. |
 | **Fanboy Annoyance** | Fanboy remote list | 24 hours | Cosmetic annoyance rules and supported scriptlets only; not allocated to network DNR. |
 
-Chroma does not ship a maintainer-controlled hotfix subscription. Project fixes are delivered through GitHub release packages, and the popup can notify you when a newer release is available. If you want to trust an additional remote list, add it explicitly as a custom subscription.
+Chroma does not use a hidden remote hotfix list. Project fixes arrive through visible Chroma updates, and every additional remote list is one you explicitly choose to add.
 
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
@@ -65,7 +65,7 @@ Network rules are allocated by Chroma's internal priority score before being app
 
 This lets custom lists express urgency while still respecting Manifest V3 dynamic-rule budgets.
 
-New custom lists default to a 24-hour refresh interval unless a different valid interval is supplied by the UI or message API.
+New custom lists default to a 24-hour refresh interval unless you choose another interval in Settings.
 
 ## Protection Lifecycle And Cached Restoration
 
@@ -77,13 +77,13 @@ Subscription request state, cached parse results, and active browser state are d
 - Re-enabling protection restores runtime rules from cached data without requiring another network fetch. Startup, worker recovery, and an HTTP `304 Not Modified` also reconcile the active runtime from cache when necessary.
 - Whitelist destination rules for top-level navigation and initiator rules for subresources are installed only while network protection is active.
 
-Runtime DNR reconciliation is serialized and generation-checked so a refresh that started earlier cannot overwrite a newer master or network-toggle decision.
+A refresh that started earlier cannot override a newer master-protection or **Network Blocking** choice.
 
 ## Remote URL Network Boundary
 
 Custom remote URLs must use HTTPS on the default port and cannot contain credentials. Chroma rejects URLs that literally name localhost or private/special-use IPv4 or IPv6 addresses, and it revalidates the final response URL before accepting response metadata or body content.
 
-DNS resolution and redirect transport are performed by Chromium. Chroma cannot inspect or pin the connection's peer IP, so a public-looking hostname could resolve or rebind to a private address, and Chromium may contact an automatically followed redirect before Chroma rejects its final URL. Add only remote sources you trust. See [Security Policy](SECURITY.md#remote-url-network-boundary) for the complete boundary.
+DNS resolution and redirect transport are performed by Chromium. Chroma cannot inspect or pin the connection's peer IP, so a public-looking hostname could resolve or rebind to a private address, and Chromium may contact an automatically followed redirect before Chroma rejects its final URL. Add only remote sources you trust.
 
 ## Example Custom List
 
@@ -108,8 +108,6 @@ Remote list content is not treated as arbitrary code. Lists are fetched over HTT
 Advanced user scriptlet resources are the explicit exception to this model. They are not installed by Chroma, not bundled with Chroma, and not activated through filter-list subscriptions. They run only after the user adds a resource URL and matching user scriptlet rules in settings.
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
-
-For the security-policy version of this boundary, see [Security Policy](SECURITY.md#remote-list-trust-boundary).
 
 ## Third-Party Credits
 

@@ -1,0 +1,73 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Project Philosophy · Chroma Guide</title>
+<meta name="description" content="Read why Chroma exists, why it is distributed outside the Chrome Web Store, and which alternatives fit other needs.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="project-philosophy">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section><section class="guide-nav-group"><h2>Project Context</h2><ul><li><a class="guide-nav-link is-active" href="project-philosophy.html" data-guide-slug="project-philosophy" aria-current="page">Project Philosophy</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Project Context</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Project Context</p><h1 id="project-philosophy" tabindex="-1">Project Philosophy</h1><p class="guide-article-summary">Read why Chroma exists, why it is distributed outside the Chrome Web Store, and which alternatives fit other needs.</p></header><div class="guide-content"><p>Chroma is a practical extension, but it is also a response to a specific browser-platform reality: Chrome ad blocking now lives inside Manifest V3.</p>
+<h2 id="why-i-made-this" tabindex="-1">Why I Made This</h2>
+<p>Most Chrome ad blockers break often because the ground underneath them changed. Manifest V3 is not a temporary detour; for Chrome and most Chromium-based browsers, it is the platform reality now.</p>
+<p>Chromium has other browser vendors, but Google still drives the upstream platform that Chrome and most Chromium-based browsers inherit. Edge, Vivaldi, and others can patch or work around parts of that stack, but they do not make MV2-style Chrome extension blocking the durable default for Chrome users.</p>
+<p>Chroma exists because I wanted a blocker designed for that reality instead of fighting yesterday's API forever. It leans into MV3-native tools like Declarative Net Request, <code>userScripts</code>, local rule subscriptions, targeted scriptlets, and platform-specific handlers.</p>
+<p>The goal is not to be the biggest blocker or the loudest blocker. The goal is to be more robust when sites change, transparent about what it does, and auditable through release packages.</p>
+<p>Chroma is my answer to a simple problem: if Chrome ad blocking is going to live inside MV3, then the blocker should be built like it knows that.</p>
+<h2 id="recommended-companion-extensions" tabindex="-1">Recommended Companion Extensions</h2>
+<p>Chroma already includes network blocking, cosmetic filtering, scriptlets, proxy routing, and platform-specific handling, so I do not recommend stacking it with another ad blocker by default. Layering multiple content blockers can cause overlapping rules, false positives, and broken pages.</p>
+<p>Extensions that do something different from ad blocking can still pair well with Chroma. A favorite example is:</p>
+<ul>
+<li><strong><a href="https://chromewebstore.google.com/detail/sponsorblock-for-youtube-s/mnjggcdmjocbbbhaepdhchncahnbgone" target="_blank" rel="noopener noreferrer">SponsorBlock</a></strong>: Skips sponsor segments and other interruptions on YouTube.</li>
+</ul>
+<h2 id="recommended-alternatives" tabindex="-1">Recommended Alternatives</h2>
+<p>Chroma is built for users who want a transparent, source-auditable, Chrome/Chromium-focused MV3 extension with integrated proxy routing, YouTube ad stripping, custom subscriptions, and no store-mediated update delay. If that fits your workflow, Chroma is the right tool.</p>
+<p>If you prefer a store-installed extension, a Firefox-first setup, or a dedicated proxy manager, these are the alternatives I trust most:</p>
+<ul>
+<li><strong>Chrome / Chromium:</strong> <a href="https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh?hl=en" target="_blank" rel="noopener noreferrer">uBlock Origin Lite</a> + <a href="https://chromewebstore.google.com/detail/foxyproxy/gcknhkkoolaabfmlnjonogaaifnjlfnp?hl=en" target="_blank" rel="noopener noreferrer">FoxyProxy</a>. Recommended for users who want the Chrome Web Store path. uBlock Origin Lite comes from the uBlock Origin project and is a more reputable choice than most generic store ad blockers. FoxyProxy adds focused proxy management without bundling unrelated ad-blocking behavior.</li>
+<li><strong>Firefox:</strong> <a href="https://addons.mozilla.org/firefox/addon/ublock-origin/" target="_blank" rel="noopener noreferrer">uBlock Origin</a> + <a href="https://getfoxyproxy.org/" target="_blank" rel="noopener noreferrer">FoxyProxy</a>. Recommended for users who want the strongest traditional content-blocking setup. Full uBlock Origin has more browser API power on Firefox than MV3 Chrome blockers, and FoxyProxy is a mature, dedicated proxy-routing tool.</li>
+</ul>
+<h2 id="why-not-the-chrome-web-store" tabindex="-1">Why Not The Chrome Web Store?</h2>
+<p>Ad blocking on the modern web changes quickly, and trust is the most valuable currency. Chroma is deliberately not hosted on the Chrome Web Store. This is a strategic decision rooted in transparency and technical freedom.</p>
+<h3 id="conflict-of-interest" tabindex="-1">Conflict Of Interest</h3>
+<p>Google is an advertising company first. As the gatekeeper of the Chrome Web Store, it has an inherent conflict of interest regarding tools that neutralize its primary revenue stream.</p>
+<p>By remaining independent, Chroma is not subject to arbitrary policy changes, forced feature deprecations, or the risk of sudden removal that authorized blockers can face.</p>
+<h3 id="full-auditability" tabindex="-1">Full Auditability</h3>
+<p>Web Store extensions often arrive as bundled packages that are harder for ordinary users to inspect. Chroma is distributed as raw, human-readable source code. By loading it as an unpacked extension, users and contributors can audit the JavaScript that is actually running.</p>
+<p>There are no hidden analytics, telemetry backdoors, or Acceptable Ads-style paid bypass programs.</p>
+<h3 id="unrestricted-api-power" tabindex="-1">Unrestricted API Power</h3>
+<p>Chroma uses advanced MV3 APIs such as the <code>userScripts</code> engine and high-volume <code>declarativeNetRequest</code> rulesets. Staying release-package based keeps those capabilities transparent and source-auditable without waiting on store review cycles.</p>
+<h3 id="fast-github-releases" tabindex="-1">Fast GitHub Releases</h3>
+<p>When YouTube or other platforms update their ad-delivery algorithms, Chroma can ship a reviewed GitHub release package quickly. Web Store reviews can take days or weeks. In ad blocking, that delay matters.</p>
+<p>Staying off the store helps keep the engine responsive to platform changes while keeping updates tied to inspectable releases.</p>
+<aside class="guide-callout guide-callout--important" role="note"><p class="guide-callout-label guide-callout__title">Important</p>
+<p>Sideloading an extension requires a higher level of trust. Review <a href="permissions.html">Permissions</a> and the <a href="privacy-policy.html">Privacy Policy</a> before installing.</p>
+</aside>
+<h2 id="ai-usage-quality-assurance-disclosure" tabindex="-1">AI Usage &amp; Quality Assurance Disclosure</h2>
+<p>Portions of this codebase, including initial logic structures and documentation, were developed with the assistance of agentic AI coding assistants. To ensure project integrity, every AI-assisted component has been manually audited, refactored, and verified to meet strict security and performance standards.</p>
+<p>This collaborative approach combines the efficiency of advanced tooling with focused oversight and robust test coverage.</p>
+<h2 id="legal-disclaimers" tabindex="-1">Legal Disclaimers</h2>
+<p><strong>Trademark Disclaimer:</strong> YouTube, Google, and Chrome are trademarks of Google LLC. Amazon and Amazon Prime Video are trademarks of Amazon.com, Inc. Twitch is a trademark of Twitch Interactive, Inc. Netflix is a trademark of Netflix, Inc. Spotify is a trademark of Spotify AB. Disney+ is a trademark of Disney Enterprises, Inc. Hulu is a trademark of Hulu, LLC. Max and HBO are trademarks of Home Box Office, Inc. NordVPN is a trademark of Nord Security. ExpressVPN and Private Internet Access are trademarks of their respective owners. Brave is a trademark of Brave Software, Inc. All other trademarks, service marks, and company names mentioned are the property of their respective owners. Chroma Ad-Blocker is an independent project and is not affiliated with, endorsed by, or sponsored by any of these entities or their respective platforms.</p>
+<p><strong>Usage Warning:</strong> Using ad blockers, ad stripping, ad acceleration, or proxy routing tools may violate the Terms of Service of various platforms. By using Chroma, you acknowledge and assume all risks associated with potential account restrictions or enforcement actions.</p>
+<hr>
+<p>Next: <a href="terms.html">Terms of Service</a></p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="performance.html"><span>Previous</span><strong>Performance Guide</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="terms.html"><span>Next</span><strong>Terms of Service for Chroma Ad-Blocker</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#why-i-made-this">Why I Made This</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#recommended-companion-extensions">Recommended Companion Extensions</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#recommended-alternatives">Recommended Alternatives</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#why-not-the-chrome-web-store">Why Not The Chrome Web Store?</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#conflict-of-interest">Conflict Of Interest</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#full-auditability">Full Auditability</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#unrestricted-api-power">Unrestricted API Power</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#fast-github-releases">Fast GitHub Releases</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#ai-usage-quality-assurance-disclosure">AI Usage &amp; Quality Assurance Disclosure</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#legal-disclaimers">Legal Disclaimers</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>

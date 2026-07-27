@@ -4,7 +4,7 @@ Chroma's statistics and diagnostics are local-only. They are designed to explain
 
 ## Protection Intelligence
 
-The settings page includes **Protection Intelligence**, a local analytics dashboard backed by the versioned `statsV2` storage record. It upgrades the old single counter into a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.
+The settings page includes **Protection Intelligence**, a local analytics dashboard that provides a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.
 
 The popup headline shows **Protection Events**, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than "ads blocked": DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or feedback-only matches, so Chroma classifies events before counting them.
 
@@ -25,11 +25,9 @@ The **Events** section in settings shows recent local activity from the protecti
 
 Payload cleanup remains visible in the Event Tracker for transparency, but it is folded into the broader **Ad Cleanups** stat instead of being promoted as a platform-specific headline badge.
 
-### Page-Event Trust Boundary
+### Approximate Page-Level Counts
 
-MAIN-world YouTube and registered-scriptlet signals cross page-visible DOM notifications and are therefore not authenticated enforcement evidence. Chroma accepts only strict coarse event types; discards caller-supplied counts, timestamps, URLs, domains, sources, and rule identifiers; and derives tab/domain context from Chrome's authenticated message sender. Events are gated by master state, the corresponding feature, and the whitelist, then bounded per document, per tab, and globally.
-
-A hostile page can still forge an allowed coarse event within those limits. Page-layer totals are approximate diagnostics rather than an audit log. These signals do not affect blocking, DNR, configuration, or other privileged enforcement state.
+Some YouTube and scriptlet activity is reported from the page itself, so those page-level totals are approximate diagnostics rather than an audit log. Chroma accepts only coarse event types and does not trust page-supplied URLs, domains, timestamps, or counts. These signals cannot change settings or control protection.
 
 ## Privacy Modes
 
@@ -78,7 +76,7 @@ The panel is diagnostic-only. It reports counts and coarse status information, b
 
 For proxy, WebRTC, browser privacy, and geolocation, Health separates stored/requested intent, whether Chroma controls the relevant Chrome setting, and the observed effective state. Master-off requests appear paused rather than mismatched; another controller appears degraded or **Controlled elsewhere**.
 
-DNR match logging is shown separately because it depends on Chrome exposing `chrome.declarativeNetRequest.onRuleMatchedDebug` to the unpacked extension. Dynamic-rule action classification is rebuilt from Chrome's installed rules after each worker evaluation. Early matches wait in a bounded buffer until hydration completes; if action recovery fails, they remain neutral/unknown rather than being mislabeled as blocks. The compact action map stores rule IDs and action types, not URLs or subscription bodies. When the feedback API is unavailable, blocking can still work normally.
+Request Log availability depends on Chrome exposing matched-rule feedback to the unpacked extension. When that feedback is unavailable, blocking can still work normally.
 
 ---
 

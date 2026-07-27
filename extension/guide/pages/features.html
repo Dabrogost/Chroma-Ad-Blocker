@@ -1,0 +1,126 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Feature Guide · Chroma Guide</title>
+<meta name="description" content="See how Chroma's blocking, cleanup, privacy, proxy, and page-level protection layers work together.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="features">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link is-active" href="features.html" data-guide-slug="features" aria-current="page">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section><section class="guide-nav-group"><h2>Project Context</h2><ul><li><a class="guide-nav-link" href="project-philosophy.html" data-guide-slug="project-philosophy">Project Philosophy</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Start Using Chroma</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Start Using Chroma</p><h1 id="feature-guide" tabindex="-1">Feature Guide</h1><p class="guide-article-summary">See how Chroma's blocking, cleanup, privacy, proxy, and page-level protection layers work together.</p><a class="guide-settings-cta" href="../../ui/settings.html#protectionSection" data-settings-path="ui/settings.html#protectionSection"><span>Configure protection layers</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>This guide expands the feature summary from the root README and explains how Chroma's user-facing protection layers behave.</p>
+<h2 id="master-protection-lifecycle" tabindex="-1">Master Protection Lifecycle</h2>
+<p>The global master switch controls active protection rather than erasing requested settings. Master off removes active network and whitelist DNR, unregisters Chroma-managed subscription and advanced <code>userScripts</code>, releases proxy PAC routing, clears Chroma-owned WebRTC/browser-privacy/geolocation settings, and keeps recipe/platform MAIN behavior inert. Cached subscription rules, proxy records, feature toggles, and user resources remain stored.</p>
+<p>Master on restores the latest requested state from those caches and settings. Startup and service-worker recovery use the same reconciliation paths, and generation checks prevent an older refresh or registration operation from overwriting a newer toggle. A subscription refresh may update cached data while protection is off, but it cannot reactivate an inactive runtime layer.</p>
+<h2 id="youtube-ad-stripping" tabindex="-1">YouTube Ad Stripping</h2>
+<p>Chroma's primary YouTube defense intercepts and cleans ad-related metadata from JSON payloads before they reach the player. This includes sponsored Shorts overlay payloads and player ad metadata. The goal is a seamless, high-performance viewing experience without relying on playback acceleration.</p>
+<p>For the full platform-specific breakdown, see <a href="youtube.html">YouTube Protection</a>.</p>
+<h2 id="split-tunnel-proxy-router" tabindex="-1">Split-Tunnel Proxy Router</h2>
+<p>Chroma can route selected media domains through a user-configured HTTP, HTTPS, SOCKS4, or SOCKS5 proxy while keeping unrelated browser traffic direct. It is designed for media-site routing: sending supported services through proxy regions that reduce ad serving or match country-specific media delivery.</p>
+<p><img src="../../docs/assets/docs-settings-proxy-router.png" alt="Chroma media proxy router settings" loading="lazy" decoding="async"></p>
+<p>The router includes:</p>
+<ul>
+<li>Domain-specific proxy overrides.</li>
+<li>Global Proxy Fallback for unmatched browser traffic.</li>
+<li>Smart-Link Auto-Expansion for related media and CDN domains.</li>
+<li>Real-time connection verification.</li>
+<li>Local-only proxy credential handling for HTTP/HTTPS authentication.</li>
+<li>Chrome browser services bypass for Global Fallback mode.</li>
+<li>WebRTC leak protection controls.</li>
+</ul>
+<p>Master off pauses every proxy route and releases Chrome proxy control while preserving the configured routes. Health separates requested routes from effective Chrome routing, reports another extension or policy as <strong>Controlled elsewhere</strong>, and automatically reconciles after control is released.</p>
+<p>For the full proxy manual, see <a href="media-proxy-router.html">Media Proxy Router</a>.</p>
+<h2 id="source-generated-dnr-network-blocking" tabindex="-1">Source-Generated DNR Network Blocking</h2>
+<p>Chroma uses generated OISD Big static rules, a protected custom static layer, a specialized recipe layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.</p>
+<p>DNR blocking is central to Chroma's MV3 design because request decisions can be enforced by Chromium without waking the extension service worker for every network request.</p>
+<h2 id="tracking-url-amp-cleanup" tabindex="-1">Tracking URL &amp; AMP Cleanup</h2>
+<p>Tracking URL Cleanup removes known tracking query parameters from top-level navigation URLs with DNR redirect rules. Examples include <code>utm_*</code>, <code>fbclid</code>, <code>gclid</code>, and similar campaign IDs.</p>
+<p>De-AMP Links is optional and disabled by default. When enabled, Chroma redirects supported Google AMP viewer and AMP cache URLs to publisher URLs while respecting current-site and target-domain whitelists.</p>
+<h2 id="live-filter-list-subscriptions" tabindex="-1">Live Filter List Subscriptions</h2>
+<p>Chroma subscribes to Hagezi Pro Mini, EasyList, Fanboy Annoyance, and the bundled Chroma Scriptlet Library. Subscription rules are parsed locally, cached for restoration, deduplicated where appropriate, and routed to an active layer that can enforce them:</p>
+<ul>
+<li>Network rules can become DNR dynamic rules.</li>
+<li>Cosmetic rules feed the cosmetic filtering layer.</li>
+<li>Supported scriptlet rules feed the <code>userScripts</code> engine.</li>
+<li>Unsupported or malformed rules are dropped instead of guessed at.</li>
+</ul>
+<p>For custom subscription behavior and MV3 rule budgeting, see <a href="filter-lists.html">Filter List Subscriptions</a>.</p>
+<h2 id="scriptlet-injection-engine" tabindex="-1">Scriptlet Injection Engine</h2>
+<p>Chroma's scriptlet layer uses Chrome's <code>userScripts</code> API to run supported scriptlets in the page context at the right lifecycle point. It translates supported uBlock Origin and AdGuard syntax into native JavaScript.</p>
+<p>Capabilities include JSON pruning, property-read aborts, constant setting, fetch prevention, regex translation, and explicit timing flags such as <code>document_start</code>, <code>document_idle</code>, and <code>document_end</code>.</p>
+<p>Advanced users can also add their own uBO-style scriptlet resource URLs in settings, then save matching rules such as <code>example.com##+js(resource-name)</code>. These user-provided resources are not bundled with Chroma and are separate from normal filter list subscriptions; add only resources you trust. For setup examples and linked-resource troubleshooting, see <a href="advanced-user-scriptlets.html">Advanced User Scriptlets</a>.</p>
+<p>Subscription and advanced scripts require master protection. Turning it off unregisters all Chroma-managed <code>userScripts</code> for future documents while retaining their rules and resources for restoration. Whitelisted domains are excluded when registrations are active. Already-executed arbitrary page code may require a tab reload to remove its effects.</p>
+<h3 id="quiet-console" tabindex="-1">Quiet Console</h3>
+<p>Quiet Console is off by default. Chroma does not register its page-context helper unless Quiet Console is turned on and master protection is enabled. Turning it off unregisters the helper for new documents; already-open tabs that received the helper need a reload to remove that page-context code. When enabled, it reduces adblock-related noise in page DevTools by catching handled scriptlet and fingerprint warnings and short-circuiting known ad/tracker <code>fetch</code>, <code>XMLHttpRequest</code>, and <code>sendBeacon</code> calls. It does not rewrite DOM resource URLs such as script, image, iframe, or stylesheet sources, so Chrome may still show browser-generated resource-failure rows for blocked subresources. Coarse local diagnostics remain available to the extension.</p>
+<h2 id="cosmetic-filtering-layer" tabindex="-1">Cosmetic Filtering Layer</h2>
+<p>The cosmetic layer removes ad slots, placeholders, unwanted UI, and unsolicited overlay dialogs through CSS injection and DOM mutation monitoring. It is optimized for YouTube and Twitch, where server-side ad insertion or platform UI behavior can leave page clutter even when network blocking is active.</p>
+<p>Controls include:</p>
+<ul>
+<li>Hide Shorts modules.</li>
+<li>Hide Merchandise panels.</li>
+<li>Hide Movie/TV offer modules.</li>
+<li>Suppress browser-configuration warning overlays.</li>
+<li>Apply local cosmetic rules from Element Zapper.</li>
+</ul>
+<h2 id="element-zapper" tabindex="-1">Element Zapper</h2>
+<p>The Element Zapper is a manual cleanup tool for one-off annoyances that filter lists do not catch: sticky banners, leftover ad containers, newsletter blocks, floating widgets, and site-specific clutter.</p>
+<p>To use it:</p>
+<ol>
+<li>Open the Chroma popup on an <code>http://</code> or <code>https://</code> page.</li>
+<li>Click <strong>Zap Element</strong>.</li>
+<li>Click the unwanted page element. Press <code>Esc</code> to cancel.</li>
+<li>Review the selector prompt and save it.</li>
+</ol>
+<p>Zapper rules are local to your browser and stored as cosmetic rules with a <code>zapper</code> source. Chroma rejects invalid selectors and warns when a selector matches too many elements, helping avoid accidental broad hiding. Saved rules can be toggled or deleted from settings at any time.</p>
+<h2 id="main-world-interceptor-safety-exclusions" tabindex="-1">Main-World Interceptor Safety Exclusions</h2>
+<p>Chroma bypasses its generic MAIN-world interceptor and bridge on critical infrastructure, including listed financial institutions, authentication providers, and sensitive TLDs such as <code>.gov</code>, <code>.mil</code>, <code>.edu</code>, and <code>.int</code>.</p>
+<p>Broader network, cosmetic, and scriptlet behavior remains governed by user settings, subscriptions, and per-domain whitelisting.</p>
+<h2 id="recipe-blog-optimization" tabindex="-1">Recipe &amp; Blog Optimization</h2>
+<p>Chroma provides specialized protection for high-clutter recipe and lifestyle sites. It prevents ad scripts from breaking site layouts, preserves recipe card content, and suppresses aggressive anti-adblock overlays and scroll locks.</p>
+<p>The layer includes style protection, semantic recipe content preservation, anti-adblock containment, scroll-lock recovery, and site-specific cosmetic overrides for major recipe platforms.</p>
+<p>Recipe behavior waits for authenticated configuration and remains inert while master protection is off or the site is whitelisted. Live deactivation disconnects observers, cancels sweeps, removes Chroma-owned styles, and restores only API slots and page styles Chroma still owns, preserving later page changes. Re-enabling does not stack duplicate wrappers or stylesheets.</p>
+<h2 id="dynamic-ad-acceleration" tabindex="-1">Dynamic Ad Acceleration</h2>
+<p>Dynamic Ad Acceleration automatically identifies and accelerates video ads at a configurable speed (<code>x4</code>, <code>x8</code>, <code>x12</code>, or <code>x16</code>, default <code>x8</code>) on YouTube and Amazon Prime Video. It is a fallback for cases where stripping is disabled or platform behavior changes.</p>
+<p>It ships off by default. Twitch uses server-side ad insertion and does not support this acceleration path.</p>
+<p>For platform-specific behavior, see <a href="youtube.html">YouTube Protection</a>.</p>
+<h2 id="privacy-hardening-fingerprint-randomization" tabindex="-1">Privacy Hardening &amp; Fingerprint Randomization</h2>
+<p>Chroma includes optional browser privacy controls:</p>
+<ul>
+<li>Block third-party cookies.</li>
+<li>Keep Do Not Track disabled.</li>
+<li>Disable supported Privacy Sandbox ad APIs.</li>
+<li>Block website geolocation access through Chrome's native site setting.</li>
+<li>Apply WebRTC leak protection modes.</li>
+<li>Randomize or farble supported fingerprint surfaces per document.</li>
+</ul>
+<p>Fingerprint Randomization covers surfaces such as canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. It uses fresh non-persisted salts and full-hostname domain separation.</p>
+<p>Browser Privacy Hardening, Geolocation Protection, WebRTC modes, and Fingerprint Randomization require master protection in addition to their own feature settings. Master off releases or unregisters Chroma-owned runtime controls without erasing requested values; master on restores them. Health distinguishes requested, controlled, and effective Chrome state and automatically retries when an external controller releases a setting.</p>
+<p>These features are optional because browser privacy hardening and fingerprint changes can affect site compatibility.</p>
+<h2 id="local-event-tracker" tabindex="-1">Local Event Tracker</h2>
+<p>The settings page includes a local-only statistics dashboard for Protection Events, top domains, rule sources, timelines, and recent event summaries. It distinguishes network blocks from allow/whitelist matches. MAIN-world YouTube and scriptlet diagnostics accept only coarse, bounded event types, so those page-layer totals are approximate rather than authenticated enforcement evidence.</p>
+<p><img src="../../docs/assets/docs-settings-protection-intelligence.png" alt="Chroma Protection Intelligence dashboard" loading="lazy" decoding="async"></p>
+<p>For retention, privacy modes, and export behavior, see <a href="statistics.html">Statistics &amp; Health</a>.</p>
+<h2 id="platform-compatibility" tabindex="-1">Platform Compatibility</h2>
+<p>Chroma is designed for Windows, macOS, and Linux versions of Google Chrome 122+ and other Chromium-based browsers with engine version 122+. This version is required to support the multi-part static ruleset.</p>
+<p>Chrome 138+ also requires users to enable <strong>Allow User Scripts</strong> on Chroma's extension details page. Chrome 122-137 uses Developer Mode to enable the <code>userScripts</code> API.</p>
+<hr>
+<p>Next: <a href="youtube.html">YouTube Protection</a></p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="install.html"><span>Previous</span><strong>Installation &amp; Configuration</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="youtube.html"><span>Next</span><strong>YouTube Protection</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#master-protection-lifecycle">Master Protection Lifecycle</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#youtube-ad-stripping">YouTube Ad Stripping</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#split-tunnel-proxy-router">Split-Tunnel Proxy Router</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#source-generated-dnr-network-blocking">Source-Generated DNR Network Blocking</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#tracking-url-amp-cleanup">Tracking URL &amp; AMP Cleanup</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#live-filter-list-subscriptions">Live Filter List Subscriptions</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#scriptlet-injection-engine">Scriptlet Injection Engine</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#quiet-console">Quiet Console</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#cosmetic-filtering-layer">Cosmetic Filtering Layer</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#element-zapper">Element Zapper</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#main-world-interceptor-safety-exclusions">Main-World Interceptor Safety Exclusions</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#recipe-blog-optimization">Recipe &amp; Blog Optimization</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#dynamic-ad-acceleration">Dynamic Ad Acceleration</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#privacy-hardening-fingerprint-randomization">Privacy Hardening &amp; Fingerprint Randomization</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#local-event-tracker">Local Event Tracker</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#platform-compatibility">Platform Compatibility</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>

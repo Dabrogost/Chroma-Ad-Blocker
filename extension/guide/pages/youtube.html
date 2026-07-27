@@ -1,0 +1,59 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>YouTube Protection · Chroma Guide</title>
+<meta name="description" content="Understand YouTube payload cleanup, feed and Shorts handling, and the optional acceleration fallback.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="youtube">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link is-active" href="youtube.html" data-guide-slug="youtube" aria-current="page">YouTube Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section><section class="guide-nav-group"><h2>Project Context</h2><ul><li><a class="guide-nav-link" href="project-philosophy.html" data-guide-slug="project-philosophy">Project Philosophy</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Protect &amp; Customize</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Protect &amp; Customize</p><h1 id="youtube-protection" tabindex="-1">YouTube Protection</h1><p class="guide-article-summary">Understand YouTube payload cleanup, feed and Shorts handling, and the optional acceleration fallback.</p><a class="guide-settings-cta" href="../../ui/settings.html#protectionSection" data-settings-path="ui/settings.html#protectionSection"><span>Open YouTube protection settings</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Chroma's YouTube protection is designed around upstream payload cleanup rather than reacting to visible ads after the player has already started processing them.</p>
+<h2 id="youtube-ad-stripping" tabindex="-1">YouTube Ad Stripping</h2>
+<p>The YouTube Ad Stripper intercepts communication between your browser and YouTube's internal APIs, including <code>/youtubei/v1/player</code>, <code>/next</code>, and related endpoints. It surgically removes ad-related metadata before the YouTube player can process it.</p>
+<p>Instead of waiting for an ad to appear and then speeding it up or hiding it, the stripper tries to make the player receive a cleaned payload from the beginning.</p>
+<h2 id="how-it-works" tabindex="-1">How It Works</h2>
+<ul>
+<li><strong>Upstream Neutralization</strong>: Deletes fields such as <code>adPlacements</code>, <code>adSlots</code>, and <code>playerAds</code> from raw JSON responses before the player reads them.</li>
+<li><strong>Seamless Viewing Experience</strong>: Because ads are stripped before they load, there is no ad countdown, black-screen wait, or need for the acceleration engine in the ideal path.</li>
+<li><strong>Payload Interception</strong>: Uses hooks into <code>window.fetch</code>, <code>XMLHttpRequest</code>, and <code>JSON.parse</code> so batched or delayed requests can still be cleaned.</li>
+<li><strong>Feed &amp; Search Optimization</strong>: Strips promoted Sparkles ads, suggested products, and sponsored results from home feed and search payloads.</li>
+<li><strong>Sponsored Shorts Blocking</strong>: Prunes sponsored Shorts payloads such as <code>adsOverlay</code>, <code>shortsAdsRenderer</code>, <code>sequenceItemInPlayerAdLayoutRenderer</code>, and <code>reelWatchEndpoint.adClientParams.isAd</code> before the Shorts player renders the sponsored overlay.</li>
+</ul>
+<p>The stripper can still have a slight delay while YouTube processes cleaned data, and behavior can change when YouTube changes its delivery pipeline. Proxy-side ad-free payloads can reduce delay in supported setups because the payload starts without ad data.</p>
+<h2 id="relationship-to-acceleration" tabindex="-1">Relationship To Acceleration</h2>
+<p>Ad Acceleration remains available as a fallback, but stripping is the recommended method for a seamless YouTube experience.</p>
+<p>Dynamic Ad Acceleration ships off by default. When enabled, it detects active ads and accelerates them at a configurable speed:</p>
+<ul>
+<li><code>x4</code></li>
+<li><code>x8</code>, the default</li>
+<li><code>x12</code></li>
+<li><code>x16</code></li>
+</ul>
+<p>Acceleration is most useful when stripping is disabled, temporarily degraded by a platform change, or not appropriate for a particular playback situation.</p>
+<h2 id="privacy-boundary" tabindex="-1">Privacy Boundary</h2>
+<p>Session state is private to the handler closure. Host-page scripts cannot directly read or write acceleration state, session flags, or stripping internals, although they can observe visible player behavior and infer that cleanup occurred. Stripping, acceleration, and scroll behavior start inert until authenticated configuration arrives over the private bridge; page-dispatched config notifications carry no authoritative values.</p>
+<p>Coarse payload-modified events may appear in the local Event Tracker and are folded into broader cleanup statistics instead of being promoted as platform-specific telemetry. Caller-provided field counts or object details are discarded. Because the MAIN-world signal crosses a page-visible event, a hostile page can forge the coarse event within fixed rate limits; these approximate diagnostics do not affect enforcement or privileged state.</p>
+<h2 id="twitch-and-server-side-ad-insertion" tabindex="-1">Twitch And Server-Side Ad Insertion</h2>
+<p>Twitch uses server-side ad insertion, which prevents Chroma from applying the same kind of client-side ad acceleration path used for YouTube and Amazon Prime Video. Chroma can still apply cosmetic and scriptlet-related cleanup where supported, but it does not claim Twitch ad acceleration.</p>
+<hr>
+<p>Next: <a href="filter-lists.html">Filter List Subscriptions</a></p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="features.html"><span>Previous</span><strong>Feature Guide</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="media-proxy-router.html"><span>Next</span><strong>Media Proxy Router</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#youtube-ad-stripping">YouTube Ad Stripping</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#how-it-works">How It Works</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#relationship-to-acceleration">Relationship To Acceleration</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#privacy-boundary">Privacy Boundary</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#twitch-and-server-side-ad-insertion">Twitch And Server-Side Ad Insertion</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>
