@@ -33,8 +33,8 @@
 <tbody>
 <tr>
 <td>DNR request matching</td>
-<td>Chromium matches DNR rules in the browser engine without waking Chroma JavaScript for each request.</td>
-<td>Very large rule sets still have install/update validation cost and MV3 rule-budget limits.</td>
+<td>Chromium makes the block, redirect, or allow decision in the browser engine; Chroma JavaScript is not part of the enforcement decision.</td>
+<td>In unpacked profiles where Chrome exposes <code>onRuleMatchedDebug</code>, a matched rule can wake the worker for Chroma's separate request log. Very large rule sets also have install/update validation cost and MV3 rule-budget limits.</td>
 </tr>
 <tr>
 <td>Service worker</td>
@@ -68,8 +68,8 @@
 </tr>
 <tr>
 <td>Stats and request logs</td>
-<td>Content/background events are batched before storage writes.</td>
-<td>Debug request logging can store more URL detail and write more often on pages with many DNR matches.</td>
+<td>Content/background events and DNR matches are batched before storage writes.</td>
+<td>The DNR request log retains up to 500 recent full matched URLs independently of the statistics privacy mode. Debug mode additionally permits full URLs in <code>statsV2</code> recent events.</td>
 </tr>
 </tbody>
 </table></div>
@@ -80,22 +80,20 @@
 <li>Static rules are validated when the extension is installed or updated.</li>
 <li>Dynamic and subscription rules are rebuilt when settings, whitelists, or subscriptions change.</li>
 <li>Request-time matching is browser-managed.</li>
-<li>The service worker is not kept alive just because pages are making network requests.</li>
+<li>Enforcement does not depend on a running service worker.</li>
 </ul>
-<p>Chrome's DNR behavior and budgets still apply. Unsupported rules are skipped, dynamic subscription rules are allocated by priority, and extremely broad subscription sets can be trimmed before they reach the browser.</p>
+<p>Chroma also registers Chrome's developer-mode <code>onRuleMatchedDebug</code> feedback event when it is available. That event is diagnostics, not enforcement, but a rule match can wake the worker so Chroma can classify it, update local statistics, and append it to the request log. Chrome's DNR behavior and budgets still apply. Unsupported rules are skipped, dynamic subscription rules are allocated by priority, and extremely broad subscription sets can be trimmed before they reach the browser.</p>
 <h2 id="service-worker-lifecycle-and-startup-work" tabindex="-1">Service-Worker Lifecycle And Startup Work</h2>
-<p>Manifest V3 service workers are ephemeral. Chroma stores persistent state in <code>chrome.storage.local</code> and treats the worker as a coordinator rather than a long-running process.</p>
-<p>On install, update, startup, or wake, the worker may:</p>
+<p>Manifest V3 service workers are ephemeral. Chroma stores persistent state in <code>chrome.storage.local</code> and treats the worker as a coordinator rather than a long-running process. Chrome lifecycle events are distinct; <code>runtime.onStartup</code> does not run for an ordinary worker recreation.</p>
+<p>Work is divided as follows:</p>
 <ul>
-<li>Reconcile static and dynamic DNR state with the current master/network request, removing inactive rules or restoring cached rules as needed.</li>
-<li>Rebuild whitelist allow rules only while network protection is active.</li>
-<li>Ensure subscription refresh alarms exist.</li>
-<li>Refresh stale subscriptions.</li>
-<li>Register, recover, or unregister <code>userScripts</code> according to master state.</li>
-<li>Apply or release browser privacy, geolocation, WebRTC, and proxy-related browser settings according to master and feature state.</li>
-<li>Re-broadcast configuration to open tabs where possible.</li>
+<li><strong>New worker instance / ordinary wake:</strong> module evaluation registers handlers, initializes request-log classification, restores proxy state, reconciles DNR and cached subscription runtime state, checks persisted <code>userScripts</code>, and reconciles browser privacy controls.</li>
+<li><strong>Install or extension update:</strong> <code>runtime.onInstalled</code> writes defaults only for a fresh install, then initializes subscriptions and their alarm, refreshes stale lists, reconciles DNR/browser controls/scriptlets, and sends configuration to reachable open tabs.</li>
+<li><strong>Browser profile startup:</strong> <code>runtime.onStartup</code> reconciles browser controls, DNR, cached subscription state, and scriptlets; clears the request log; ensures the subscription alarm exists; and sends configuration to reachable open tabs.</li>
+<li><strong>Subscription alarm:</strong> refreshes only enabled lists whose interval has elapsed.</li>
+<li><strong>UI message or settings change:</strong> performs that request's targeted work. It does not repeat every startup task.</li>
 </ul>
-<p>That startup work happens during lifecycle and settings events instead of the request path. If the worker was asleep, opening the popup or changing settings may pay the wake cost before showing fresh state.</p>
+<p>Most of this work happens during lifecycle and settings events instead of the enforcement decision path. DNR match feedback is the exception: where Chrome exposes the debug feedback event, matches can wake the worker for logging and statistics. Opening the popup or changing settings may also pay a cold-start and recovery cost before showing fresh state.</p>
 <h2 id="content-script-cost" tabindex="-1">Content Script Cost</h2>
 <p>The isolated content script runs on normal web pages because cosmetic filtering, warning suppression, site whitelisting, De-AMP checks, and zapper rules are page-scoped features.</p>
 <p>The expected cost is small on ordinary pages:</p>
@@ -159,7 +157,7 @@
 <li>Background stats are queued, flushed, and pruned under retention caps.</li>
 </ul>
 <p>MAIN-world page-event diagnostics are additionally enum-gated and rate-limited. They are approximate local counters rather than authenticated enforcement evidence; their transport does not affect the blocking path.</p>
-<p>Debug request logging can still add overhead on very noisy pages because it records recent full URLs when available. Use Debug mode only when you need that detail.</p>
+<p>The request log and statistics history are separate stores. Whenever Chrome exposes DNR match feedback, the request log keeps up to 500 recent entries with full matched URLs regardless of whether statistics mode is Basic, Aggregated, or Debug. Statistics mode controls the detail retained in <code>statsV2</code>; only Debug permits full URLs in its recent-event records. Debug therefore adds detail to statistics, but switching away from Debug does not disable or redact the separate request log.</p>
 <h2 id="recommended-low-overhead-settings" tabindex="-1">Recommended Low-Overhead Settings</h2>
 <p>For a conservative everyday setup:</p>
 <div class="guide-table-wrap"><table>

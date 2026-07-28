@@ -39,17 +39,20 @@
 <h3 id="approximate-page-level-counts" tabindex="-1">Approximate Page-Level Counts</h3>
 <p>Some YouTube and scriptlet activity is reported from the page itself, so those page-level totals are approximate diagnostics rather than an audit log. Chroma accepts only coarse event types and does not trust page-supplied URLs, domains, timestamps, or counts. These signals cannot change settings or control protection.</p>
 <h2 id="privacy-modes" tabindex="-1">Privacy Modes</h2>
-<p>Statistics are stored only in <code>chrome.storage.local</code>.</p>
+<p>Protection Intelligence statistics are stored only in <code>chrome.storage.local</code>. These modes govern the <code>statsV2</code> statistics dataset:</p>
 <ul>
 <li><strong>Basic</strong>: Records totals only going forward. Existing aggregated history is preserved locally unless the user explicitly resets stats.</li>
 <li><strong>Aggregated</strong>: Records totals plus domains, rule sources, resource types, timelines, and recent event summaries.</li>
-<li><strong>Debug</strong>: May include recent full request URLs where they are available.</li>
+<li><strong>Debug</strong>: May include recent full request URLs in <code>statsV2</code> where they are available.</li>
 </ul>
-<p>Switching privacy modes changes future collection behavior and URL visibility. It does not erase saved aggregate intelligence unless a reset action is used.</p>
-<p>Aggregated mode is the default. Chroma stores domains by default, not full URLs. Full request URLs are only kept when Debug mode is enabled, and the bounded debug request log remains separate from <code>statsV2</code>.</p>
+<p>Switching privacy modes changes future <code>statsV2</code> collection and URL visibility. It does not erase saved aggregate intelligence unless a reset action is used.</p>
+<p>Aggregated mode is the default. Within <code>statsV2</code>, Chroma stores domains by default and retains full request URLs only in Debug mode.</p>
+<h3 id="separate-dnr-request-log" tabindex="-1">Separate DNR Request Log</h3>
+<p>The Request Log is a separate dataset and is not controlled by the Basic, Aggregated, or Debug statistics mode. Whenever Chrome exposes DNR matched-rule feedback to the unpacked extension, Chroma records the newest 500 reported matches in <code>chrome.storage.local</code>. Entries can contain full request URLs, timestamps, request types, matched rule IDs, block, allow, or neutral/match actions, and rule sources such as whitelist or unknown.</p>
+<p>Chroma clears this request log when the browser profile starts and Chrome fires <code>runtime.onStartup</code>. You can also reset it independently in settings. Changing statistics mode, resetting site statistics, or resetting all <code>statsV2</code> statistics does not clear it. When Chrome does not expose matched-rule feedback, the Request Log remains unavailable even though browser-enforced blocking can continue normally.</p>
 <h2 id="retention-reset-and-export" tabindex="-1">Retention, Reset, And Export</h2>
-<p>The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all stats, reset site stats only, reset the debug request log, or export a local JSON snapshot.</p>
-<p>Resetting stats does not erase configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.</p>
+<p>The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all <code>statsV2</code> statistics, reset site statistics only, reset the separate DNR request log, or export a local JSON statistics snapshot.</p>
+<p>Resetting <code>statsV2</code> statistics does not erase the separate request log, configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.</p>
 <p>The <strong>Time Saved (est.)</strong> card is deliberately conservative. It uses a small sub-second estimate per protection event and floors the displayed value, so ordinary page-load activity does not inflate into unrealistic minutes.</p>
 <h2 id="health-panel" tabindex="-1">Health Panel</h2>
 <p>The settings page includes a <strong>Health</strong> panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including:</p>
@@ -68,14 +71,14 @@
 <li>WebRTC protection.</li>
 <li>Proxy routing.</li>
 <li>Whitelists.</li>
-<li>Request-log/debug availability.</li>
+<li>DNR request-log feedback availability.</li>
 </ul>
 <p>The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.</p>
 <p>For proxy, WebRTC, browser privacy, and geolocation, Health separates stored/requested intent, whether Chroma controls the relevant Chrome setting, and the observed effective state. Master-off requests appear paused rather than mismatched; another controller appears degraded or <strong>Controlled elsewhere</strong>.</p>
 <p>Request Log availability depends on Chrome exposing matched-rule feedback to the unpacked extension. When that feedback is unavailable, blocking can still work normally.</p>
 <hr>
 <p>Next: <a href="privacy-policy.html">Privacy Policy</a></p>
-</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="advanced-user-scriptlets.html"><span>Previous</span><strong>Advanced User Scriptlets</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="permissions.html"><span>Next</span><strong>Permissions</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#protection-intelligence">Protection Intelligence</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#event-tracker">Event Tracker</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#approximate-page-level-counts">Approximate Page-Level Counts</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#privacy-modes">Privacy Modes</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#retention-reset-and-export">Retention, Reset, And Export</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#health-panel">Health Panel</a></li></ol></aside></div></main>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="advanced-user-scriptlets.html"><span>Previous</span><strong>Advanced User Scriptlets</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="permissions.html"><span>Next</span><strong>Permissions</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#protection-intelligence">Protection Intelligence</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#event-tracker">Event Tracker</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#approximate-page-level-counts">Approximate Page-Level Counts</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#privacy-modes">Privacy Modes</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#separate-dnr-request-log">Separate DNR Request Log</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#retention-reset-and-export">Retention, Reset, And Export</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#health-panel">Health Panel</a></li></ol></aside></div></main>
 </div>
 <button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
 <footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>

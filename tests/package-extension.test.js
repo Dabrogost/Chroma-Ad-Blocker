@@ -259,7 +259,7 @@ test('privacy and security docs document remote list behavior', () => {
   assert.match(threatModel, /private update-signing key/i);
 });
 
-test('docs disclose remote DNS limits and private MAIN config authority', () => {
+test('docs disclose remote DNS limits and authenticated MAIN config boundaries', () => {
   const filterLists = fs.readFileSync(path.join(__dirname, '..', 'docs', 'FILTER_LISTS.md'), 'utf8');
   const userScriptlets = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ADVANCED_USER_SCRIPTLETS.md'), 'utf8');
   const security = fs.readFileSync(path.join(__dirname, '..', 'docs', 'SECURITY.md'), 'utf8');
@@ -269,7 +269,8 @@ test('docs disclose remote DNS limits and private MAIN config authority', () => 
   assert.match(userScriptlets, /Chromium performs DNS resolution/i);
   assert.match(security, /cannot inspect or pin the connection's peer IP/i);
   assert.match(security, /__CHROMA_CONFIG_UPDATE__[^\n]*no authoritative values/i);
-  assert.match(architecture, /short-lived private `MessagePort`/i);
+  assert.match(architecture, /accepted private `MessagePort` remains open/i);
+  assert.match(architecture, /page scripts can directly read the exposed configuration/i);
   assert.doesNotMatch(architecture, /__EXT_INIT__/);
 });
 

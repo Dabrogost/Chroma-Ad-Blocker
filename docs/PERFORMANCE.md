@@ -6,14 +6,14 @@ Chroma's performance goal is practical low overhead, not zero overhead. The exte
 
 | Surface | Low-overhead path | What can make it heavier |
 |---|---|---|
-| DNR request matching | Chromium matches DNR rules in the browser engine without waking Chroma JavaScript for each request. | Very large rule sets still have install/update validation cost and MV3 rule-budget limits. |
+| DNR request matching | Chromium makes the block, redirect, or allow decision in the browser engine; Chroma JavaScript is not part of the enforcement decision. | In unpacked profiles where Chrome exposes `onRuleMatchedDebug`, a matched rule can wake the worker for Chroma's separate request log. Very large rule sets also have install/update validation cost and MV3 rule-budget limits. |
 | Service worker | Sleeps when idle and wakes for extension events, alarms, UI messages, DNR sync, subscription work, and proxy changes. | Cold starts, subscription refreshes, dynamic rule rebuilds, and scriptlet registration can take visible time in settings or diagnostics. |
 | Content script | Runs in the isolated world and primarily injects CSS, watches DOM additions, and removes known leftovers. | High-churn pages can produce many DOM mutations, especially video feeds, infinite scroll pages, and live chat layouts. |
 | Constructable stylesheets | Reuses `CSSStyleSheet` objects and updates `document.adoptedStyleSheets` instead of repeatedly appending style nodes. | Large selector sets still cost browser style recalculation when enabled or changed. |
 | MAIN-world interception | Runs only where platform handlers, scriptlets, media handlers, or optional fingerprint randomization require page-context hooks. | Hooking `fetch`, `XMLHttpRequest`, `JSON.parse`, media APIs, or fingerprint surfaces adds per-call checks on matched pages. |
 | `userScripts` registration | Browser stores registered script definitions and injects them on matching pages. | Many subscription or user scriptlet rules increase registration time and match pattern count. |
 | Proxy PAC routing | PAC chooses direct vs proxy transport by host, keeping DNR policy separate from routing. | Large domain lists and Global Fallback add routing checks and may add proxy latency. |
-| Stats and request logs | Content/background events are batched before storage writes. | Debug request logging can store more URL detail and write more often on pages with many DNR matches. |
+| Stats and request logs | Content/background events and DNR matches are batched before storage writes. | The DNR request log retains up to 500 recent full matched URLs independently of the statistics privacy mode. Debug mode additionally permits full URLs in `statsV2` recent events. |
 
 ## DNR Matching Vs JavaScript Request Overhead
 
@@ -24,25 +24,23 @@ That matters for MV3 performance:
 - Static rules are validated when the extension is installed or updated.
 - Dynamic and subscription rules are rebuilt when settings, whitelists, or subscriptions change.
 - Request-time matching is browser-managed.
-- The service worker is not kept alive just because pages are making network requests.
+- Enforcement does not depend on a running service worker.
 
-Chrome's DNR behavior and budgets still apply. Unsupported rules are skipped, dynamic subscription rules are allocated by priority, and extremely broad subscription sets can be trimmed before they reach the browser.
+Chroma also registers Chrome's developer-mode `onRuleMatchedDebug` feedback event when it is available. That event is diagnostics, not enforcement, but a rule match can wake the worker so Chroma can classify it, update local statistics, and append it to the request log. Chrome's DNR behavior and budgets still apply. Unsupported rules are skipped, dynamic subscription rules are allocated by priority, and extremely broad subscription sets can be trimmed before they reach the browser.
 
 ## Service-Worker Lifecycle And Startup Work
 
-Manifest V3 service workers are ephemeral. Chroma stores persistent state in `chrome.storage.local` and treats the worker as a coordinator rather than a long-running process.
+Manifest V3 service workers are ephemeral. Chroma stores persistent state in `chrome.storage.local` and treats the worker as a coordinator rather than a long-running process. Chrome lifecycle events are distinct; `runtime.onStartup` does not run for an ordinary worker recreation.
 
-On install, update, startup, or wake, the worker may:
+Work is divided as follows:
 
-- Reconcile static and dynamic DNR state with the current master/network request, removing inactive rules or restoring cached rules as needed.
-- Rebuild whitelist allow rules only while network protection is active.
-- Ensure subscription refresh alarms exist.
-- Refresh stale subscriptions.
-- Register, recover, or unregister `userScripts` according to master state.
-- Apply or release browser privacy, geolocation, WebRTC, and proxy-related browser settings according to master and feature state.
-- Re-broadcast configuration to open tabs where possible.
+- **New worker instance / ordinary wake:** module evaluation registers handlers, initializes request-log classification, restores proxy state, reconciles DNR and cached subscription runtime state, checks persisted `userScripts`, and reconciles browser privacy controls.
+- **Install or extension update:** `runtime.onInstalled` writes defaults only for a fresh install, then initializes subscriptions and their alarm, refreshes stale lists, reconciles DNR/browser controls/scriptlets, and sends configuration to reachable open tabs.
+- **Browser profile startup:** `runtime.onStartup` reconciles browser controls, DNR, cached subscription state, and scriptlets; clears the request log; ensures the subscription alarm exists; and sends configuration to reachable open tabs.
+- **Subscription alarm:** refreshes only enabled lists whose interval has elapsed.
+- **UI message or settings change:** performs that request's targeted work. It does not repeat every startup task.
 
-That startup work happens during lifecycle and settings events instead of the request path. If the worker was asleep, opening the popup or changing settings may pay the wake cost before showing fresh state.
+Most of this work happens during lifecycle and settings events instead of the enforcement decision path. DNR match feedback is the exception: where Chrome exposes the debug feedback event, matches can wake the worker for logging and statistics. Opening the popup or changing settings may also pay a cold-start and recovery cost before showing fresh state.
 
 ## Content Script Cost
 
@@ -126,7 +124,7 @@ Chroma batches stats and request-log writes to avoid writing to storage for ever
 
 MAIN-world page-event diagnostics are additionally enum-gated and rate-limited. They are approximate local counters rather than authenticated enforcement evidence; their transport does not affect the blocking path.
 
-Debug request logging can still add overhead on very noisy pages because it records recent full URLs when available. Use Debug mode only when you need that detail.
+The request log and statistics history are separate stores. Whenever Chrome exposes DNR match feedback, the request log keeps up to 500 recent entries with full matched URLs regardless of whether statistics mode is Basic, Aggregated, or Debug. Statistics mode controls the detail retained in `statsV2`; only Debug permits full URLs in its recent-event records. Debug therefore adds detail to statistics, but switching away from Debug does not disable or redact the separate request log.
 
 ## Recommended Low-Overhead Settings
 

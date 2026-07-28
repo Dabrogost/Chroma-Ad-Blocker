@@ -1,0 +1,9 @@
+# The guide generator emits LF text and its freshness check compares generated
+# bytes. Keep tracked guide text on LF across platforms so clean Windows
+# checkouts do not appear stale before any source documentation changes.
+/extension/guide/*.html text eol=lf
+/extension/guide/pages/*.html text eol=lf
+/extension/guide/*.css text eol=lf
+/extension/guide/*.js text eol=lf
+/extension/guide/*.json text eol=lf
+/extension/docs/assets/*.png binary

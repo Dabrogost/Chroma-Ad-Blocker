@@ -31,21 +31,27 @@ Some YouTube and scriptlet activity is reported from the page itself, so those p
 
 ## Privacy Modes
 
-Statistics are stored only in `chrome.storage.local`.
+Protection Intelligence statistics are stored only in `chrome.storage.local`. These modes govern the `statsV2` statistics dataset:
 
 - **Basic**: Records totals only going forward. Existing aggregated history is preserved locally unless the user explicitly resets stats.
 - **Aggregated**: Records totals plus domains, rule sources, resource types, timelines, and recent event summaries.
-- **Debug**: May include recent full request URLs where they are available.
+- **Debug**: May include recent full request URLs in `statsV2` where they are available.
 
-Switching privacy modes changes future collection behavior and URL visibility. It does not erase saved aggregate intelligence unless a reset action is used.
+Switching privacy modes changes future `statsV2` collection and URL visibility. It does not erase saved aggregate intelligence unless a reset action is used.
 
-Aggregated mode is the default. Chroma stores domains by default, not full URLs. Full request URLs are only kept when Debug mode is enabled, and the bounded debug request log remains separate from `statsV2`.
+Aggregated mode is the default. Within `statsV2`, Chroma stores domains by default and retains full request URLs only in Debug mode.
+
+### Separate DNR Request Log
+
+The Request Log is a separate dataset and is not controlled by the Basic, Aggregated, or Debug statistics mode. Whenever Chrome exposes DNR matched-rule feedback to the unpacked extension, Chroma records the newest 500 reported matches in `chrome.storage.local`. Entries can contain full request URLs, timestamps, request types, matched rule IDs, block, allow, or neutral/match actions, and rule sources such as whitelist or unknown.
+
+Chroma clears this request log when the browser profile starts and Chrome fires `runtime.onStartup`. You can also reset it independently in settings. Changing statistics mode, resetting site statistics, or resetting all `statsV2` statistics does not clear it. When Chrome does not expose matched-rule feedback, the Request Log remains unavailable even though browser-enforced blocking can continue normally.
 
 ## Retention, Reset, And Export
 
-The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all stats, reset site stats only, reset the debug request log, or export a local JSON snapshot.
+The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all `statsV2` statistics, reset site statistics only, reset the separate DNR request log, or export a local JSON statistics snapshot.
 
-Resetting stats does not erase configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.
+Resetting `statsV2` statistics does not erase the separate request log, configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.
 
 The **Time Saved (est.)** card is deliberately conservative. It uses a small sub-second estimate per protection event and floors the displayed value, so ordinary page-load activity does not inflate into unrealistic minutes.
 
@@ -70,7 +76,7 @@ The settings page includes a **Health** panel for diagnostics. It shows whether 
 - WebRTC protection.
 - Proxy routing.
 - Whitelists.
-- Request-log/debug availability.
+- DNR request-log feedback availability.
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.
 

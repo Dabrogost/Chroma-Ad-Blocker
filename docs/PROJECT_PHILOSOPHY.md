@@ -39,7 +39,7 @@ Ad blocking on the modern web changes quickly, and trust is the most valuable cu
 
 Google is an advertising company first. As the gatekeeper of the Chrome Web Store, it has an inherent conflict of interest regarding tools that neutralize its primary revenue stream.
 
-By remaining independent, Chroma is not subject to arbitrary policy changes, forced feature deprecations, or the risk of sudden removal that authorized blockers can face.
+By remaining independent, Chroma is not subject to Chrome Web Store review delays, listing removal, or the store's publication cadence. It remains subject to Chrome and Chromium API changes, Manifest V3 limits, browser policies, and feature deprecations.
 
 ### Full Auditability
 
@@ -47,9 +47,9 @@ Web Store extensions often arrive as bundled packages that are harder for ordina
 
 There are no hidden analytics, telemetry backdoors, or Acceptable Ads-style paid bypass programs.
 
-### Unrestricted API Power
+### Transparent MV3 API Use
 
-Chroma uses advanced MV3 APIs such as the `userScripts` engine and high-volume `declarativeNetRequest` rulesets. Staying release-package based keeps those capabilities transparent and source-auditable without waiting on store review cycles.
+Chroma uses MV3 APIs such as the `userScripts` engine and multi-part `declarativeNetRequest` rulesets within Chromium's permissions and quotas. Release-package distribution does not grant extra browser API power; it keeps the implementation inspectable and allows releases without waiting on store review cycles.
 
 ### Fast GitHub Releases
 
@@ -62,7 +62,7 @@ Staying off the store helps keep the engine responsive to platform changes while
 
 ## AI Usage & Quality Assurance Disclosure
 
-Portions of this codebase, including initial logic structures and documentation, were developed with the assistance of agentic AI coding assistants. To ensure project integrity, every AI-assisted component has been manually audited, refactored, and verified to meet strict security and performance standards.
+Portions of this codebase, including initial logic structures and documentation, were developed with the assistance of agentic AI coding assistants. AI-assisted changes are reviewed, refactored where needed, and subjected to relevant automated and manual checks before release. This process reduces risk, but it is not a claim that every component is formally verified or defect-free.
 
 This collaborative approach combines the efficiency of advanced tooling with focused oversight and robust test coverage.
 

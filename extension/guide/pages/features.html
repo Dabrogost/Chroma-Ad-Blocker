@@ -34,10 +34,10 @@
 <ul>
 <li>Domain-specific proxy overrides.</li>
 <li>Global Proxy Fallback for unmatched browser traffic.</li>
-<li>Smart-Link Auto-Expansion for related media and CDN domains.</li>
+<li>Smart-Link expansion through a fixed map of known media and CDN domains.</li>
 <li>Real-time connection verification.</li>
 <li>Local-only proxy credential handling for HTTP/HTTPS authentication.</li>
-<li>Chrome browser services bypass for Global Fallback mode.</li>
+<li>A default direct-connect list for selected Google/Chrome-related domains. It applies to page traffic as well as browser services and takes precedence whenever Chroma proxy routing is active, including domain-only routes.</li>
 <li>WebRTC leak protection controls.</li>
 </ul>
 <p>Master off pauses every proxy route and releases Chrome proxy control while preserving the configured routes. Health separates requested routes from effective Chrome routing, reports another extension or policy as <strong>Controlled elsewhere</strong>, and automatically reconciles after control is released.</p>
@@ -105,6 +105,7 @@
 <li>Apply WebRTC leak protection modes.</li>
 <li>Randomize or farble supported fingerprint surfaces per document.</li>
 </ul>
+<p>Do Not Track remains disabled deliberately: the <a href="https://www.w3.org/standards/history/tracking-dnt/" target="_blank" rel="noopener noreferrer">W3C retired the DNT specification</a>, sites are not required to honor the signal, and sending an uncommon preference can add another observable browser difference without reliably preventing tracking.</p>
 <p>Fingerprint Randomization covers surfaces such as canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. It uses fresh non-persisted salts and full-hostname domain separation.</p>
 <p>Browser Privacy Hardening, Geolocation Protection, WebRTC modes, and Fingerprint Randomization require master protection in addition to their own feature settings. Master off releases or unregisters Chroma-owned runtime controls without erasing requested values; master on restores them. Health distinguishes requested, controlled, and effective Chrome state and automatically retries when an external controller releases a setting.</p>
 <p>These features are optional because browser privacy hardening and fingerprint changes can affect site compatibility.</p>
@@ -113,7 +114,7 @@
 <p><img src="../../docs/assets/docs-settings-protection-intelligence.png" alt="Chroma Protection Intelligence dashboard" loading="lazy" decoding="async"></p>
 <p>For retention, privacy modes, and export behavior, see <a href="statistics.html">Statistics &amp; Health</a>.</p>
 <h2 id="platform-compatibility" tabindex="-1">Platform Compatibility</h2>
-<p>Chroma is designed for Windows, macOS, and Linux versions of Google Chrome 122+ and other Chromium-based browsers with engine version 122+. This version is required to support the multi-part static ruleset.</p>
+<p>Chroma is designed for Windows, macOS, and Linux versions of Google Chrome 122+ and other Chromium-based browsers with engine version 122+. Chrome 122 is Chroma's declared minimum supported version across its feature set; the 12-part static ruleset alone does not require Chrome 122.</p>
 <p>Chrome 138+ also requires users to enable <strong>Allow User Scripts</strong> on Chroma's extension details page. Chrome 122-137 uses Developer Mode to enable the <code>userScripts</code> API.</p>
 <hr>
 <p>Next: <a href="youtube.html">YouTube Protection</a></p>

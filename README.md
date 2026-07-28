@@ -1,6 +1,6 @@
 # Chroma Ad-Blocker
 
-**Chroma Ad-Blocker** is a free, open-source Manifest V3 browser extension built for local, auditable ad blocking on Chrome and Chromium-based browsers. It combines browser-engine DNR blocking, YouTube payload stripping, scriptlets, cosmetic filtering, media-aware proxy routing, local statistics, and optional privacy hardening with no Chroma telemetry or browsing-data collection.
+**Chroma Ad-Blocker** is a free, open-source Manifest V3 browser extension built for local, auditable ad blocking on Chrome and Chromium-based browsers. It combines browser-engine DNR blocking, YouTube payload stripping, scriptlets, cosmetic filtering, media-aware proxy routing, local statistics, and optional privacy hardening without Chroma-operated telemetry. Chroma processes browsing activity locally and, when Chrome exposes DNR match feedback, keeps a bounded local request log as documented in the [Privacy Policy](docs/PRIVACY_POLICY.md).
 
 For best results, disable other ad-blocking extensions while using Chroma. Layering multiple blockers can cause overlapping rules, false positives, and broken pages.
 
@@ -33,7 +33,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - **[Quiet Console](docs/FEATURES.md#quiet-console)**: Optional DevTools noise reduction for handled scriptlet/fingerprint warnings and known ad/tracker request paths.
 - **[Cosmetic Filtering & Element Zapper](docs/FEATURES.md#element-zapper)**: Removes ad slots, placeholders, unwanted UI, warnings, and user-selected page elements through CSS injection, DOM monitoring, and local cosmetic rules.
 - **[Privacy Hardening & Fingerprint Randomization](docs/FEATURES.md#privacy-hardening-fingerprint-randomization)**: Optional controls for third-party cookies, Privacy Sandbox ad APIs, geolocation access, WebRTC routing behavior, and per-document fingerprint farbling.
-- **[Local Event Tracker](docs/STATISTICS.md)**: A local-only Protection Intelligence dashboard for network, cleanup, scriptlet, proxy, and payload-cleanup events.
+- **[Local Event Tracker](docs/STATISTICS.md)**: A local-only Protection Intelligence dashboard for network, cleanup, scriptlet, proxy, and payload-cleanup events, plus a separate bounded DNR request log when Chrome exposes match feedback.
 - **[Local-First Privacy](docs/PRIVACY_POLICY.md)**: Keeps settings, diagnostics, subscriptions, proxy configuration, and protection statistics on the user's device without Chroma telemetry.
 
 ## Quick Start
@@ -45,7 +45,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 5. Enable User Scripts support:
    - **Chrome 138+**: On the Chroma extension card, click **Details**, then enable **Allow User Scripts**.
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
-6. Done. Chroma is active on all tabs. Pin it from the extensions menu to access the popup.
+6. Done. Network rules become active immediately. Reload tabs that were already open so Chroma's page-side cosmetic, scriptlet, and platform handlers can initialize. Browser-restricted pages remain outside extension access. Pin Chroma from the extensions menu to access the popup.
 
 When a newer GitHub release is available, Chroma can guide unpacked-extension updates from **Settings -> Updates** if the release includes the exact direct ZIP asset and signed `updates.json`. Chroma fetches those release assets internally, so users do not manually download `updates.json` and the extension does not need Chrome's download permission or download dialog. It verifies the update signature and package hash, builds a dry-run install plan, probes folder write access, backs up changed files, writes `manifest.json` last, and then shows a **Reload Chroma** action to load the updated files.
 
@@ -70,7 +70,8 @@ graph TD
     CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
 
     LOAD --> MEDIA{"YouTube or Amazon/Prime?"}:::actor
-    MEDIA -->|"yes"| BRIDGE["protection.js + interceptor.js<br/>secure config bridge"]:::main
+    MEDIA -->|"yes"| PROTECTION["protection.js<br/>isolated-world config relay"]:::ext
+    PROTECTION --> BRIDGE["interceptor.js<br/>MAIN-world config bridge"]:::main
     BRIDGE --> HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
     HANDLERS --> PAGE
 
@@ -90,7 +91,7 @@ Chroma processes core extension state locally. It does not operate telemetry, an
 
 Some optional or normal features make external requests: remote filter-list updates, GitHub release checks, proxy connectivity tests, and user-configured proxy routes. These are documented in the [Privacy Policy](docs/PRIVACY_POLICY.md).
 
-Chroma also includes limited allow rules for compatibility on specific supported sites. It does not intercept, store, or transmit data from those allowed requests.
+Chroma can apply allow rules from bundled compatibility rules, enabled subscriptions, and user whitelists. Chroma does not read response bodies merely because a request is allowed, but Chrome can expose the matched request URL and rule metadata to Chroma's bounded local DNR request log. Chroma does not transmit that log to a Chroma service.
 
 For another account-level privacy improvement, open [Google My Ad Center](https://myadcenter.google.com) and turn **Personalized Ads** to **OFF**.
 
@@ -122,14 +123,14 @@ Chroma is a solo project dedicated to restoring the web to its fast, private, an
 
 ## Credits, License, And Disclaimers
 
-Chroma uses logic and patterns derived from Brave Browser's YouTube ad-stripping scriptlets, Hagezi Pro Mini, and OISD Big. See [Filter List Subscriptions](docs/FILTER_LISTS.md#third-party-credits) for details.
+Chroma uses logic and patterns derived from Brave Browser's YouTube ad-stripping scriptlets and data from third-party filter lists including Hagezi Pro Mini, OISD Big, EasyList, and Fanboy Annoyance. See [Filter List Subscriptions](docs/FILTER_LISTS.md#third-party-credits) for details.
 
-Portions of this codebase, including initial logic structures and documentation, were developed with assistance from agentic AI coding assistants. Every AI-assisted component has been manually audited, refactored, and verified against the project's security and performance expectations.
+Portions of this codebase, including initial logic structures and documentation, were developed with assistance from agentic AI coding assistants. AI-assisted changes are reviewed and tested before release under the same project process as other contributions; this is a development practice, not an independent security certification.
 
 YouTube, Google, Chrome, Amazon, Amazon Prime Video, Twitch, Netflix, Spotify, Disney+, Hulu, Max, HBO, NordVPN, ExpressVPN, PIA, Brave, and other names are trademarks of their respective owners. Chroma Ad-Blocker is an independent project and is not affiliated with, endorsed by, or sponsored by those entities.
 
-Using ad blockers, ad stripping, proxy routing, or ad-acceleration tools may violate the terms of service of various platforms. By using Chroma, you acknowledge and assume those risks.
+Using ad blockers, ad stripping, proxy routing, or ad-acceleration tools may conflict with the terms of service of various platforms. Review the rules of services you use and understand the possible account or access consequences.
 
 <p align="right">
-  <sub>Copyright 2026 Dabrogost - GPL-3.0-or-later</sub>
+  <sub>Copyright 2026 Dabrogost — Chroma-authored material: GPL-3.0-or-later; third-party material retains the licenses identified in the source and credits.</sub>
 </p>

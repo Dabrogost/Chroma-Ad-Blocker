@@ -62,6 +62,7 @@
 <aside class="guide-callout guide-callout--note" role="note"><p class="guide-callout-label guide-callout__title">Note</p>
 <p>To maximize performance and respect Manifest V3 rule limits, <strong>EasyList</strong> and <strong>Fanboy Annoyance</strong> are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.</p>
 </aside>
+<p>Chrome <a href="https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest#rule-limits" target="_blank" rel="noopener noreferrer">guarantees at least 30,000 static DNR rules per extension</a>, while additional static capacity comes from a browser-wide pool shared by installed extensions. Chroma's multi-part OISD packaging does not bypass that platform quota, so other rule-heavy extensions can reduce the extra static capacity available beyond Chrome's guaranteed minimum.</p>
 <h2 id="custom-filter-list-subscriptions" tabindex="-1">Custom Filter List Subscriptions</h2>
 <p>Chroma supports user-added filter list subscriptions. You can host your own list in a GitHub repository, GitHub Gist, or any HTTPS endpoint that serves raw filter-list text, then paste the raw <code>https://</code> URL into Chroma's subscription manager.</p>
 <p>Custom subscriptions can include supported Adblock/uBO-style network rules, cosmetic rules, cosmetic exceptions, and scriptlet rules. During refresh, Chroma parses the list into network, cosmetic, and scriptlet buckets, drops unsupported or malformed rules, deduplicates network rules already covered by the bundled static ruleset, and only keeps scriptlets that map to Chroma's shipped scriptlet library.</p>
@@ -125,11 +126,13 @@ example.com##+js(set-constant, adsEnabled, false)
 <p>Advanced user scriptlet resources are the explicit exception to this model. They are not installed by Chroma, not bundled with Chroma, and not activated through filter-list subscriptions. They run only after the user adds a resource URL and matching user scriptlet rules in settings.</p>
 <p>Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.</p>
 <h2 id="third-party-credits" tabindex="-1">Third-Party Credits</h2>
-<p>Chroma utilizes logic and patterns derived from the following open-source projects:</p>
+<p>Chroma uses or derives logic and patterns from the following open-source projects and filter-list sources:</p>
 <ul>
 <li><strong>Brave Browser</strong>: The YouTube ad-stripping logic, including payload metadata pruning patterns, is derived from Brave's ad-blocking scriptlets under the <a href="https://mozilla.org/MPL/2.0/" target="_blank" rel="noopener noreferrer">MPL 2.0</a>.</li>
-<li><strong>Hagezi Pro Mini</strong> by <a href="https://github.com/hagezi/dns-blocklists" target="_blank" rel="noopener noreferrer">hagezi</a>: <a href="https://github.com/hagezi/dns-blocklists/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>.</li>
-<li><strong>OISD Big</strong> by <a href="https://oisd.nl" target="_blank" rel="noopener noreferrer">oisd</a>: <a href="https://github.com/sjhgvr/oisd/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">License</a>.</li>
+<li><strong>HaGeZi Pro Mini</strong> by <a href="https://github.com/hagezi/dns-blocklists" target="_blank" rel="noopener noreferrer">HaGeZi</a>: <a href="https://github.com/hagezi/dns-blocklists/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU General Public License version 3</a>.</li>
+<li><strong>OISD Big</strong> by <a href="https://oisd.nl" target="_blank" rel="noopener noreferrer">OISD</a>: <a href="https://github.com/sjhgvr/oisd/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU General Public License version 3</a>.</li>
+<li><strong>EasyList</strong> by the <a href="https://github.com/easylist/easylist" target="_blank" rel="noopener noreferrer">EasyList authors</a>: the EasyList repository is <a href="https://easylist.to/pages/licence.html" target="_blank" rel="noopener noreferrer">dual-licensed under GPLv3-or-later or CC BY-SA 3.0-or-later</a>, unless otherwise noted.</li>
+<li><strong>Fanboy's Annoyance List</strong> by the <a href="https://easylist.to/" target="_blank" rel="noopener noreferrer">EasyList/Fanboy maintainers</a>: the configured list declares the <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">Creative Commons Attribution 3.0 license</a> in its source header.</li>
 </ul>
 <hr>
 <p>Next: <a href="permissions.html">Permissions</a></p>

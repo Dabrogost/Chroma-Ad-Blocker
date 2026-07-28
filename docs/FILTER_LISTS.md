@@ -16,6 +16,8 @@ Chroma does not use a hidden remote hotfix list. Project fixes arrive through vi
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
 
+Chrome [guarantees at least 30,000 static DNR rules per extension](https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest#rule-limits), while additional static capacity comes from a browser-wide pool shared by installed extensions. Chroma's multi-part OISD packaging does not bypass that platform quota, so other rule-heavy extensions can reduce the extra static capacity available beyond Chrome's guaranteed minimum.
+
 ## Custom Filter List Subscriptions
 
 Chroma supports user-added filter list subscriptions. You can host your own list in a GitHub repository, GitHub Gist, or any HTTPS endpoint that serves raw filter-list text, then paste the raw `https://` URL into Chroma's subscription manager.
@@ -111,11 +113,13 @@ Because enabled remote lists can still change blocking, allow rules, cosmetic be
 
 ## Third-Party Credits
 
-Chroma utilizes logic and patterns derived from the following open-source projects:
+Chroma uses or derives logic and patterns from the following open-source projects and filter-list sources:
 
 - **Brave Browser**: The YouTube ad-stripping logic, including payload metadata pruning patterns, is derived from Brave's ad-blocking scriptlets under the [MPL 2.0](https://mozilla.org/MPL/2.0/).
-- **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists): [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE).
-- **OISD Big** by [oisd](https://oisd.nl): [License](https://github.com/sjhgvr/oisd/blob/main/LICENSE).
+- **HaGeZi Pro Mini** by [HaGeZi](https://github.com/hagezi/dns-blocklists): [GNU General Public License version 3](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE).
+- **OISD Big** by [OISD](https://oisd.nl): [GNU General Public License version 3](https://github.com/sjhgvr/oisd/blob/main/LICENSE).
+- **EasyList** by the [EasyList authors](https://github.com/easylist/easylist): the EasyList repository is [dual-licensed under GPLv3-or-later or CC BY-SA 3.0-or-later](https://easylist.to/pages/licence.html), unless otherwise noted.
+- **Fanboy's Annoyance List** by the [EasyList/Fanboy maintainers](https://easylist.to/): the configured list declares the [Creative Commons Attribution 3.0 license](https://creativecommons.org/licenses/by/3.0/) in its source header.
 
 ---
 

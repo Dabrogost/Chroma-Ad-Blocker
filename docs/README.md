@@ -2,7 +2,7 @@
 
 This directory is the long-form home for Chroma Ad-Blocker. The root [README](../README.md) is the public front door; these docs preserve user help as well as repository-only engineering, security-review, and release notes.
 
-Only the documents under **User Documentation** are included in the in-extension guide and release package. The remaining sections are repository references for development and review.
+Only the documents under **User Documentation** are included in the in-extension guide and release package. The remaining sections are repository references for development and review. The two tracks use separate `Next` navigation: the user track stays within packaged help, while the repository track returns here after Contributing.
 
 <div align="center">
   <img src="assets/docs-settings-overview.png" alt="Chroma settings dashboard" width="760">
@@ -31,6 +31,6 @@ Only the documents under **User Documentation** are included in the in-extension
 
 ## Development And Releases (Repository Only)
 
-- [Testing](TEST_GUIDE.md) - Node tests, policy tests, and Chrome for Testing / Chromium E2E guidance.
-- [Distribution](DISTRIBUTION.md) - packaging the extension ZIP, guided updater asset requirements, and release checks.
+- [Testing](TEST_GUIDE.md) - Node and policy tiers, CI smoke coverage, full Chrome for Testing / Chromium E2E, and browser-selection guidance.
+- [Distribution](DISTRIBUTION.md) - local and required-signing package workflows, guided updater asset requirements, and release checks.
 - [Contributing](CONTRIBUTING.md) - contribution ground rules and local PR expectations.

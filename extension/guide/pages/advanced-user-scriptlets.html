@@ -45,8 +45,14 @@
 <li>You add a trusted HTTPS resource URL in settings.</li>
 <li>Chroma successfully parses one or more JavaScript resources from that file.</li>
 <li>You save a matching <code>domain##+js(resource-name)</code> rule.</li>
-<li>Chrome's <strong>Allow User Scripts</strong> setting is enabled for Chroma.</li>
+<li>Chrome has enabled <code>userScripts</code> access for Chroma:
+<ul>
+<li><strong>Chrome 138+</strong>: Enable <strong>Allow User Scripts</strong> on Chroma's extension details page.</li>
+<li><strong>Chrome 122-137</strong>: Keep <strong>Developer Mode</strong> enabled on <code>chrome://extensions</code>.</li>
+</ul>
+</li>
 </ol>
+<p>User-provided resources are arbitrary page-context code. On matching pages and frames, they can read or modify data available to page scripts and can make network requests. Chroma's own no-telemetry promises do not apply to third-party or personal code you choose to add.</p>
 <p>Turning master protection off unregisters advanced user scriptlets while keeping
 their cached resources and rules available for restoration when protection is
 enabled again.</p>
@@ -209,7 +215,7 @@ news.example##+js(unlock-scroll)
 <tr>
 <td>Health says UserScripts unavailable</td>
 <td>Chrome has not enabled Chroma's <code>userScripts</code> access.</td>
-<td>Open the extension details page and enable <strong>Allow User Scripts</strong>.</td>
+<td>On Chrome 138+, open Chroma's extension details page and enable <strong>Allow User Scripts</strong>. On Chrome 122-137, enable <strong>Developer Mode</strong> on <code>chrome://extensions</code>.</td>
 </tr>
 </tbody>
 </table></div>
