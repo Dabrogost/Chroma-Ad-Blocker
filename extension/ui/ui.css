@@ -325,36 +325,26 @@ header {
   justify-content: center;
   gap: 5px;
   margin-left: 2px;
-  padding: 4px 10px;
-  color: #e9fffa;
-  border: 1px solid rgba(0, 255, 204, 0.4);
+  padding: 4px 9px;
+  color: var(--text-dim);
+  border: 1px solid transparent;
   border-radius: 6px;
-  background:
-    linear-gradient(90deg, rgba(255, 0, 85, 0.13), rgba(0, 136, 255, 0.16), rgba(0, 255, 204, 0.13)),
-    rgba(0, 255, 204, 0.07);
-  box-shadow:
-    0 0 15px rgba(0, 255, 204, 0.13),
-    0 0 0 1px rgba(255, 255, 255, 0.035) inset;
+  background: transparent;
+  box-shadow: none;
   font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.07em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   line-height: 1.2;
   text-decoration: none;
   text-transform: uppercase;
-  transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .settings-nav__guide:hover,
 .settings-nav__guide:focus-visible {
-  color: #fff;
-  border-color: rgba(0, 255, 204, 0.7);
-  background:
-    linear-gradient(90deg, rgba(255, 0, 85, 0.18), rgba(0, 136, 255, 0.22), rgba(0, 255, 204, 0.18)),
-    rgba(0, 255, 204, 0.1);
-  box-shadow:
-    0 0 20px rgba(0, 255, 204, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.055) inset;
-  transform: translateY(-1px);
+  color: var(--text);
+  border-color: rgba(0, 255, 204, 0.26);
+  background: rgba(0, 255, 204, 0.06);
 }
 
 .guide-link__icon {
