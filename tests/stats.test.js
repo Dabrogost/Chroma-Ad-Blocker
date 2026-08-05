@@ -131,7 +131,8 @@ test('statsV2 core aggregation and privacy', async (t) => {
 
   await t.test('merges batched events into totals, byDay, bySite, byResourceType, and byRule', async () => {
     const stats = loadStatsSandbox();
-    const ts = Date.UTC(2026, 4, 7, 12, 0, 0);
+    const ts = Date.now();
+    const day = new Date(ts).toISOString().slice(0, 10);
 
     stats.recordStatsEvents([
       {
@@ -173,7 +174,7 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(snapshot.totals.scriptletHits, 1);
     assert.strictEqual(snapshot.totals.zapperHits, 1);
     assert.strictEqual(snapshot.totals.protectionEvents, 8);
-    assert.strictEqual(snapshot.byDay['2026-05-07'].protectionEvents, 8);
+    assert.strictEqual(snapshot.byDay[day].protectionEvents, 8);
     assert.strictEqual(snapshot.bySite['example.com'].cosmeticHides, 3);
     assert.strictEqual(snapshot.bySite['ads.example.com'].networkBlocks, 1);
     assert.strictEqual(snapshot.byResourceType.script.networkBlocks, 1);
