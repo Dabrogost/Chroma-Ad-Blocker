@@ -318,6 +318,41 @@ header {
     0 0 0 1px rgba(255, 255, 255, 0.04) inset;
 }
 
+.settings-nav__guide {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-left: 2px;
+  padding: 4px 9px;
+  color: var(--text-dim);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.settings-nav__guide:hover,
+.settings-nav__guide:focus-visible {
+  color: var(--text);
+  border-color: rgba(0, 255, 204, 0.26);
+  background: rgba(0, 255, 204, 0.06);
+}
+
+.guide-link__icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
 /* TOGGLES */
 .section-title {
   font-size: 14px; font-weight: 700; color: var(--text-muted);
@@ -339,8 +374,52 @@ header {
   gap: 6px;
 }
 
+.section-title--with-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
 .section-title-text {
   margin-top: 1px;
+}
+
+.section-title--with-guide .section-title-text {
+  grid-column: 2;
+}
+
+.section-guide-link {
+  grid-column: 3;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  justify-self: end;
+  padding: 2px 4px;
+  color: rgba(182, 174, 202, 0.78);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.015em;
+  line-height: 1.2;
+  text-decoration: none;
+  text-transform: none;
+  transition: color 0.15s, background 0.15s;
+}
+
+.section-guide-link .guide-link__icon {
+  width: 11px;
+  height: 11px;
+}
+
+.section-guide-link:hover,
+.section-guide-link:focus-visible {
+  color: rgba(128, 255, 229, 0.96);
+  background: rgba(0, 255, 204, 0.045);
 }
 
 .icon-action-btn {
@@ -2855,6 +2934,11 @@ body.popup-page {
 
   .settings-nav__link {
     flex: 0 0 auto;
+  }
+
+  .settings-nav__guide {
+    flex: 0 0 auto;
+    margin-left: 0;
   }
 
   .section-title {

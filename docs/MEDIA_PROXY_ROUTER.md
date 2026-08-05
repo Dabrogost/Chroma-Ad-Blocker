@@ -14,7 +14,7 @@ Chroma's proxy router is not intended to replace a full general-purpose proxy ma
 
 Chroma's router is narrower by design. It exists as one layer of Chroma's larger local protection stack: DNR network blocking, scriptlets, cosmetic filtering, media handling, local event tracking, and optional browser-level routing all work together. The proxy layer is focused on split-tunneling selected media domains through user-provided proxies while keeping unrelated browser traffic direct, or optionally sending unmatched browser traffic through a Global Fallback proxy.
 
-The main difference is that Chroma is media-aware. When a supported streaming or media service is routed, Chroma can automatically include related CDN and delivery domains so the service UI and media stream are less likely to split across different IP paths. For example, adding `youtube.com` can also route related YouTube delivery domains such as `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com`.
+The main difference is that Chroma is media-aware. When a supported streaming or media service is routed, Chroma expands it through a fixed map of known CDN and delivery domains so the service UI and media stream are less likely to use different routes. For example, adding `youtube.com` also routes known YouTube delivery domains such as `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com`. This selects the same configured proxy route, but it cannot guarantee that a proxy provider will assign every request the same external IP.
 
 Chroma's design principle is:
 
@@ -25,7 +25,7 @@ Network filtering decides what should be blocked or allowed by the browser's DNR
 | Feature | Chroma Proxy Router | General Proxy Manager |
 |---|---|---|
 | Primary purpose | Media-aware split tunneling for ad-reducing or country-specific media routes inside Chroma's protection stack | Full proxy profile and rule management |
-| Routing model | Domain-specific rules, Smart-Link CDN expansion, optional Global Fallback | Proxy profiles, URL patterns, tab rules, PAC URLs, quick switching |
+| Routing model | Domain-specific rules, fixed Smart-Link domain-map expansion, optional Global Fallback | Proxy profiles, URL patterns, tab rules, PAC URLs, quick switching |
 | Scope | Browser-level routing for selected traffic | General-purpose proxy control |
 | Ad-block integration | Works alongside Chroma's DNR, scriptlet, cosmetic, and media layers | Usually separate from ad blocking |
 | Best use case | Route a service like YouTube, Netflix, Prime Video, or Twitch through a chosen media region without routing everything | Manage many proxies and complex user-defined routing rules |
@@ -70,11 +70,17 @@ The global Chroma master switch is authoritative over every proxy route. Master 
 
 Chrome allows only one extension or policy controller to own proxy settings at a time. If another controller wins, Chroma separates **requested** from **effective** routing, withholds credentials, reports the conflict in Health, and removes dormant Chroma PAC state so an obsolete route cannot reactivate later. When Chrome reports that control is available again, Chroma automatically reconciles the latest stored intent.
 
-## Chrome Browser Services Bypass
+## Google And Chrome Domain Bypass
 
-When Global Proxy Fallback is enabled, Chroma can optionally bypass Chrome-owned browser service traffic so Chrome's own infrastructure can still connect directly. The **Bypass Chrome Browser Services** toggle is enabled by default so the extension does not appear to break Chrome functionality when Global Proxy is enabled.
+The setting labeled **Bypass Chrome Browser Services** inserts a fixed direct-connect list whenever Chroma installs a PAC route. It is enabled by default. Despite the label, it is not limited to internal browser requests or to Global Proxy Fallback: it also applies during domain-only routing, affects normal page navigations and resources on matching hosts, and is evaluated before connection-test, domain-specific, and global routes. An explicit route for a listed hostname therefore still resolves directly while the bypass is enabled.
 
-Recommended mode lets Chrome-owned services connect directly while Global Proxy is enabled, helping browser-managed features such as updates, sign-in, and optional browser services keep working. Turning this off is stricter, but may cause Chrome-owned features to fail while Global Proxy Fallback is active.
+The list covers each hostname below and its subdomains:
+
+- AI, optimization, and account services: `optimizationguide-pa.googleapis.com`, `optimizationguide.googleapis.com`, `gemini.google.com`, `bard.google.com`, `generativelanguage.googleapis.com`, `accounts.google.com`, and `oauthaccountmanager.googleapis.com`.
+- Update and client infrastructure: `update.googleapis.com`, `tools.google.com`, `clients1.google.com` through `clients6.google.com`, `dl.google.com`, `dl-ssl.google.com`, `edgedl.me.gvt1.com`, `redirector.gvt1.com`, `redirector.gvt2.com`, `gvt1.com`, `gvt2.com`, and `gvt3.com`.
+- Other Google API and content hosts: `storage.googleapis.com`, `commondatastorage.googleapis.com`, `www.googleapis.com`, `aratea-pa.googleapis.com`, `scone-pa.clients6.google.com`, `gstatic.com`, and `googleusercontent.com`.
+
+This default can help browser-managed updates, sign-in, and optional Google/Chrome services continue working, but it also means visits and page resources on the broader listed domains can avoid the proxy. Turn the bypass off when every matching request should follow normal Chroma routing, while recognizing that some Chrome-owned features may then fail.
 
 ## WebRTC Leak Protection
 
@@ -95,39 +101,32 @@ Auto, Balanced, and Strict describe stored intent only while master protection i
 
 Proxy cards summarize saved route intent and the latest connection-test result:
 
-- **GLOBAL PROXY ACTIVE**: The server is handling all browser traffic.
+- **GLOBAL PROXY ACTIVE**: The server is selected for unmatched browser traffic. Direct-connect bypasses, browser-restricted traffic, and any more-specific route are exceptions.
 - **ROUTING [X] DOMAINS**: The server is only handling the specific domains you have listed.
 - **CONNECTED**: The server is ready but has no current routing assignments.
 - **DISABLED**: The proxy is saved but paused. Its domain rows and global selection, if any, are preserved.
 
 These card labels are not proof that Chrome accepted Chroma's PAC settings. The **Health** panel is authoritative for requested, master-paused, effective, externally controlled, and incomplete-release state. In particular, a saved GLOBAL selection is not effective while master protection is off or another controller owns Chrome's proxy setting.
 
-## Example: Setting Up NordVPN
+## Example: Checking NordVPN Compatibility
 
-Many commercial VPN providers, including NordVPN, ExpressVPN, and PIA, operate browser-compatible proxy servers. Here is how to route specific domains through a NordVPN HTTPS proxy server, such as Belize #1:
+As reviewed on July 27, 2026, [NordVPN's current proxy instructions](https://support.nordvpn.com/hc/en-us/articles/20195967385745-NordVPN-proxy-setup-for-qBittorrent) document authenticated SOCKS5 endpoints on port `1080` for applications such as qBittorrent. Those instructions require NordVPN service credentials.
 
-1. **Protocol:** Select `HTTPS` from the dropdown.
-2. **Host:** Enter `bz1.proxy.nordvpn.com`.
-3. **Port:** Enter `89`. This is commonly used by NordVPN HTTPS/HTTP SSL proxy endpoints.
-4. **Username & Password:** You cannot use your standard NordAccount email/password. Use your auto-generated **Service Credentials**, which can be found in your NordAccount dashboard under **Services > NordVPN > Manual Setup**.
-5. **Domains:** Add the domains you want to route, such as `youtube.com`, to the active list.
-6. Click **Accept Settings**.
-
-This provider-specific example was last reviewed on May 11, 2026. It may require converting Nord's displayed server address from `bz1.nordvpn.com` to the browser-compatible proxy host form `bz1.proxy.nordvpn.com`. Other proxy providers may use different hostnames, ports, protocols, and credential requirements, so follow your provider's current proxy setup instructions.
+That authenticated SOCKS5 setup is not directly compatible with Chroma because Chromium does not expose SOCKS username/password authentication to extensions. Do not derive an HTTPS hostname or substitute a different port unless NordVPN currently documents that endpoint. NordVPN would work with Chroma only if it provides a current browser-compatible HTTP/HTTPS endpoint or an unauthenticated/IP-allowlisted SOCKS endpoint. Provider offerings change, so confirm the protocol, hostname, port, authentication method, and permitted use in the provider's current documentation before saving a route.
 
 Proxy-region performance can vary by provider, route, and streaming service. If YouTube buffers above 1080p or struggles in fullscreen, try another nearby proxy region before assuming the extension is at fault.
 
 ## Smart-Link Auto-Expansion
 
-To prevent infinite spin and geo-blocking issues caused by IP mismatches between a site's UI and its video delivery network, Chroma includes a **Smart-Link** system. When you add a major streaming service to your proxy list, Chroma automatically identifies and proxies its associated media delivery networks.
+To reduce infinite spin and geo-blocking issues caused by route mismatches between a site's UI and its video delivery network, Chroma includes a **Smart-Link** system. When you add a supported streaming-service domain, Chroma expands it using the fixed known-domain map below. It does not discover new CDN relationships dynamically.
 
-For example, adding `youtube.com` automatically proxies `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com`, ensuring that the video stream itself originates from the same proxy IP as your main session.
+For example, adding `youtube.com` also routes `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com` through the same configured proxy. This improves route consistency but does not guarantee the same external IP for every request; the proxy provider controls egress assignment.
 
 Supported services include:
 
 - **YouTube**: `googlevideo.com`, `ytimg.com`, `ggpht.com`, `youtube-nocookie.com`, `youtu.be`, `youtubei.googleapis.com`, `youtube.googleapis.com`
 - **Netflix**: `netflix.net`, `nflxvideo.net`, `nflxext.com`, `nflximg.com`, `nflximg.net`, `nflxso.net`, `nflxsearch.net`
-- **Amazon Prime Video**: `amazonvideo.com`, `primevideo.com`, `aiv-cdn.net`, `pv-cdn.net`, `aiv-delivery.net`, `media-amazon.com`, `ssl-images-amazon.com`, plus global TLDs such as `.de` and `.co.jp`
+- **Amazon Prime Video**: `amazonvideo.com`, `primevideo.com`, `aiv-cdn.net`, `pv-cdn.net`, `aiv-delivery.net`, `media-amazon.com`, and `ssl-images-amazon.com`. Regional `amazon.*` domains such as `amazon.de` or `amazon.co.jp` trigger this same CDN expansion when the user adds them; Chroma does not automatically add every regional Amazon hostname.
 - **Twitch**: `ttvnw.net`, `jtvnw.net`, `twitchcdn.net`
 - **Disney+**: `disney-plus.net`, `dssott.com`, `dssedge.com`, `bamgrid.com`, `disney-plus.com`
 - **Hulu**: `hulumail.com`, `huluim.com`, `hulu.hbomax.com`

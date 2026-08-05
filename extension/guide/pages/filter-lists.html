@@ -1,0 +1,145 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Filter List Subscriptions · Chroma Guide</title>
+<meta name="description" content="Manage bundled and custom filter sources while understanding MV3 rule budgets and trust boundaries.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="filter-lists">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link is-active" href="filter-lists.html" data-guide-slug="filter-lists" aria-current="page">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section><section class="guide-nav-group"><h2>Project Context</h2><ul><li><a class="guide-nav-link" href="project-philosophy.html" data-guide-slug="project-philosophy">Project Philosophy</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Protect &amp; Customize</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Protect &amp; Customize</p><h1 id="filter-list-subscriptions" tabindex="-1">Filter List Subscriptions</h1><p class="guide-article-summary">Manage bundled and custom filter sources while understanding MV3 rule budgets and trust boundaries.</p><a class="guide-settings-cta" href="../../ui/settings.html#filterListsSection" data-settings-path="ui/settings.html#filterListsSection"><span>Manage filter lists</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Chroma ships with a mix of bundled and remote filter sources. Requested-enabled remote lists are fetched directly by your browser on their configured schedule, parsed locally, and cached in <code>chrome.storage.local</code>. Applying those cached rules is a separate lifecycle decision: master protection and each relevant feature gate determine whether the network, cosmetic, or scriptlet runtime is active.</p>
+<h2 id="bundled-and-default-sources" tabindex="-1">Bundled And Default Sources</h2>
+<div class="guide-table-wrap"><table>
+<thead>
+<tr>
+<th>List</th>
+<th>Source</th>
+<th class="guide-align-right">Default refresh</th>
+<th>What it can affect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Chroma Scriptlet Library</strong></td>
+<td>Bundled inside the extension package</td>
+<td class="guide-align-right">Local bundled file</td>
+<td>Chroma-maintained scriptlet compatibility rules. Updates only when the extension package changes.</td>
+</tr>
+<tr>
+<td><strong>Hagezi Pro Mini</strong></td>
+<td>Hagezi remote list</td>
+<td class="guide-align-right">24 hours</td>
+<td>Network DNR subscription rules after parsing, static deduplication, and dynamic-rule allocation.</td>
+</tr>
+<tr>
+<td><strong>EasyList</strong></td>
+<td>EasyList remote list</td>
+<td class="guide-align-right">24 hours</td>
+<td>Cosmetic rules and supported scriptlets only; not allocated to network DNR.</td>
+</tr>
+<tr>
+<td><strong>Fanboy Annoyance</strong></td>
+<td>Fanboy remote list</td>
+<td class="guide-align-right">24 hours</td>
+<td>Cosmetic annoyance rules and supported scriptlets only; not allocated to network DNR.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Chroma does not use a hidden remote hotfix list. Project fixes arrive through visible Chroma updates, and every additional remote list is one you explicitly choose to add.</p>
+<aside class="guide-callout guide-callout--note" role="note"><p class="guide-callout-label guide-callout__title">Note</p>
+<p>To maximize performance and respect Manifest V3 rule limits, <strong>EasyList</strong> and <strong>Fanboy Annoyance</strong> are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.</p>
+</aside>
+<p>Chrome <a href="https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest#rule-limits" target="_blank" rel="noopener noreferrer">guarantees at least 30,000 static DNR rules per extension</a>, while additional static capacity comes from a browser-wide pool shared by installed extensions. Chroma's multi-part OISD packaging does not bypass that platform quota, so other rule-heavy extensions can reduce the extra static capacity available beyond Chrome's guaranteed minimum.</p>
+<h2 id="custom-filter-list-subscriptions" tabindex="-1">Custom Filter List Subscriptions</h2>
+<p>Chroma supports user-added filter list subscriptions. You can host your own list in a GitHub repository, GitHub Gist, or any HTTPS endpoint that serves raw filter-list text, then paste the raw <code>https://</code> URL into Chroma's subscription manager.</p>
+<p>Custom subscriptions can include supported Adblock/uBO-style network rules, cosmetic rules, cosmetic exceptions, and scriptlet rules. During refresh, Chroma parses the list into network, cosmetic, and scriptlet buckets, drops unsupported or malformed rules, deduplicates network rules already covered by the bundled static ruleset, and only keeps scriptlets that map to Chroma's shipped scriptlet library.</p>
+<p>Network rules are compiled to Chrome Declarative Net Request rules on a best-effort basis. Simple wildcard host patterns such as <code>||cdn.*.example/path</code> may be translated to DNR regular expressions, while URL filters that cannot be represented safely are skipped so the rest of the custom list can still load.</p>
+<p>After each refresh, Chroma records how many network filters were translated for DNR compatibility and how many unsupported URL-filter patterns were skipped. Settings only shows those compatibility details when a list actually needs them.</p>
+<h3 id="parser-trust-boundary" tabindex="-1">Parser Trust Boundary</h3>
+<p>Network options are accepted only when Chroma can preserve their meaning in DNR. Supported constraints include recognized resource types, <code>$important</code>, first/third-party forms and their supported negations, and validated <code>$domain=</code> inclusions and exclusions.</p>
+<p>Constraint-bearing options that Chroma cannot represent safely, including <code>$method</code>, <code>$match-case</code>, <code>$header</code>, and similar modifiers, cause the complete block or exception rule to be dropped. Chroma never removes an unsupported constraint and then installs a broader rule. Malformed lines are counted and dropped individually so one bad line does not reject valid siblings.</p>
+<p>Cosmetic and scriptlet domain inclusions and exclusions are stored separately. An exclusion-only rule such as <code>~example.com##.ad</code> is treated as global except on the excluded domain rather than being discarded or applied only to that domain.</p>
+<h2 id="advanced-user-scriptlet-resources" tabindex="-1">Advanced User Scriptlet Resources</h2>
+<p>Chroma also has a separate advanced settings area for user-provided scriptlet resources. This is not a filter-list subscription feature: resources are executable code selected by the user, and they run only after the user adds both a trusted resource URL and matching <code>domain##+js(resource-name)</code> rules.</p>
+<p>For setup steps, safe examples, linked-resource badges, troubleshooting, and the trust boundary, see <a href="advanced-user-scriptlets.html">Advanced User Scriptlets</a>.</p>
+<h2 id="why-custom-lists-still-work-in-mv3" tabindex="-1">Why Custom Lists Still Work In MV3</h2>
+<p>Manifest V3 does not allow extensions to intercept and decide every request in JavaScript the way MV2 blockers often did. Chroma's subscription design works around that by doing the expensive work at refresh time instead of request time.</p>
+<p>It fetches and parses the list locally, converts supported network rules into DNR dynamic rules, and lets Chrome's browser engine enforce those rules without waking the extension for every request.</p>
+<p>Rules that do not belong in DNR are handled by the layers that fit them:</p>
+<ul>
+<li>Cosmetic selectors go to the cosmetic filtering layer.</li>
+<li>Supported scriptlets go to the <code>userScripts</code> engine.</li>
+<li>Unsupported syntax is dropped instead of being guessed at.</li>
+</ul>
+<p>This is why custom lists can still be useful in MV3 while staying inside Chrome's rule budgets and execution model.</p>
+<h2 id="rule-allocation" tabindex="-1">Rule Allocation</h2>
+<p>Network rules are allocated by Chroma's internal priority score before being applied to DNR:</p>
+<ul>
+<li>Exception/allow rules are preserved first.</li>
+<li><code>$important</code> block rules receive a higher score.</li>
+<li>Domain/resource-type-specific rules are favored next.</li>
+<li>Earlier list position acts as a final tiebreaker.</li>
+</ul>
+<p>This lets custom lists express urgency while still respecting Manifest V3 dynamic-rule budgets.</p>
+<p>New custom lists default to a 24-hour refresh interval unless you choose another interval in Settings.</p>
+<h2 id="protection-lifecycle-and-cached-restoration" tabindex="-1">Protection Lifecycle And Cached Restoration</h2>
+<p>Subscription request state, cached parse results, and active browser state are deliberately separate:</p>
+<ul>
+<li>Turning master protection off removes subscription DNR application, subscription cosmetics, and Chroma-managed subscription and advanced <code>userScripts</code>. Per-list caches, requested enabled states, and advanced resource data remain stored.</li>
+<li>Turning only <strong>Network Blocking</strong> off removes network DNR application, including dynamic whitelist allow rules, without disabling master-enabled cosmetic or scriptlet layers.</li>
+<li>Manual or scheduled refresh while a layer is off may still fetch, parse, and update that list's cache, but it cannot reactivate inactive DNR or <code>userScripts</code>.</li>
+<li>Re-enabling protection restores runtime rules from cached data without requiring another network fetch. Startup, worker recovery, and an HTTP <code>304 Not Modified</code> also reconcile the active runtime from cache when necessary.</li>
+<li>Whitelist destination rules for top-level navigation and initiator rules for subresources are installed only while network protection is active.</li>
+</ul>
+<p>A refresh that started earlier cannot override a newer master-protection or <strong>Network Blocking</strong> choice.</p>
+<h2 id="remote-url-network-boundary" tabindex="-1">Remote URL Network Boundary</h2>
+<p>Custom remote URLs must use HTTPS on the default port and cannot contain credentials. Chroma rejects URLs that literally name localhost or private/special-use IPv4 or IPv6 addresses, and it revalidates the final response URL before accepting response metadata or body content.</p>
+<p>DNS resolution and redirect transport are performed by Chromium. Chroma cannot inspect or pin the connection's peer IP, so a public-looking hostname could resolve or rebind to a private address, and Chromium may contact an automatically followed redirect before Chroma rejects its final URL. Add only remote sources you trust.</p>
+<h2 id="example-custom-list" tabindex="-1">Example Custom List</h2>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">! Higher-priority network block. `$important` receives a stronger Chroma allocation score.
+||example-ad-server.com^$script,third-party,important
+
+! Cosmetic rule: hide sponsored cards on one site.
+example.com##.sponsored-card
+
+! Cosmetic exception: preserve a subset if the broad cosmetic rule is too aggressive.
+example.com#@#.sponsored-card.keep-visible
+
+! Scriptlet rule: run a supported Chroma/uBO-style scriptlet on a site.
+example.com##+js(set-constant, adsEnabled, false)
+</code></pre>
+</div><h2 id="remote-list-trust-boundary" tabindex="-1">Remote List Trust Boundary</h2>
+<p>Remote list content is not treated as arbitrary code. Lists are fetched over HTTPS, parsed locally, bounded by response-size and rule-budget limits, deduplicated against bundled static rules where applicable, and unsupported syntax is dropped. Scriptlet rules can only call implementations already shipped in Chroma's bundled scriptlet library.</p>
+<p>Advanced user scriptlet resources are the explicit exception to this model. They are not installed by Chroma, not bundled with Chroma, and not activated through filter-list subscriptions. They run only after the user adds a resource URL and matching user scriptlet rules in settings.</p>
+<p>Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.</p>
+<h2 id="third-party-credits" tabindex="-1">Third-Party Credits</h2>
+<p>Chroma uses or derives logic and patterns from the following open-source projects and filter-list sources:</p>
+<ul>
+<li><strong>Brave Browser</strong>: The YouTube ad-stripping logic, including payload metadata pruning patterns, is derived from Brave's ad-blocking scriptlets under the <a href="https://mozilla.org/MPL/2.0/" target="_blank" rel="noopener noreferrer">MPL 2.0</a>.</li>
+<li><strong>HaGeZi Pro Mini</strong> by <a href="https://github.com/hagezi/dns-blocklists" target="_blank" rel="noopener noreferrer">HaGeZi</a>: <a href="https://github.com/hagezi/dns-blocklists/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU General Public License version 3</a>.</li>
+<li><strong>OISD Big</strong> by <a href="https://oisd.nl" target="_blank" rel="noopener noreferrer">OISD</a>: <a href="https://github.com/sjhgvr/oisd/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GNU General Public License version 3</a>.</li>
+<li><strong>EasyList</strong> by the <a href="https://github.com/easylist/easylist" target="_blank" rel="noopener noreferrer">EasyList authors</a>: the EasyList repository is <a href="https://easylist.to/pages/licence.html" target="_blank" rel="noopener noreferrer">dual-licensed under GPLv3-or-later or CC BY-SA 3.0-or-later</a>, unless otherwise noted.</li>
+<li><strong>Fanboy's Annoyance List</strong> by the <a href="https://easylist.to/" target="_blank" rel="noopener noreferrer">EasyList/Fanboy maintainers</a>: the configured list declares the <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener noreferrer">Creative Commons Attribution 3.0 license</a> in its source header.</li>
+</ul>
+<hr>
+<p>Next: <a href="permissions.html">Permissions</a></p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="media-proxy-router.html"><span>Previous</span><strong>Media Proxy Router</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="advanced-user-scriptlets.html"><span>Next</span><strong>Advanced User Scriptlets</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#bundled-and-default-sources">Bundled And Default Sources</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#custom-filter-list-subscriptions">Custom Filter List Subscriptions</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#parser-trust-boundary">Parser Trust Boundary</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#advanced-user-scriptlet-resources">Advanced User Scriptlet Resources</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#why-custom-lists-still-work-in-mv3">Why Custom Lists Still Work In MV3</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#rule-allocation">Rule Allocation</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#protection-lifecycle-and-cached-restoration">Protection Lifecycle And Cached Restoration</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#remote-url-network-boundary">Remote URL Network Boundary</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#example-custom-list">Example Custom List</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#remote-list-trust-boundary">Remote List Trust Boundary</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#third-party-credits">Third-Party Credits</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>

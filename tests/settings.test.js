@@ -5,6 +5,7 @@ const path = require('path');
 const vm = require('vm');
 const zlib = require('zlib');
 const { JSDOM } = require('jsdom');
+const { GUIDE_PAGES } = require('../scripts/guide-manifest');
 
 const domUtilsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'dom-utils.js'), 'utf8');
 const domainUtilsJs = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'domain-utils.js'), 'utf8');
@@ -1970,6 +1971,36 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     sandbox.ChromaComponents.renderPageShell({ settingsMode: true });
 
+    const navGuide = dom.window.document.querySelector('.settings-nav__guide');
+    assert.ok(navGuide);
+    assert.strictEqual(navGuide.href, 'chrome-extension://test/guide/index.html');
+    assert.strictEqual(navGuide.target, '_blank');
+    assert.strictEqual(navGuide.rel, 'noopener');
+    assert.match(navGuide.getAttribute('aria-label'), /new tab/i);
+    assert.strictEqual(navGuide.classList.contains('settings-nav__link'), false);
+    assert.strictEqual(dom.window.document.querySelectorAll('.settings-nav__link').length, 9);
+
+    const expectedGuideTargets = {
+      protectionSection: 'chrome-extension://test/guide/pages/features.html#master-protection-lifecycle',
+      filterListsSection: 'chrome-extension://test/guide/pages/filter-lists.html#custom-filter-list-subscriptions',
+      proxySection: 'chrome-extension://test/guide/pages/media-proxy-router.html',
+      healthSection: 'chrome-extension://test/guide/pages/statistics.html#health-panel',
+      statsSection: 'chrome-extension://test/guide/pages/statistics.html#protection-intelligence',
+      updatesSection: 'chrome-extension://test/guide/pages/install.html#updating-chroma',
+      userScriptletsSection: 'chrome-extension://test/guide/pages/advanced-user-scriptlets.html#setup-flow',
+      zapperRulesSection: 'chrome-extension://test/guide/pages/features.html#element-zapper',
+      requestLogSection: 'chrome-extension://test/guide/pages/statistics.html#event-tracker'
+    };
+    for (const [sectionId, expectedHref] of Object.entries(expectedGuideTargets)) {
+      const guideLink = dom.window.document.querySelector(`#${sectionId} .section-guide-link`);
+      assert.ok(guideLink, `expected contextual guide link for ${sectionId}`);
+      assert.strictEqual(guideLink.href, expectedHref);
+      assert.strictEqual(guideLink.target, '_blank');
+      assert.strictEqual(guideLink.rel, 'noopener');
+      assert.strictEqual(guideLink.textContent.trim(), 'Guide');
+      assert.match(guideLink.getAttribute('aria-label'), /new tab/i);
+    }
+
     assert.strictEqual(dom.window.document.querySelectorAll('#healthPanelBody .health-section--skeleton').length, 9);
     assert.strictEqual(dom.window.document.querySelector('#healthPanelBody .skeleton-grid'), null);
     assert.ok(dom.window.document.querySelector('#statisticsTopCards .skeleton-card'));
@@ -1987,6 +2018,79 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#statsModeSelect').disabled, true);
     assert.ok(dom.window.document.querySelector('#exportConfigJson'));
     assert.ok(dom.window.document.querySelector('#importConfigFile'));
+  });
+
+  await t.test('settings guide actions open packaged guide pages in new tabs', async () => {
+    const harness = createSettingsHarness();
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    doc.querySelector('.settings-nav__guide').click();
+    doc.querySelector('#proxySection .section-guide-link').click();
+
+    assert.deepStrictEqual(harness.tabsCreated.map(tab => tab.url), [
+      'chrome-extension://test/guide/index.html',
+      'chrome-extension://test/guide/pages/media-proxy-router.html'
+    ]);
+  });
+
+  await t.test('settings and generated guide deep links resolve in both directions', () => {
+    const dom = new JSDOM('<!doctype html><body><div id="appShell"></div></body>', {
+      url: 'chrome-extension://test/ui/settings.html',
+      runScripts: 'outside-only'
+    });
+    const sandbox = { document: dom.window.document, globalThis: null };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(componentsJs, sandbox);
+    sandbox.ChromaComponents.renderPageShell({ settingsMode: true });
+
+    const settingsDocument = dom.window.document;
+    const extensionRoot = path.join(__dirname, '..', 'extension');
+    const settingsGuideLinks = [
+      ...settingsDocument.querySelectorAll('.settings-nav__guide, .section-guide-link')
+    ];
+
+    assert.strictEqual(settingsGuideLinks.length, 10);
+    for (const link of settingsGuideLinks) {
+      const target = new URL(link.href);
+      const relativePath = decodeURIComponent(target.pathname).replace(/^\/+/, '');
+      const segments = relativePath.split('/');
+      assert.strictEqual(target.protocol, 'chrome-extension:');
+      assert.strictEqual(segments[0], 'guide', `${link.href} must stay inside the packaged guide`);
+      assert.ok(!segments.includes('..'), `${link.href} contains an unsafe path segment`);
+
+      const generatedPagePath = path.join(extensionRoot, ...segments);
+      assert.ok(fs.existsSync(generatedPagePath), `${link.href} does not resolve to a generated guide page`);
+
+      if (target.hash) {
+        const generatedDocument = new JSDOM(fs.readFileSync(generatedPagePath, 'utf8')).window.document;
+        const fragmentId = decodeURIComponent(target.hash.slice(1));
+        assert.ok(
+          generatedDocument.getElementById(fragmentId),
+          `${link.href} does not resolve to a generated guide heading`
+        );
+      }
+    }
+
+    for (const page of GUIDE_PAGES.filter(candidate => candidate.settings)) {
+      const generatedPagePath = path.join(extensionRoot, 'guide', 'pages', `${page.slug}.html`);
+      assert.ok(fs.existsSync(generatedPagePath), `missing generated guide page for ${page.slug}`);
+      const generatedDocument = new JSDOM(fs.readFileSync(generatedPagePath, 'utf8')).window.document;
+      const settingsCta = generatedDocument.querySelector('.guide-settings-cta[data-settings-path]');
+      assert.ok(settingsCta, `${page.slug} is missing its generated Settings link`);
+      assert.strictEqual(settingsCta.dataset.settingsPath, page.settings.path);
+
+      const target = new URL(settingsCta.dataset.settingsPath, 'chrome-extension://test/');
+      const fragmentId = decodeURIComponent(target.hash.slice(1));
+      assert.strictEqual(target.pathname, '/ui/settings.html');
+      assert.ok(fragmentId, `${page.slug} Settings link is missing a section fragment`);
+      assert.ok(
+        settingsDocument.getElementById(fragmentId),
+        `${page.slug} links to missing Settings section #${fragmentId}`
+      );
+    }
   });
 
   await t.test('popup shell does not render settings-only skeleton sections', () => {
@@ -2012,6 +2116,8 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#toggleNetwork'), null);
     assert.ok(dom.window.document.querySelector('#zapElementBtn'));
     assert.ok(dom.window.document.querySelector('#toggleWhitelist'));
+    assert.strictEqual(dom.window.document.querySelector('.settings-nav__guide'), null);
+    assert.strictEqual(dom.window.document.querySelector('.section-guide-link'), null);
     assert.strictEqual(dom.window.document.querySelector('#exportConfigJson'), null);
     assert.strictEqual(dom.window.document.querySelector('#importConfigFile'), null);
   });

@@ -13,32 +13,78 @@ const {
   canonicalizeUpdateManifest,
   publicKeyFromPrivateJwk,
   readBundledUpdatePublicKey,
+  releaseFiles,
   signUpdateManifest,
   validateUpdateSigningPrivateKey,
+  verifyReleaseFileReferences,
   verifyReleaseEntries
 } = require('../scripts/package-extension');
 const fs = require('fs');
 const path = require('path');
 
 const validReleaseEntries = [
-  'manifest.json',
-  'README.md',
-  'LICENSE.md',
-  'content/quiet_console.js',
-  ...RELEASE_DOC_FILES,
+  ...REQUIRED_RELEASE_FILES,
   'background/background.js',
   'rules/rules_oisd_1.json'
 ];
+const repoOnlyDocs = [
+  'docs/README.md',
+  'docs/ARCHITECTURE.md',
+  'docs/SECURITY.md',
+  'docs/THREAT_MODEL.md',
+  'docs/TEST_GUIDE.md',
+  'docs/DISTRIBUTION.md',
+  'docs/CONTRIBUTING.md'
+];
+const repoOnlyGuidePages = [
+  'guide/pages/architecture.html',
+  'guide/pages/security.html',
+  'guide/pages/threat-model.html',
+  'guide/pages/testing.html',
+  'guide/pages/distribution.html',
+  'guide/pages/contributing.html'
+];
 
-test('package verification accepts the expected release contents', () => {
+test('package verification accepts only the selected user-documentation set', () => {
   assert.ok(Array.isArray(REQUIRED_RELEASE_FILES));
-  assert.ok(RELEASE_DOC_FILES.includes('docs/TEST_GUIDE.md'));
-  assert.ok(RELEASE_DOC_FILES.includes('docs/DISTRIBUTION.md'));
+  assert.strictEqual(RELEASE_DOC_FILES.length, 12);
+  assert.ok(RELEASE_DOC_FILES.includes('docs/ADVANCED_USER_SCRIPTLETS.md'));
   assert.ok(!RELEASE_DOC_FILES.includes('docs/testing.md'));
   assert.ok(!RELEASE_DOC_FILES.includes('docs/dist.md'));
+  for (const repoOnlyDoc of repoOnlyDocs) {
+    assert.ok(!RELEASE_DOC_FILES.includes(repoOnlyDoc), `${repoOnlyDoc} must remain repository-only`);
+  }
+  for (const repoOnlyPage of repoOnlyGuidePages) {
+    assert.ok(!REQUIRED_RELEASE_FILES.includes(repoOnlyPage), `${repoOnlyPage} must not be packaged`);
+  }
+  assert.ok(REQUIRED_RELEASE_FILES.includes('guide/index.html'));
+  assert.ok(REQUIRED_RELEASE_FILES.includes('guide/search-index.json'));
+  assert.ok(REQUIRED_RELEASE_FILES.includes('docs/assets/docs-settings-overview.png'));
   assert.strictEqual(UPDATE_MANIFEST_FILE, 'updates.json');
   assert.ok(Array.isArray(FORBIDDEN_RELEASE_PATH_PATTERNS));
   assert.deepStrictEqual(verifyReleaseEntries(validReleaseEntries), []);
+});
+
+test('release documentation and generated guide references resolve inside the package', () => {
+  const files = releaseFiles();
+  const entries = files.map(file => file.zipName.replace(/\\/g, '/'));
+
+  assert.ok(entries.includes('docs/ADVANCED_USER_SCRIPTLETS.md'));
+  assert.ok(entries.includes('docs/assets/docs-settings-overview.png'));
+  assert.ok(entries.includes('guide/index.html'));
+  assert.ok(entries.includes('guide/pages/advanced-user-scriptlets.html'));
+  for (const repoOnlyPath of [...repoOnlyDocs, ...repoOnlyGuidePages]) {
+    assert.ok(!entries.includes(repoOnlyPath), `${repoOnlyPath} unexpectedly entered releaseFiles()`);
+  }
+  assert.deepStrictEqual(verifyReleaseFileReferences(files), []);
+
+  const withoutOverview = files.filter(file => (
+    file.zipName.replace(/\\/g, '/') !== 'docs/assets/docs-settings-overview.png'
+  ));
+  assert.ok(
+    verifyReleaseFileReferences(withoutOverview)
+      .some(error => error.includes('missing release file: docs/assets/docs-settings-overview.png'))
+  );
 });
 
 test('package script builds update manifest metadata for guided updater verification', () => {
@@ -133,7 +179,7 @@ test('package verification rejects missing required release files', () => {
   ]);
 
   assert.ok(errors.some(error => error.includes('LICENSE.md')));
-  assert.ok(errors.some(error => error.includes('docs/README.md')));
+  assert.ok(errors.some(error => error.includes('docs/INSTALL.md')));
   assert.ok(errors.some(error => error.includes('docs/PRIVACY_POLICY.md')));
 });
 
@@ -188,8 +234,8 @@ test('docs document broad host permission and remote list trust boundary', () =>
 
   assert.ok(manifest.host_permissions.includes('<all_urls>'));
   assert.match(permissions, /\|\s*Host permission:\s*`<all_urls>`\s*\|[^|]*sensitive settings[^|]*local/i);
-  assert.match(filterLists, /does not ship a maintainer-controlled hotfix subscription/i);
-  assert.match(filterLists, /GitHub release packages/i);
+  assert.match(filterLists, /does not use a hidden remote hotfix list/i);
+  assert.match(filterLists, /visible Chroma updates/i);
   assert.match(filterLists, /custom subscription/i);
   assert.doesNotMatch(defaultLists, /chroma-hotfix|hotfix\.txt/i);
   assert.strictEqual(fs.existsSync(path.join(__dirname, '..', 'subscriptions', 'hotfix.txt')), false);
@@ -213,7 +259,7 @@ test('privacy and security docs document remote list behavior', () => {
   assert.match(threatModel, /private update-signing key/i);
 });
 
-test('docs disclose remote DNS limits and private MAIN config authority', () => {
+test('docs disclose remote DNS limits and authenticated MAIN config boundaries', () => {
   const filterLists = fs.readFileSync(path.join(__dirname, '..', 'docs', 'FILTER_LISTS.md'), 'utf8');
   const userScriptlets = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ADVANCED_USER_SCRIPTLETS.md'), 'utf8');
   const security = fs.readFileSync(path.join(__dirname, '..', 'docs', 'SECURITY.md'), 'utf8');
@@ -223,7 +269,8 @@ test('docs disclose remote DNS limits and private MAIN config authority', () => 
   assert.match(userScriptlets, /Chromium performs DNS resolution/i);
   assert.match(security, /cannot inspect or pin the connection's peer IP/i);
   assert.match(security, /__CHROMA_CONFIG_UPDATE__[^\n]*no authoritative values/i);
-  assert.match(architecture, /short-lived private `MessagePort`/i);
+  assert.match(architecture, /accepted private `MessagePort` remains open/i);
+  assert.match(architecture, /page scripts can directly read the exposed configuration/i);
   assert.doesNotMatch(architecture, /__EXT_INIT__/);
 });
 

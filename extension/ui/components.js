@@ -26,6 +26,35 @@ const ChromaComponents = (() => {
     </svg>
   `;
 
+  const guideIcon = `
+    <svg class="guide-link__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+    </svg>
+  `;
+
+  const GUIDE_PATHS = Object.freeze({
+    home: '../guide/index.html',
+    protection: '../guide/pages/features.html#master-protection-lifecycle',
+    filterLists: '../guide/pages/filter-lists.html#custom-filter-list-subscriptions',
+    proxy: '../guide/pages/media-proxy-router.html',
+    health: '../guide/pages/statistics.html#health-panel',
+    stats: '../guide/pages/statistics.html#protection-intelligence',
+    updates: '../guide/pages/install.html#updating-chroma',
+    userScriptlets: '../guide/pages/advanced-user-scriptlets.html#setup-flow',
+    zapper: '../guide/pages/features.html#element-zapper',
+    requestLog: '../guide/pages/statistics.html#event-tracker'
+  });
+
+  function renderGuideLink(href, topic) {
+    return `
+      <a class="section-guide-link" href="${href}" target="_blank" rel="noopener" title="Open ${topic} guide" aria-label="Open ${topic} guide in a new tab">
+        ${guideIcon}
+        <span>Guide</span>
+      </a>
+    `;
+  }
+
   function renderSkeletonLine(className = '') {
     return `<div class="skeleton-line${className ? ` ${className}` : ''}" aria-hidden="true"></div>`;
   }
@@ -204,13 +233,20 @@ const ChromaComponents = (() => {
     return `
       <nav class="settings-nav" aria-label="Settings sections">
         ${links.map(([href, label]) => `<a class="settings-nav__link" href="${href}">${label}</a>`).join('')}
+        <a class="settings-nav__guide" href="${GUIDE_PATHS.home}" target="_blank" rel="noopener" aria-label="Open Chroma user guide in a new tab">
+          ${guideIcon}
+          <span>Guide</span>
+        </a>
       </nav>
     `;
   }
 
   function renderProtectionControls() {
     return `
-      <div class="section-title" id="protectionSection">Protection Layers</div>
+      <div class="section-title section-title--with-guide" id="protectionSection">
+        <span class="section-title-text">Protection Layers</span>
+        ${renderGuideLink(GUIDE_PATHS.protection, 'Protection')}
+      </div>
       <div class="protection-list">
         ${renderToggleRow({
           inputId: 'toggleNetwork',
@@ -319,6 +355,7 @@ const ChromaComponents = (() => {
         <button id="addSubscriptionBtn" class="reset-btn icon-action-btn" title="Add Filter List" aria-label="Add Filter List" type="button">
           ${plusIcon}
         </button>
+        ${renderGuideLink(GUIDE_PATHS.filterLists, 'Filter Lists')}
       </div>
       <div id="addSubscriptionForm" class="protection-list add-subscription-form is-hidden">
         <div class="add-subscription-grid">
@@ -343,7 +380,10 @@ const ChromaComponents = (() => {
 
   function renderHealthPanelShell() {
     return `
-      <div class="section-title section-title--spaced" id="healthSection">Health</div>
+      <div class="section-title section-title--spaced section-title--with-guide" id="healthSection">
+        <span class="section-title-text">Health</span>
+        ${renderGuideLink(GUIDE_PATHS.health, 'Health')}
+      </div>
       <div class="protection-list health-panel" id="healthPanel">
         <div class="health-header">
           <div class="toggle-info">
@@ -370,7 +410,10 @@ const ChromaComponents = (() => {
 
   function renderUpdaterShell() {
     return `
-      <div class="section-title section-title--spaced" id="updatesSection">Updates</div>
+      <div class="section-title section-title--spaced section-title--with-guide" id="updatesSection">
+        <span class="section-title-text">Updates</span>
+        ${renderGuideLink(GUIDE_PATHS.updates, 'Updates')}
+      </div>
       <div class="protection-list updater-panel" id="updaterPanel">
         <div class="updater-header">
           <div class="toggle-info updater-status-copy">
@@ -480,7 +523,10 @@ const ChromaComponents = (() => {
 
   function renderStatisticsShell({ settingsMode = false } = {}) {
     return `
-      <div class="section-title section-title--spaced" id="statsSection">Protection Intelligence</div>
+      <div class="section-title section-title--spaced section-title--with-guide" id="statsSection">
+        <span class="section-title-text">Protection Intelligence</span>
+        ${renderGuideLink(GUIDE_PATHS.stats, 'Protection Intelligence')}
+      </div>
       <div class="protection-list stats-panel" id="statisticsPanel">
         <div class="stats-panel-header">
           <div class="toggle-info">
@@ -588,6 +634,7 @@ const ChromaComponents = (() => {
           ${plusIcon}
           <span>Add URL</span>
         </button>
+        ${renderGuideLink(GUIDE_PATHS.userScriptlets, 'User Scriptlets')}
       </div>
       <div class="protection-list user-scriptlet-panel is-loading" id="userScriptletPanel">
         <div class="user-scriptlet-warning">
@@ -658,6 +705,7 @@ const ChromaComponents = (() => {
           <button id="addProxyServerBtn" class="reset-btn icon-action-btn" title="Add Proxy Server" aria-label="Add Proxy Server" type="button">
             ${plusIcon}
           </button>
+          ${renderGuideLink(GUIDE_PATHS.proxy, 'Media Proxy Router')}
         ` : ''}
       </div>
       <div id="proxyRouterContainer">
@@ -668,7 +716,10 @@ const ChromaComponents = (() => {
 
   function renderLocalZapperShell() {
     return `
-      <div class="section-title section-title--spaced" id="zapperRulesSection">Local Zapper Rules</div>
+      <div class="section-title section-title--spaced section-title--with-guide" id="zapperRulesSection">
+        <span class="section-title-text">Local Zapper Rules</span>
+        ${renderGuideLink(GUIDE_PATHS.zapper, 'Element Zapper')}
+      </div>
       <div class="protection-list zapper-rules-panel">
         <div class="zapper-overview" id="zapperOverview" aria-label="Local zapper summary">
           <div class="zapper-overview-card">
@@ -703,7 +754,10 @@ const ChromaComponents = (() => {
 
   function renderRequestLogShell() {
     return `
-      <div class="section-title section-title--spaced" id="requestLogSection">Request Log</div>
+      <div class="section-title section-title--spaced section-title--with-guide" id="requestLogSection">
+        <span class="section-title-text">Request Log</span>
+        ${renderGuideLink(GUIDE_PATHS.requestLog, 'Request Log')}
+      </div>
       <div class="protection-list request-log-panel" id="requestLogPanel">
         <div class="request-log-summary" id="requestLogSummary" aria-label="Request log summary">
           <div class="request-log-summary-card">

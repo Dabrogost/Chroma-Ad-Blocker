@@ -4,7 +4,7 @@ Chroma's statistics and diagnostics are local-only. They are designed to explain
 
 ## Protection Intelligence
 
-The settings page includes **Protection Intelligence**, a local analytics dashboard backed by the versioned `statsV2` storage record. It upgrades the old single counter into a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.
+The settings page includes **Protection Intelligence**, a local analytics dashboard that provides a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.
 
 The popup headline shows **Protection Events**, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than "ads blocked": DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or feedback-only matches, so Chroma classifies events before counting them.
 
@@ -25,29 +25,33 @@ The **Events** section in settings shows recent local activity from the protecti
 
 Payload cleanup remains visible in the Event Tracker for transparency, but it is folded into the broader **Ad Cleanups** stat instead of being promoted as a platform-specific headline badge.
 
-### Page-Event Trust Boundary
+### Approximate Page-Level Counts
 
-MAIN-world YouTube and registered-scriptlet signals cross page-visible DOM notifications and are therefore not authenticated enforcement evidence. Chroma accepts only strict coarse event types; discards caller-supplied counts, timestamps, URLs, domains, sources, and rule identifiers; and derives tab/domain context from Chrome's authenticated message sender. Events are gated by master state, the corresponding feature, and the whitelist, then bounded per document, per tab, and globally.
-
-A hostile page can still forge an allowed coarse event within those limits. Page-layer totals are approximate diagnostics rather than an audit log. These signals do not affect blocking, DNR, configuration, or other privileged enforcement state.
+Some YouTube and scriptlet activity is reported from the page itself, so those page-level totals are approximate diagnostics rather than an audit log. Chroma accepts only coarse event types and does not trust page-supplied URLs, domains, timestamps, or counts. These signals cannot change settings or control protection.
 
 ## Privacy Modes
 
-Statistics are stored only in `chrome.storage.local`.
+Protection Intelligence statistics are stored only in `chrome.storage.local`. These modes govern the `statsV2` statistics dataset:
 
 - **Basic**: Records totals only going forward. Existing aggregated history is preserved locally unless the user explicitly resets stats.
 - **Aggregated**: Records totals plus domains, rule sources, resource types, timelines, and recent event summaries.
-- **Debug**: May include recent full request URLs where they are available.
+- **Debug**: May include recent full request URLs in `statsV2` where they are available.
 
-Switching privacy modes changes future collection behavior and URL visibility. It does not erase saved aggregate intelligence unless a reset action is used.
+Switching privacy modes changes future `statsV2` collection and URL visibility. It does not erase saved aggregate intelligence unless a reset action is used.
 
-Aggregated mode is the default. Chroma stores domains by default, not full URLs. Full request URLs are only kept when Debug mode is enabled, and the bounded debug request log remains separate from `statsV2`.
+Aggregated mode is the default. Within `statsV2`, Chroma stores domains by default and retains full request URLs only in Debug mode.
+
+### Separate DNR Request Log
+
+The Request Log is a separate dataset and is not controlled by the Basic, Aggregated, or Debug statistics mode. Whenever Chrome exposes DNR matched-rule feedback to the unpacked extension, Chroma records the newest 500 reported matches in `chrome.storage.local`. Entries can contain full request URLs, timestamps, request types, matched rule IDs, block, allow, or neutral/match actions, and rule sources such as whitelist or unknown.
+
+Chroma clears this request log when the browser profile starts and Chrome fires `runtime.onStartup`. You can also reset it independently in settings. Changing statistics mode, resetting site statistics, or resetting all `statsV2` statistics does not clear it. When Chrome does not expose matched-rule feedback, the Request Log remains unavailable even though browser-enforced blocking can continue normally.
 
 ## Retention, Reset, And Export
 
-The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all stats, reset site stats only, reset the debug request log, or export a local JSON snapshot.
+The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all `statsV2` statistics, reset site statistics only, reset the separate DNR request log, or export a local JSON statistics snapshot.
 
-Resetting stats does not erase configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.
+Resetting `statsV2` statistics does not erase the separate request log, configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.
 
 The **Time Saved (est.)** card is deliberately conservative. It uses a small sub-second estimate per protection event and floors the displayed value, so ordinary page-load activity does not inflate into unrealistic minutes.
 
@@ -72,13 +76,13 @@ The settings page includes a **Health** panel for diagnostics. It shows whether 
 - WebRTC protection.
 - Proxy routing.
 - Whitelists.
-- Request-log/debug availability.
+- DNR request-log feedback availability.
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.
 
 For proxy, WebRTC, browser privacy, and geolocation, Health separates stored/requested intent, whether Chroma controls the relevant Chrome setting, and the observed effective state. Master-off requests appear paused rather than mismatched; another controller appears degraded or **Controlled elsewhere**.
 
-DNR match logging is shown separately because it depends on Chrome exposing `chrome.declarativeNetRequest.onRuleMatchedDebug` to the unpacked extension. Dynamic-rule action classification is rebuilt from Chrome's installed rules after each worker evaluation. Early matches wait in a bounded buffer until hydration completes; if action recovery fails, they remain neutral/unknown rather than being mislabeled as blocks. The compact action map stores rule IDs and action types, not URLs or subscription bodies. When the feedback API is unavailable, blocking can still work normally.
+Request Log availability depends on Chrome exposing matched-rule feedback to the unpacked extension. When that feedback is unavailable, blocking can still work normally.
 
 ---
 

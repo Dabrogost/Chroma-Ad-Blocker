@@ -1,0 +1,109 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Permissions · Chroma Guide</title>
+<meta name="description" content="Review every Chrome permission Chroma requests and the feature or safety boundary it supports.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="permissions">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link is-active" href="permissions.html" data-guide-slug="permissions" aria-current="page">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section><section class="guide-nav-group"><h2>Project Context</h2><ul><li><a class="guide-nav-link" href="project-philosophy.html" data-guide-slug="project-philosophy">Project Philosophy</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Privacy &amp; Trust</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Privacy &amp; Trust</p><h1 id="permissions" tabindex="-1">Permissions</h1><p class="guide-article-summary">Review every Chrome permission Chroma requests and the feature or safety boundary it supports.</p></header><div class="guide-content"><p>Chroma requests the following permissions. Each is tied to current, documented behavior, although this table does not claim that every future implementation would require the same permission set.</p>
+<div class="guide-table-wrap"><table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>declarativeNetRequest</code></td>
+<td>Enables and manages the static and dynamic DNR rulesets that perform network-level ad and tracker blocking at the browser engine level.</td>
+</tr>
+<tr>
+<td><code>declarativeNetRequestFeedback</code></td>
+<td>Allows the service worker to read which DNR rules fired when Chrome exposes DNR feedback events to the unpacked extension. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads.</td>
+</tr>
+<tr>
+<td><code>storage</code></td>
+<td>Base API required to persist user configuration and subscription metadata across sessions.</td>
+</tr>
+<tr>
+<td><code>unlimitedStorage</code></td>
+<td>Chrome's default <code>chrome.storage.local</code> cap is 10 MB, which is insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets, user configuration, statistics, health diagnostics, and a separate DNR request log. When Chrome exposes matched-rule feedback, that log can retain the newest 500 full matched URLs—including allow matches—in every statistics mode until browser-profile startup or a manual reset. Chroma does not transmit this local storage to a Chroma telemetry service.</td>
+</tr>
+<tr>
+<td><code>tabs</code></td>
+<td>Chroma currently uses tab queries and URL visibility for current-site whitelist controls and state rebroadcasts, and uses the Tabs API to open extension pages and reload a tab after whitelist changes. Chrome does not require the <code>tabs</code> permission for every Tabs API method, and Chroma already has broad web host access, so this permission remains appropriate to reevaluate for minimization rather than describe as universally required.</td>
+</tr>
+<tr>
+<td><code>alarms</code></td>
+<td>Powers periodic subscription refresh checks. Chrome MV3 service workers are ephemeral and cannot use <code>setInterval</code>; <code>chrome.alarms</code> is the reliable timer mechanism available.</td>
+</tr>
+<tr>
+<td><code>userScripts</code></td>
+<td>The primary API for the scriptlet engine. Allows bundled subscription scriptlets and explicit user-added scriptlet resources to execute in the page's MAIN world context with native lifecycle management. User-added resources are executable code and can read, modify, or transmit page-accessible data; add only code you trust. Chrome 138+ also requires users to enable <strong>Allow User Scripts</strong> on Chroma's extension details page.</td>
+</tr>
+<tr>
+<td><code>scripting</code></td>
+<td>Used for extension-controlled script work, including Element Zapper injection and optional Fingerprint Randomization content-script registration.</td>
+</tr>
+<tr>
+<td><code>proxy</code></td>
+<td>Enables the split-tunnel proxy router, Chrome ownership inspection, and PAC script generation for domain-specific routing while master protection is active.</td>
+</tr>
+<tr>
+<td><code>privacy</code></td>
+<td>Allows Chroma to apply optional WebRTC leak protection and Chrome Privacy Hardening while master protection is active, and to release Chroma-owned settings when inactive.</td>
+</tr>
+<tr>
+<td><code>contentSettings</code></td>
+<td>Allows Chroma to apply optional Geolocation Protection while master protection is active and clear Chroma's location rule when inactive.</td>
+</tr>
+<tr>
+<td><code>webRequest</code></td>
+<td>Observes genuine proxy authentication challenges so Chroma can compare them with the currently effective route.</td>
+</tr>
+<tr>
+<td><code>webRequestAuthProvider</code></td>
+<td>Provides credentials only to an exact active HTTP/HTTPS proxy route through the <code>onAuthRequired</code> listener.</td>
+</tr>
+<tr>
+<td>Host permission: <code>&lt;all_urls&gt;</code></td>
+<td>Allows the always-on isolated content script, cosmetic filtering, DNR rules, subscription scriptlets, optional proxy/site controls, and configured remote list/resource fetches to operate across required origins. This broad scope is why Chroma keeps sensitive settings, stats, proxy credentials, and health diagnostics local and validates privileged messages at the extension boundary.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Chroma does not request Chrome's <code>downloads</code> permission for guided updates. The updater uses the standard File System Access folder picker from the settings page after the user clicks <strong>Choose Chroma Folder</strong>, and it fetches verified release assets into memory rather than sending files through Chrome's Downloads shelf.</p>
+<h2 id="local-storage-access-boundary" tabindex="-1">Local Storage Access Boundary</h2>
+<p>Local storage is not the same as service-worker-only storage. Under Chrome's default <code>chrome.storage.local</code> access level, Chroma's extension pages, service worker, and isolated-world Chroma content scripts can access the storage area; Chroma does not currently narrow that access with <code>chrome.storage.local.setAccessLevel()</code>.</p>
+<p>Ordinary host-page JavaScript and ordinary unrelated extensions cannot call Chroma's extension-specific storage API merely because an isolated content script is present. However, a vulnerability or unintended code path in a privileged Chroma content script could expose more stored state than that script normally needs, including request-log URLs or proxy records. A compromised browser profile, browser binary, operating system, or exceptional debugger-enabled environment capable of inspecting Chroma is outside this local-storage protection boundary.</p>
+<h2 id="why-broad-host-access-exists" tabindex="-1">Why Broad Host Access Exists</h2>
+<p>Ad blocking, cosmetic filtering, subscription scriptlets, site whitelisting, and proxy routing all need to evaluate pages the user visits. Chroma uses broad host access so the protection stack can work across websites without needing per-site permission prompts for every domain.</p>
+<p>The tradeoff is trust. Chroma addresses that by keeping sensitive state local, documenting permissions, validating privileged messages, and keeping release packages source-auditable.</p>
+<p>Related docs:</p>
+<ul>
+<li><a href="privacy-policy.html">Privacy Policy</a></li>
+</ul>
+<hr>
+<p>Next: <a href="statistics.html">Statistics &amp; Health</a></p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="statistics.html"><span>Previous</span><strong>Statistics &amp; Health</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="privacy-policy.html"><span>Next</span><strong>Privacy Policy for Chroma Ad-Blocker</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#local-storage-access-boundary">Local Storage Access Boundary</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#why-broad-host-access-exists">Why Broad Host Access Exists</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>

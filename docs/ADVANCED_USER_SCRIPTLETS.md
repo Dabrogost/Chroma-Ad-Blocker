@@ -11,7 +11,6 @@ Good use cases:
 - Fix one site that blocks copy, paste, selection, or right-click.
 - Remove a scroll lock after a modal or interstitial closes.
 - Patch a niche video player behavior on a site you personally use.
-- Test a scriptlet locally before proposing it for Chroma's bundled scriptlet library.
 - Run a trusted third-party scriptlet resource, such as a specialized video-site fix, only on the domain you choose.
 
 Avoid this feature for:
@@ -31,13 +30,17 @@ They run only when all of these are true:
 2. You add a trusted HTTPS resource URL in settings.
 3. Chroma successfully parses one or more JavaScript resources from that file.
 4. You save a matching `domain##+js(resource-name)` rule.
-5. Chrome's **Allow User Scripts** setting is enabled for Chroma.
+5. Chrome has enabled `userScripts` access for Chroma:
+   - **Chrome 138+**: Enable **Allow User Scripts** on Chroma's extension details page.
+   - **Chrome 122-137**: Keep **Developer Mode** enabled on `chrome://extensions`.
+
+User-provided resources are arbitrary page-context code. On matching pages and frames, they can read or modify data available to page scripts and can make network requests. Chroma's own no-telemetry promises do not apply to third-party or personal code you choose to add.
 
 Turning master protection off unregisters advanced user scriptlets while keeping
 their cached resources and rules available for restoration when protection is
 enabled again.
 
-Resource URLs must use `https://` on the default port and cannot contain a username or password. Chroma rejects literal localhost and private/special-use IP addresses, but Chromium performs DNS resolution and Chroma cannot guarantee that a public-looking hostname will not resolve or rebind to a private address. Add only sources you trust; see [Remote URL Network Boundary](SECURITY.md#remote-url-network-boundary).
+Resource URLs must use `https://` on the default port and cannot contain a username or password. Chroma rejects literal localhost and private/special-use IP addresses, but Chromium performs DNS resolution and Chroma cannot guarantee that a public-looking hostname will not resolve or rebind to a private address. Add only sources you trust.
 
 ## Setup Flow
 
@@ -207,7 +210,7 @@ twitch.tv##+js(twitch-videoad)
 | Nothing changes on the page | The tab loaded before the scriptlet was registered, or the domain rule does not match. | Reload the tab and check the rule domain. |
 | Scriptlet errors do not appear in DevTools | Quiet Console is enabled. | Turn off **Quiet Console** in settings while debugging, then reload the affected tab. |
 | A site stays broken after removal | The old script already ran in that page document. | Remove the rule/resource, then reload the affected tab. |
-| Health says UserScripts unavailable | Chrome has not enabled Chroma's `userScripts` access. | Open the extension details page and enable **Allow User Scripts**. |
+| Health says UserScripts unavailable | Chrome has not enabled Chroma's `userScripts` access. | On Chrome 138+, open Chroma's extension details page and enable **Allow User Scripts**. On Chrome 122-137, enable **Developer Mode** on `chrome://extensions`. |
 
 ## Backup Behavior
 

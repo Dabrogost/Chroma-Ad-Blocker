@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Statistics &amp; Health · Chroma Guide</title>
+<meta name="description" content="Use Protection Intelligence, privacy modes, local event history, exports, and Health diagnostics.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="statistics">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link is-active" href="statistics.html" data-guide-slug="statistics" aria-current="page">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section><section class="guide-nav-group"><h2>Project Context</h2><ul><li><a class="guide-nav-link" href="project-philosophy.html" data-guide-slug="project-philosophy">Project Philosophy</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Protect &amp; Customize</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Protect &amp; Customize</p><h1 id="statistics-health" tabindex="-1">Statistics &amp; Health</h1><p class="guide-article-summary">Use Protection Intelligence, privacy modes, local event history, exports, and Health diagnostics.</p><a class="guide-settings-cta" href="../../ui/settings.html#statsSection" data-settings-path="ui/settings.html#statsSection"><span>Open Protection Intelligence</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Chroma's statistics and diagnostics are local-only. They are designed to explain what the protection stack is doing without turning local browser activity into telemetry.</p>
+<h2 id="protection-intelligence" tabindex="-1">Protection Intelligence</h2>
+<p>The settings page includes <strong>Protection Intelligence</strong>, a local analytics dashboard that provides a broader view of Chroma's protection layers without changing blocking behavior or sending telemetry anywhere.</p>
+<p>The popup headline shows <strong>Protection Events</strong>, with a compact breakdown for Network, Cleanup, Scriptlets, and Proxy. This number is intentionally broader than &quot;ads blocked&quot;: DNR matches can represent network blocks, allow rules, whitelist bypasses, subscription rules, or feedback-only matches, so Chroma classifies events before counting them.</p>
+<p><img src="../../docs/assets/docs-settings-protection-intelligence.png" alt="Chroma Protection Intelligence dashboard" loading="lazy" decoding="async"></p>
+<h2 id="event-tracker" tabindex="-1">Event Tracker</h2>
+<p>The <strong>Events</strong> section in settings shows recent local activity from the protection stack. It can include:</p>
+<ul>
+<li>Network block, allow, and unknown-match classifications.</li>
+<li>Cosmetic cleanup and warning-suppression events.</li>
+<li>Scriptlet hits and sanitized scriptlet errors.</li>
+<li>Local zapper actions.</li>
+<li>Coarse payload-modified events from supported platform handling.</li>
+<li>Proxy test and proxy authentication activity.</li>
+</ul>
+<p>Payload cleanup remains visible in the Event Tracker for transparency, but it is folded into the broader <strong>Ad Cleanups</strong> stat instead of being promoted as a platform-specific headline badge.</p>
+<h3 id="approximate-page-level-counts" tabindex="-1">Approximate Page-Level Counts</h3>
+<p>Some YouTube and scriptlet activity is reported from the page itself, so those page-level totals are approximate diagnostics rather than an audit log. Chroma accepts only coarse event types and does not trust page-supplied URLs, domains, timestamps, or counts. These signals cannot change settings or control protection.</p>
+<h2 id="privacy-modes" tabindex="-1">Privacy Modes</h2>
+<p>Protection Intelligence statistics are stored only in <code>chrome.storage.local</code>. These modes govern the <code>statsV2</code> statistics dataset:</p>
+<ul>
+<li><strong>Basic</strong>: Records totals only going forward. Existing aggregated history is preserved locally unless the user explicitly resets stats.</li>
+<li><strong>Aggregated</strong>: Records totals plus domains, rule sources, resource types, timelines, and recent event summaries.</li>
+<li><strong>Debug</strong>: May include recent full request URLs in <code>statsV2</code> where they are available.</li>
+</ul>
+<p>Switching privacy modes changes future <code>statsV2</code> collection and URL visibility. It does not erase saved aggregate intelligence unless a reset action is used.</p>
+<p>Aggregated mode is the default. Within <code>statsV2</code>, Chroma stores domains by default and retains full request URLs only in Debug mode.</p>
+<h3 id="separate-dnr-request-log" tabindex="-1">Separate DNR Request Log</h3>
+<p>The Request Log is a separate dataset and is not controlled by the Basic, Aggregated, or Debug statistics mode. Whenever Chrome exposes DNR matched-rule feedback to the unpacked extension, Chroma records the newest 500 reported matches in <code>chrome.storage.local</code>. Entries can contain full request URLs, timestamps, request types, matched rule IDs, block, allow, or neutral/match actions, and rule sources such as whitelist or unknown.</p>
+<p>Chroma clears this request log when the browser profile starts and Chrome fires <code>runtime.onStartup</code>. You can also reset it independently in settings. Changing statistics mode, resetting site statistics, or resetting all <code>statsV2</code> statistics does not clear it. When Chrome does not expose matched-rule feedback, the Request Log remains unavailable even though browser-enforced blocking can continue normally.</p>
+<h2 id="retention-reset-and-export" tabindex="-1">Retention, Reset, And Export</h2>
+<p>The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all <code>statsV2</code> statistics, reset site statistics only, reset the separate DNR request log, or export a local JSON statistics snapshot.</p>
+<p>Resetting <code>statsV2</code> statistics does not erase the separate request log, configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.</p>
+<p>The <strong>Time Saved (est.)</strong> card is deliberately conservative. It uses a small sub-second estimate per protection event and floors the displayed value, so ordinary page-load activity does not inflate into unrealistic minutes.</p>
+<h2 id="health-panel" tabindex="-1">Health Panel</h2>
+<p>The settings page includes a <strong>Health</strong> panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including:</p>
+<p><img src="../../docs/assets/docs-settings-health-panel.png" alt="Chroma health diagnostics panel" loading="lazy" decoding="async"></p>
+<ul>
+<li>Static DNR rulesets.</li>
+<li>Dynamic rules.</li>
+<li>Tracking URL cleanup.</li>
+<li>De-AMP redirects.</li>
+<li>Subscriptions.</li>
+<li>Cosmetic filtering.</li>
+<li>Scriptlets.</li>
+<li>Fingerprint randomization.</li>
+<li>Browser privacy hardening.</li>
+<li>Geolocation protection.</li>
+<li>WebRTC protection.</li>
+<li>Proxy routing.</li>
+<li>Whitelists.</li>
+<li>DNR request-log feedback availability.</li>
+</ul>
+<p>The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.</p>
+<p>For proxy, WebRTC, browser privacy, and geolocation, Health separates stored/requested intent, whether Chroma controls the relevant Chrome setting, and the observed effective state. Master-off requests appear paused rather than mismatched; another controller appears degraded or <strong>Controlled elsewhere</strong>.</p>
+<p>Request Log availability depends on Chrome exposing matched-rule feedback to the unpacked extension. When that feedback is unavailable, blocking can still work normally.</p>
+<hr>
+<p>Next: <a href="privacy-policy.html">Privacy Policy</a></p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="advanced-user-scriptlets.html"><span>Previous</span><strong>Advanced User Scriptlets</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="permissions.html"><span>Next</span><strong>Permissions</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#protection-intelligence">Protection Intelligence</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#event-tracker">Event Tracker</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#approximate-page-level-counts">Approximate Page-Level Counts</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#privacy-modes">Privacy Modes</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#separate-dnr-request-log">Separate DNR Request Log</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#retention-reset-and-export">Retention, Reset, And Export</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#health-panel">Health Panel</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>

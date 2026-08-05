@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const { GUIDE_PAGES } = require('../../scripts/guide-manifest');
 const {
   attach,
   closeTarget,
@@ -64,12 +65,34 @@ test('loaded extension E2E smoke', async (t) => {
     assert.doesNotMatch(browser.stderr(), /Failed to load extension|Manifest is not valid|Could not load manifest/i);
   });
 
-  await t.test('popup and settings pages open', async () => {
+  await t.test('popup, settings, and offline guide pages open', async () => {
     const popup = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/popup.html');
     const settings = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html#proxy');
+    const guide = await openExtensionPage(browser.cdp, browser.extensionId, 'guide/index.html');
 
     assert.strictEqual(await evaluate(browser.cdp, popup.sessionId, '!!document.body && location.pathname.endsWith("/ui/popup.html")'), true);
     assert.strictEqual(await evaluate(browser.cdp, settings.sessionId, '!!document.body && location.pathname.endsWith("/ui/settings.html")'), true);
+    const guideState = await waitFor(async () => {
+      const state = await evaluate(browser.cdp, guide.sessionId, `(() => {
+        const input = document.querySelector('[data-guide-search]');
+        const articleLinks = document.querySelectorAll('.guide-article-card a');
+        if (!input || articleLinks.length < ${GUIDE_PAGES.length}) return null;
+        input.value = 'media proxy';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const results = document.querySelector('[data-guide-search-results]');
+        return {
+          path: location.pathname,
+          articleCount: articleLinks.length,
+          resultsHidden: results?.hidden,
+          resultsText: results?.innerText || ''
+        };
+      })()`);
+      return state?.resultsText.includes('Media Proxy Router') ? state : null;
+    }, 'offline guide search');
+
+    assert.strictEqual(guideState.path.endsWith('/guide/index.html'), true);
+    assert.strictEqual(guideState.articleCount, GUIDE_PAGES.length);
+    assert.strictEqual(guideState.resultsHidden, false);
   });
 
   await t.test('settings health panel renders diagnostics', async () => {

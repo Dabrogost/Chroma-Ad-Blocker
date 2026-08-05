@@ -1,6 +1,6 @@
 # Feature Guide
 
-This guide expands the feature summary from the root README. For implementation diagrams and module-level layering, see [Architecture Deep Dive](ARCHITECTURE.md).
+This guide expands the feature summary from the root README and explains how Chroma's user-facing protection layers behave.
 
 ## Master Protection Lifecycle
 
@@ -26,10 +26,10 @@ The router includes:
 
 - Domain-specific proxy overrides.
 - Global Proxy Fallback for unmatched browser traffic.
-- Smart-Link Auto-Expansion for related media and CDN domains.
+- Smart-Link expansion through a fixed map of known media and CDN domains.
 - Real-time connection verification.
 - Local-only proxy credential handling for HTTP/HTTPS authentication.
-- Chrome browser services bypass for Global Fallback mode.
+- A default direct-connect list for selected Google/Chrome-related domains. It applies to page traffic as well as browser services and takes precedence whenever Chroma proxy routing is active, including domain-only routes.
 - WebRTC leak protection controls.
 
 Master off pauses every proxy route and releases Chrome proxy control while preserving the configured routes. Health separates requested routes from effective Chrome routing, reports another extension or policy as **Controlled elsewhere**, and automatically reconciles after control is released.
@@ -41,8 +41,6 @@ For the full proxy manual, see [Media Proxy Router](MEDIA_PROXY_ROUTER.md).
 Chroma uses generated OISD Big static rules, a protected custom static layer, a specialized recipe layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.
 
 DNR blocking is central to Chroma's MV3 design because request decisions can be enforced by Chromium without waking the extension service worker for every network request.
-
-For rule ownership and request flow, see [Architecture Deep Dive](ARCHITECTURE.md#layer-1-network-level-blocking-extensionrules-extensionbackgrounddnrstatejs-extensionsubscriptions).
 
 ## Tracking URL & AMP Cleanup
 
@@ -133,6 +131,8 @@ Chroma includes optional browser privacy controls:
 - Apply WebRTC leak protection modes.
 - Randomize or farble supported fingerprint surfaces per document.
 
+Do Not Track remains disabled deliberately: the [W3C retired the DNT specification](https://www.w3.org/standards/history/tracking-dnt/), sites are not required to honor the signal, and sending an uncommon preference can add another observable browser difference without reliably preventing tracking.
+
 Fingerprint Randomization covers surfaces such as canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. It uses fresh non-persisted salts and full-hostname domain separation.
 
 Browser Privacy Hardening, Geolocation Protection, WebRTC modes, and Fingerprint Randomization require master protection in addition to their own feature settings. Master off releases or unregisters Chroma-owned runtime controls without erasing requested values; master on restores them. Health distinguishes requested, controlled, and effective Chrome state and automatically retries when an external controller releases a setting.
@@ -151,10 +151,10 @@ For retention, privacy modes, and export behavior, see [Statistics & Health](STA
 
 ## Platform Compatibility
 
-Chroma is designed for Windows, macOS, and Linux versions of Google Chrome 122+ and other Chromium-based browsers with engine version 122+. This version is required to support the multi-part static ruleset.
+Chroma is designed for Windows, macOS, and Linux versions of Google Chrome 122+ and other Chromium-based browsers with engine version 122+. Chrome 122 is Chroma's declared minimum supported version across its feature set; the 12-part static ruleset alone does not require Chrome 122.
 
 Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. Chrome 122-137 uses Developer Mode to enable the `userScripts` API.
 
 ---
 
-Next: [Architecture Deep Dive](ARCHITECTURE.md)
+Next: [YouTube Protection](YOUTUBE.md)

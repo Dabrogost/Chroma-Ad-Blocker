@@ -11,10 +11,12 @@ Chroma ships with a mix of bundled and remote filter sources. Requested-enabled 
 | **EasyList** | EasyList remote list | 24 hours | Cosmetic rules and supported scriptlets only; not allocated to network DNR. |
 | **Fanboy Annoyance** | Fanboy remote list | 24 hours | Cosmetic annoyance rules and supported scriptlets only; not allocated to network DNR. |
 
-Chroma does not ship a maintainer-controlled hotfix subscription. Project fixes are delivered through GitHub release packages, and the popup can notify you when a newer release is available. If you want to trust an additional remote list, add it explicitly as a custom subscription.
+Chroma does not use a hidden remote hotfix list. Project fixes arrive through visible Chroma updates, and every additional remote list is one you explicitly choose to add.
 
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
+
+Chrome [guarantees at least 30,000 static DNR rules per extension](https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest#rule-limits), while additional static capacity comes from a browser-wide pool shared by installed extensions. Chroma's multi-part OISD packaging does not bypass that platform quota, so other rule-heavy extensions can reduce the extra static capacity available beyond Chrome's guaranteed minimum.
 
 ## Custom Filter List Subscriptions
 
@@ -65,7 +67,7 @@ Network rules are allocated by Chroma's internal priority score before being app
 
 This lets custom lists express urgency while still respecting Manifest V3 dynamic-rule budgets.
 
-New custom lists default to a 24-hour refresh interval unless a different valid interval is supplied by the UI or message API.
+New custom lists default to a 24-hour refresh interval unless you choose another interval in Settings.
 
 ## Protection Lifecycle And Cached Restoration
 
@@ -77,13 +79,13 @@ Subscription request state, cached parse results, and active browser state are d
 - Re-enabling protection restores runtime rules from cached data without requiring another network fetch. Startup, worker recovery, and an HTTP `304 Not Modified` also reconcile the active runtime from cache when necessary.
 - Whitelist destination rules for top-level navigation and initiator rules for subresources are installed only while network protection is active.
 
-Runtime DNR reconciliation is serialized and generation-checked so a refresh that started earlier cannot overwrite a newer master or network-toggle decision.
+A refresh that started earlier cannot override a newer master-protection or **Network Blocking** choice.
 
 ## Remote URL Network Boundary
 
 Custom remote URLs must use HTTPS on the default port and cannot contain credentials. Chroma rejects URLs that literally name localhost or private/special-use IPv4 or IPv6 addresses, and it revalidates the final response URL before accepting response metadata or body content.
 
-DNS resolution and redirect transport are performed by Chromium. Chroma cannot inspect or pin the connection's peer IP, so a public-looking hostname could resolve or rebind to a private address, and Chromium may contact an automatically followed redirect before Chroma rejects its final URL. Add only remote sources you trust. See [Security Policy](SECURITY.md#remote-url-network-boundary) for the complete boundary.
+DNS resolution and redirect transport are performed by Chromium. Chroma cannot inspect or pin the connection's peer IP, so a public-looking hostname could resolve or rebind to a private address, and Chromium may contact an automatically followed redirect before Chroma rejects its final URL. Add only remote sources you trust.
 
 ## Example Custom List
 
@@ -109,15 +111,15 @@ Advanced user scriptlet resources are the explicit exception to this model. They
 
 Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
 
-For the security-policy version of this boundary, see [Security Policy](SECURITY.md#remote-list-trust-boundary).
-
 ## Third-Party Credits
 
-Chroma utilizes logic and patterns derived from the following open-source projects:
+Chroma uses or derives logic and patterns from the following open-source projects and filter-list sources:
 
 - **Brave Browser**: The YouTube ad-stripping logic, including payload metadata pruning patterns, is derived from Brave's ad-blocking scriptlets under the [MPL 2.0](https://mozilla.org/MPL/2.0/).
-- **Hagezi Pro Mini** by [hagezi](https://github.com/hagezi/dns-blocklists): [MIT License](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE).
-- **OISD Big** by [oisd](https://oisd.nl): [License](https://github.com/sjhgvr/oisd/blob/main/LICENSE).
+- **HaGeZi Pro Mini** by [HaGeZi](https://github.com/hagezi/dns-blocklists): [GNU General Public License version 3](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE).
+- **OISD Big** by [OISD](https://oisd.nl): [GNU General Public License version 3](https://github.com/sjhgvr/oisd/blob/main/LICENSE).
+- **EasyList** by the [EasyList authors](https://github.com/easylist/easylist): the EasyList repository is [dual-licensed under GPLv3-or-later or CC BY-SA 3.0-or-later](https://easylist.to/pages/licence.html), unless otherwise noted.
+- **Fanboy's Annoyance List** by the [EasyList/Fanboy maintainers](https://easylist.to/): the configured list declares the [Creative Commons Attribution 3.0 license](https://creativecommons.org/licenses/by/3.0/) in its source header.
 
 ---
 

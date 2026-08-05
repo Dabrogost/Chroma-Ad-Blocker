@@ -29,12 +29,13 @@ graph TD
     CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
 
     LOAD --> BRIDGEHOST{"YouTube, Amazon/Prime,<br/>or supported recipe host?"}:::actor
-    BRIDGEHOST -->|"yes"| BRIDGE["protection.js + interceptor.js<br/>fail-closed private config bridge"]:::main
-    BRIDGE --> MEDIA{"Media platform?"}:::actor
+    BRIDGEHOST -->|"yes"| PROTECTION["protection.js<br/>isolated-world config authority"]:::ext
+    PROTECTION -->|"authenticated MessagePort"| INTERCEPTOR["interceptor.js<br/>MAIN-world validated snapshot"]:::main
+    INTERCEPTOR --> MEDIA{"Media platform?"}:::actor
     MEDIA -->|"yes"| HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
     HANDLERS --> PAGE
 
-    BRIDGE --> RECIPES{"Supported recipe/blog host?"}:::actor
+    INTERCEPTOR --> RECIPES{"Supported recipe/blog host?"}:::actor
     RECIPES -->|"active and not whitelisted"| RECIPE["recipes.js<br/>reversible layout protection + containment"]:::main
     RECIPE --> PAGE
 
@@ -86,6 +87,16 @@ graph TD
     PROXY -->|"PAC route"| NET
 ```
 
+### Service-Worker Lifecycle Boundaries
+
+The worker does not perform the same initialization on every event:
+
+- **Every new worker instance / ordinary MV3 wake** evaluates the background module, registers event and message listeners, initializes request-log classification, restores proxy routing, reconciles DNR and cached subscription runtime state, checks the persisted `userScripts` registry, and reconciles browser privacy controls. This path does not fire `runtime.onStartup`.
+- **`runtime.onInstalled`** runs for an install or extension update. A fresh install writes defaults; both install and update then initialize subscriptions and their alarm, reconcile browser controls and DNR, refresh stale lists, initialize scriptlets, and send current configuration to reachable open tabs.
+- **`runtime.onStartup`** runs when the browser profile starts, not whenever an evicted worker is recreated. It reconciles browser controls, DNR, cached subscription state, and scriptlets; clears the bounded request log; ensures the subscription alarm exists; and sends configuration to reachable open tabs.
+- **The subscription alarm** refreshes lists whose configured interval has elapsed. It does not repeat the complete install or browser-start sequence.
+- **An ordinary message or extension event** runs its registered handler. If Chrome had to create a new worker first, the module-evaluation recovery work above also runs; if the worker was already alive, only the event-specific work is added.
+
 ## System Layers
 
 ### Layer 1: Network-Level Blocking (extension/rules/, extension/background/dnrState.js, extension/subscriptions/)
@@ -98,7 +109,7 @@ Users often wonder how static rules can operate without moving every request thr
 
 - **Engine-Level Matching**: Unlike legacy ad blockers that use the `webRequest` API for request decisions, DNR rules are handed off to Chromium's Declarative Net Request implementation before matching.
 - **Browser-Managed Indexing**: Chromium validates and indexes static rulesets when the extension is installed or updated. Chroma does not depend on a specific internal data structure or lookup guarantee.
-- **Low JS Request-Path Overhead**: Because the matching logic lives outside of the extension's execution context, Chroma avoids waking its own service worker for every blocked request.
+- **Enforcement Outside JavaScript**: DNR matching and enforcement do not require Chroma's service worker. In unpacked profiles where Chrome exposes `onRuleMatchedDebug`, a separate matched-rule feedback event may still wake the worker to update local statistics and the request log.
 - **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This reserves the dynamic rule budget for unique, high-priority threats.
 
 All dynamic network application flows through one serialized, generation-checked reconciliation coordinator. The coordinator derives desired state from the master and Network Blocking settings, rechecks that state immediately before committing to Chrome, and lets the newest requested state win over older refresh work. Turning protection back on, worker recovery, and `304 Not Modified` refreshes rebuild active subscription DNR from cached per-list rules rather than depending on a new download.
@@ -132,13 +143,15 @@ The Element Zapper is an on-demand cosmetic rule builder for elements that are t
 
 ### Layer 4: Universal Protection (protection.js, interceptor.js)
 
-This proactive security layer maintains extension integrity across execution contexts. `protection.js` reads stored configuration and the whitelist in the isolated world, derives an effective fail-closed configuration, and transfers it through a short-lived private `MessagePort`. `interceptor.js` validates supported keys into closure-owned state and exposes frozen snapshots with a monotonic revision through `__CHROMA_INTERNAL__`.
+This proactive security layer maintains extension integrity across execution contexts. `protection.js` runs in the isolated world, reads stored configuration and the whitelist, derives an effective fail-closed configuration, and authenticates a one-time handoff to MAIN-world `interceptor.js`. The challenge events, randomized transfer listener, and rejected candidate ports are short-lived. The accepted private `MessagePort` remains open so configuration and whitelist changes can reach an already-open page.
 
-Public bridge events are notification-only: handlers re-read the protected snapshot, and a page-dispatched notification cannot change configuration or advance its revision. Before authenticated state arrives, or when native-integrity checks fail, MAIN handlers remain inert.
+`interceptor.js` validates supported keys into closure-owned state and exposes a fresh frozen snapshot with a monotonic revision through `window.__CHROMA_INTERNAL__`. Because that object exists in the MAIN world, page scripts can directly read the exposed configuration, revision, and API surface. Freezing the snapshot and reserving the property protect its integrity; they do not make its values secret from the page.
+
+Public bridge events are notification-only: handlers re-read the validated snapshot, and a page-dispatched notification cannot change configuration or advance its revision. Before authenticated state arrives, or when native-integrity checks fail, MAIN handlers remain inert.
 
 ### Layer 5: YouTube Ad Stripping (yt_handler.js)
 
-This specialized platform layer intercepts raw JSON responses from the YouTube API and surgically removes ad metadata, such as `adPlacements` and `playerAds`, before the player reads them. The goal is a seamless ad-free experience without countdowns, black screens, pauses, or playback acceleration. Session state is closure-owned, so host-page scripts cannot directly read or write it; pages can still observe visible player behavior and infer that cleanup occurred.
+This specialized platform layer intercepts raw JSON responses from the YouTube API and surgically removes ad metadata, such as `adPlacements` and `playerAds`, before the player reads them. Stripping operates independently of acceleration: it can be used alone, or acceleration can remain enabled as a fallback for an ad that survives payload cleanup. Session state is closure-owned, so host-page scripts cannot directly write it; pages can observe visible player behavior and can read the exposed bridge configuration.
 
 ### Layer 6: Recipe & Blog Protection (recipes.js)
 
@@ -156,7 +169,7 @@ Recipe behavior loads inert and activates only after the trusted bridge reports 
 
 ### Layer 7: Dynamic Ad Acceleration (prm_handler.js, yt_handler.js)
 
-Dynamic Ad Acceleration is a fallback and specialized layer for Amazon Prime Video and YouTube when stripping is disabled. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition.
+Dynamic Ad Acceleration is an optional fallback and specialized layer for Amazon Prime Video and YouTube. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition. On YouTube it may run alongside stripping and handle ads that still reach playback; it is not conditional on stripping being disabled. Prime Video uses the acceleration path without YouTube JSON stripping.
 
 Twitch uses server-side ad insertion and does not support this acceleration path.
 
@@ -176,7 +189,7 @@ Chroma is not trying to recreate MV2 request interception in MV3. It leans into 
 
 - Use DNR for request decisions the browser can enforce efficiently.
 - Do expensive parsing and subscription work at refresh time, not per request.
-- Keep sensitive state local and scoped to extension storage or closure-private handler state.
+- Keep authoritative mutable state local and scoped to extension storage or closure-private handler state; treat the frozen MAIN-world configuration snapshot as page-readable.
 - Use MAIN-world logic only where browser APIs or platform payload interception require it.
 - Keep proxy routing separate from network blocking: DNR decides policy, PAC chooses transport.
 - Make diagnostics transparent without turning local debug data into telemetry.
@@ -187,7 +200,7 @@ Chroma assumes that extension APIs, browser feedback paths, network refreshes, a
 
 | Failure mode | Expected behavior | User-visible recovery |
 |---|---|---|
-| Service worker sleeps or restarts | Browser-managed DNR rules continue to apply while the worker is asleep. On wake/startup, Chroma registers handlers and resyncs DNR state, privacy controls, scriptlets, alarms, and open-tab config where possible. | Open the popup/settings page, reload the affected tab, or reload the extension if Health continues to show stale state. |
+| Service worker sleeps or is recreated | Browser-managed DNR rules continue to apply while the worker is asleep. A newly evaluated worker registers handlers and reconciles DNR, cached subscription/scriptlet runtime state, proxy state, and browser privacy controls. Alarm repair, request-log clearing, and open-tab rebroadcast belong to browser `runtime.onStartup`; install/update has its own separate path. | Open the popup/settings page, reload the affected tab, or reload the extension if Health continues to show stale state. |
 | UserScripts API unavailable | Subscription scriptlet rules and advanced user scriptlet resources are parsed and stored, but not registered. Network DNR, cosmetics, proxy routing, and other non-`userScripts` layers can continue. | Enable **Allow User Scripts** on Chrome 138+, or use a Chromium build/version that exposes `chrome.userScripts`. |
 | Scriptlet registration failure | Chroma registers what it can, chunks registrations, retries within failed chunks, and records a scriptlet health diagnostic if only part of the set registers. | Review Health, remove malformed/broad custom rules, confirm Allow User Scripts, then reload affected tabs. |
 | PAC/proxy sync failure or external ownership | Chroma distinguishes requested routes from effective Chrome routing. Another extension or policy makes Chroma routing ineffective and prevents credential release; Chrome control changes trigger automatic reconciliation. DNR blocking is separate and can continue. | Review Health for **Controlled elsewhere**. Release the other controller; toggle the route or reload only if automatic recovery does not converge. |
@@ -195,9 +208,9 @@ Chroma assumes that extension APIs, browser feedback paths, network refreshes, a
 | Subscription refresh failure | Last-known parsed rules remain available if already stored. The failed subscription records `lastError`; other subscriptions can still refresh. | Refresh the affected list manually, check HTTPS reachability and list format, or disable the subscription. |
 | DNR dynamic rule budget exhaustion | Subscription network rules are allocated by priority and trimmed to fit the MV3 dynamic-rule budget. Cosmetic rules and supported scriptlets are handled by their own layers. | Reduce large or overlapping custom subscriptions, then refresh subscriptions. |
 | MAIN-world handshake failure | Platform handlers that require the isolated-to-MAIN bridge may fall back to safe defaults or skip activation for that page load. Isolated-world cosmetics and DNR can still operate. | Reload the tab. If the page is hostile or changed its startup timing, the MAIN-world layer may remain degraded until Chroma is updated. |
-| Request-log feedback API unavailable | DNR blocking can still work, but local request-log/debug feedback and some match classification detail are unavailable. | Treat this as a diagnostics limitation. Use Health to confirm the request-log status; blocking does not depend on feedback events. |
+| Request-log feedback API unavailable | DNR blocking can still work, but the separate local request log and some match classification detail are unavailable. | Treat this as a diagnostics limitation. Use Health to confirm the request-log status; blocking does not depend on feedback events. |
 | Whitelisted site behavior | While network protection is active, destination-based main-frame and initiator-based subresource allow rules are synchronized into DNR. Local cleanup, recipes/platform behavior, and scriptlet injection are suppressed where applicable, including live deactivation in already-open tabs. | Remove the site from the whitelist. Runtime-reversible layers reactivate live; reload when already-executed arbitrary scriptlets or FPR code must be replaced. |
 
 ---
 
-Next: [Media Proxy Router](MEDIA_PROXY_ROUTER.md)
+Next: [Security Policy](SECURITY.md)
