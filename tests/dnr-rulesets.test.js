@@ -67,6 +67,11 @@ test('Manifest-declared static DNR rulesets', async (t) => {
     }
   });
 
+  await t.test('uses the complete 300,000-rule static budget', () => {
+    const totalRules = ruleResources.reduce((total, resource) => total + loadRules(resource).length, 0);
+    assert.strictEqual(totalRules, 300000);
+  });
+
   await t.test('every rule has required MV3 DNR fields and no duplicate ids inside its ruleset', () => {
     for (const resource of ruleResources) {
       const ids = new Set();

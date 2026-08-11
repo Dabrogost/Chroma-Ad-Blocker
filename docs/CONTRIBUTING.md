@@ -9,7 +9,7 @@ Thanks for your interest. Here's what you need to know.
 - **Platform handlers** - New or updated site-specific handlers, including stripping or ad-acceleration fallbacks, are highly valued but require rigorous testing to ensure compatibility and stability across target platforms.
 - **Code changes** - Open an issue first to discuss before writing anything significant. This avoids wasted effort.
 
-Do not hand-edit `extension/rules/rules_oisd_*.json`. Those shards and their manifest entries are generated from OISD sources. Refresh them with `npm.cmd run rules:update:oisd`, review the complete generated diff, and run the rules and policy tests.
+Do not hand-edit `extension/rules/rules_oisd_*.json`. Those shards and their manifest entries are generated from OISD Small and Big, with adult and shock-site domains from OISD NSFW used only to fill otherwise-unused static capacity. Refresh them with `npm.cmd run rules:update:oisd`, confirm the projected static total is 300,000, review the complete generated diff, and run the rules and policy tests.
 
 ## Ground Rules
 
