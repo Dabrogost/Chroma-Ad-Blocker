@@ -7,7 +7,7 @@ export const DEFAULT_SUBSCRIPTIONS = [
   {
     id: 'hagezi-pro-mini',
     name: 'Hagezi Pro Mini',
-    url: 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.mini.txt',
+    url: 'https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/adblock/pro.mini.txt',
     enabled: true,
     intervalHours: 24,
     lastUpdated: 0,

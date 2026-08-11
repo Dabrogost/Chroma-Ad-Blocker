@@ -116,8 +116,8 @@ Because enabled remote lists can still change blocking, allow rules, cosmetic be
 Chroma uses or derives logic and patterns from the following open-source projects and filter-list sources:
 
 - **Brave Browser**: The YouTube ad-stripping logic, including payload metadata pruning patterns, is derived from Brave's ad-blocking scriptlets under the [MPL 2.0](https://mozilla.org/MPL/2.0/).
-- **HaGeZi Pro Mini** by [HaGeZi](https://github.com/hagezi/dns-blocklists): [GNU General Public License version 3](https://github.com/hagezi/dns-blocklists/blob/main/LICENSE).
-- **OISD Big** by [OISD](https://oisd.nl): [GNU General Public License version 3](https://github.com/sjhgvr/oisd/blob/main/LICENSE).
+- **HaGeZi Pro Mini** by [HaGeZi](https://gitlab.com/hagezi/mirror): [GNU General Public License version 3](https://gitlab.com/hagezi/mirror/-/blob/main/LICENSE).
+- **OISD Small, Big, and NSFW** by [OISD](https://oisd.nl): [GNU General Public License version 3](https://github.com/sjhgvr/oisd/blob/main/LICENSE). Small and Big are selected first. When they do not fill the packaged static budget, Chroma selects adult and shock-site domains from across OISD NSFW until the complete corpus reaches 300,000 rules.
 - **EasyList** by the [EasyList authors](https://github.com/easylist/easylist): the EasyList repository is [dual-licensed under GPLv3-or-later or CC BY-SA 3.0-or-later](https://easylist.to/pages/licence.html), unless otherwise noted.
 - **Fanboy's Annoyance List** by the [EasyList/Fanboy maintainers](https://easylist.to/): the configured list declares the [Creative Commons Attribution 3.0 license](https://creativecommons.org/licenses/by/3.0/) in its source header.
 

@@ -203,8 +203,8 @@ function main() {
   }
 
   const totalRules = counts.reduce((sum, item) => sum + item.count, 0);
-  if (totalRules > 300000) {
-    addError(`Total static rule count ${totalRules} exceeds configured cap of 300,000`);
+  if (totalRules !== 300000) {
+    addError(`Total static rule count ${totalRules} must equal the configured budget of 300,000`);
   }
 
   console.log('DNR ruleset validation summary');

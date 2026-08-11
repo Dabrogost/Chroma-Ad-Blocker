@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-const HAGEZI_PRO_MINI = 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.mini.txt';
+const HAGEZI_PRO_MINI = 'https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/adblock/pro.mini.txt';
 
 const extensionDir = path.join(__dirname, '..', '..', 'extension');
 const manifestPath = path.join(extensionDir, 'manifest.json');

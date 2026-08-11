@@ -43,7 +43,7 @@
 <p>Master off pauses every proxy route and releases Chrome proxy control while preserving the configured routes. Health separates requested routes from effective Chrome routing, reports another extension or policy as <strong>Controlled elsewhere</strong>, and automatically reconciles after control is released.</p>
 <p>For the full proxy manual, see <a href="media-proxy-router.html">Media Proxy Router</a>.</p>
 <h2 id="source-generated-dnr-network-blocking" tabindex="-1">Source-Generated DNR Network Blocking</h2>
-<p>Chroma uses generated OISD Big static rules, a protected custom static layer, a specialized recipe layer, and runtime dynamic rules to block trackers, invasive analytics, and traditional banner ads at the browser engine level.</p>
+<p>Chroma selects OISD Small and Big first, then fills otherwise-unused static capacity with a stable cross-list selection of adult and shock-site domains from OISD NSFW. Protected custom and recipe layers bring the packaged corpus to exactly 300,000 static rules, while runtime dynamic rules add user-configurable blocking at the browser engine level.</p>
 <p>DNR blocking is central to Chroma's MV3 design because request decisions can be enforced by Chromium without waking the extension service worker for every network request.</p>
 <h2 id="tracking-url-amp-cleanup" tabindex="-1">Tracking URL &amp; AMP Cleanup</h2>
 <p>Tracking URL Cleanup removes known tracking query parameters from top-level navigation URLs with DNR redirect rules. Examples include <code>utm_*</code>, <code>fbclid</code>, <code>gclid</code>, and similar campaign IDs.</p>

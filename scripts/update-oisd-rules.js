@@ -12,6 +12,7 @@ const manifestPath = path.join(extensionRoot, 'manifest.json');
 const SOURCE_NAME = 'OISD';
 const SMALL_SOURCE_URL = 'https://small.oisd.nl/';
 const BIG_SOURCE_URL = 'https://big.oisd.nl/';
+const NSFW_SOURCE_URL = 'https://nsfw.oisd.nl/';
 const OUTPUT_PREFIX = 'rules_oisd';
 const RULESET_ID_PREFIX = 'oisd_rules';
 const RULES_PER_FILE = 30000;
@@ -157,6 +158,97 @@ function parseOisd(text) {
   }
 
   return { domains, skipped };
+}
+
+function stableDomainRank(domain) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < domain.length; i++) {
+    hash ^= domain.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function compareStableDomains(a, b) {
+  const rankDifference = stableDomainRank(a) - stableDomainRank(b);
+  if (rankDifference) return rankDifference;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function countEligibleDomains(sourceResults, protectedFilters) {
+  const seen = new Set();
+  let count = 0;
+
+  for (const result of sourceResults) {
+    for (const domain of result.domains) {
+      if (seen.has(domain)) continue;
+      seen.add(domain);
+      if (!protectedFilters.has(`||${domain}^`)) count++;
+    }
+  }
+
+  return count;
+}
+
+function selectDomainsForBudget(sourceResults, protectedFilters, availableSlots) {
+  const domains = [];
+  const seenDomains = new Set();
+  const sourceByDomain = new Map();
+  let skipped = 0;
+
+  for (const result of sourceResults) {
+    skipped += result.skipped || 0;
+    for (const domain of result.domains) {
+      if (seenDomains.has(domain)) continue;
+      seenDomains.add(domain);
+      sourceByDomain.set(domain, result.label);
+      domains.push(domain);
+    }
+  }
+
+  let protectedOverlap = 0;
+  const generatedFilters = [];
+  const generatedDomains = [];
+  const generatedBySource = new Map();
+
+  for (const domain of domains) {
+    const urlFilter = `||${domain}^`;
+    if (protectedFilters.has(urlFilter)) {
+      protectedOverlap++;
+      continue;
+    }
+    generatedFilters.push(urlFilter);
+    generatedDomains.push(domain);
+    const source = sourceByDomain.get(domain) || 'unknown';
+    generatedBySource.set(source, (generatedBySource.get(source) || 0) + 1);
+  }
+
+  const selectedFilters = generatedFilters.slice(0, availableSlots);
+  const selectedDomains = generatedDomains.slice(0, availableSlots);
+  const selectedBySource = new Map();
+  for (const domain of selectedDomains) {
+    const source = sourceByDomain.get(domain) || 'unknown';
+    selectedBySource.set(source, (selectedBySource.get(source) || 0) + 1);
+  }
+
+  return {
+    combinedDomainCount: domains.length,
+    generatedBySource,
+    generatedFilters,
+    omittedForCap: generatedFilters.length - selectedFilters.length,
+    protectedOverlap,
+    selectedBySource,
+    selectedFilters,
+    skipped
+  };
+}
+
+function requireFullCapacity(selectedCount, availableSlots) {
+  if (selectedCount !== availableSlots) {
+    throw new Error(
+      `${SOURCE_NAME} sources filled only ${selectedCount}/${availableSlots} generated slots. Refusing to write an under-cap static corpus.`
+    );
+  }
 }
 
 function listManifestResources() {
@@ -318,6 +410,11 @@ async function main() {
     reservedIds
   } = currentStaticState(resources);
 
+  const availableSlots = maxTotalRules - protectedRuleCount;
+  if (availableSlots < 0) {
+    throw new Error(`Protected static rules already exceed cap: ${protectedRuleCount}/${maxTotalRules}`);
+  }
+
   const sourceResults = [];
   if (sourceUrlOverride) {
     console.log(`Fetching ${SOURCE_NAME} from override source...`);
@@ -341,63 +438,50 @@ async function main() {
         ...parseOisd(text)
       });
     }
-  }
 
-  const domains = [];
-  const seenDomains = new Set();
-  const sourceByDomain = new Map();
-  let skipped = 0;
-  for (const result of sourceResults) {
-    skipped += result.skipped;
-    for (const domain of result.domains) {
-      if (seenDomains.has(domain)) continue;
-      seenDomains.add(domain);
-      sourceByDomain.set(domain, result.label);
-      domains.push(domain);
+    const primaryEligible = countEligibleDomains(sourceResults, protectedFilters);
+    if (primaryEligible < availableSlots) {
+      console.log(`Primary OISD sources leave ${availableSlots - primaryEligible} static slots open.`);
+      console.log('Fetching OISD NSFW capacity filler...');
+      console.log(NSFW_SOURCE_URL);
+      const text = await fetchText(NSFW_SOURCE_URL);
+      const parsed = parseOisd(text);
+
+      // OISD publishes domains in lexical order. Rank the overflow tier by a
+      // stable domain hash so a capped subset covers the whole NSFW corpus
+      // instead of only the alphabetically earliest domains.
+      parsed.domains.sort(compareStableDomains);
+      sourceResults.push({
+        label: 'nsfw-fill',
+        url: NSFW_SOURCE_URL,
+        ...parsed
+      });
     }
   }
 
-  let protectedOverlap = 0;
-  const generatedFilters = [];
-  const generatedDomains = [];
-  const generatedBySource = new Map();
-
-  for (const domain of domains) {
-    const urlFilter = `||${domain}^`;
-    if (protectedFilters.has(urlFilter)) {
-      protectedOverlap++;
-      continue;
-    }
-    generatedFilters.push(urlFilter);
-    generatedDomains.push(domain);
-    const source = sourceByDomain.get(domain) || 'unknown';
-    generatedBySource.set(source, (generatedBySource.get(source) || 0) + 1);
-  }
-
-  const availableSlots = maxTotalRules - protectedRuleCount;
-  if (availableSlots < 0) {
-    throw new Error(`Protected static rules already exceed cap: ${protectedRuleCount}/${maxTotalRules}`);
-  }
+  const {
+    combinedDomainCount,
+    generatedBySource,
+    generatedFilters,
+    omittedForCap,
+    protectedOverlap,
+    selectedBySource,
+    selectedFilters,
+    skipped
+  } = selectDomainsForBudget(sourceResults, protectedFilters, availableSlots);
 
   if (failOverLimit && generatedFilters.length > availableSlots) {
     throw new Error(`${SOURCE_NAME} needs ${generatedFilters.length} generated slots but only ${availableSlots} are available after protected rules.`);
   }
 
-  const selectedFilters = generatedFilters.slice(0, availableSlots);
-  const selectedDomains = generatedDomains.slice(0, availableSlots);
-  const omittedForCap = generatedFilters.length - selectedFilters.length;
-  const selectedBySource = new Map();
-  for (const domain of selectedDomains) {
-    const source = sourceByDomain.get(domain) || 'unknown';
-    selectedBySource.set(source, (selectedBySource.get(source) || 0) + 1);
-  }
+  requireFullCapacity(selectedFilters.length, availableSlots);
   const rules = toRules(selectedFilters, startId, reservedIds);
   const chunks = chunkRules(rules);
 
   for (const result of sourceResults) {
     console.log(`Parsed ${SOURCE_NAME} ${result.label}: ${result.domains.length} unique domains`);
   }
-  console.log(`Parsed combined unique domains: ${domains.length}`);
+  console.log(`Parsed combined unique domains: ${combinedDomainCount}`);
   console.log(`Skipped unsupported non-domain lines: ${skipped}`);
   console.log(`Already covered by protected custom rules: ${protectedOverlap}`);
   console.log(`Generated ${SOURCE_NAME} rules wanted: ${generatedFilters.length}`);
@@ -437,7 +521,21 @@ async function main() {
   console.log(`\n${SOURCE_NAME} static rules updated.`);
 }
 
-main().catch(err => {
-  console.error(err.message);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error(err.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  compareStableDomains,
+  countEligibleDomains,
+  domainFromLine,
+  normalizeHostname,
+  parseOisd,
+  requireFullCapacity,
+  selectDomainsForBudget,
+  stableDomainRank,
+  toRules
+};

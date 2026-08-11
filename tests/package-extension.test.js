@@ -242,6 +242,16 @@ test('docs document broad host permission and remote list trust boundary', () =>
   assert.match(readme, /\[Permissions\]\(docs\/PERMISSIONS\.md\)/);
 });
 
+test('default HaGeZi subscription uses the maintained official mirror', () => {
+  const defaultLists = fs.readFileSync(path.join(__dirname, '..', 'extension', 'subscriptions', 'lists.js'), 'utf8');
+
+  assert.match(
+    defaultLists,
+    /https:\/\/gitlab\.com\/hagezi\/mirror\/-\/raw\/main\/dns-blocklists\/adblock\/pro\.mini\.txt/
+  );
+  assert.doesNotMatch(defaultLists, /raw\.githubusercontent\.com\/hagezi\/dns-blocklists/);
+});
+
 test('privacy and security docs document remote list behavior', () => {
   const privacy = fs.readFileSync(path.join(__dirname, '..', 'docs', 'PRIVACY_POLICY.md'), 'utf8');
   const security = fs.readFileSync(path.join(__dirname, '..', 'docs', 'SECURITY.md'), 'utf8');
