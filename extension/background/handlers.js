@@ -84,9 +84,7 @@ const SETTINGS_IMPORT_COMMIT_KEYS = Object.freeze([
   'userScriptletRules'
 ]);
 const SETTINGS_IMPORT_SNAPSHOT_KEYS = Object.freeze([
-  ...SETTINGS_IMPORT_COMMIT_KEYS,
-  'appliedNetworkRuleCount',
-  'appliedNetworkRulesPerSub'
+  ...SETTINGS_IMPORT_COMMIT_KEYS
 ]);
 const zapperSessions = new Map();
 let whitelistMutationTail = Promise.resolve();
@@ -583,7 +581,10 @@ function sanitizeImportedSubscription(sub) {
     isCustom: true,
     lastUpdated: 0,
     version: null,
+    networkCompilerVersion: 0,
     lastError: null,
+    lastErrorScope: null,
+    lastErrorAt: null,
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
     compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   };
@@ -776,30 +777,6 @@ async function restoreSettingsImportSnapshot(snapshot) {
   const oldProxyConfigs = Array.isArray(snapshot.proxyConfigs) ? snapshot.proxyConfigs : [];
   const runtime = await reconcileSettingsImportRuntime(oldConfig, oldProxyConfigs, { continueOnError: true });
 
-  // DNR reconciliation refreshes these derived counters. Restore their exact
-  // prior presence/value after runtime recovery so rollback matches the
-  // original storage image even when those keys were previously absent.
-  const derivedValues = {};
-  const derivedRemovals = [];
-  for (const key of ['appliedNetworkRuleCount', 'appliedNetworkRulesPerSub']) {
-    if (Object.prototype.hasOwnProperty.call(snapshot, key)) derivedValues[key] = snapshot[key];
-    else derivedRemovals.push(key);
-  }
-  if (Object.keys(derivedValues).length > 0) {
-    try {
-      await chrome.storage.local.set(derivedValues);
-    } catch (error) {
-      storageErrors.push({ step: 'storage-finalize-set', error: importErrorMessage(error) });
-    }
-  }
-  if (derivedRemovals.length > 0) {
-    try {
-      await chrome.storage.local.remove(derivedRemovals);
-    } catch (error) {
-      storageErrors.push({ step: 'storage-finalize-remove', error: importErrorMessage(error) });
-    }
-  }
-
   const errors = [...storageErrors, ...runtime.errors];
   return {
     attempted: true,
@@ -856,7 +833,7 @@ async function handleConfigExport() {
     fprWhitelist: sanitizeDomainList(fprWhitelist),
     proxyConfigs: Array.isArray(proxyConfigs) ? proxyConfigs.map(exportProxyConfig) : [],
     subscriptions: subscriptions
-      .filter(sub => sub?.isCustom === true)
+      .filter(sub => sub?.isCustom === true && sub?.pendingRemoval !== true)
       .map(exportSubscription),
     userScriptlets: await exportUserScriptletSettings()
   };

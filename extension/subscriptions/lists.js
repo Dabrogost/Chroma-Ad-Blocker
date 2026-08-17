@@ -12,7 +12,10 @@ export const DEFAULT_SUBSCRIPTIONS = [
     intervalHours: 24,
     lastUpdated: 0,
     version: null,
+    networkCompilerVersion: 0,
     lastError: null,
+    lastErrorScope: null,
+    lastErrorAt: null,
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
     compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   },
@@ -24,7 +27,10 @@ export const DEFAULT_SUBSCRIPTIONS = [
     intervalHours: 9999,
     lastUpdated: 0,
     version: null,
+    networkCompilerVersion: 0,
     lastError: null,
+    lastErrorScope: null,
+    lastErrorAt: null,
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
     compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   },
@@ -37,7 +43,10 @@ export const DEFAULT_SUBSCRIPTIONS = [
     intervalHours: 24,
     lastUpdated: 0,
     version: null,
+    networkCompilerVersion: 0,
     lastError: null,
+    lastErrorScope: null,
+    lastErrorAt: null,
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
     compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   },
@@ -50,7 +59,10 @@ export const DEFAULT_SUBSCRIPTIONS = [
     intervalHours: 24,
     lastUpdated: 0,
     version: null,
+    networkCompilerVersion: 0,
     lastError: null,
+    lastErrorScope: null,
+    lastErrorAt: null,
     ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
     compatibility: { translatedRegexFilter: 0, unsupportedUrlFilter: 0 }
   }

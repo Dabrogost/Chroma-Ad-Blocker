@@ -26,6 +26,7 @@ const SUBSCRIPTION_RULE_ID_END = 8999999;
 const WHITELIST_RULE_ID_START = 9000000;
 const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
 const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
+const DEFAULT_DYNAMIC_REGEX_RULE_LIMIT = 1000;
 const ACCELERATION_OFF_PRESERVED_ALLOW_RULE_IDS = new Set([1015]);
 const RECOVERED_DNR_DIAGNOSTIC_IDS = [
   'dnrWakeRecovery',
@@ -280,12 +281,48 @@ export function hydrateDynamicRuleClassifications() {
   return classificationHydrationPromise;
 }
 
-async function storeAppliedSubscriptionCounts(generation, active, application) {
-  if (!await commitIsStillAllowed(generation, active)) return;
+async function storeAppliedSubscriptionCounts(active, application) {
+  const appliedNetworkRuleCount = active ? (Number(application.appliedNetworkRuleCount) || 0) : 0;
+  const appliedNetworkRulesPerSub = active ? (application.appliedNetworkRulesPerSub || {}) : {};
+  const browserUnsupportedRegexRuleCount = active
+    ? (Number(application.browserUnsupportedRegexRuleCount) || 0)
+    : 0;
+  const browserUnsupportedRegexRulesPerSub = active
+    ? (application.browserUnsupportedRegexRulesPerSub || {})
+    : {};
+  const regexQuotaTrimCount = active ? (Number(application.regexQuotaTrimCount) || 0) : 0;
+  const regexQuotaTrimmedRulesPerSub = active
+    ? (application.regexQuotaTrimmedRulesPerSub || {})
+    : {};
+  const perSub = active
+    ? Object.fromEntries(Object.entries(application.subscriptionStats || {}).map(([id, stats]) => [
+        id,
+        { enabledAtCommit: true, ...stats }
+      ]))
+    : {};
   await chrome.storage.local.set({
-    appliedNetworkRuleCount: active ? application.appliedNetworkRuleCount : 0,
-    appliedNetworkRulesPerSub: active ? application.appliedNetworkRulesPerSub : {}
+    appliedNetworkStateVersion: 1,
+    appliedNetworkRuleCount,
+    appliedNetworkRulesPerSub,
+    browserUnsupportedRegexRuleCount,
+    browserUnsupportedRegexRulesPerSub,
+    regexQuotaTrimCount,
+    regexQuotaTrimmedRulesPerSub,
+    subscriptionNetworkRuntime: {
+      schemaVersion: 1,
+      protectionActive: active,
+      committedAt: Date.now(),
+      appliedTotal: appliedNetworkRuleCount,
+      perSub
+    }
   });
+}
+
+function dynamicRegexRuleLimit() {
+  const browserLimit = Number(chrome.declarativeNetRequest.MAX_NUMBER_OF_REGEX_RULES);
+  return Number.isInteger(browserLimit) && browserLimit >= 0
+    ? browserLimit
+    : DEFAULT_DYNAMIC_REGEX_RULE_LIMIT;
 }
 
 async function performReconciliation(generation, reason) {
@@ -293,19 +330,42 @@ async function performReconciliation(generation, reason) {
   if (generation !== requestedGeneration) return { ok: true, stale: true };
 
   const active = isNetworkProtectionActive(desired.config);
-  const subscriptionApplication = buildSubscriptionRuleApplication(
-    desired.subscriptions,
-    desired.cachedSubscriptionRules
-  );
+  let subscriptionApplication = await buildSubscriptionRuleApplication([], {});
   let desiredRules = [];
+  let defaultRules = [];
+  let whitelistRules = [];
+  let buildSubscriptionApplication = null;
   if (active) {
-    const defaultRules = buildDefaultRules(
+    defaultRules = buildDefaultRules(
       desired.config,
       desired.whitelist,
       desired.dynamicRules
     );
+    const regexLimit = dynamicRegexRuleLimit();
+    const dnrApi = chrome.declarativeNetRequest;
+    buildSubscriptionApplication = async currentDefaultRules => {
+      const defaultRegexRuleCount = currentDefaultRules.filter(rule =>
+        typeof rule?.condition?.regexFilter === 'string'
+      ).length;
+      if (defaultRegexRuleCount > regexLimit) {
+        throw new Error(
+          `Default dynamic rules exceed the browser regex quota (${defaultRegexRuleCount}/${regexLimit})`
+        );
+      }
+      return buildSubscriptionRuleApplication(
+        desired.subscriptions,
+        desired.cachedSubscriptionRules,
+        {
+          isRegexSupported: typeof dnrApi.isRegexSupported === 'function'
+            ? dnrApi.isRegexSupported.bind(dnrApi)
+            : null,
+          regexRuleLimit: regexLimit - defaultRegexRuleCount
+        }
+      );
+    };
+    subscriptionApplication = await buildSubscriptionApplication(defaultRules);
     const subscriptionRules = prepareSubscriptionRules(subscriptionApplication.networkRules);
-    const whitelistRules = buildWhitelistRules(desired.whitelist);
+    whitelistRules = buildWhitelistRules(desired.whitelist);
     desiredRules = [...defaultRules, ...subscriptionRules, ...whitelistRules];
   }
 
@@ -331,48 +391,74 @@ async function performReconciliation(generation, reason) {
     }
     dynamicRuleClassifications.clear();
     dynamicRuleClassificationsReady = true;
-    await storeAppliedSubscriptionCounts(generation, false, subscriptionApplication);
+    // This exact empty image is now authoritative even if a newer desired
+    // generation was queued while Chrome committed it. The serialized newer
+    // generation will replace the snapshot only after its own successful
+    // commit.
+    await storeAppliedSubscriptionCounts(false, subscriptionApplication);
     await clearRecoveredDnrDiagnostics();
     if (DEBUG) console.log(`[Chroma DNR] Reconciled inactive state (${reason}).`);
     return { ok: true, active: false };
   }
 
+  // Keep match diagnostics behind the reconciliation boundary. If this
+  // generation becomes stale after Chrome commits, the next generation (or a
+  // runtime hydration after failure) will rebuild the authoritative map.
+  dynamicRuleClassificationsReady = false;
+  let trackingCleanupError = null;
   try {
-    // Keep match diagnostics behind the reconciliation boundary. If this
-    // generation becomes stale after Chrome commits, the next generation (or
-    // a runtime hydration after failure) will rebuild the authoritative map.
-    dynamicRuleClassificationsReady = false;
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds,
       addRules: desiredRules
     });
-    // Chrome has committed this exact runtime image. Publish its action map
-    // before checking whether a newer desired-state generation was requested;
-    // the queued generation has not started its serialized commit yet.
-    updateClassificationCache(desiredRules);
-    await clearHealthDiagnostic('trackingUrlCleanupSync');
   } catch (err) {
     if (!desiredRules.some(isTrackingCleanupRule)) throw err;
     if (!await commitIsStillAllowed(generation, true)) {
       return { ok: true, stale: true };
     }
-    desiredRules = desiredRules.filter(rule => !isTrackingCleanupRule(rule));
+    defaultRules = defaultRules.filter(rule => !isTrackingCleanupRule(rule));
+    subscriptionApplication = await buildSubscriptionApplication(defaultRules);
+    const subscriptionRules = prepareSubscriptionRules(subscriptionApplication.networkRules);
+    desiredRules = [...defaultRules, ...subscriptionRules, ...whitelistRules];
+    if (!await commitIsStillAllowed(generation, true)) {
+      return { ok: true, stale: true };
+    }
     await chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds,
       addRules: desiredRules
     });
-    updateClassificationCache(desiredRules);
-    await recordHealthDiagnostic('trackingUrlCleanupSync', {
-      area: 'trackingUrlCleanup',
-      severity: 'warning',
-      message: 'Tracking URL Cleanup could not register its DNR redirect rule.',
-      action: 'Reload the extension, or turn Tracking URL Cleanup off and on.',
-      error: err?.message || err
-    });
+    trackingCleanupError = err;
   }
 
+  // Chrome has committed this exact runtime image. Publish its action map
+  // before checking whether a newer desired-state generation was requested;
+  // the queued generation has not started its serialized commit yet.
+  updateClassificationCache(desiredRules);
+
+  // Diagnostic persistence is observability only. Keep it outside the DNR
+  // rejection boundary so a storage failure can neither remove healthy
+  // tracking rules nor make a completed browser commit look unsuccessful.
+  try {
+    if (trackingCleanupError) {
+      await recordHealthDiagnostic('trackingUrlCleanupSync', {
+        area: 'trackingUrlCleanup',
+        severity: 'warning',
+        message: 'Tracking URL Cleanup could not register its DNR redirect rule.',
+        action: 'Reload the extension, or turn Tracking URL Cleanup off and on.',
+        error: trackingCleanupError?.message || trackingCleanupError
+      });
+    } else {
+      await clearHealthDiagnostic('trackingUrlCleanupSync');
+    }
+  } catch (err) {
+    if (DEBUG) console.warn('[Chroma DNR] Tracking cleanup diagnostic update failed:', err);
+  }
+
+  // Publish every successfully committed image. If this generation became
+  // stale during the atomic browser call, its snapshot remains the truthful
+  // fallback should the queued generation fail.
+  await storeAppliedSubscriptionCounts(true, subscriptionApplication);
   if (generation !== requestedGeneration) return { ok: true, stale: true };
-  await storeAppliedSubscriptionCounts(generation, true, subscriptionApplication);
   await clearRecoveredDnrDiagnostics();
   if (DEBUG) {
     console.log(`[Chroma DNR] Reconciled ${desiredRules.length} dynamic rules (${reason}).`);

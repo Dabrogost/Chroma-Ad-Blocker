@@ -265,73 +265,12 @@ function utf8ByteLength(text) {
   return bytes;
 }
 
-function escapeRegexChar(ch) {
-  return /[\\^$.*+?()[\]{}|]/.test(ch) ? `\\${ch}` : ch;
-}
-
-function translatePatternTailToRegex(tail) {
-  let out = '';
-  for (let i = 0; i < tail.length; i++) {
-    const ch = tail[i];
-    if (ch === '*') {
-      out += '.*';
-    } else if (ch === '^') {
-      out += '(?:[^A-Za-z0-9_.%-]|$)';
-    } else if (ch === '|' && i === tail.length - 1) {
-      out += '$';
-    } else if (ch === '|') {
-      return null;
-    } else {
-      out += escapeRegexChar(ch);
-    }
-  }
-  return out;
-}
-
-function translateDomainAnchorWildcardPattern(pattern) {
-  if (!pattern.startsWith('||')) return { matched: false };
-
-  const body = pattern.slice(2);
-  const boundary = body.search(/[/?#^]/);
-  const hostPart = boundary === -1 ? body : body.slice(0, boundary);
-  const tail = boundary === -1 ? '' : body.slice(boundary);
-  if (!hostPart.includes('*')) return { matched: false };
-
-  if (
-    !/^[A-Za-z0-9][A-Za-z0-9.*-]*$/.test(hostPart) ||
-    !hostPart.replace(/\*/g, '').includes('.') ||
-    /[\s\x00-\x1f\x7f]/.test(tail)
-  ) {
-    return { matched: true, regexFilter: null };
-  }
-
-  let hostRegex = '';
-  for (const ch of hostPart) {
-    hostRegex += ch === '*' ? '[^/?#:]*' : escapeRegexChar(ch);
-  }
-
-  const tailRegex = translatePatternTailToRegex(tail);
-  if (tailRegex === null) return { matched: true, regexFilter: null };
-
-  const regexFilter = `^https?://(?:[^/?#:]+\\.)*${hostRegex}${tailRegex}`;
-  if (utf8ByteLength(regexFilter) > MAX_DNR_FILTER_BYTES) {
-    return { matched: true, regexFilter: null };
-  }
-
-  try {
-    new RegExp(regexFilter);
-  } catch {
-    return { matched: true, regexFilter: null };
-  }
-
-  return { matched: true, regexFilter };
-}
-
 function isLikelyDnrUrlFilter(pattern) {
   if (
     typeof pattern !== 'string' ||
     pattern.length === 0 ||
     utf8ByteLength(pattern) > MAX_DNR_FILTER_BYTES ||
+    /[^\x00-\x7f]/.test(pattern) ||
     /[\s\x00-\x1f\x7f]/.test(pattern)
   ) {
     return false;
@@ -341,7 +280,13 @@ function isLikelyDnrUrlFilter(pattern) {
     const body = pattern.slice(2);
     const boundary = body.search(/[/?#^]/);
     const hostPart = boundary === -1 ? body : body.slice(0, boundary);
-    if (!hostPart || !/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(hostPart)) return false;
+    if (!hostPart || !/^[A-Za-z0-9][A-Za-z0-9.*-]*$/.test(hostPart)) return false;
+
+    // Chromium DNR supports `*` natively in urlFilter values. Its wildcard can
+    // consume any URL characters (not only a DNS label); preserving the source
+    // pattern intentionally keeps those native semantics. The checks here only
+    // keep unsafe host shapes outside our parser trust boundary.
+    if (hostPart.includes('*') && !hostPart.replace(/\*/g, '').includes('.')) return false;
   }
 
   const bodyStart = pattern.startsWith('||') ? 2 : 0;
@@ -353,13 +298,6 @@ function isLikelyDnrUrlFilter(pattern) {
 }
 
 function compileNetworkPattern(pattern) {
-  const translated = translateDomainAnchorWildcardPattern(pattern);
-  if (translated.matched) {
-    return translated.regexFilter
-      ? { condition: { regexFilter: translated.regexFilter } }
-      : null;
-  }
-
   if (!isLikelyDnrUrlFilter(pattern)) return null;
   return { condition: { urlFilter: pattern } };
 }

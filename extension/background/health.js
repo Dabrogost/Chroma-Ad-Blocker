@@ -302,6 +302,9 @@ function computeOverall({
   userScriptletResourceErrorCount,
   scriptlets,
   subscriptionErrors,
+  browserUnsupportedRegexRuleCount,
+  regexQuotaTrimCount,
+  pendingSubscriptionRemovalCount,
   debugLoggingAvailable,
   webrtc,
   effectiveGlobalProxy,
@@ -381,6 +384,33 @@ function computeOverall({
       'subscriptions',
       `${subscriptionErrors.length} subscription list(s) have refresh errors.`,
       'Refresh the affected lists or disable broken lists.'
+    ));
+  }
+
+  if (browserUnsupportedRegexRuleCount > 0) {
+    issues.push(makeIssue(
+      'warning',
+      'subscriptions',
+      `${browserUnsupportedRegexRuleCount} subscription network rule(s) are unsupported by this browser; valid sibling rules remain active.`,
+      'Refresh the affected lists after updating the browser.'
+    ));
+  }
+
+  if (regexQuotaTrimCount > 0) {
+    issues.push(makeIssue(
+      'warning',
+      'subscriptions',
+      `${regexQuotaTrimCount} subscription regex rule(s) were omitted by Chromium's dynamic regex quota.`,
+      'Disable overlapping lists or remove regex-heavy subscriptions.'
+    ));
+  }
+
+  if (pendingSubscriptionRemovalCount > 0) {
+    issues.push(makeIssue(
+      'warning',
+      'subscriptions',
+      `${pendingSubscriptionRemovalCount} subscription removal(s) are pending.`,
+      'Retry removal from the filter-list settings.'
     ));
   }
 
@@ -570,6 +600,8 @@ export async function getHealthStatus(consistencyAttempt = 0) {
     'statsV2',
     'requestLog',
     'appliedNetworkRuleCount',
+    'browserUnsupportedRegexRuleCount',
+    'regexQuotaTrimCount',
     'healthDiagnostics'
   ]);
 
@@ -586,16 +618,27 @@ export async function getHealthStatus(consistencyAttempt = 0) {
     TRACKING_URL_CLEANUP_RULE_ID_END
   );
   const subscriptionDynamicRuleCount = countByRange(dynamicRules, SUBSCRIPTION_RULE_ID_START, SUBSCRIPTION_RULE_ID_END);
+  const authoritativeAppliedSubscriptionRuleCount = dnrSnapshot.error === null
+    ? subscriptionDynamicRuleCount
+    : (Number(storage.appliedNetworkRuleCount) || 0);
   const whitelistRuleCount = countByRange(dynamicRules, WHITELIST_RULE_ID_START);
 
   const subscriptions = asArray(storage.subscriptions);
   const subscriptionErrors = subscriptions
-    .filter(sub => sub?.lastError)
+    .filter(sub => (
+      sub?.enabled !== false &&
+      sub?.pendingRemoval !== true &&
+      sub?.lastErrorScope === 'refresh' &&
+      sub?.lastError
+    ))
     .map(sub => ({
       id: sanitizeText(sub.id, 80),
       name: sanitizeText(sub.name, 120),
       error: sanitizeText(sub.lastError)
     }));
+  const browserUnsupportedRegexRuleCount = Number(storage.browserUnsupportedRegexRuleCount) || 0;
+  const regexQuotaTrimCount = Number(storage.regexQuotaTrimCount) || 0;
+  const pendingSubscriptionRemovalCount = subscriptions.filter(sub => sub?.pendingRemoval === true).length;
   const lastUpdated = getLastUpdatedBounds(subscriptions);
   const subscriptionScriptletRules = asArray(storage.subscriptionScriptletRules);
   const cachedSubscriptionScriptletRuleCount = countEnabledCachedRules(
@@ -715,10 +758,14 @@ export async function getHealthStatus(consistencyAttempt = 0) {
       disabled: subscriptions.filter(sub => sub?.enabled === false).length,
       cosmeticOnly: subscriptions.filter(sub => sub?.cosmeticOnly === true).length,
       withErrors: subscriptionErrors.length,
+      browserUnsupportedRegex: browserUnsupportedRegexRuleCount,
+      regexQuotaTrimmed: regexQuotaTrimCount,
+      pendingRemoval: pendingSubscriptionRemovalCount,
       parsedNetwork: sumRuleCount(subscriptions, 'network'),
-      appliedNetwork: masterEnabled && networkBlocking
-        ? (Number(storage.appliedNetworkRuleCount) || subscriptionDynamicRuleCount)
-        : 0,
+      // This is committed/effective state, not requested state. A failed
+      // disable can leave Chrome's prior rules active even though the stored
+      // network toggle is off; live DNR inspection must remain authoritative.
+      appliedNetwork: authoritativeAppliedSubscriptionRuleCount,
       cosmetic: sumRuleCount(subscriptions, 'cosmetic'),
       scriptlet: sumRuleCount(subscriptions, 'scriptlet'),
       lastUpdatedNewest: lastUpdated.newest,
@@ -793,6 +840,9 @@ export async function getHealthStatus(consistencyAttempt = 0) {
     userScriptletResourceErrorCount: health.scriptlets.userResourceErrorCount,
     scriptlets: health.scriptlets,
     subscriptionErrors,
+    browserUnsupportedRegexRuleCount,
+    regexQuotaTrimCount,
+    pendingSubscriptionRemovalCount,
     debugLoggingAvailable: requestLogAvailable,
     webrtc,
     effectiveGlobalProxy,

@@ -24,9 +24,9 @@ Chroma supports user-added filter list subscriptions. You can host your own list
 
 Custom subscriptions can include supported Adblock/uBO-style network rules, cosmetic rules, cosmetic exceptions, and scriptlet rules. During refresh, Chroma parses the list into network, cosmetic, and scriptlet buckets, drops unsupported or malformed rules, deduplicates network rules already covered by the bundled static ruleset, and only keeps scriptlets that map to Chroma's shipped scriptlet library.
 
-Network rules are compiled to Chrome Declarative Net Request rules on a best-effort basis. Simple wildcard host patterns such as `||cdn.*.example/path` may be translated to DNR regular expressions, while URL filters that cannot be represented safely are skipped so the rest of the custom list can still load.
+Network rules are compiled to Chrome Declarative Net Request rules on a best-effort basis. Safe wildcard-host patterns such as `||cdn.*.example/path` are preserved as native DNR `urlFilter` values instead of being expanded into regular expressions. The native `*` keeps Chromium's any-URL-character wildcard semantics; it is not narrowed to DNS-label characters. URL filters that cannot be represented safely, including non-ASCII filter text that Chromium requires to be URL-encoded, are skipped so the rest of the custom list can still load.
 
-After each refresh, Chroma records how many network filters were translated for DNR compatibility and how many unsupported URL-filter patterns were skipped. Settings only shows those compatibility details when a list actually needs them.
+After parsing and browser validation, Chroma records compatibility losses separately: parser-skipped URL-filter patterns, regular expressions rejected by the current browser, rules omitted by Chromium's dynamic-regex quota, and rules omitted by Chroma's dynamic-rule budget. Settings only shows compatibility details that apply to that list. Existing translated-regex counts remain readable for caches created by older Chroma versions.
 
 ### Parser Trust Boundary
 
@@ -35,6 +35,12 @@ Network options are accepted only when Chroma can preserve their meaning in DNR.
 Constraint-bearing options that Chroma cannot represent safely, including `$method`, `$match-case`, `$header`, and similar modifiers, cause the complete block or exception rule to be dropped. Chroma never removes an unsupported constraint and then installs a broader rule. Malformed lines are counted and dropped individually so one bad line does not reject valid siblings.
 
 Cosmetic and scriptlet domain inclusions and exclusions are stored separately. An exclusion-only rule such as `~example.com##.ad` is treated as global except on the excluded domain rather than being discarded or applied only to that domain.
+
+### Browser Compatibility And Atomic Application
+
+Chroma asks Chromium to validate the highest-priority regular-expression candidates and, when an incompatibility leaves a quota opening, a bounded reserve of lower-priority candidates. Every regular expression selected for application has therefore passed the browser preflight, which catches compiled-memory limits that cannot be predicted from source length or JavaScript syntax alone. An examined unsupported expression is attributed to its source subscription and dropped individually. Candidates outside the bounded preflight window are recorded as deterministic regex-quota omissions rather than browser incompatibilities, keeping rebuild work bounded for very large caches.
+
+After compatibility and allocation checks, Chroma submits one complete dynamic-rule image to Chromium. The browser applies that image atomically. If Chromium rejects the update, the previous successfully committed network state remains active rather than being partially replaced. Chroma reports an incomplete synchronization as a global DNR problem, not as an error on whichever subscription happened to trigger the rebuild.
 
 ## Advanced User Scriptlet Resources
 
@@ -77,9 +83,16 @@ Subscription request state, cached parse results, and active browser state are d
 - Turning only **Network Blocking** off removes network DNR application, including dynamic whitelist allow rules, without disabling master-enabled cosmetic or scriptlet layers.
 - Manual or scheduled refresh while a layer is off may still fetch, parse, and update that list's cache, but it cannot reactivate inactive DNR or `userScripts`.
 - Re-enabling protection restores runtime rules from cached data without requiring another network fetch. Startup, worker recovery, and an HTTP `304 Not Modified` also reconcile the active runtime from cache when necessary.
+- A subscription toggle records the requested state. Settings compares that request with the last network image Chromium successfully committed, so a failed enable, disable, update, or removal remains visible as pending instead of being shown as completed.
 - Whitelist destination rules for top-level navigation and initiator rules for subresources are installed only while network protection is active.
 
 A refresh that started earlier cannot override a newer master-protection or **Network Blocking** choice.
+
+### Compiler Cache Migration
+
+When Chroma's network compiler changes, cached rules from an older compiler remain usable while the list waits for a full-body refresh. Legacy regular expressions participate in the same bounded browser preflight and quota selection as current rules, so an incompatible cached candidate cannot reject its valid siblings. Chroma does not discard the old cache merely because the source is temporarily unreachable.
+
+The next eligible refresh bypasses conditional validators so Chroma receives the list body and recompiles it with the current representation. A successful refresh stamps the new compiler version and normal conditional requests resume. A failed migration keeps the legacy cache and retries on the normal refresh schedule or when the user refreshes the list manually.
 
 ## Remote URL Network Boundary
 

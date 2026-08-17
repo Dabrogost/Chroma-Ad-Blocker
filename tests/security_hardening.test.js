@@ -51,6 +51,16 @@ const SETTINGS_IMPORT_STORAGE_KEYS = [
   'userScriptletRuleText',
   'userScriptletRules'
 ];
+const DNR_DERIVED_STORAGE_KEYS = [
+  'appliedNetworkStateVersion',
+  'appliedNetworkRuleCount',
+  'appliedNetworkRulesPerSub',
+  'browserUnsupportedRegexRuleCount',
+  'browserUnsupportedRegexRulesPerSub',
+  'regexQuotaTrimCount',
+  'regexQuotaTrimmedRulesPerSub',
+  'subscriptionNetworkRuntime'
+];
 const CONFIG_KEYS = [
   'networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts',
   'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled',
@@ -148,6 +158,25 @@ function makeSettingsImportStorage({ omit = [] } = {}) {
   };
   for (const key of omit) delete storage[key];
   return storage;
+}
+
+function makeDnrDerivedStorage(label, applied = 1) {
+  return {
+    appliedNetworkStateVersion: 1,
+    appliedNetworkRuleCount: applied,
+    appliedNetworkRulesPerSub: { [label]: applied },
+    browserUnsupportedRegexRuleCount: applied + 1,
+    browserUnsupportedRegexRulesPerSub: { [label]: applied + 1 },
+    regexQuotaTrimCount: applied + 2,
+    regexQuotaTrimmedRulesPerSub: { [label]: applied + 2 },
+    subscriptionNetworkRuntime: {
+      schemaVersion: 1,
+      protectionActive: true,
+      committedAt: applied * 100,
+      appliedTotal: applied,
+      perSub: { [label]: { enabledAtCommit: true, appliedNetworkRuleCount: applied } }
+    }
+  };
 }
 
 const handlersJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'handlers.js'), 'utf8')
@@ -289,7 +318,8 @@ function loadTransactionalImportHarness(options = {}) {
     proxy: 0,
     webRtc: 0,
     browserPrivacy: 0,
-    geolocation: 0
+    geolocation: 0,
+    dnrDerivedWrites: 0
   };
   const commitImages = [];
   const runtimeSnapshots = [];
@@ -327,6 +357,13 @@ function loadTransactionalImportHarness(options = {}) {
     }
     if (rollbackBegan && options.failRollbackRuntime === name) {
       throw new Error(`${name} rollback failure`);
+    }
+    if (name === 'dnr' && options.mutateDnrDerived === true) {
+      calls.dnrDerivedWrites++;
+      Object.assign(storage, makeDnrDerivedStorage(
+        rollbackBegan ? 'rollback-runtime' : 'forward-runtime',
+        rollbackBegan ? 92 : 91
+      ));
     }
     runtimeState[name] = storage.subscriptions?.[0]?.id || 'none';
     if (forwardFailure) throw new Error(`${name} forward failure after mutation`);
@@ -908,14 +945,25 @@ test('Security Hardening - handlers.js', async (t) => {
     const sandbox = loadHandlers({
       storage,
       updateDNRState: async (enabled) => { dnrUpdates.push(enabled); },
-      getSubscriptions: async () => [{
-        id: 'custom_news',
-        name: 'News',
-        url: 'https://lists.example.com/news.txt',
-        enabled: true,
-        isCustom: true,
-        intervalHours: 24
-      }],
+      getSubscriptions: async () => [
+        {
+          id: 'custom_news',
+          name: 'News',
+          url: 'https://lists.example.com/news.txt',
+          enabled: true,
+          isCustom: true,
+          intervalHours: 24
+        },
+        {
+          id: 'custom_pending_removal',
+          name: 'Already removed',
+          url: 'https://lists.example.com/pending.txt',
+          enabled: true,
+          isCustom: true,
+          pendingRemoval: true,
+          intervalHours: 24
+        }
+      ],
       exportUserScriptletSettings: async () => ({
         sources: [{ name: 'Custom', url: 'https://cdn.example.com/resources.js' }],
         ruleText: 'example.com##+js(custom-scriptlet)'
@@ -928,10 +976,26 @@ test('Security Hardening - handlers.js', async (t) => {
 
     const exported = await handlers.CONFIG_EXPORT();
     assert.strictEqual(exported.schema, 'chroma-settings');
+    assert.strictEqual(exported.version, 1);
+    assert.deepStrictEqual(Object.keys(exported).sort(), [
+      'config',
+      'exportedAt',
+      'fprWhitelist',
+      'proxyConfigs',
+      'schema',
+      'subscriptions',
+      'userScriptlets',
+      'version',
+      'whitelist'
+    ]);
+    for (const key of DNR_DERIVED_STORAGE_KEYS) {
+      assert.strictEqual(Object.prototype.hasOwnProperty.call(exported, key), false, key);
+    }
     assert.strictEqual(exported.proxyConfigs[0].authIv, undefined);
     assert.strictEqual(exported.proxyConfigs[0].authCipher, undefined);
     assert.deepStrictEqual(plain(exported.whitelist), ['example.com']);
     assert.deepStrictEqual(plain(exported.fprWhitelist), ['login.example.com']);
+    assert.strictEqual(exported.subscriptions.length, 1);
     assert.strictEqual(exported.subscriptions[0].id, 'custom_news');
     assert.deepStrictEqual(plain(exported.userScriptlets.sources), [{
       name: 'Custom',
@@ -1149,6 +1213,78 @@ test('Security Hardening - handlers.js', async (t) => {
         snapshot.subscriptions?.[0]?.id === 'custom-old' &&
         snapshot.userScriptletRuleText === 'old.example##+js(old-scriptlet)'
       )), true, commitFailure);
+    }
+  });
+
+  await t.test('settings import rollback keeps DNR-derived state aligned with the last committed runtime image', async () => {
+    const presentStorage = makeSettingsImportStorage();
+    Object.assign(presentStorage, makeDnrDerivedStorage('prior-runtime', 17));
+    const presentHarness = loadTransactionalImportHarness({
+      storage: presentStorage,
+      failRuntime: 'userScripts',
+      mutateDnrDerived: true
+    });
+    const presentBefore = plain(presentStorage);
+    const presentResult = await presentHarness.sandbox.handleConfigImport({
+      settings: makeSettingsImportPayload()
+    });
+
+    assert.strictEqual(presentResult.ok, false);
+    assert.strictEqual(presentResult.rollback?.succeeded, true);
+    assert.strictEqual(presentHarness.calls.dnrDerivedWrites, 2);
+    const rollbackProjection = makeDnrDerivedStorage('rollback-runtime', 92);
+    for (const key of SETTINGS_IMPORT_STORAGE_KEYS) {
+      assert.deepStrictEqual(plain(presentStorage[key]), presentBefore[key], key);
+    }
+    for (const key of DNR_DERIVED_STORAGE_KEYS) {
+      assert.strictEqual(Object.prototype.hasOwnProperty.call(presentStorage, key), true, key);
+      assert.deepStrictEqual(plain(presentStorage[key]), plain(rollbackProjection[key]), key);
+    }
+
+    const absentStorage = makeSettingsImportStorage();
+    const absentHarness = loadTransactionalImportHarness({
+      storage: absentStorage,
+      failRuntime: 'userScripts',
+      mutateDnrDerived: true
+    });
+    const absentBefore = plain(absentStorage);
+    const absentResult = await absentHarness.sandbox.handleConfigImport({
+      settings: makeSettingsImportPayload()
+    });
+
+    assert.strictEqual(absentResult.ok, false);
+    assert.strictEqual(absentResult.rollback?.succeeded, true);
+    assert.strictEqual(absentHarness.calls.dnrDerivedWrites, 2);
+    for (const key of SETTINGS_IMPORT_STORAGE_KEYS) {
+      assert.deepStrictEqual(plain(absentStorage[key]), absentBefore[key], key);
+    }
+    for (const key of DNR_DERIVED_STORAGE_KEYS) {
+      assert.deepStrictEqual(plain(absentStorage[key]), plain(rollbackProjection[key]), key);
+    }
+
+    const failedRollbackStorage = makeSettingsImportStorage();
+    Object.assign(failedRollbackStorage, makeDnrDerivedStorage('prior-runtime', 17));
+    const failedRollbackHarness = loadTransactionalImportHarness({
+      storage: failedRollbackStorage,
+      failRuntime: 'userScripts',
+      failRollbackRuntime: 'dnr',
+      mutateDnrDerived: true
+    });
+    const failedRollbackResult = await failedRollbackHarness.sandbox.handleConfigImport({
+      settings: makeSettingsImportPayload()
+    });
+
+    assert.strictEqual(failedRollbackResult.ok, false);
+    assert.strictEqual(failedRollbackResult.phase, 'rollback');
+    assert.strictEqual(failedRollbackResult.rollback?.runtimeRestored, false);
+    assert.strictEqual(failedRollbackHarness.calls.dnrDerivedWrites, 1);
+    const retainedForwardProjection = makeDnrDerivedStorage('forward-runtime', 91);
+    for (const key of DNR_DERIVED_STORAGE_KEYS) {
+      assert.deepStrictEqual(
+        plain(failedRollbackStorage[key]),
+        plain(retainedForwardProjection[key]),
+        key
+      );
     }
   });
 
@@ -1535,28 +1671,60 @@ test('Security Hardening - subscription parser', async (t) => {
     assert.strictEqual(parsed.skipped.malformed, 0);
   });
 
-  await t.test('translates safe wildcard-host network rules to DNR regex filters', () => {
+  await t.test('preserves safe wildcard-host network rules as DNR urlFilter values', () => {
     const { parseList } = loadParser();
+    const temptationFilter = '||temptation.*/temptation.js';
+    const loaderFilter = '||loader.*.com/prod/*/loader.min.js';
     const parsed = parseList([
-      '||temptation.*/temptation.js$script,~third-party,domain=ad.nl|hln.be',
-      '||loader.*.com/prod/*/loader.min.js$script'
+      `${temptationFilter}$script,~third-party,domain=ad.nl|hln.be`,
+      `${loaderFilter}$script`
     ].join('\n'));
 
     assert.strictEqual(parsed.networkRules.length, 2);
     assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 0);
-    assert.strictEqual(parsed.stats.translatedRegexFilter, 2);
-    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, undefined);
-    assert.match(parsed.networkRules[0].condition.regexFilter, /^\^https\?:\/\//);
-    const temptationRegex = new RegExp(parsed.networkRules[0].condition.regexFilter);
-    assert.strictEqual(temptationRegex.test('https://temptation.example/temptation.js'), true);
-    assert.strictEqual(temptationRegex.test('https://a.b.temptation.example/temptation.js'), true);
-    assert.strictEqual(temptationRegex.test('https://temptation.example/other.js'), false);
+    assert.strictEqual(parsed.stats.translatedRegexFilter, 0);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, temptationFilter);
+    assert.strictEqual(parsed.networkRules[0].condition.regexFilter, undefined);
     assert.deepStrictEqual(plain(parsed.networkRules[0].condition.resourceTypes), ['script']);
     assert.strictEqual(parsed.networkRules[0].condition.domainType, 'firstParty');
     assert.deepStrictEqual(plain(parsed.networkRules[0].condition.initiatorDomains), ['ad.nl', 'hln.be']);
-    const loaderRegex = new RegExp(parsed.networkRules[1].condition.regexFilter);
-    assert.strictEqual(loaderRegex.test('https://loader.foo.com/prod/v1/loader.min.js'), true);
-    assert.strictEqual(loaderRegex.test('https://cdn.foo.com/prod/v1/loader.min.js'), false);
+    assert.strictEqual(parsed.networkRules[1].condition.urlFilter, loaderFilter);
+    assert.strictEqual(parsed.networkRules[1].condition.regexFilter, undefined);
+  });
+
+  await t.test('keeps unsafe wildcard-host shapes outside the DNR trust boundary', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '||*/ad.js$script',
+      '||bad*host/ad.js$script',
+      '||bad.[host]*/ad.js$script',
+      '||bad.*/path|middle$script',
+      '||bad.*/path with space$script',
+      '||good.*/ad.js$script'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, '||good.*/ad.js');
+    assert.strictEqual(parsed.networkRules[0].condition.regexFilter, undefined);
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 5);
+    assert.strictEqual(parsed.stats.translatedRegexFilter, 0);
+  });
+
+  await t.test('drops non-ASCII DNR urlFilter patterns while preserving encoded siblings', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '||cdn.*/caf\u00e9.js$script',
+      '||static.example/\u5e7f\u544a.js$script',
+      '||cdn.*/caf%C3%A9.js$script',
+      '||static.example/%E5%B9%BF%E5%91%8A.js$script'
+    ].join('\n'));
+
+    assert.deepStrictEqual(
+      plain(parsed.networkRules.map(rule => rule.condition.urlFilter)),
+      ['||cdn.*/caf%C3%A9.js', '||static.example/%E5%B9%BF%E5%91%8A.js']
+    );
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 2);
+    assert.strictEqual(parsed.skipped.malformed, 0);
   });
 
   await t.test('drops unsupported DNR urlFilter shapes without rejecting the list', () => {

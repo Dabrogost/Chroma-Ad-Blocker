@@ -178,7 +178,10 @@ function loadHealthSandbox(options = {}) {
     ? undefined
     : {
       getEnabledRulesets: async () => enabledRulesets,
-      getDynamicRules: async () => dynamicRules
+      getDynamicRules: async () => {
+        if (options.dnrSnapshotError) throw new Error('DNR inspection failed');
+        return dynamicRules;
+      }
     };
   if (dnr && options.debugLogging !== false) {
     dnr.onRuleMatchedDebug = { addListener: () => {} };
@@ -331,6 +334,36 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.scriptlets.subscriptionStoredRuleCount, 2);
     assert.strictEqual(health.scriptlets.subscriptionRuntimeRuleCount, 0);
     assert.strictEqual(health.overall.issues.some(issue => issue.area === 'proxy'), false);
+  });
+
+  await t.test('failed network disable reports subscription rules that remain live in Chromium', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: { enabled: true, networkBlocking: false },
+        subscriptions: [{
+          id: 'still-committed',
+          enabled: true,
+          ruleCount: { network: 2, cosmetic: 0, scriptlet: 0 }
+        }],
+        appliedNetworkRuleCount: 2,
+        healthDiagnostics: {
+          dnrState: {
+            area: 'dnr',
+            severity: 'error',
+            message: 'Core DNR state could not be synchronized.'
+          }
+        }
+      },
+      enabledRulesets: [],
+      dynamicRules: [{ id: 100000 }, { id: 100001 }]
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.master.networkBlocking, false);
+    assert.strictEqual(health.dnr.subscriptionDynamicRuleCount, 2);
+    assert.strictEqual(health.subscriptions.appliedNetwork, 2);
+    assert.strictEqual(health.overall.status, 'disabled');
   });
 
   await t.test('master-off stored scriptlets do not retry registration or report missing runtime scripts', async () => {
@@ -623,6 +656,7 @@ test('health diagnostics', async (t) => {
           name: 'Custom List',
           enabled: true,
           lastError: 'HTTP 500 from https://example.com/list.txt',
+          lastErrorScope: 'refresh',
           ruleCount: { network: 10, cosmetic: 2, scriptlet: 1 }
         }]
       }
@@ -633,6 +667,55 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.overall.status, 'degraded');
     assert.strictEqual(health.subscriptions.withErrors, 1);
     assert.strictEqual(health.subscriptions.errors[0].error.includes('https://example.com'), false);
+  });
+
+  await t.test('legacy and disabled subscription errors remain historical without degrading health', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        subscriptions: [
+          {
+            id: 'legacy-enabled',
+            name: 'Legacy enabled',
+            enabled: true,
+            lastError: 'old global DNR error',
+            lastErrorScope: 'legacy'
+          },
+          {
+            id: 'disabled-refresh',
+            name: 'Disabled refresh',
+            enabled: false,
+            lastError: 'HTTP 503',
+            lastErrorScope: 'refresh'
+          }
+        ]
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'healthy');
+    assert.strictEqual(health.subscriptions.withErrors, 0);
+    assert.deepStrictEqual(plain(health.subscriptions.errors), []);
+  });
+
+  await t.test('browser-incompatible subscription regexes degrade without becoming a DNR error', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        browserUnsupportedRegexRuleCount: 1,
+        subscriptions: [{ id: 'legacy', name: 'Legacy', enabled: true }]
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.overall.status, 'degraded');
+    assert.strictEqual(health.subscriptions.browserUnsupportedRegex, 1);
+    assert.ok(health.overall.issues.some(issue =>
+      issue.area === 'subscriptions' &&
+      issue.severity === 'warning' &&
+      /valid sibling rules remain active/i.test(issue.message)
+    ));
+    assert.ok(!health.overall.issues.some(issue => issue.severity === 'error'));
   });
 
   await t.test('request logging unavailable is diagnostic only', async () => {
@@ -1489,7 +1572,7 @@ test('health diagnostics', async (t) => {
         { id: 8999999 },
         { id: 9000000 }
       ],
-      storage: { appliedNetworkRuleCount: 2 }
+      storage: { appliedNetworkRuleCount: 99 }
     });
 
     const health = await sandbox.getHealthStatus();
@@ -1500,5 +1583,20 @@ test('health diagnostics', async (t) => {
     assert.strictEqual(health.dnr.whitelistRuleCount, 1);
     assert.strictEqual(health.dnr.appliedNetworkRuleCount, 5);
     assert.strictEqual(health.subscriptions.appliedNetwork, 2);
+  });
+
+  await t.test('stored subscription count is only a fallback when live DNR inspection fails', async () => {
+    const sandbox = loadHealthSandbox({
+      dnrSnapshotError: true,
+      storage: { appliedNetworkRuleCount: 7 }
+    });
+
+    const health = await sandbox.getHealthStatus();
+
+    assert.strictEqual(health.subscriptions.appliedNetwork, 7);
+    assert.strictEqual(
+      health.overall.issues.some(issue => issue.area === 'dnr' && issue.severity === 'error'),
+      true
+    );
   });
 });

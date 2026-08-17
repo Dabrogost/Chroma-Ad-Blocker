@@ -24,6 +24,7 @@ const DEBUG = false;
 const ALARM_NAME     = 'chroma-subscription-check';
 const FETCH_TIMEOUT  = 30000; // 30s per-fetch timeout
 const MAX_LIST_BYTES = 10 * 1024 * 1024; // 10 MiB per subscription response
+const NETWORK_COMPILER_VERSION = 1;
 let _staticRuleKeySetPromise = null;
 let _subscriptionStateTail = Promise.resolve();
 
@@ -87,8 +88,18 @@ function utf8ByteLength(text) {
 }
 
 function cloneSubscriptionMetadata(sub) {
+  const lastError = typeof sub?.lastError === 'string' && sub.lastError
+    ? sub.lastError
+    : null;
   return {
     ...sub,
+    lastError,
+    lastErrorScope: lastError
+      ? (sub?.lastErrorScope === 'refresh' ? 'refresh' : 'legacy')
+      : null,
+    lastErrorAt: lastError && sub?.lastErrorAt != null && Number.isFinite(Number(sub.lastErrorAt))
+      ? Number(sub.lastErrorAt)
+      : null,
     ruleCount: sub?.ruleCount ? { ...sub.ruleCount } : sub?.ruleCount,
     compatibility: sub?.compatibility ? normalizeSubscriptionCompatibility(sub.compatibility) : sub?.compatibility
   };
@@ -98,7 +109,8 @@ function mergeDefaultSubscriptions(existing) {
   if (!Array.isArray(existing)) return DEFAULT_SUBSCRIPTIONS.map(cloneSubscriptionMetadata);
 
   const byId = new Map(existing.map(sub => [sub?.id, sub]));
-  const merged = existing.map(sub => {
+  const merged = existing.map(storedSub => {
+    const sub = cloneSubscriptionMetadata(storedSub);
     const defaults = DEFAULT_SUBSCRIPTIONS.find(defaultSub => defaultSub.id === sub?.id);
     if (!defaults || sub?.isCustom) return sub;
     const next = {
@@ -169,7 +181,7 @@ async function readResponseTextWithLimit(res, maxBytes) {
  * @param {Object} sub
  * @returns {Promise<{ text?: string, notModified?: boolean, etag: string|null, lastModified: string|null }>}
  */
-async function fetchList(sub) {
+async function fetchList(sub, { forceFullBody = false } = {}) {
   const isBundledResource = sub?.isCustom !== true && String(sub?.url || '').startsWith('chrome-extension://');
   if (!isBundledResource) {
     const requestedUrl = validateRemoteHttpsUrl(sub?.url, { label: 'Subscription' });
@@ -179,8 +191,8 @@ async function fetchList(sub) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   const headers = {};
-  if (sub.etag) headers['If-None-Match'] = sub.etag;
-  if (sub.lastModified) headers['If-Modified-Since'] = sub.lastModified;
+  if (!forceFullBody && sub.etag) headers['If-None-Match'] = sub.etag;
+  if (!forceFullBody && sub.lastModified) headers['If-Modified-Since'] = sub.lastModified;
 
   try {
     const res = await fetch(sub.url, { signal: controller.signal, cache: 'no-cache', headers });
@@ -194,6 +206,9 @@ async function fetchList(sub) {
     const etag = getHeader(res, 'etag');
     const lastModified = getHeader(res, 'last-modified');
     if (res.status === 304) {
+      if (forceFullBody) {
+        throw new Error('Subscription compiler refresh returned 304 without a response body');
+      }
       return {
         notModified: true,
         etag: etag || sub.etag || null,
@@ -209,6 +224,11 @@ async function fetchList(sub) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function needsNetworkCompilerRefresh(sub) {
+  return sub?.cosmeticOnly !== true &&
+    Number(sub?.networkCompilerVersion) !== NETWORK_COMPILER_VERSION;
 }
 
 // ─── COSMETIC DEDUPLICATION ─────
@@ -316,10 +336,24 @@ async function buildStaticRuleKeySet() {
 /**
  * Reconciles cached subscription rules through the authoritative DNR
  * coordinator.
- * @returns {Promise<void>}
+ * @returns {Promise<Object|undefined>}
  */
 async function rebuildNetworkRules() {
-  await reconcileNetworkDnr('subscription-cache');
+  return reconcileNetworkDnr('subscription-cache');
+}
+
+async function reconcileNetworkAfterSubscriptionChange(reason, successResult) {
+  try {
+    await reconcileNetworkDnr(reason);
+    return successResult;
+  } catch (err) {
+    return {
+      ...successResult,
+      networkApplied: false,
+      networkRuntimeRetained: true,
+      applyError: err?.message || String(err)
+    };
+  }
 }
 
 /**
@@ -331,7 +365,7 @@ async function rebuildNetworkRules() {
 function buildCombinedCosmeticRules(subscriptions, perSubRules = {}) {
   const allRules = [];
   for (const sub of subscriptions) {
-    if (sub?.enabled && Array.isArray(perSubRules[sub.id])) {
+    if (sub?.enabled && sub?.pendingRemoval !== true && Array.isArray(perSubRules[sub.id])) {
       for (const rule of perSubRules[sub.id]) {
         allRules.push(rule);
       }
@@ -350,7 +384,7 @@ function buildCombinedCosmeticRules(subscriptions, perSubRules = {}) {
 function buildCombinedScriptletRules(subscriptions, perSubRules = {}) {
   const allRules = [];
   for (const sub of subscriptions) {
-    if (sub?.enabled && Array.isArray(perSubRules[sub.id])) {
+    if (sub?.enabled && sub?.pendingRemoval !== true && Array.isArray(perSubRules[sub.id])) {
       for (const rule of perSubRules[sub.id]) {
         allRules.push({ ...rule, sourceId: sub.id });
       }
@@ -570,10 +604,15 @@ export async function refreshAllStale() {
   const now = Date.now();
 
   for (const sub of subscriptions) {
-    if (!sub.enabled) continue;
+    if (!sub.enabled || sub.pendingRemoval === true) continue;
     const ageMs = now - (sub.lastUpdated || 0);
     const intervalMs = (sub.intervalHours || 24) * 60 * 60 * 1000;
-    if (ageMs >= intervalMs) {
+    const compilerAttemptAgeMs = now - (sub.networkCompilerAttemptAt || 0);
+    const compilerRefreshPending = needsNetworkCompilerRefresh(sub);
+    const refreshDue = compilerRefreshPending
+      ? compilerAttemptAgeMs >= intervalMs
+      : ageMs >= intervalMs;
+    if (refreshDue) {
       await refreshSubscription(sub.id);
     }
   }
@@ -588,11 +627,12 @@ export async function refreshSubscription(id) {
   const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
   const sub = subscriptions.find(s => s.id === id);
   if (!sub) return { ok: false, error: 'Subscription not found' };
-  if (!sub.enabled) return { ok: false, error: 'Subscription disabled' };
+  if (sub.pendingRemoval === true) return { ok: false, error: 'Subscription removal pending' };
 
+  const forceFullBody = needsNetworkCompilerRefresh(sub);
   try {
     if (DEBUG) console.log(`[Chroma Subscriptions] Fetching: ${sub.name}`);
-    const fetched = await fetchList(sub);
+    const fetched = await fetchList(sub, { forceFullBody });
     const now = Date.now();
 
     if (fetched.notModified) {
@@ -605,6 +645,8 @@ export async function refreshSubscription(id) {
               ...item,
               lastUpdated: now,
               lastError: null,
+              lastErrorScope: null,
+              lastErrorAt: null,
               etag: fetched.etag,
               lastModified: fetched.lastModified
             }
@@ -619,8 +661,10 @@ export async function refreshSubscription(id) {
       await reconcileSubscriptionRuntimeState();
       // A 304 confirms the cache is current; rebuilding here also repairs a
       // missing runtime ruleset after browser or service-worker recovery.
-      await reconcileNetworkDnr('subscription-not-modified');
-      return { ok: true, notModified: true };
+      return reconcileNetworkAfterSubscriptionChange(
+        'subscription-not-modified',
+        { ok: true, notModified: true }
+      );
     }
 
     const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(fetched.text || '');
@@ -669,7 +713,11 @@ export async function refreshSubscription(id) {
             compatibility,
             lastUpdated: now,
             version: String(now),
+            networkCompilerVersion: NETWORK_COMPILER_VERSION,
+            networkCompilerAttemptAt: null,
             lastError: null,
+            lastErrorScope: null,
+            lastErrorAt: null,
             etag: fetched.etag,
             lastModified: fetched.lastModified
           }
@@ -691,7 +739,10 @@ export async function refreshSubscription(id) {
     }
     // The coordinator rereads config and cached rules immediately before its
     // commit. Off-state refreshes therefore update cache without adding DNR.
-    await reconcileNetworkDnr('subscription-refresh');
+    const result = await reconcileNetworkAfterSubscriptionChange(
+      'subscription-refresh',
+      { ok: true }
+    );
 
     if (DEBUG) {
       console.log(
@@ -704,7 +755,7 @@ export async function refreshSubscription(id) {
       );
     }
 
-    return { ok: true };
+    return result;
   } catch (err) {
     // Record error without clobbering other subscription metadata
     await serializeSubscriptionState(async () => {
@@ -712,7 +763,17 @@ export async function refreshSubscription(id) {
       if (!subs.some(item => item.id === id)) return;
       await chrome.storage.local.set({
         subscriptions: subs.map(item => item.id === id
-          ? { ...item, lastError: err.message }
+          ? {
+              ...item,
+              ...(item.url === sub.url
+                ? {
+                    lastError: err.message,
+                    lastErrorScope: 'refresh',
+                    lastErrorAt: Date.now(),
+                    ...(forceFullBody ? { networkCompilerAttemptAt: Date.now() } : {})
+                  }
+                : {})
+            }
           : item)
       });
     });
@@ -749,7 +810,8 @@ export async function setSubscriptionEnabled(id, enabled) {
       'sub_scriptlet_rules',
       'config'
     ]);
-    if (!subscriptions.some(sub => sub.id === id)) return false;
+    const currentSub = subscriptions.find(sub => sub.id === id);
+    if (!currentSub || currentSub.pendingRemoval === true) return false;
 
     const nextSubscriptions = subscriptions.map(sub => sub.id === id
       ? { ...sub, enabled }
@@ -762,7 +824,17 @@ export async function setSubscriptionEnabled(id, enabled) {
   });
   if (!updated) return { ok: false };
 
-  await rebuildNetworkRules();
+  try {
+    await rebuildNetworkRules();
+  } catch (err) {
+    return {
+      ok: true,
+      requestedEnabled: enabled,
+      networkApplied: false,
+      networkRuntimeRetained: true,
+      applyError: err?.message || String(err)
+    };
+  }
 
   return { ok: true };
 }
@@ -772,28 +844,34 @@ export async function setSubscriptionEnabled(id, enabled) {
  * @param {{ id: string, name: string, url: string, intervalHours?: number }} sub
  * @returns {Promise<{ ok: boolean, error?: string }>}
  */
-export async function addSubscription(sub) {
-  const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
-  if (subscriptions.find(s => s.id === sub.id)) return { ok: false, error: 'ID already exists' };
+export function addSubscription(sub) {
+  return serializeSubscriptionState(async () => {
+    const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
+    if (subscriptions.find(s => s.id === sub.id)) return { ok: false, error: 'ID already exists' };
 
-  if (subscriptions.find(s => s.url === sub.url)) return { ok: false, error: 'URL already added' };
+    if (subscriptions.find(s => s.url === sub.url)) return { ok: false, error: 'URL already added' };
 
-  subscriptions.push({
-    id: sub.id,
-    name: sub.name,
-    url: sub.url,
-    enabled: true,
-    isCustom: true,
-    intervalHours: sub.intervalHours || 24,
-    lastUpdated: 0,
-    version: null,
-    lastError: null,
-    ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
-    compatibility: normalizeSubscriptionCompatibility()
+    const nextSubscriptions = subscriptions.concat({
+      id: sub.id,
+      name: sub.name,
+      url: sub.url,
+      enabled: true,
+      isCustom: true,
+      intervalHours: sub.intervalHours || 24,
+      lastUpdated: 0,
+      version: null,
+      networkCompilerVersion: 0,
+      networkCompilerAttemptAt: null,
+      lastError: null,
+      lastErrorScope: null,
+      lastErrorAt: null,
+      ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+      compatibility: normalizeSubscriptionCompatibility()
+    });
+
+    await chrome.storage.local.set({ subscriptions: nextSubscriptions });
+    return { ok: true };
   });
-
-  await chrome.storage.local.set({ subscriptions });
-  return { ok: true };
 }
 
 /**
@@ -802,7 +880,53 @@ export async function addSubscription(sub) {
  * @returns {Promise<{ ok: boolean }>}
  */
 export async function removeSubscription(id) {
-  const removed = await serializeSubscriptionState(async () => {
+  const marked = await serializeSubscriptionState(async () => {
+    const {
+      config = {},
+      subscriptions = [],
+      sub_cosmetic_rules: storedCosmeticRules = {},
+      sub_scriptlet_rules: storedScriptletRules = {}
+    } = await chrome.storage.local.get([
+      'config',
+      'subscriptions',
+      'sub_cosmetic_rules',
+      'sub_scriptlet_rules'
+    ]);
+    const currentSub = subscriptions.find(sub => sub.id === id);
+    if (!currentSub) return false;
+    const nextSubscriptions = subscriptions.map(sub => sub.id === id
+      ? { ...sub, pendingRemoval: true }
+      : sub);
+
+    await chrome.storage.local.set({
+      subscriptions: nextSubscriptions,
+      ...buildSubscriptionRuntimeState(config, nextSubscriptions, storedCosmeticRules, storedScriptletRules)
+    });
+    return true;
+  });
+  if (!marked) return { ok: false };
+
+  let reconciliation;
+  try {
+    reconciliation = await rebuildNetworkRules();
+  } catch (err) {
+    return {
+      ok: false,
+      error: err?.message || String(err),
+      pendingRemoval: true,
+      networkRuntimeRetained: true
+    };
+  }
+  if (reconciliation?.stale === true || reconciliation?.ok === false) {
+    return {
+      ok: false,
+      error: reconciliation?.error || 'Subscription removal is waiting for network reconciliation',
+      pendingRemoval: true,
+      stale: reconciliation?.stale === true
+    };
+  }
+
+  return serializeSubscriptionState(async () => {
     const {
       config = {},
       subscriptions = [],
@@ -816,9 +940,13 @@ export async function removeSubscription(id) {
       'sub_cosmetic_rules',
       'sub_scriptlet_rules'
     ]);
-    const filtered = subscriptions.filter(sub => sub.id !== id);
-    if (filtered.length === subscriptions.length) return false;
+    const currentSub = subscriptions.find(sub => sub.id === id);
+    if (!currentSub) return { ok: true };
+    if (currentSub.pendingRemoval !== true) {
+      return { ok: false, error: 'Subscription removal state changed' };
+    }
 
+    const filtered = subscriptions.filter(sub => sub.id !== id);
     const netPerSub = { ...storedNetworkRules };
     const cosPerSub = { ...storedCosmeticRules };
     const scrPerSub = { ...storedScriptletRules };
@@ -833,11 +961,6 @@ export async function removeSubscription(id) {
       sub_scriptlet_rules: scrPerSub,
       ...buildSubscriptionRuntimeState(config, filtered, cosPerSub, scrPerSub)
     });
-    return true;
+    return { ok: true };
   });
-  if (!removed) return { ok: false };
-
-  await rebuildNetworkRules();
-
-  return { ok: true };
 }
