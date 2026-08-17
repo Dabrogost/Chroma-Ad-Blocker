@@ -235,6 +235,7 @@ function createSettingsHarness({
   url = 'chrome-extension://test/ui/settings.html',
   responses = {},
   pending = {},
+  storage = {},
   fetch = async () => ({ ok: false }),
   confirm = () => true
 } = {}) {
@@ -246,7 +247,7 @@ function createSettingsHarness({
   const tabsCreated = [];
   const reloadCalls = [];
   const storageChangeListeners = [];
-  const storageState = {};
+  const storageState = { ...storage };
   const defaultStats = {
     settings: { mode: 'aggregated', retentionDays: 90 },
     totals: { protectionEvents: 42, networkBlocks: 7, cosmeticHides: 2, youtubePayloadCleans: 1, scriptletHits: 3 },
@@ -370,7 +371,8 @@ function createSettingsHarness({
       if (pending[msg.type]) return pending[msg.type].promise;
       if (Object.prototype.hasOwnProperty.call(responses, msg.type)) {
         const value = responses[msg.type];
-        return value instanceof Error ? Promise.reject(value) : Promise.resolve(value);
+        if (value instanceof Error) return Promise.reject(value);
+        return Promise.resolve(typeof value === 'function' ? value(msg) : value);
       }
       if (msg.type === 'CONFIG_GET') return Promise.resolve({ enabled: true, acceleration: false, cosmetic: true });
       if (msg.type === 'UPDATE_CHECK') return Promise.resolve(null);
@@ -406,6 +408,7 @@ function createSettingsHarness({
     tabsCreated,
     reloadCalls,
     pending,
+    storageState,
     emitStorageChange,
     getStorageChangeListenerCount: () => storageChangeListeners.length
   };
@@ -2824,23 +2827,143 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     const descTexts = Array.from(harness.dom.window.document.querySelectorAll('#subscriptionList .desc'))
       .map(node => node.textContent);
-    assert.ok(descTexts.includes('Network compatibility: 6 translated \u00b7 1 skipped'));
+    assert.ok(descTexts.includes('Network compatibility: 6 translated \u00b7 1 parser-skipped'));
 
     const toggle = harness.dom.window.document.querySelector('.sub-toggle');
     toggle.checked = false;
     toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
     await settleDomAsyncWork();
 
-    assert.strictEqual(toggle.checked, true);
-    assert.strictEqual(toggle.disabled, false);
+    const rehydratedToggle = harness.dom.window.document.querySelector('.sub-toggle');
+    assert.strictEqual(rehydratedToggle.checked, true);
+    assert.strictEqual(rehydratedToggle.disabled, false);
 
     const deleteBtn = harness.dom.window.document.querySelector('.sub-delete-btn');
     deleteBtn.dispatchEvent(new harness.dom.window.Event('click', { bubbles: true }));
     await settleDomAsyncWork();
 
-    assert.strictEqual(deleteBtn.disabled, false);
-    assert.match(deleteBtn.title, /failed/i);
+    const rehydratedDelete = harness.dom.window.document.querySelector('.sub-delete-btn');
+    assert.strictEqual(rehydratedDelete.disabled, false);
     assert.ok(harness.dom.window.document.querySelector('.sub-toggle'));
+  });
+
+  await t.test('subscription UI distinguishes committed counts, compatibility skips, and pending removal', async () => {
+    const subscriptions = [
+      {
+        id: 'legacy-regex',
+        name: 'Legacy regex',
+        enabled: true,
+        version: 'new-version',
+        ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 },
+        compatibility: { translatedRegexFilter: 1, unsupportedUrlFilter: 2 },
+        lastError: 'old copied DNR error',
+        lastErrorScope: 'legacy'
+      },
+      {
+        id: 'pending-remove',
+        name: 'Pending removal',
+        enabled: true,
+        isCustom: true,
+        pendingRemoval: true,
+        version: 'v1',
+        ruleCount: { network: 4, cosmetic: 0, scriptlet: 0 }
+      }
+    ];
+    const harness = createSettingsHarness({
+      storage: {
+        config: { enabled: true, networkBlocking: true },
+        appliedNetworkStateVersion: 1,
+        appliedNetworkRuleCount: 13,
+        appliedNetworkRulesPerSub: { 'legacy-regex': 9, 'pending-remove': 4 },
+        subscriptionNetworkRuntime: {
+          schemaVersion: 1,
+          protectionActive: true,
+          appliedTotal: 13,
+          perSub: {
+            'legacy-regex': {
+              sourceVersion: 'old-version',
+              appliedNetworkRuleCount: 9,
+              browserUnsupportedRegexRuleCount: 1,
+              regexQuotaTrimCount: 0,
+              budgetTrimCount: 0
+            },
+            'pending-remove': {
+              sourceVersion: 'v1',
+              appliedNetworkRuleCount: 4
+            }
+          }
+        },
+        healthDiagnostics: { dnrState: { severity: 'error' } }
+      },
+      responses: { SUBSCRIPTION_GET: subscriptions }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const text = harness.dom.window.document.querySelector('#subscriptionList').textContent;
+    assert.match(text, /9 \/ 0 network/);
+    assert.match(text, /1 unsupported by this browser/);
+    assert.match(text, /2 parser-skipped/);
+    assert.match(text, /Update pending .* previous network version remains active/);
+    assert.match(text, /Previous error: old copied DNR error/);
+    assert.match(text, /Removal pending .* 4 network rules are still active/);
+    assert.match(text, /Per-list counts show the last recorded browser state/);
+
+    const pendingRow = Array.from(harness.dom.window.document.querySelectorAll('#subscriptionList .toggle-row'))
+      .find(row => row.textContent.includes('Pending removal'));
+    assert.strictEqual(pendingRow.querySelector('.sub-toggle').disabled, true);
+    assert.strictEqual(pendingRow.querySelector('.sub-refresh-btn').disabled, true);
+    assert.strictEqual(pendingRow.querySelector('.sub-delete-btn').textContent, 'Retry');
+  });
+
+  await t.test('a failed atomic disable rehydrates requested state while showing committed rules', async () => {
+    let enabled = true;
+    const harness = createSettingsHarness({
+      storage: {
+        config: { enabled: true, networkBlocking: true },
+        appliedNetworkStateVersion: 1,
+        appliedNetworkRuleCount: 10,
+        appliedNetworkRulesPerSub: { 'sub-a': 10 },
+        subscriptionNetworkRuntime: {
+          schemaVersion: 1,
+          protectionActive: true,
+          appliedTotal: 10,
+          perSub: {
+            'sub-a': { sourceVersion: 'v1', appliedNetworkRuleCount: 10 }
+          }
+        },
+        healthDiagnostics: { dnrState: { severity: 'error' } }
+      },
+      responses: {
+        SUBSCRIPTION_GET: () => [{
+          id: 'sub-a',
+          name: 'Sub A',
+          enabled,
+          version: 'v1',
+          ruleCount: { network: 10, cosmetic: 0, scriptlet: 0 }
+        }],
+        SUBSCRIPTION_SET: msg => {
+          enabled = msg.enabled;
+          return { ok: true, requestedEnabled: enabled, networkApplied: false, networkRuntimeRetained: true };
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const toggle = harness.dom.window.document.querySelector('.sub-toggle');
+    toggle.checked = false;
+    toggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    const rehydrated = harness.dom.window.document.querySelector('.sub-toggle');
+    const text = harness.dom.window.document.querySelector('#subscriptionList').textContent;
+    assert.strictEqual(rehydrated.checked, false);
+    assert.strictEqual(rehydrated.disabled, false);
+    assert.match(text, /10 \/ 10 network/);
+    assert.match(text, /Disable pending .* 10 network rules are still active/);
   });
 
   await t.test('local zapper controls roll back or stay visible when writes fail', async () => {

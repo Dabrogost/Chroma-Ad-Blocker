@@ -21,6 +21,10 @@ function ruleSummary(outcome) {
     .join(', ') || 'none';
 }
 
+function outcomeHasRule(outcome, ruleId) {
+  return (outcome?.matchedRules || []).some(rule => rule.ruleId === ruleId);
+}
+
 test('DNR match/outcome E2E', async (t) => {
   const browser = await startExtensionBrowser();
   t.after(async () => {
@@ -49,6 +53,139 @@ test('DNR match/outcome E2E', async (t) => {
 
     assert.deepStrictEqual(enabledRulesets, expectedRulesets);
     assert.ok(dynamicRules.length > 0, 'dynamic rules should be installed after background startup');
+  });
+
+  await t.test('issue #134 wildcard-host exception remains a native urlFilter with scoped matches', async (t) => {
+    const ruleId = 8999999;
+    const urlFilter = '||estaticos.*/elementosWeb/ew/js/multimedia/player/videojs-contrib-ads/videojs.ads.min.js';
+    const resourceUrl = 'https://estaticos.example/elementosWeb/ew/js/multimedia/player/videojs-contrib-ads/videojs.ads.min.js';
+    const initiatorDomains = [
+      'diaridegirona.cat',
+      'diariodeibiza.es',
+      'diariodemallorca.es',
+      'diarioinformacion.com',
+      'eldia.es',
+      'emporda.info',
+      'farodevigo.es',
+      'laopinioncoruna.es',
+      'laopiniondemalaga.es',
+      'laopiniondemurcia.es',
+      'laopiniondezamora.es',
+      'laprovincia.es',
+      'levante-emv.com',
+      'lne.es',
+      'mallorcazeitung.es',
+      'regio7.cat',
+      'superdeporte.es'
+    ];
+    const rule = {
+      id: ruleId,
+      priority: 10000,
+      action: { type: 'allow' },
+      condition: {
+        urlFilter,
+        resourceTypes: ['xmlhttprequest'],
+        initiatorDomains
+      }
+    };
+
+    const existingRule = await evaluate(
+      browser.cdp,
+      browser.workerSession,
+      `chrome.declarativeNetRequest.getDynamicRules().then(rules => rules.find(rule => rule.id === ${ruleId}) || null)`
+    );
+    assert.strictEqual(existingRule, null, `reserved E2E rule id ${ruleId} should be unused`);
+
+    t.after(async () => {
+      await evaluate(
+        browser.cdp,
+        browser.workerSession,
+        `chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [${ruleId}] })`
+      );
+    });
+    await evaluate(
+      browser.cdp,
+      browser.workerSession,
+      `chrome.declarativeNetRequest.updateDynamicRules({ addRules: [${JSON.stringify(rule)}] })`
+    );
+
+    const installedRule = await evaluate(
+      browser.cdp,
+      browser.workerSession,
+      `chrome.declarativeNetRequest.getDynamicRules().then(rules => rules.find(rule => rule.id === ${ruleId}) || null)`
+    );
+    assert.ok(installedRule, 'issue #134 rule should install in Chromium');
+    assert.strictEqual(installedRule.condition.urlFilter, urlFilter);
+    assert.strictEqual(installedRule.condition.regexFilter, undefined);
+    assert.deepStrictEqual(installedRule.condition.resourceTypes, ['xmlhttprequest']);
+    assert.deepStrictEqual(installedRule.condition.initiatorDomains, initiatorDomains);
+
+    const cases = [
+      {
+        label: 'base host, exact path, allowed initiator, and XHR',
+        request: {
+          url: resourceUrl,
+          type: 'xmlhttprequest',
+          initiator: 'https://diaridegirona.cat'
+        },
+        matches: true
+      },
+      {
+        label: 'subdomain host',
+        request: {
+          url: resourceUrl.replace('://estaticos.', '://cdn.estaticos.'),
+          type: 'xmlhttprequest',
+          initiator: 'https://superdeporte.es'
+        },
+        matches: true
+      },
+      {
+        label: 'wrong host',
+        request: {
+          url: resourceUrl.replace('://estaticos.', '://notestaticos.'),
+          type: 'xmlhttprequest',
+          initiator: 'https://diaridegirona.cat'
+        },
+        matches: false
+      },
+      {
+        label: 'wrong path',
+        request: {
+          url: resourceUrl.replace('/elementosWeb/', '/other/'),
+          type: 'xmlhttprequest',
+          initiator: 'https://diaridegirona.cat'
+        },
+        matches: false
+      },
+      {
+        label: 'wrong initiator',
+        request: {
+          url: resourceUrl,
+          type: 'xmlhttprequest',
+          initiator: 'https://unrelated.example'
+        },
+        matches: false
+      },
+      {
+        label: 'wrong resource type',
+        request: {
+          url: resourceUrl,
+          type: 'script',
+          initiator: 'https://diaridegirona.cat'
+        },
+        matches: false
+      }
+    ];
+
+    for (const matchCase of cases) {
+      const outcome = await testMatchOutcome(browser, matchCase.request);
+      console.log(`DNR issue #134 ${matchCase.label}: ${ruleSummary(outcome)}`);
+      assert.strictEqual(
+        outcomeHasRule(outcome, ruleId),
+        matchCase.matches,
+        `issue #134 rule should ${matchCase.matches ? '' : 'not '}match ${matchCase.label}`
+      );
+    }
   });
 
   await t.test('known tracker URL matches a blocking rule', async () => {

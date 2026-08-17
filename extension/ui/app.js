@@ -144,16 +144,28 @@ const ChromaApp = (() => {
     return formatCount(number);
   }
 
-  function formatSubscriptionCompatibility(sub) {
+  function formatSubscriptionCompatibility(sub, runtimeStats = {}) {
     const compatibility = sub?.compatibility || {};
     const translated = Number(compatibility.translatedRegexFilter) || 0;
     const unsupported = Number(compatibility.unsupportedUrlFilter) || 0;
+    const browserUnsupported = Number(runtimeStats.browserUnsupportedRegexRuleCount) || 0;
+    const regexQuotaTrimmed = Number(runtimeStats.regexQuotaTrimCount) || 0;
+    const budgetTrimmed = Number(runtimeStats.budgetTrimCount) || 0;
     const parts = [];
     if (translated > 0) {
       parts.push(`${formatCount(translated)} translated`);
     }
     if (unsupported > 0) {
-      parts.push(`${formatCount(unsupported)} skipped`);
+      parts.push(`${formatCount(unsupported)} parser-skipped`);
+    }
+    if (browserUnsupported > 0) {
+      parts.push(`${formatCount(browserUnsupported)} unsupported by this browser`);
+    }
+    if (regexQuotaTrimmed > 0) {
+      parts.push(`${formatCount(regexQuotaTrimmed)} regex quota-limited`);
+    }
+    if (budgetTrimmed > 0) {
+      parts.push(`${formatCount(budgetTrimmed)} budget-limited`);
     }
     return parts.length ? `Network compatibility: ${parts.join(' \u00b7 ')}` : '';
   }
@@ -1053,8 +1065,28 @@ const ChromaApp = (() => {
       try {
         subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
 
-        const { appliedNetworkRuleCount = 0, appliedNetworkRulesPerSub = {} } =
-          await chrome.storage.local.get(['appliedNetworkRuleCount', 'appliedNetworkRulesPerSub']);
+        const {
+          appliedNetworkStateVersion = 0,
+          appliedNetworkRuleCount = 0,
+          appliedNetworkRulesPerSub = {},
+          subscriptionNetworkRuntime = null,
+          healthDiagnostics = {},
+          config = {}
+        } = await chrome.storage.local.get([
+          'appliedNetworkStateVersion',
+          'appliedNetworkRuleCount',
+          'appliedNetworkRulesPerSub',
+          'subscriptionNetworkRuntime',
+          'healthDiagnostics',
+          'config'
+        ]);
+        const hasCommittedRuntime = appliedNetworkStateVersion === 1 &&
+          subscriptionNetworkRuntime?.schemaVersion === 1;
+        const runtimePerSub = hasCommittedRuntime && subscriptionNetworkRuntime.perSub &&
+          typeof subscriptionNetworkRuntime.perSub === 'object'
+          ? subscriptionNetworkRuntime.perSub
+          : {};
+        const networkProtectionRequested = config?.enabled !== false && config?.networkBlocking !== false;
         const totalParsed = subscriptions.reduce((sum, s) => sum + (s.ruleCount?.network || 0), 0);
 
         if (subscriptions.length === 0) {
@@ -1072,6 +1104,14 @@ const ChromaApp = (() => {
 
         clearElement(list);
         list.appendChild(summaryBar);
+        if (healthDiagnostics?.dnrState) {
+          appendElement(
+            list,
+            'div',
+            'subscription-runtime-warning',
+            'Network rule synchronization did not complete. Per-list counts show the last recorded browser state.'
+          );
+        }
 
         for (const sub of subscriptions) {
           const row = document.createElement('div');
@@ -1080,31 +1120,75 @@ const ChromaApp = (() => {
           const info = appendElement(row, 'div', 'toggle-info');
           appendElement(info, 'div', 'name', sub.name);
           appendElement(info, 'div', 'desc', `Updated: ${lastUpdatedText}`);
+          const runtimeStats = runtimePerSub[sub.id] || null;
+          const applied = hasCommittedRuntime
+            ? (Number(runtimeStats?.appliedNetworkRuleCount) || 0)
+            : (Number(appliedNetworkRulesPerSub[sub.id]) || 0);
 
           if (sub.ruleCount) {
             const parts = [];
-            if (!sub.cosmeticOnly && sub.ruleCount.network > 0) {
-              const applied = sub.enabled ? (appliedNetworkRulesPerSub[sub.id] || 0) : 0;
+            if (!sub.cosmeticOnly && (sub.ruleCount.network > 0 || applied > 0)) {
               parts.push(`${applied.toLocaleString()} / ${sub.ruleCount.network.toLocaleString()} network`);
             }
             if (sub.ruleCount.cosmetic > 0) parts.push(`${sub.ruleCount.cosmetic.toLocaleString()} cosmetic`);
             if (sub.ruleCount.scriptlet > 0) parts.push(`${sub.ruleCount.scriptlet.toLocaleString()} scriptlets`);
             if (parts.length) appendElement(info, 'div', 'desc', parts.join(' \u00b7 '));
           }
-          const compatibilityText = formatSubscriptionCompatibility(sub);
+          const compatibilityText = formatSubscriptionCompatibility(sub, runtimeStats || {});
           if (compatibilityText) appendElement(info, 'div', 'desc', compatibilityText);
 
+          if (sub.pendingRemoval === true) {
+            const text = applied > 0
+              ? `Removal pending \u2014 ${formatCount(applied)} network rules are still active`
+              : 'Removal pending \u2014 retry to finish cleanup';
+            appendElement(info, 'div', 'subscription-runtime-status', text);
+          } else if (hasCommittedRuntime && networkProtectionRequested && !sub.cosmeticOnly) {
+            if (sub.enabled && !runtimeStats) {
+              appendElement(info, 'div', 'subscription-runtime-status', 'Enable pending \u2014 not active in Chromium');
+            } else if (!sub.enabled && runtimeStats && applied > 0) {
+              appendElement(
+                info,
+                'div',
+                'subscription-runtime-status',
+                `Disable pending \u2014 ${formatCount(applied)} network rules are still active`
+              );
+            } else if (
+              sub.enabled &&
+              runtimeStats &&
+              String(runtimeStats.sourceVersion ?? '') !== String(sub.version ?? '')
+            ) {
+              appendElement(
+                info,
+                'div',
+                'subscription-runtime-status',
+                'Update pending \u2014 the previous network version remains active'
+              );
+            }
+          }
+
           if (sub.lastError) {
-            const error = appendElement(info, 'div', 'subscription-error', `Error: ${sub.lastError}`);
+            const isRefreshError = sub.lastErrorScope === 'refresh';
+            const error = appendElement(
+              info,
+              'div',
+              isRefreshError ? 'subscription-error' : 'desc',
+              `${isRefreshError ? 'Last refresh error' : 'Previous error'}: ${sub.lastError}`
+            );
             error.title = sub.lastError;
           }
 
           const actions = appendElement(row, 'div', 'subscription-actions');
           if (sub.isCustom) {
-            const deleteBtn = appendElement(actions, 'button', 'sub-delete-btn reset-btn inline-danger-btn compact-action-btn subscription-icon-btn action-btn action-btn--danger', 'Remove');
+            const deleteBtn = appendElement(
+              actions,
+              'button',
+              'sub-delete-btn reset-btn inline-danger-btn compact-action-btn subscription-icon-btn action-btn action-btn--danger',
+              sub.pendingRemoval === true ? 'Retry' : 'Remove'
+            );
             deleteBtn.dataset.id = sub.id;
-            deleteBtn.title = 'Remove List';
-            deleteBtn.setAttribute('aria-label', `Remove ${sub.name || 'filter list'}`);
+            deleteBtn.dataset.pendingRemoval = sub.pendingRemoval === true ? 'true' : 'false';
+            deleteBtn.title = sub.pendingRemoval === true ? 'Retry removal' : 'Remove List';
+            deleteBtn.setAttribute('aria-label', `${sub.pendingRemoval === true ? 'Retry removing' : 'Remove'} ${sub.name || 'filter list'}`);
             appendElement(actions, 'span', 'inline-separator');
           }
 
@@ -1112,12 +1196,14 @@ const ChromaApp = (() => {
           refreshBtn.dataset.id = sub.id;
           refreshBtn.title = 'Force refresh';
           refreshBtn.setAttribute('aria-label', `Refresh ${sub.name || 'filter list'}`);
+          refreshBtn.disabled = sub.pendingRemoval === true;
 
           const toggleLabel = appendElement(actions, 'label', 'switch');
           const toggleInput = appendElement(toggleLabel, 'input', 'sub-toggle');
           toggleInput.type = 'checkbox';
           toggleInput.dataset.id = sub.id;
           toggleInput.checked = !!sub.enabled;
+          toggleInput.disabled = sub.pendingRemoval === true;
           toggleInput.setAttribute('aria-label', `Enable ${sub.name || 'filter list'}`);
           appendElement(toggleLabel, 'span', 'slider');
           list.appendChild(row);
@@ -1135,13 +1221,9 @@ const ChromaApp = (() => {
           e.target.disabled = true;
           e.target.classList.add('control-pending');
           const result = await sendMutation({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
-          if (result) {
-            await loadHealthPanel();
-          } else {
-            e.target.checked = previous;
-          }
-          e.target.disabled = false;
-          e.target.classList.remove('control-pending');
+          if (!result) e.target.checked = previous;
+          await loadSubscriptionUI();
+          await loadHealthPanel();
         });
       });
       list.querySelectorAll('.sub-refresh-btn').forEach(btn => {
@@ -1150,7 +1232,9 @@ const ChromaApp = (() => {
           e.target.textContent = 'Refreshing';
           e.target.disabled = true;
           const result = await sendMutation({ type: MSG.SUBSCRIPTION_REFRESH, id });
-          e.target.textContent = result && result.ok ? 'Updated' : 'Failed';
+          e.target.textContent = result?.networkApplied === false
+            ? 'Cached'
+            : (result && result.ok ? 'Updated' : 'Failed');
           setTimeout(() => {
             e.target.textContent = 'Refresh';
             e.target.disabled = false;
@@ -1161,16 +1245,11 @@ const ChromaApp = (() => {
       });
       list.querySelectorAll('.sub-delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
-          if (!confirm('Remove this filter list?')) return;
+          if (e.target.dataset.pendingRemoval !== 'true' && !confirm('Remove this filter list?')) return;
           e.target.disabled = true;
           const result = await sendMutation({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id });
-          if (result) {
-            loadSubscriptionUI();
-            loadHealthPanel();
-          } else {
-            e.target.disabled = false;
-            e.target.title = 'Remove failed';
-          }
+          loadSubscriptionUI();
+          loadHealthPanel();
         });
       });
     }

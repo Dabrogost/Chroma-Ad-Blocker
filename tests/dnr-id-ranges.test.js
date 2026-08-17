@@ -23,7 +23,7 @@ const subscriptionDnrCode = '{\n' + fs.readFileSync(path.join(__dirname, '..', '
 const dnrStateCode = '{\n' + fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'dnrState.js'), 'utf8')
   .replace('const DEBUG = false;', 'var DEBUG = false;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", 'var getDefaultDynamicRules = globalThis._getDefaultDynamicRules;')
-  .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", 'var clearHealthDiagnostic = globalThis._clearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = async () => {};')
+  .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", 'var clearHealthDiagnostic = globalThis._clearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._recordHealthDiagnostic || (async () => {});')
   .replace(/import\s*\{[\s\S]*?\}\s*from\s*['"]\.\.\/subscriptions\/dnr\.js['"];?/, `
     var buildSubscriptionRuleApplication = globalThis.__subscriptionDnr.buildSubscriptionRuleApplication;
     var prepareSubscriptionRules = globalThis.__subscriptionDnr.prepareSubscriptionRules;
@@ -54,6 +54,15 @@ function subscriptionRule(index) {
   };
 }
 
+function regexSubscriptionRule(regexFilter, { action = 'block', priority = 1, position = 0 } = {}) {
+  return {
+    priority,
+    action: { type: action },
+    condition: { regexFilter },
+    _listPosition: position
+  };
+}
+
 function conditionMatchesRequest(condition, request) {
   if (condition.resourceTypes && !condition.resourceTypes.includes(request.resourceType)) return false;
   if (condition.requestDomains && !condition.requestDomains.includes(request.requestDomain)) return false;
@@ -61,9 +70,19 @@ function conditionMatchesRequest(condition, request) {
   return true;
 }
 
-function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } = {}) {
+function loadDnrState({
+  storage = {},
+  existingRules = [],
+  beforeDynamicUpdate,
+  regexSupport = async () => ({ isSupported: true }),
+  maxRegexRules = 1000,
+  onClearHealthDiagnostic,
+  onRecordHealthDiagnostic,
+  onBudgetAllocate
+} = {}) {
   let dynamicRules = plain(existingRules);
   const clearedHealthDiagnostics = [];
+  const recordedHealthDiagnostics = [];
   const updateDynamicRulesCalls = [];
   const updateEnabledRulesetsCalls = [];
   const chrome = {
@@ -85,6 +104,8 @@ function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } 
       }
     },
     declarativeNetRequest: {
+      MAX_NUMBER_OF_REGEX_RULES: maxRegexRules,
+      ...(typeof regexSupport === 'function' ? { isRegexSupported: regexSupport } : {}),
       getDynamicRules: async () => plain(dynamicRules),
       updateDynamicRules: async (args) => {
         if (beforeDynamicUpdate) await beforeDynamicUpdate(args, updateDynamicRulesCalls.length);
@@ -103,6 +124,11 @@ function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } 
     console,
     _clearHealthDiagnostic: async id => {
       clearedHealthDiagnostics.push(id);
+      if (onClearHealthDiagnostic) await onClearHealthDiagnostic(id);
+    },
+    _recordHealthDiagnostic: async (id, entry) => {
+      recordedHealthDiagnostics.push({ id, entry: plain(entry) });
+      if (onRecordHealthDiagnostic) await onRecordHealthDiagnostic(id, entry);
     },
     _getDefaultDynamicRules: ({ trackingUrlCleanup = true } = {}) => [
       { id: 1000, priority: 4, action: { type: 'allow' }, condition: { urlFilter: '||default.example^' } },
@@ -114,6 +140,13 @@ function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } 
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(budgetCode, sandbox);
+  if (onBudgetAllocate) {
+    const nativeAllocate = sandbox.__budget.allocate;
+    sandbox.__budget.allocate = (rules, cap) => {
+      onBudgetAllocate({ candidateCount: rules.length, cap });
+      return nativeAllocate(rules, cap);
+    };
+  }
   vm.runInContext(subscriptionDnrCode, sandbox);
   vm.runInContext(dnrStateCode, sandbox);
 
@@ -122,6 +155,7 @@ function loadDnrState({ storage = {}, existingRules = [], beforeDynamicUpdate } 
     subscriptionDnr: sandbox.__subscriptionDnr,
     storage,
     clearedHealthDiagnostics,
+    recordedHealthDiagnostics,
     getDynamicRules: () => plain(dynamicRules),
     updateDynamicRulesCalls,
     updateEnabledRulesetsCalls
@@ -151,10 +185,10 @@ test('Network DNR reconciliation', async (t) => {
     );
   });
 
-  await t.test('a malformed cached domain constraint cannot poison valid sibling DNR rules', () => {
+  await t.test('a malformed cached domain constraint cannot poison valid sibling DNR rules', async () => {
     const dnr = loadDnrState();
     const subscriptions = [{ id: 'list-a', enabled: true }];
-    const application = dnr.subscriptionDnr.buildSubscriptionRuleApplication(subscriptions, {
+    const application = await dnr.subscriptionDnr.buildSubscriptionRuleApplication(subscriptions, {
       'list-a': [
         subscriptionRule(0),
         {
@@ -187,6 +221,435 @@ test('Network DNR reconciliation', async (t) => {
       plain(dnr.subscriptionDnr.prepareSubscriptionRules(application.networkRules).map(rule => rule.id)),
       [100000, 100001]
     );
+  });
+
+  await t.test('non-ASCII cached filters are dropped individually before browser reconciliation', async () => {
+    const regexChecks = [];
+    const dnr = loadDnrState({
+      regexSupport: async details => {
+        regexChecks.push(plain(details));
+        return { isSupported: true };
+      }
+    });
+    const application = await dnr.subscriptionDnr.buildSubscriptionRuleApplication(
+      [{ id: 'legacy-list', enabled: true }],
+      {
+        'legacy-list': [
+          subscriptionRule(0),
+          {
+            priority: 1,
+            action: { type: 'block' },
+            condition: { urlFilter: '||cdn.example/caf\u00e9.js' }
+          },
+          regexSubscriptionRule('^https://cdn\\.example/\u5e7f\u544a\\.js$'),
+          regexSubscriptionRule('^https://cdn\\.example/encoded\\.js$'),
+          subscriptionRule(1)
+        ]
+      }
+    );
+
+    assert.deepStrictEqual(regexChecks.map(check => check.regex), [
+      '^https://cdn\\.example/encoded\\.js$'
+    ], 'only the structurally valid regex should reach browser preflight');
+    assert.strictEqual(application.appliedNetworkRuleCount, 3);
+    assert.deepStrictEqual(plain(application.appliedNetworkRulesPerSub), { 'legacy-list': 3 });
+    assert.strictEqual(application.subscriptionStats['legacy-list'].structurallySkippedNetworkRuleCount, 2);
+    assert.deepStrictEqual(
+      plain(application.networkRules.map(rule => rule.condition.urlFilter).filter(Boolean)),
+      ['||subscription-00000.example^', '||subscription-00001.example^']
+    );
+    assert.deepStrictEqual(
+      plain(application.networkRules.map(rule => rule.condition.regexFilter).filter(Boolean)),
+      ['^https://cdn\\.example/encoded\\.js$']
+    );
+  });
+
+  await t.test('browser-incompatible regex is dropped only from its owner and valid sibling lists still commit', async () => {
+    const checks = [];
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+      subscriptions: [
+        { id: 'unbreak-like', enabled: true, version: 'u1' },
+        { id: 'quick-like', enabled: true, version: 'q1' }
+      ],
+      sub_network_rules: {
+        'unbreak-like': [
+          subscriptionRule(1),
+          regexSubscriptionRule('^https?://(?:[^/?#:]+\\.)*unsupported\\.example/')
+        ],
+        'quick-like': [subscriptionRule(2)]
+      }
+    };
+    const dnr = loadDnrState({
+      storage,
+      regexSupport: async details => {
+        checks.push(plain(details));
+        return details.regex.includes('unsupported')
+          ? { isSupported: false, reason: 'memoryLimitExceeded' }
+          : { isSupported: true };
+      }
+    });
+
+    await dnr.reconcileNetworkDnr('subscription-refresh');
+
+    const installed = dnr.getDynamicRules().filter(rule => rule.id >= 100000 && rule.id < 9000000);
+    assert.deepStrictEqual(installed.map(rule => rule.condition.urlFilter), [
+      '||subscription-00001.example^',
+      '||subscription-00002.example^'
+    ]);
+    assert.strictEqual(checks.length, 1);
+    assert.deepStrictEqual(checks[0], {
+      regex: '^https?://(?:[^/?#:]+\\.)*unsupported\\.example/',
+      isCaseSensitive: false,
+      requireCapturing: false
+    });
+    assert.strictEqual(storage.appliedNetworkStateVersion, 1);
+    assert.deepStrictEqual(storage.appliedNetworkRulesPerSub, {
+      'unbreak-like': 1,
+      'quick-like': 1
+    });
+    assert.deepStrictEqual(storage.browserUnsupportedRegexRulesPerSub, {
+      'unbreak-like': 1,
+      'quick-like': 0
+    });
+    assert.strictEqual(storage.subscriptionNetworkRuntime.perSub['unbreak-like'].sourceVersion, 'u1');
+    assert.strictEqual(
+      storage.subscriptionNetworkRuntime.perSub['unbreak-like'].browserUnsupportedRegexRuleCount,
+      1
+    );
+    assert.strictEqual(storage.subscriptionNetworkRuntime.perSub['quick-like'].appliedNetworkRuleCount, 1);
+  });
+
+  await t.test('regex preflight is deduplicated and runs before budget allocation so valid rules backfill', async () => {
+    let checkCount = 0;
+    const checker = async ({ regex }) => {
+      checkCount++;
+      return regex === '^unsupported$'
+        ? { isSupported: false, reason: 'memoryLimitExceeded' }
+        : { isSupported: true };
+    };
+    const dnr = loadDnrState({ regexSupport: checker });
+    const application = await dnr.subscriptionDnr.buildSubscriptionRuleApplication(
+      [
+        { id: 'list-a', enabled: true },
+        { id: 'list-b', enabled: true }
+      ],
+      {
+        'list-a': [
+          regexSubscriptionRule('^unsupported$', { action: 'allow' }),
+          subscriptionRule(10),
+          regexSubscriptionRule('^shared$')
+        ],
+        'list-b': [
+          subscriptionRule(11),
+          regexSubscriptionRule('^shared$')
+        ]
+      },
+      { isRegexSupported: checker, ruleLimit: 4 }
+    );
+
+    assert.strictEqual(checkCount, 2, 'two distinct regexes should produce two browser checks');
+    assert.strictEqual(application.appliedNetworkRuleCount, 4);
+    assert.strictEqual(application.networkRules.some(rule => rule.condition.regexFilter === '^unsupported$'), false);
+    assert.deepStrictEqual(plain(application.browserUnsupportedRegexRulesPerSub), {
+      'list-a': 1,
+      'list-b': 0
+    });
+    assert.deepStrictEqual(plain(application.appliedNetworkRulesPerSub), {
+      'list-a': 2,
+      'list-b': 2
+    });
+  });
+
+  await t.test('regex preflight work stays bounded for a large cache and compatible URL rules still apply', async () => {
+    let checkCount = 0;
+    const checker = async () => {
+      checkCount++;
+      return { isSupported: true };
+    };
+    const dnr = loadDnrState({ regexSupport: checker });
+    const rules = [
+      ...Array.from({ length: 10000 }, (_, index) =>
+        regexSubscriptionRule(`^bounded-work-${index}$`, { position: index })
+      ),
+      subscriptionRule(70000),
+      subscriptionRule(70001)
+    ];
+
+    const application = await dnr.subscriptionDnr.buildSubscriptionRuleApplication(
+      [{ id: 'large-legacy-cache', enabled: true }],
+      { 'large-legacy-cache': rules },
+      { isRegexSupported: checker, regexRuleLimit: 1000 }
+    );
+
+    assert.strictEqual(checkCount, 1000, 'compatible top-priority candidates should fill the quota immediately');
+    assert.strictEqual(checkCount <= 2000, true, 'browser checks must remain strictly bounded');
+    assert.strictEqual(application.appliedNetworkRuleCount, 1002);
+    assert.strictEqual(application.regexQuotaTrimCount, 9000);
+    assert.deepStrictEqual(
+      plain(application.networkRules.filter(rule => rule.condition.urlFilter).map(rule => rule.condition.urlFilter)),
+      ['||subscription-70000.example^', '||subscription-70001.example^']
+    );
+    assert.deepStrictEqual(plain(application.appliedNetworkRulesPerSub), {
+      'large-legacy-cache': 1002
+    });
+  });
+
+  await t.test('regex backfill ranks an unbounded cache only once before using its bounded work pool', async () => {
+    let checkCount = 0;
+    const allocationCalls = [];
+    const checker = async ({ regex }) => {
+      checkCount++;
+      return { isSupported: regex.startsWith('^supported-priority-') };
+    };
+    const dnr = loadDnrState({
+      regexSupport: checker,
+      onBudgetAllocate: call => allocationCalls.push(call)
+    });
+    const rules = [
+      ...Array.from({ length: 1000 }, (_, index) =>
+        regexSubscriptionRule(
+          index === 999 ? '^unsupported-priority$' : `^supported-priority-${index}$`,
+          { action: 'allow', position: index }
+        )
+      ),
+      ...Array.from({ length: 9000 }, (_, index) =>
+        regexSubscriptionRule(`^unsupported-reserve-${index}$`, { position: 1000 + index })
+      )
+    ];
+
+    const application = await dnr.subscriptionDnr.buildSubscriptionRuleApplication(
+      [{ id: 'large-backfill-cache', enabled: true }],
+      { 'large-backfill-cache': rules },
+      { isRegexSupported: checker, regexRuleLimit: 1000 }
+    );
+
+    assert.strictEqual(checkCount, 2000, 'backfill must stop at the bounded work limit');
+    assert.strictEqual(application.appliedNetworkRuleCount, 999);
+    assert.deepStrictEqual(
+      allocationCalls.filter(call => call.candidateCount > 2000),
+      [{ candidateCount: 10000, cap: 2000 }],
+      'only the one-time work-pool selection may rank the unbounded cache'
+    );
+  });
+
+  await t.test('unsupported priority regexes are attributed and bounded preflight backfills their slots', async () => {
+    let checkCount = 0;
+    const checker = async ({ regex }) => {
+      checkCount++;
+      return regex === '^unsupported-priority$'
+        ? { isSupported: false, reason: 'memoryLimitExceeded' }
+        : { isSupported: true };
+    };
+    const dnr = loadDnrState({ regexSupport: checker });
+    const application = await dnr.subscriptionDnr.buildSubscriptionRuleApplication(
+      [{ id: 'backfill-list', enabled: true }],
+      {
+        'backfill-list': [
+          regexSubscriptionRule('^unsupported-priority$', { action: 'allow', position: 0 }),
+          regexSubscriptionRule('^supported-one$', { position: 1 }),
+          regexSubscriptionRule('^supported-two$', { position: 2 })
+        ]
+      },
+      { isRegexSupported: checker, regexRuleLimit: 2 }
+    );
+
+    assert.strictEqual(checkCount, 3);
+    assert.strictEqual(application.appliedNetworkRuleCount, 2);
+    assert.strictEqual(application.browserUnsupportedRegexRuleCount, 1);
+    assert.deepStrictEqual(plain(application.browserUnsupportedRegexRulesPerSub), {
+      'backfill-list': 1
+    });
+    assert.strictEqual(application.regexQuotaTrimCount, 0);
+    assert.deepStrictEqual(
+      plain(application.networkRules.map(rule => rule.condition.regexFilter)),
+      ['^supported-one$', '^supported-two$']
+    );
+  });
+
+  await t.test('subscription regex quota is deterministic, owner-attributed, and reserves valid URL rules', async () => {
+    const dnr = loadDnrState({ maxRegexRules: 2 });
+    const storage = dnr.storage;
+    Object.assign(storage, {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+      subscriptions: [{ id: 'quota-list', enabled: true }],
+      sub_network_rules: {
+        'quota-list': [
+          regexSubscriptionRule('^ordinary-one$', { position: 0 }),
+          regexSubscriptionRule('^ordinary-two$', { position: 1 }),
+          regexSubscriptionRule('^allow-priority$', { action: 'allow', position: 2 }),
+          subscriptionRule(20)
+        ]
+      }
+    });
+
+    await dnr.reconcileNetworkDnr('regex-quota');
+
+    const installed = dnr.getDynamicRules().filter(rule => rule.id >= 100000 && rule.id < 9000000);
+    assert.strictEqual(installed.length, 3);
+    assert.ok(installed.some(rule => rule.condition.regexFilter === '^allow-priority$'));
+    assert.ok(installed.some(rule => rule.condition.urlFilter === '||subscription-00020.example^'));
+    assert.strictEqual(storage.regexQuotaTrimCount, 1);
+    assert.deepStrictEqual(storage.regexQuotaTrimmedRulesPerSub, { 'quota-list': 1 });
+    assert.strictEqual(storage.subscriptionNetworkRuntime.perSub['quota-list'].regexQuotaTrimCount, 1);
+  });
+
+  await t.test('subscription regex quota reserves capacity for default dynamic regex rules', async () => {
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: true },
+      subscriptions: [{ id: 'quota-list', enabled: true }],
+      sub_network_rules: {
+        'quota-list': [
+          regexSubscriptionRule('^subscription-one$'),
+          regexSubscriptionRule('^subscription-two$', { position: 1 })
+        ]
+      }
+    };
+    const dnr = loadDnrState({ storage, maxRegexRules: 2 });
+
+    await dnr.reconcileNetworkDnr('regex-quota-default-reservation');
+
+    const installedRegexRules = dnr.getDynamicRules().filter(rule => rule.condition?.regexFilter);
+    assert.strictEqual(installedRegexRules.length, 2, 'one default and one subscription regex should fit');
+    assert.strictEqual(installedRegexRules.filter(rule => rule.id >= 100000).length, 1);
+    assert.strictEqual(storage.regexQuotaTrimCount, 1);
+  });
+
+  await t.test('tracking cleanup fallback reallocates its freed regex quota to subscription rules', async () => {
+    let commitAttempts = 0;
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: true },
+      subscriptions: [{ id: 'quota-list', enabled: true }],
+      sub_network_rules: {
+        'quota-list': [
+          regexSubscriptionRule('^subscription-one$'),
+          regexSubscriptionRule('^subscription-two$', { position: 1 })
+        ]
+      }
+    };
+    const dnr = loadDnrState({
+      storage,
+      maxRegexRules: 2,
+      beforeDynamicUpdate: async () => {
+        commitAttempts++;
+        if (commitAttempts === 1) throw new Error('tracking cleanup rejected');
+      }
+    });
+
+    await dnr.reconcileNetworkDnr('tracking-cleanup-fallback');
+
+    const installed = dnr.getDynamicRules();
+    const installedSubscriptionRegexes = installed.filter(rule =>
+      rule.id >= 100000 && typeof rule.condition?.regexFilter === 'string'
+    );
+    assert.strictEqual(commitAttempts, 2);
+    assert.strictEqual(installed.some(rule => rule.id === 2000), false);
+    assert.strictEqual(installedSubscriptionRegexes.length, 2);
+    assert.strictEqual(storage.appliedNetworkRuleCount, 2);
+    assert.deepStrictEqual(storage.appliedNetworkRulesPerSub, { 'quota-list': 2 });
+    assert.strictEqual(storage.regexQuotaTrimCount, 0);
+    assert.deepStrictEqual(storage.regexQuotaTrimmedRulesPerSub, { 'quota-list': 0 });
+    assert.strictEqual(storage.subscriptionNetworkRuntime.perSub['quota-list'].eligibleNetworkRuleCount, 2);
+    assert.strictEqual(storage.subscriptionNetworkRuntime.perSub['quota-list'].appliedNetworkRuleCount, 2);
+  });
+
+  await t.test('post-commit diagnostic clear failure cannot trigger tracking cleanup fallback', async () => {
+    let commitAttempts = 0;
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: true }
+    };
+    const dnr = loadDnrState({
+      storage,
+      beforeDynamicUpdate: async () => { commitAttempts++; },
+      onClearHealthDiagnostic: async id => {
+        if (id === 'trackingUrlCleanupSync') {
+          throw new Error('diagnostic storage unavailable');
+        }
+      }
+    });
+
+    const result = await dnr.reconcileNetworkDnr('diagnostic-clear-failure');
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(commitAttempts, 1);
+    assert.strictEqual(dnr.getDynamicRules().some(rule => rule.id === 2000), true);
+    assert.strictEqual(storage.subscriptionNetworkRuntime.protectionActive, true);
+  });
+
+  await t.test('post-fallback diagnostic record failure cannot hide the committed runtime image', async () => {
+    let commitAttempts = 0;
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: true },
+      subscriptions: [{ id: 'cached', enabled: true }],
+      sub_network_rules: { cached: [subscriptionRule(88)] }
+    };
+    const dnr = loadDnrState({
+      storage,
+      beforeDynamicUpdate: async () => {
+        commitAttempts++;
+        if (commitAttempts === 1) throw new Error('tracking cleanup rejected');
+      },
+      onRecordHealthDiagnostic: async id => {
+        if (id === 'trackingUrlCleanupSync') {
+          throw new Error('diagnostic storage unavailable');
+        }
+      }
+    });
+
+    const result = await dnr.reconcileNetworkDnr('diagnostic-record-failure');
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(commitAttempts, 2);
+    assert.strictEqual(dnr.getDynamicRules().some(rule => rule.id === 2000), false);
+    assert.strictEqual(dnr.getDynamicRules().some(rule => rule.id === 100000), true);
+    assert.strictEqual(dnr.classifyDnrMatch({ rule: { ruleId: 100000 } }).type, 'block');
+    assert.strictEqual(storage.appliedNetworkRuleCount, 1);
+    assert.deepStrictEqual(storage.appliedNetworkRulesPerSub, { cached: 1 });
+    assert.strictEqual(storage.subscriptionNetworkRuntime.perSub.cached.appliedNetworkRuleCount, 1);
+    assert.strictEqual(dnr.recordedHealthDiagnostics[0].id, 'trackingUrlCleanupSync');
+  });
+
+  await t.test('missing browser regex validation is a global failure and preserves the prior runtime and counters', async () => {
+    const existingRules = [
+      { id: 100000, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||prior.example^' } }
+    ];
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+      subscriptions: [{ id: 'legacy', enabled: true }],
+      sub_network_rules: { legacy: [regexSubscriptionRule('^legacy$')] },
+      appliedNetworkRuleCount: 7,
+      appliedNetworkRulesPerSub: { prior: 7 }
+    };
+    const dnr = loadDnrState({ storage, existingRules, regexSupport: null });
+
+    await assert.rejects(
+      dnr.reconcileNetworkDnr('missing-regex-api'),
+      /isRegexSupported is unavailable/
+    );
+
+    assert.deepStrictEqual(dnr.getDynamicRules(), existingRules);
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+    assert.strictEqual(storage.appliedNetworkRuleCount, 7);
+    assert.deepStrictEqual(storage.appliedNetworkRulesPerSub, { prior: 7 });
+  });
+
+  await t.test('a thrown browser regex validation error is global and does not mutate DNR', async () => {
+    const dnr = loadDnrState({
+      storage: {
+        config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+        subscriptions: [{ id: 'legacy', enabled: true }],
+        sub_network_rules: { legacy: [regexSubscriptionRule('^legacy$')] }
+      },
+      regexSupport: async () => {
+        throw new Error('simulated compiler failure');
+      }
+    });
+
+    await assert.rejects(
+      dnr.reconcileNetworkDnr('regex-api-error'),
+      /Browser regex compatibility check failed: simulated compiler failure/
+    );
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
   });
 
   await t.test('inactive protection disables static rules and removes every dynamic rule', async () => {
@@ -247,10 +710,23 @@ test('Network DNR reconciliation', async (t) => {
   });
 
   await t.test('failed active reconciliation preserves the wake recovery diagnostic', async () => {
+    const previousRuntime = {
+      schemaVersion: 1,
+      protectionActive: true,
+      committedAt: 123,
+      appliedTotal: 3,
+      perSub: { prior: { enabledAtCommit: true, appliedNetworkRuleCount: 3 } }
+    };
     const dnr = loadDnrState({
       storage: {
-        config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false }
+        config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+        appliedNetworkRuleCount: 3,
+        appliedNetworkRulesPerSub: { prior: 3 },
+        subscriptionNetworkRuntime: previousRuntime
       },
+      existingRules: [
+        { id: 100000, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||prior.example^' } }
+      ],
       beforeDynamicUpdate: async () => {
         throw new Error('Simulated DNR commit failure');
       }
@@ -261,6 +737,10 @@ test('Network DNR reconciliation', async (t) => {
       /Simulated DNR commit failure/
     );
     assert.strictEqual(dnr.clearedHealthDiagnostics.includes('dnrWakeRecovery'), false);
+    assert.strictEqual(dnr.storage.appliedNetworkRuleCount, 3);
+    assert.deepStrictEqual(dnr.storage.appliedNetworkRulesPerSub, { prior: 3 });
+    assert.deepStrictEqual(dnr.storage.subscriptionNetworkRuntime, previousRuntime);
+    assert.strictEqual(dnr.getDynamicRules()[0].condition.urlFilter, '||prior.example^');
   });
 
   await t.test('whitelist uses destination main-frame and initiator subresource rules', async () => {
@@ -315,6 +795,37 @@ test('Network DNR reconciliation', async (t) => {
 
     await dnr.syncWhitelistRules();
     assert.deepStrictEqual(dnr.getDynamicRules(), []);
+  });
+
+  await t.test('disable requested during async regex preflight prevents the stale active commit', async () => {
+    let releasePreflight;
+    const preflightBlocked = new Promise(resolve => { releasePreflight = resolve; });
+    let signalPreflight;
+    const preflightReached = new Promise(resolve => { signalPreflight = resolve; });
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+      subscriptions: [{ id: 'cached', enabled: true }],
+      sub_network_rules: { cached: [regexSubscriptionRule('^preflight-race$')] }
+    };
+    const dnr = loadDnrState({
+      storage,
+      regexSupport: async () => {
+        signalPreflight();
+        await preflightBlocked;
+        return { isSupported: true };
+      }
+    });
+
+    const activeRun = dnr.reconcileNetworkDnr('refresh-completion');
+    await preflightReached;
+    storage.config.networkBlocking = false;
+    const disableRun = dnr.updateDNRState();
+    releasePreflight();
+    await Promise.all([activeRun, disableRun]);
+
+    assert.deepStrictEqual(dnr.getDynamicRules(), []);
+    assert.strictEqual(storage.appliedNetworkRuleCount, 0);
+    assert.deepStrictEqual(storage.appliedNetworkRulesPerSub, {});
   });
 
   await t.test('disable during an in-flight active commit wins and leaves DNR empty', async () => {

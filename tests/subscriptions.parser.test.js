@@ -66,6 +66,41 @@ test('Subscription parser trust boundary', async (t) => {
     assert.strictEqual(parsed.skipped.malformed, 1);
   });
 
+  await t.test('keeps the issue #134 Unbreak exception as a native DNR urlFilter', () => {
+    const { parseList } = loadParser();
+    const urlFilter = '||estaticos.*/elementosWeb/ew/js/multimedia/player/videojs-contrib-ads/videojs.ads.min.js';
+    const domains = [
+      'diaridegirona.cat',
+      'diariodeibiza.es',
+      'diariodemallorca.es',
+      'diarioinformacion.com',
+      'eldia.es',
+      'emporda.info',
+      'farodevigo.es',
+      'laopinioncoruna.es',
+      'laopiniondemalaga.es',
+      'laopiniondemurcia.es',
+      'laopiniondezamora.es',
+      'laprovincia.es',
+      'levante-emv.com',
+      'lne.es',
+      'mallorcazeitung.es',
+      'regio7.cat',
+      'superdeporte.es'
+    ];
+    const parsed = parseList(`@@${urlFilter}$xhr,domain=${domains.join('|')}`);
+
+    assert.strictEqual(parsed.networkRules.length, 1);
+    assert.strictEqual(parsed.networkRules[0].action.type, 'allow');
+    assert.strictEqual(parsed.networkRules[0].priority, 2);
+    assert.strictEqual(parsed.networkRules[0].condition.urlFilter, urlFilter);
+    assert.strictEqual(parsed.networkRules[0].condition.regexFilter, undefined);
+    assert.deepStrictEqual(plain(parsed.networkRules[0].condition.resourceTypes), ['xmlhttprequest']);
+    assert.deepStrictEqual(plain(parsed.networkRules[0].condition.initiatorDomains), domains);
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 0);
+    assert.strictEqual(parsed.stats.translatedRegexFilter, 0);
+  });
+
   await t.test('separates positive and negative cosmetic domains', () => {
     const { parseList } = loadParser();
     const parsed = parseList([

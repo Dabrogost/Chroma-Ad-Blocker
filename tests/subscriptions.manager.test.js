@@ -32,6 +32,9 @@ function loadManager(options = {}) {
   const storage = options.storage || {};
   const appliedRules = [];
   const alarmsCreated = [];
+  const readStorageValue = value => options.cloneStorageReads && value !== undefined
+    ? plain(value)
+    : value;
   const parseList = options.parseList || (() => ({
     networkRules: [],
     cosmeticRules: [],
@@ -67,11 +70,13 @@ function loadManager(options = {}) {
         get: async (keys) => {
           if (Array.isArray(keys)) {
             const result = {};
-            for (const key of keys) result[key] = storage[key];
+            for (const key of keys) result[key] = readStorageValue(storage[key]);
             return result;
           }
-          if (typeof keys === 'string') return { [keys]: storage[keys] };
-          return { ...storage };
+          if (typeof keys === 'string') return { [keys]: readStorageValue(storage[keys]) };
+          return Object.fromEntries(
+            Object.entries(storage).map(([key, value]) => [key, readStorageValue(value)])
+          );
         },
         set: async (values) => {
           Object.assign(storage, values);
@@ -116,7 +121,7 @@ function loadManager(options = {}) {
     _reconcileNetworkDnr: options.reconcileNetworkDnr || (async () => {
       const rules = [];
       for (const sub of storage.subscriptions || []) {
-        if (sub?.enabled === false || sub?.cosmeticOnly) continue;
+        if (sub?.enabled === false || sub?.cosmeticOnly || sub?.pendingRemoval === true) continue;
         rules.push(...(storage.sub_network_rules?.[sub.id] || []));
       }
       appliedRules.push(plain(rules));
@@ -570,15 +575,18 @@ test('Subscription lifecycle manager', async (t) => {
 
     const result = await manager.refreshSubscription('sub-a');
 
-    assert.strictEqual(result.ok, false);
-    assert.match(result.error, /DNR apply failed/);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.networkApplied, false);
+    assert.strictEqual(result.networkRuntimeRetained, true);
+    assert.match(result.applyError, /DNR apply failed/);
     assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a'].map(r => r.condition.urlFilter)), ['||new.example^']);
     assert.deepStrictEqual(plain(storage.sub_cosmetic_rules['sub-a']), [{ domains: null, selector: '.new', isException: false }]);
     assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), [{ domains: null, selector: '.new', isException: false }]);
     assert.ok(storage.subscriptions[0].lastUpdated > 111);
     assert.notStrictEqual(storage.subscriptions[0].version, 'old-version');
     assert.deepStrictEqual(plain(storage.subscriptions[0].ruleCount), { network: 1, cosmetic: 1, scriptlet: 0 });
-    assert.match(storage.subscriptions[0].lastError, /DNR apply failed/);
+    assert.strictEqual(storage.subscriptions[0].lastError, null);
+    assert.strictEqual(storage.subscriptions[0].lastErrorScope, null);
   });
 
   await t.test('static dedupe keeps semantically distinct subscription rules with the same urlFilter', async () => {
@@ -627,21 +635,159 @@ test('Subscription lifecycle manager', async (t) => {
     ]);
   });
 
-  await t.test('refreshSubscription reports missing and disabled subscriptions without fetch side effects', async () => {
+  await t.test('refreshSubscription reports missing subscriptions and refreshes disabled caches without activating them', async () => {
     let fetchCount = 0;
     const manager = loadManager({
       storage: {
         subscriptions: [{ id: 'disabled', name: 'Disabled', url: 'https://lists.example/disabled.txt', enabled: false }]
       },
-      fetch: async () => {
+      fetch: async url => {
+        if (String(url).startsWith('chrome-extension://')) {
+          return { ok: true, json: async () => [] };
+        }
         fetchCount++;
         return { ok: true, text: async () => '' };
       }
     });
 
     assert.deepStrictEqual(plain(await manager.refreshSubscription('missing')), { ok: false, error: 'Subscription not found' });
-    assert.deepStrictEqual(plain(await manager.refreshSubscription('disabled')), { ok: false, error: 'Subscription disabled' });
-    assert.strictEqual(fetchCount, 0);
+    assert.deepStrictEqual(plain(await manager.refreshSubscription('disabled')), { ok: true });
+    assert.strictEqual(fetchCount, 1);
+    assert.deepStrictEqual(plain(manager.storage.sub_network_rules.disabled), []);
+    assert.deepStrictEqual(manager.appliedRules[0], []);
+  });
+
+  await t.test('legacy compiler caches force one full-body refresh before validators resume', async () => {
+    const requests = [];
+    const storage = {
+      subscriptions: [{
+        id: 'legacy',
+        name: 'Legacy',
+        url: 'https://lists.example/legacy.txt',
+        enabled: true,
+        networkCompilerVersion: 0,
+        etag: '"legacy-etag"',
+        lastModified: 'Mon, 01 Jan 2024 00:00:00 GMT'
+      }],
+      sub_network_rules: {
+        legacy: [regexRule('^https?://legacy\\.example/')]
+      }
+    };
+    const manager = loadManager({
+      storage,
+      fetch: async (url, init = {}) => {
+        if (String(url).startsWith('chrome-extension://')) {
+          return { ok: true, json: async () => [] };
+        }
+        requests.push(plain(init.headers || {}));
+        return {
+          ok: true,
+          status: 200,
+          url: String(url),
+          headers: {
+            get: name => name.toLowerCase() === 'etag' ? '"new-etag"' : null
+          },
+          text: async () => 'new body'
+        };
+      },
+      parseList: () => ({
+        networkRules: [networkRule('||native.example^')],
+        cosmeticRules: [],
+        scriptletRules: [],
+        skipped: {}
+      })
+    });
+
+    assert.deepStrictEqual(plain(await manager.refreshSubscription('legacy')), { ok: true });
+    assert.deepStrictEqual(requests[0], {});
+    assert.strictEqual(storage.subscriptions[0].networkCompilerVersion, 1);
+    assert.strictEqual(storage.subscriptions[0].etag, '"new-etag"');
+
+    assert.deepStrictEqual(plain(await manager.refreshSubscription('legacy')), { ok: true });
+    assert.deepStrictEqual(requests[1], { 'If-None-Match': '"new-etag"' });
+  });
+
+  await t.test('scheduled compiler migration retries use the last attempt instead of stale list age', async () => {
+    const now = 1_800_000_000_000;
+    class FixedDate extends Date {
+      static now() {
+        return now;
+      }
+    }
+    const dayMs = 24 * 60 * 60 * 1000;
+    const storage = {
+      subscriptions: [{
+        id: 'legacy-retry',
+        name: 'Legacy retry',
+        url: 'https://lists.example/legacy-retry.txt',
+        enabled: true,
+        intervalHours: 24,
+        lastUpdated: now - (7 * dayMs),
+        networkCompilerVersion: 0,
+        networkCompilerAttemptAt: now - (60 * 60 * 1000)
+      }]
+    };
+    let remoteFetchCount = 0;
+    const manager = loadManager({
+      storage,
+      Date: FixedDate,
+      fetch: async url => {
+        if (String(url).startsWith('chrome-extension://')) {
+          return { ok: true, json: async () => [] };
+        }
+        remoteFetchCount++;
+        return {
+          ok: true,
+          status: 200,
+          url: String(url),
+          headers: { get: () => null },
+          text: async () => ''
+        };
+      }
+    });
+
+    await manager.refreshAllStale();
+    assert.strictEqual(remoteFetchCount, 0, 'a recent failed compiler attempt must be backed off');
+
+    storage.subscriptions[0].networkCompilerAttemptAt = now - dayMs;
+    await manager.refreshAllStale();
+    assert.strictEqual(remoteFetchCount, 1, 'the migration should retry once its attempt interval expires');
+    assert.strictEqual(storage.subscriptions[0].networkCompilerVersion, 1);
+  });
+
+  await t.test('a compiler refresh never accepts a 304 or deletes the legacy cache', async () => {
+    const legacyRules = [regexRule('^https?://legacy\\.example/')];
+    const storage = {
+      subscriptions: [{
+        id: 'legacy-304',
+        name: 'Legacy 304',
+        url: 'https://lists.example/legacy-304.txt',
+        enabled: true,
+        networkCompilerVersion: 0,
+        etag: '"legacy-etag"'
+      }],
+      sub_network_rules: { 'legacy-304': legacyRules }
+    };
+    const manager = loadManager({
+      storage,
+      fetch: async (url, init = {}) => String(url).startsWith('chrome-extension://')
+        ? { ok: true, json: async () => [] }
+        : {
+            ok: false,
+            status: 304,
+            url: String(url),
+            headers: { get: () => null }
+          }
+    });
+
+    const result = await manager.refreshSubscription('legacy-304');
+
+    assert.strictEqual(result.ok, false);
+    assert.match(result.error, /304 without a response body/);
+    assert.strictEqual(storage.subscriptions[0].networkCompilerVersion, 0);
+    assert.deepStrictEqual(plain(storage.sub_network_rules['legacy-304']), plain(legacyRules));
+    assert.strictEqual(storage.subscriptions[0].lastErrorScope, 'refresh');
+    assert.strictEqual(manager.appliedRules.length, 0);
   });
 
   await t.test('refreshSubscription stores lastError on HTTP, timeout, and parse failures', async () => {
@@ -827,6 +973,32 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(manager.appliedRules[1], []);
   });
 
+  await t.test('setSubscriptionEnabled preserves requested state when the atomic network apply is retained', async () => {
+    const storage = {
+      subscriptions: [{ id: 'sub-a', enabled: true, lastError: null }],
+      sub_network_rules: { 'sub-a': [networkRule('||a.example^')] },
+      sub_cosmetic_rules: { 'sub-a': [{ domains: null, selector: '.a', isException: false }] },
+      sub_scriptlet_rules: { 'sub-a': [] }
+    };
+    const manager = loadManager({
+      storage,
+      reconcileNetworkDnr: async () => {
+        throw new Error('atomic apply retained the prior image');
+      }
+    });
+
+    const result = await manager.setSubscriptionEnabled('sub-a', false);
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.requestedEnabled, false);
+    assert.strictEqual(result.networkApplied, false);
+    assert.strictEqual(result.networkRuntimeRetained, true);
+    assert.match(result.applyError, /prior image/);
+    assert.strictEqual(storage.subscriptions[0].enabled, false);
+    assert.strictEqual(storage.subscriptions[0].lastError, null);
+    assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), []);
+  });
+
   await t.test('master toggle clears and restores runtime aggregates from cache without changing requests', async () => {
     const storage = {
       config: { enabled: false, networkBlocking: true },
@@ -906,6 +1078,43 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), [validRule]);
   });
 
+  await t.test('addSubscription replaces the fetched snapshot instead of mutating it', async () => {
+    const originalSubscriptions = [];
+    const storage = { subscriptions: originalSubscriptions };
+    const manager = loadManager({ storage });
+
+    assert.deepStrictEqual(plain(await manager.addSubscription({
+      id: 'custom-a',
+      name: 'Custom A',
+      url: 'https://lists.example/custom-a.txt'
+    })), { ok: true });
+
+    assert.deepStrictEqual(originalSubscriptions, []);
+    assert.notStrictEqual(storage.subscriptions, originalSubscriptions);
+    assert.deepStrictEqual(plain(storage.subscriptions.map(sub => sub.id)), ['custom-a']);
+  });
+
+  await t.test('concurrent addSubscription calls serialize cloned storage reads without losing siblings', async () => {
+    const storage = { subscriptions: [] };
+    const manager = loadManager({ storage, cloneStorageReads: true });
+
+    const results = await Promise.all([
+      manager.addSubscription({
+        id: 'custom-a',
+        name: 'Custom A',
+        url: 'https://lists.example/custom-a.txt'
+      }),
+      manager.addSubscription({
+        id: 'custom-b',
+        name: 'Custom B',
+        url: 'https://lists.example/custom-b.txt'
+      })
+    ]);
+
+    assert.deepStrictEqual(plain(results), [{ ok: true }, { ok: true }]);
+    assert.deepStrictEqual(plain(storage.subscriptions.map(sub => sub.id)), ['custom-a', 'custom-b']);
+  });
+
   await t.test('removeSubscription deletes per-subscription stores and rebuilds remaining rules', async () => {
     const storage = {
       subscriptions: [
@@ -938,6 +1147,81 @@ test('Subscription lifecycle manager', async (t) => {
       scriptlet: r.scriptlet,
       sourceId: r.sourceId
     }))), [{ scriptlet: 'json-prune', sourceId: 'sub-b' }]);
+  });
+
+  await t.test('removeSubscription keeps a visible tombstone and caches when Chrome retains the prior image', async () => {
+    const storage = {
+      subscriptions: [{ id: 'sub-a', enabled: true, isCustom: true }],
+      sub_network_rules: { 'sub-a': [networkRule('||a.example^')] },
+      sub_cosmetic_rules: { 'sub-a': [{ domains: null, selector: '.a', isException: false }] },
+      sub_scriptlet_rules: {
+        'sub-a': [{ scriptlet: 'set-constant', args: [], runAt: 'document_start' }]
+      },
+      subscriptionCosmeticRules: [{ domains: null, selector: '.a', isException: false }],
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: [], runAt: 'document_start', sourceId: 'sub-a' }]
+    };
+    let failRemoval = true;
+    const manager = loadManager({
+      storage,
+      reconcileNetworkDnr: async () => {
+        if (failRemoval) {
+          failRemoval = false;
+          throw new Error('atomic remove failed');
+        }
+      }
+    });
+
+    const result = await manager.removeSubscription('sub-a');
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.pendingRemoval, true);
+    assert.strictEqual(result.networkRuntimeRetained, true);
+    assert.match(result.error, /atomic remove failed/);
+    assert.strictEqual(storage.subscriptions[0].pendingRemoval, true);
+    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a']), [networkRule('||a.example^')]);
+    assert.deepStrictEqual(plain(storage.sub_cosmetic_rules['sub-a']), [{ domains: null, selector: '.a', isException: false }]);
+    assert.deepStrictEqual(plain(storage.sub_scriptlet_rules['sub-a']), [
+      { scriptlet: 'set-constant', args: [], runAt: 'document_start' }
+    ]);
+    assert.deepStrictEqual(plain(storage.subscriptionCosmeticRules), []);
+    assert.deepStrictEqual(plain(storage.subscriptionScriptletRules), []);
+
+    assert.deepStrictEqual(plain(await manager.removeSubscription('sub-a')), { ok: true });
+    assert.deepStrictEqual(plain(storage.subscriptions), []);
+    assert.strictEqual('sub-a' in storage.sub_network_rules, false);
+    assert.strictEqual('sub-a' in storage.sub_cosmetic_rules, false);
+    assert.strictEqual('sub-a' in storage.sub_scriptlet_rules, false);
+  });
+
+  await t.test('removeSubscription leaves its tombstone when reconciliation is superseded', async () => {
+    const storage = {
+      subscriptions: [{ id: 'sub-a', enabled: true, isCustom: true }],
+      sub_network_rules: { 'sub-a': [networkRule('||a.example^')] },
+      sub_cosmetic_rules: { 'sub-a': [{ domains: null, selector: '.a', isException: false }] },
+      sub_scriptlet_rules: { 'sub-a': [] }
+    };
+    let reconcileCount = 0;
+    const manager = loadManager({
+      storage,
+      reconcileNetworkDnr: async () => {
+        reconcileCount++;
+        return reconcileCount === 1
+          ? { ok: true, stale: true }
+          : { ok: true, stale: false };
+      }
+    });
+
+    const superseded = await manager.removeSubscription('sub-a');
+
+    assert.strictEqual(superseded.ok, false);
+    assert.strictEqual(superseded.pendingRemoval, true);
+    assert.strictEqual(superseded.stale, true);
+    assert.strictEqual(storage.subscriptions[0].pendingRemoval, true);
+    assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a']), [networkRule('||a.example^')]);
+
+    assert.deepStrictEqual(plain(await manager.removeSubscription('sub-a')), { ok: true });
+    assert.deepStrictEqual(plain(storage.subscriptions), []);
+    assert.strictEqual('sub-a' in storage.sub_network_rules, false);
   });
 
   await t.test('transactional staging builds a complete replace-all image without mutation', () => {
@@ -1092,7 +1376,13 @@ test('Subscription lifecycle manager', async (t) => {
     await manager.initSubscriptions();
     await manager.ensureAlarm();
 
-    assert.deepStrictEqual(storageSnapshot(manager.storage.subscriptions), [{ id: 'default-sub', enabled: true }]);
+    assert.deepStrictEqual(storageSnapshot(manager.storage.subscriptions), [{
+      id: 'default-sub',
+      enabled: true,
+      lastError: null,
+      lastErrorScope: null,
+      lastErrorAt: null
+    }]);
     assert.deepStrictEqual(plain(manager.alarmsCreated), [
       { name: 'chroma-subscription-check', info: { periodInMinutes: 60 } },
       { name: 'chroma-subscription-check', info: { periodInMinutes: 60 } }
@@ -1164,6 +1454,8 @@ test('Subscription lifecycle manager', async (t) => {
       lastUpdated: 123,
       version: 'v1',
       lastError: 'old error',
+      lastErrorScope: 'legacy',
+      lastErrorAt: null,
       ruleCount: { network: 1, cosmetic: 2, scriptlet: 3 },
       etag: '"old"'
     });
