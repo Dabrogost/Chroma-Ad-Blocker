@@ -59,6 +59,10 @@ const ChromaComponents = (() => {
     return `<div class="skeleton-line${className ? ` ${className}` : ''}" aria-hidden="true"></div>`;
   }
 
+  function renderInlineSkeleton(className = '') {
+    return `<span class="skeleton-block${className ? ` ${className}` : ''}" aria-hidden="true"></span>`;
+  }
+
   function renderSkeletonRows(count = 3, className = '') {
     return Array.from({ length: count }, (_, index) => `
       <div class="skeleton-row${className ? ` ${className}` : ''}" aria-hidden="true">
@@ -152,16 +156,22 @@ const ChromaComponents = (() => {
   }
 
   function renderStats({ showSettingsIcon }) {
+    const initialTotal = showSettingsIcon
+      ? renderInlineSkeleton('popup-stat-skeleton popup-stat-skeleton--total')
+      : '0';
+    const initialBreakdown = showSettingsIcon
+      ? renderInlineSkeleton('popup-stat-skeleton popup-stat-skeleton--breakdown')
+      : '0';
     return `
       <div class="stats-container">
-        <div class="stat-card" id="cardNetwork">
-          <div class="stat-value" id="statProtectionEvents">0</div>
+        <div class="stat-card" id="cardNetwork" aria-busy="${showSettingsIcon ? 'true' : 'false'}">
+          <div class="stat-value" id="statProtectionEvents">${initialTotal}</div>
           <div class="stat-label">Protection Events</div>
           <div class="stat-breakdown" id="statHeroBreakdown">
-            <span>Network <strong id="statBreakdownNetwork">0</strong></span>
-            <span>Cleanup <strong id="statBreakdownCleanup">0</strong></span>
-            <span>Scriptlets <strong id="statBreakdownScriptlets">0</strong></span>
-            <span>Proxy <strong id="statBreakdownProxy">0</strong></span>
+            <span>Network <strong id="statBreakdownNetwork">${initialBreakdown}</strong></span>
+            <span>Cleanup <strong id="statBreakdownCleanup">${initialBreakdown}</strong></span>
+            <span>Scriptlets <strong id="statBreakdownScriptlets">${initialBreakdown}</strong></span>
+            <span>Proxy <strong id="statBreakdownProxy">${initialBreakdown}</strong></span>
           </div>
           ${showSettingsIcon ? settingsIcon : ''}
         </div>
