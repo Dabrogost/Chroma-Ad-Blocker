@@ -2096,7 +2096,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     }
   });
 
-  await t.test('popup shell does not render settings-only skeleton sections', () => {
+  await t.test('popup shell renders stat shimmer without settings-only skeleton sections', () => {
     const dom = new JSDOM('<!doctype html><body><div id="appShell"></div></body>', {
       url: 'chrome-extension://test/ui/popup.html',
       runScripts: 'outside-only'
@@ -2108,6 +2108,13 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     sandbox.ChromaComponents.renderPageShell({ settingsMode: false });
 
+    const statsCard = dom.window.document.querySelector('#cardNetwork');
+    assert.strictEqual(statsCard.getAttribute('aria-busy'), 'true');
+    assert.strictEqual(statsCard.querySelectorAll('.popup-stat-skeleton').length, 5);
+    assert.ok(Array.from(statsCard.querySelectorAll('.popup-stat-skeleton'))
+      .every(skeleton => skeleton.getAttribute('aria-hidden') === 'true'));
+    assert.strictEqual(dom.window.document.querySelector('#statProtectionEvents').textContent, '');
+    assert.strictEqual(dom.window.document.querySelector('#statBreakdownNetwork').textContent, '');
     assert.strictEqual(dom.window.document.querySelector('#healthPanelBody'), null);
     assert.strictEqual(dom.window.document.querySelector('#statisticsTopCards'), null);
     assert.strictEqual(dom.window.document.querySelector('#localZapperRules'), null);
@@ -2123,6 +2130,72 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('.section-guide-link'), null);
     assert.strictEqual(dom.window.document.querySelector('#exportConfigJson'), null);
     assert.strictEqual(dom.window.document.querySelector('#importConfigFile'), null);
+  });
+
+  await t.test('popup stat shimmer hydrates and refreshes independently of slow config', async () => {
+    const pendingStats = deferred();
+    const pendingConfig = deferred();
+    const harness = createSettingsHarness({
+      url: 'chrome-extension://test/ui/popup.html',
+      pending: {
+        CONFIG_GET: pendingConfig,
+        STATS_GET: pendingStats
+      }
+    });
+
+    const initPromise = harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork(2);
+
+    const doc = harness.dom.window.document;
+    assert.ok(harness.messages.some(message => message.type === 'STATS_GET' && message.options?.summaryOnly === true));
+    assert.strictEqual(doc.querySelector('#cardNetwork').getAttribute('aria-busy'), 'true');
+    assert.strictEqual(doc.querySelectorAll('#cardNetwork .popup-stat-skeleton').length, 5);
+
+    pendingStats.resolve({
+      totals: {
+        protectionEvents: 1200,
+        networkBlocks: 7,
+        cosmeticHides: 2,
+        youtubePayloadCleans: 1,
+        scriptletHits: 3,
+        proxyTests: 2,
+        proxyAuthChallenges: 1
+      }
+    });
+    await settleDomAsyncWork();
+
+    assert.strictEqual(doc.querySelectorAll('#cardNetwork .popup-stat-skeleton').length, 0);
+    assert.strictEqual(doc.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
+    assert.strictEqual(doc.querySelector('#statProtectionEvents').textContent, '1.2k');
+    assert.strictEqual(doc.querySelector('#statBreakdownNetwork').textContent, '7');
+    assert.strictEqual(doc.querySelector('#statBreakdownCleanup').textContent, '3');
+    assert.strictEqual(doc.querySelector('#statBreakdownScriptlets').textContent, '3');
+    assert.strictEqual(doc.querySelector('#statBreakdownProxy').textContent, '3');
+
+    const statsRequestsBeforeChange = harness.messages.filter(message => message.type === 'STATS_GET').length;
+    await harness.emitStorageChange({ statsV2: { oldValue: null, newValue: {} } });
+    assert.strictEqual(
+      harness.messages.filter(message => message.type === 'STATS_GET').length,
+      statsRequestsBeforeChange + 1
+    );
+
+    pendingConfig.resolve({ enabled: true, acceleration: false, cosmetic: true });
+    await initPromise;
+  });
+
+  await t.test('popup stat shimmer settles when stats are unavailable', async () => {
+    const harness = createSettingsHarness({
+      url: 'chrome-extension://test/ui/popup.html',
+      responses: { STATS_GET: null }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    assert.strictEqual(doc.querySelectorAll('#cardNetwork .popup-stat-skeleton').length, 0);
+    assert.strictEqual(doc.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
+    assert.strictEqual(doc.querySelector('#statProtectionEvents').textContent, '0');
   });
 
   await t.test('health skeleton is replaced on success and on unavailable response', async () => {

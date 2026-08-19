@@ -299,6 +299,7 @@ const ChromaApp = (() => {
     setText('statBreakdownCleanup', formatCompactCount(getCleanupTotal(totals)));
     setText('statBreakdownScriptlets', formatCompactCount(totals.scriptletHits));
     setText('statBreakdownProxy', formatCompactCount(getProxyActivityTotal(totals)));
+    $('cardNetwork')?.setAttribute('aria-busy', 'false');
   }
 
   function addStatsMiniCard(parent, label, value) {
@@ -525,6 +526,17 @@ const ChromaApp = (() => {
   async function initSharedUI() {
     const settingsMode = isSettingsPage();
     globalThis.ChromaComponents?.renderPageShell({ settingsMode });
+
+    const refreshStatsOnStorageChange = (changes, area) => {
+      if (area === 'local' && changes.statsV2) {
+        safeHydrateSection('stats', loadStatsUI);
+      }
+    };
+
+    if (!settingsMode) {
+      chrome.storage.onChanged.addListener(refreshStatsOnStorageChange);
+      safeHydrateSection('stats', loadStatsUI);
+    }
 
     const manifest = chrome.runtime.getManifest();
     if ($('versionText')) {
@@ -792,11 +804,9 @@ const ChromaApp = (() => {
     });
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.statsV2) {
-        safeHydrateSection('stats', loadStatsUI);
-      }
-    });
+    if (settingsMode) {
+      chrome.storage.onChanged.addListener(refreshStatsOnStorageChange);
+    }
 
     wireStatsControls();
     wireSharedLinks();
@@ -806,8 +816,8 @@ const ChromaApp = (() => {
     wireSettingsNav();
 
     safeHydrateSection('site controls', hydrateSiteControls);
-    safeHydrateSection('stats', loadStatsUI);
     if (settingsMode) {
+      safeHydrateSection('stats', loadStatsUI);
       safeHydrateSection('subscriptions', loadSubscriptionUI);
       safeHydrateSection('health panel', loadHealthPanel);
       safeHydrateSection('user scriptlets', loadUserScriptletUI);
