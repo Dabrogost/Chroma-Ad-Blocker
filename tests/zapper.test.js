@@ -4,9 +4,22 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const handlersJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'handlers.js'), 'utf8')
-  .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?\s*/g, '')
-  .replace(/^export\s+/gm, '');
+function handlerModuleForVm(file) {
+  let source = fs.readFileSync(
+    path.join(__dirname, '..', 'extension', 'background', 'handlers', file),
+    'utf8'
+  );
+  const exportNames = [...source.matchAll(/^export\s+(?:async\s+)?function\s+([a-zA-Z_$][\w$]*)/gm)]
+    .map(match => match[1]);
+  source = source
+    .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\r?\n/gm, '')
+    .replace(/^export\s+/gm, '');
+  return `(() => {\n${source}\nObject.assign(globalThis, { ${exportNames.join(', ')} });\n})();`;
+}
+
+const handlersJsCode = ['domainValidation.js', 'zapperHandlers.js']
+  .map(handlerModuleForVm)
+  .join('\n');
 
 const contentJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'content.js'), 'utf8');
 const zapperJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'zapper.js'), 'utf8');

@@ -60,7 +60,7 @@ graph TD
     classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
     UI["Popup / Settings UI"]:::actor
-    SW["Service Worker<br/>background.js + handlers.js<br/>focused background modules"]:::sw
+    SW["Service Worker<br/>background.js + handlers/<br/>focused background modules"]:::sw
     STORE[("chrome.storage.local")]:::storage
     SUBS["subscriptions/manager.js<br/>fetch, parse, dedupe, allocate"]:::sw
     SCRIPTS["scriptlets/engine.js<br/>register userScripts + optional FPR"]:::sw
@@ -137,7 +137,7 @@ Key capabilities include:
 
 Chroma uses a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up UI elements such as Shorts, Merchandise, and Movie/TV offers.
 
-### Layer 3b: Element Zapper (content/zapper.js, background/handlers.js)
+### Layer 3b: Element Zapper (content/zapper.js, background/handlers/zapperHandlers.js)
 
 The Element Zapper is an on-demand cosmetic rule builder for elements that are too site-specific or personal to belong in a shared filter list. From the popup, click **Zap Element**, choose the page element, and Chroma generates a scoped selector preview before saving it as a local rule. Saved zapper rules are stored locally, applied by the cosmetic layer, and can be enabled, disabled, or removed from settings.
 

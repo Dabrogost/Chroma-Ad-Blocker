@@ -23,7 +23,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
   .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, attachListener: () => {} };")
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\/index\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
@@ -180,9 +180,33 @@ function makeDnrDerivedStorage(label, applied = 1) {
   };
 }
 
-const handlersJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'handlers.js'), 'utf8')
-  .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?\s*/g, '')
-  .replace(/^export\s+/gm, '');
+const HANDLER_MODULE_FILES = [
+  'domainValidation.js',
+  'proxyHandlers.js',
+  'subscriptionHandlers.js',
+  'configHandlers.js',
+  'whitelistHandlers.js',
+  'settingsTransferHandlers.js',
+  'zapperHandlers.js',
+  'userScriptletHandlers.js',
+  'diagnosticHandlers.js',
+  'index.js'
+];
+
+function handlerModuleForVm(file) {
+  let source = fs.readFileSync(
+    path.join(__dirname, '..', 'extension', 'background', 'handlers', file),
+    'utf8'
+  );
+  const exportNames = [...source.matchAll(/^export\s+(?:async\s+)?function\s+([a-zA-Z_$][\w$]*)/gm)]
+    .map(match => match[1]);
+  source = source
+    .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\r?\n/gm, '')
+    .replace(/^export\s+/gm, '');
+  return `(() => {\n${source}\nObject.assign(globalThis, { ${exportNames.join(', ')} });\n})();`;
+}
+
+const handlersJsCode = HANDLER_MODULE_FILES.map(handlerModuleForVm).join('\n');
 
 const remoteUrlJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'remoteUrl.js'), 'utf8')
   .replace(/^export\s+/gm, '');
@@ -540,7 +564,7 @@ test('Security Hardening - background.js', async (t) => {
 
 });
 
-test('Security Hardening - handlers.js', async (t) => {
+test('Security Hardening - background handlers', async (t) => {
   await t.test('registers only audited content-script message exceptions', () => {
     const sandbox = loadHandlers();
     const registrations = new Map();
