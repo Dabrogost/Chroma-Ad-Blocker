@@ -28,11 +28,11 @@ graph TD
     LOAD --> CONTENT["content.js<br/>all URLs, isolated world"]:::ext
     CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
 
-    LOAD --> BRIDGEHOST{"YouTube, Amazon/Prime,<br/>or supported recipe host?"}:::actor
+    LOAD --> BRIDGEHOST{"YouTube or supported<br/>recipe host?"}:::actor
     BRIDGEHOST -->|"yes"| PROTECTION["protection.js<br/>isolated-world config authority"]:::ext
     PROTECTION -->|"authenticated MessagePort"| INTERCEPTOR["interceptor.js<br/>MAIN-world validated snapshot"]:::main
-    INTERCEPTOR --> MEDIA{"Media platform?"}:::actor
-    MEDIA -->|"yes"| HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
+    INTERCEPTOR --> MEDIA{"YouTube?"}:::actor
+    MEDIA -->|"yes"| HANDLERS["yt_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
     HANDLERS --> PAGE
 
     INTERCEPTOR --> RECIPES{"Supported recipe/blog host?"}:::actor
@@ -60,7 +60,7 @@ graph TD
     classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
 
     UI["Popup / Settings UI"]:::actor
-    SW["Service Worker<br/>background.js + handlers.js<br/>focused background modules"]:::sw
+    SW["Service Worker<br/>background.js + handlers/<br/>focused background modules"]:::sw
     STORE[("chrome.storage.local")]:::storage
     SUBS["subscriptions/manager.js<br/>fetch, parse, dedupe, allocate"]:::sw
     SCRIPTS["scriptlets/engine.js<br/>register userScripts + optional FPR"]:::sw
@@ -137,7 +137,7 @@ Key capabilities include:
 
 Chroma uses a high-performance MutationObserver and CSS injection via Constructable Stylesheets. This layer hides ad slots, removes unsolicited overlay dialogs that restrict content access based on browser configuration, and cleans up UI elements such as Shorts, Merchandise, and Movie/TV offers.
 
-### Layer 3b: Element Zapper (content/zapper.js, background/handlers.js)
+### Layer 3b: Element Zapper (content/zapper.js, background/handlers/zapperHandlers.js)
 
 The Element Zapper is an on-demand cosmetic rule builder for elements that are too site-specific or personal to belong in a shared filter list. From the popup, click **Zap Element**, choose the page element, and Chroma generates a scoped selector preview before saving it as a local rule. Saved zapper rules are stored locally, applied by the cosmetic layer, and can be enabled, disabled, or removed from settings.
 
@@ -167,9 +167,11 @@ It implements:
 
 Recipe behavior loads inert and activates only after the trusted bridge reports master protection active and the current site not whitelisted. A disable or whitelist change in an already-open tab disconnects observers, cancels scheduled sweeps, removes Chroma-owned styles, restores Chroma-hidden inline styles when still unchanged, and deactivates API patches. API properties are restored only while Chroma's wrapper still owns the slot, so later page-owned replacements are preserved. Re-enabling does not accumulate wrappers, observers, or stylesheets.
 
-### Layer 7: Dynamic Ad Acceleration (prm_handler.js, yt_handler.js)
+### Layer 7: Dynamic Ad Acceleration (yt_handler.js)
 
-Dynamic Ad Acceleration is an optional fallback and specialized layer for Amazon Prime Video and YouTube. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition. On YouTube it may run alongside stripping and handle ads that still reach playback; it is not conditional on stripping being disabled. Prime Video uses the acceleration path without YouTube JSON stripping.
+Dynamic Ad Acceleration is an optional YouTube fallback. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition. It may run alongside stripping and handle ads that still reach playback; it is not conditional on stripping being disabled.
+
+The Amazon Prime Video implementation (`prm_handler.js`) remains in the source tree and retains unit coverage, but it is temporarily dormant. The manifest does not register that handler or its supporting media bridge on Amazon or Prime Video pages.
 
 Twitch uses server-side ad insertion and does not support this acceleration path.
 

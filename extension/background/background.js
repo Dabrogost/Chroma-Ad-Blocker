@@ -17,7 +17,7 @@ import {
 import { initScriptletEngine, recoverUserScriptsIfNeeded } from '../scriptlets/engine.js';
 import { MSG } from '../core/messageTypes.js';
 import * as router from '../core/messageRouter.js';
-import { registerAll } from './handlers.js';
+import { registerAll } from './handlers/index.js';
 import { createDefaultStatsV2 } from './stats.js';
 import './proxy.js';
 import { syncWebRtcLeakProtection } from './webrtc.js';
@@ -153,8 +153,7 @@ if (typeof globalThis !== 'undefined' && globalThis.__CHROMA_INTERNAL_TEST_STRIC
 }
 
 // --- MESSAGE ROUTER WIRING -----
-// Must come after all exported handler dependencies are defined so that
-// handlers.js sees resolved bindings through the live ES-module import.
+// Registration and sender policy live together in the handler index.
 registerAll(router);
 router.attachListener();
 

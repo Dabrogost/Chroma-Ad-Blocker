@@ -4,6 +4,9 @@ const path = require('path');
 const zlib = require('zlib');
 const { checkGuideFreshness, slugifyHeading } = require('./build-guide');
 const {
+  checkStaticDedupeIndexFreshness
+} = require('./build-static-dedupe-index');
+const {
   GUIDE_REQUIRED_RELEASE_FILES,
   USER_DOC_FILES
 } = require('./guide-manifest');
@@ -29,6 +32,7 @@ const REQUIRED_RELEASE_FILES = [
   'README.md',
   'LICENSE.md',
   'content/quiet_console.js',
+  'rules/static_dedupe_index.json',
   ...RELEASE_DOC_FILES,
   ...GUIDE_REQUIRED_RELEASE_FILES
 ];
@@ -484,6 +488,18 @@ function main() {
   if (freshnessErrors.length > 0) {
     console.error('Generated guide is not current. Run `npm run docs:build`:');
     freshnessErrors.forEach(error => console.error(`- ${error}`));
+    process.exit(1);
+  }
+
+  let indexFreshness;
+  try {
+    indexFreshness = checkStaticDedupeIndexFreshness();
+  } catch (err) {
+    console.error(`Static DNR dedupe index could not be validated: ${err.message}`);
+    process.exit(1);
+  }
+  if (!indexFreshness.fresh) {
+    console.error('Static DNR dedupe index is stale. Run `npm run rules:index`.');
     process.exit(1);
   }
 

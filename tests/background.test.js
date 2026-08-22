@@ -6,6 +6,8 @@ const vm = require('vm');
 
 const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'background.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
+const manifestStaticRulesetIds = manifest.declarative_net_request.rule_resources
+  .map(resource => resource.id);
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
@@ -22,8 +24,8 @@ const backgroundJsCode = backgroundJsCodeRaw
   `)
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
-  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
+  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, attachListener: () => {} };")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\/index\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = globalThis._mockCreateDefaultStatsV2 || (() => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] })); var recordStatsEvent = globalThis._mockRecordStatsEvent || (() => {});")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = globalThis._mockSyncWebRtcLeakProtection || (async () => ({}));")
@@ -72,6 +74,7 @@ test('getDefaultDynamicRules', async (t) => {
       onChanged: { addListener: () => {} }
     },
     declarativeNetRequest: {
+      getEnabledRulesets: () => Promise.resolve(manifestStaticRulesetIds),
       getDynamicRules: () => Promise.resolve([]),
       updateDynamicRules: () => Promise.resolve(),
       updateEnabledRulesets: () => Promise.resolve(),
@@ -181,6 +184,34 @@ test('getDefaultDynamicRules', async (t) => {
     const ids = rules.map(r => r.id);
     const uniqueIds = new Set(ids);
     assert.strictEqual(ids.length, uniqueIds.size, 'Rule IDs must be unique');
+  });
+
+  await t.test('config validation accepts only null or safe-integer global proxy ids', () => {
+    for (const value of [null, 0, -1, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]) {
+      const validated = sandbox.validateConfig({ globalProxyId: value });
+      assert.strictEqual(validated.globalProxyId, value, String(value));
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(validated, 'globalProxyId'),
+        true,
+        String(value)
+      );
+    }
+
+    for (const value of [
+      1.25,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+      '7'
+    ]) {
+      const validated = sandbox.validateConfig({ globalProxyId: value });
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(validated, 'globalProxyId'),
+        false,
+        String(value)
+      );
+    }
   });
 
   await t.test('config validation accepts only valid WebRTC leak protection modes', () => {
@@ -392,6 +423,7 @@ test('syncDynamicRules successful syncing', async (t) => {
       onChanged: { addListener: () => {} }
     },
     declarativeNetRequest: {
+      getEnabledRulesets: async () => manifestStaticRulesetIds,
       getDynamicRules: async () => {
         getDynamicRulesCalled = true;
         return mockExistingRules;
@@ -619,6 +651,7 @@ test('syncDynamicRules error handling', async (t) => {
       onChanged: { addListener: () => {} }
     },
     declarativeNetRequest: {
+      getEnabledRulesets: () => Promise.resolve(manifestStaticRulesetIds),
       getDynamicRules: () => Promise.resolve([]),
       updateDynamicRules: () => Promise.reject(new Error('Simulated update error')),
       updateEnabledRulesets: () => Promise.resolve(),

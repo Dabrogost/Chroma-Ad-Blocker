@@ -257,12 +257,13 @@ function normalizeProxyType(value) {
 
 function canonicalizeProxyConfig(pc) {
   if (!pc || pc.accepted !== true) return null;
+  const id = Number.isSafeInteger(pc.id) ? pc.id : null;
   const type = normalizeProxyType(pc.type);
   const host = normalizeProxyHost(pc.host);
   const port = normalizeProxyPort(pc.port);
-  if (!type || !host || port == null) return null;
+  if (id === null || !type || !host || port == null) return null;
   return {
-    id: pc.id,
+    id,
     accepted: true,
     type,
     host,

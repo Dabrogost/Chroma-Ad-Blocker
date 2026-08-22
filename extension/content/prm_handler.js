@@ -2,6 +2,9 @@
  * Chroma Ad-Blocker - Amazon Prime Video Accelerator
  * Strategy: Ad-Acceleration (configurable speed, default 8x)
  * Specifically tuned for Prime Video's web player.
+ *
+ * Temporarily dormant: the implementation and tests are retained for future
+ * rehabilitation, but this file is intentionally not registered in manifest.json.
  */
 
 (function() {

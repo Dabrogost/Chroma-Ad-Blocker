@@ -22,8 +22,8 @@ const backgroundJsCode = backgroundJsCodeRaw
   `)
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
-  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
-  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
+  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, attachListener: () => {} };")
+  .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\/index\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
   .replace("import { syncWebRtcLeakProtection } from './webrtc.js';", "var syncWebRtcLeakProtection = async () => ({});")
@@ -34,6 +34,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));
+const cloneStorageValue = value => value === undefined ? undefined : structuredClone(value);
 
 const SETTINGS_IMPORT_STORAGE_KEYS = [
   'config',
@@ -179,9 +180,48 @@ function makeDnrDerivedStorage(label, applied = 1) {
   };
 }
 
-const handlersJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'handlers.js'), 'utf8')
-  .replace(/import[\s\S]*?from\s+['"][^'"]+['"];?\s*/g, '')
-  .replace(/^export\s+/gm, '');
+const HANDLER_MODULE_FILES = [
+  'domainValidation.js',
+  'proxyHandlers.js',
+  'subscriptionHandlers.js',
+  'configHandlers.js',
+  'whitelistHandlers.js',
+  'settingsTransferHandlers.js',
+  'zapperHandlers.js',
+  'userScriptletHandlers.js',
+  'diagnosticHandlers.js',
+  'index.js'
+];
+
+function handlerModuleForVm(file) {
+  let source = fs.readFileSync(
+    path.join(__dirname, '..', 'extension', 'background', 'handlers', file),
+    'utf8'
+  );
+  const exportNames = [...source.matchAll(/^export\s+(?:async\s+)?function\s+([a-zA-Z_$][\w$]*)/gm)]
+    .map(match => match[1]);
+  source = source
+    .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\r?\n/gm, '')
+    .replace(/^export\s+/gm, '');
+  return `(() => {\n${source}\nObject.assign(globalThis, { ${exportNames.join(', ')} });\n})();`;
+}
+
+const handlersJsCode = HANDLER_MODULE_FILES.map(handlerModuleForVm).join('\n');
+
+const configStateJsCode = fs.readFileSync(
+  path.join(__dirname, '..', 'extension', 'background', 'configState.js'),
+  'utf8'
+).replace(/^export\s+/gm, '');
+
+function loadRealConfigValidator() {
+  const sandbox = { Number, Object, Set };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(`${configStateJsCode}\nglobalThis.__validateConfig = validateConfig;`, sandbox);
+  return sandbox.__validateConfig;
+}
+
+const realValidateConfig = loadRealConfigValidator();
 
 const remoteUrlJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'remoteUrl.js'), 'utf8')
   .replace(/^export\s+/gm, '');
@@ -279,16 +319,18 @@ function loadHandlers(options = {}) {
         local: {
           get: options.storageGet || (async (key) => {
             if (typeof key === 'string') {
-              return Object.prototype.hasOwnProperty.call(storage, key) ? { [key]: storage[key] } : {};
+              return Object.prototype.hasOwnProperty.call(storage, key)
+                ? { [key]: cloneStorageValue(storage[key]) }
+                : {};
             }
             if (Array.isArray(key)) {
               return Object.fromEntries(key
                 .filter(name => Object.prototype.hasOwnProperty.call(storage, name))
-                .map(name => [name, storage[name]]));
+                .map(name => [name, cloneStorageValue(storage[name])]));
             }
-            return { ...storage };
+            return cloneStorageValue(storage);
           }),
-          set: options.storageSet || (async (values) => Object.assign(storage, values)),
+          set: options.storageSet || (async (values) => Object.assign(storage, cloneStorageValue(values))),
           remove: options.storageRemove || (async (keys) => {
             for (const key of Array.isArray(keys) ? keys : [keys]) delete storage[key];
           })
@@ -378,27 +420,29 @@ function loadTransactionalImportHarness(options = {}) {
       calls.get++;
       if (options.failSnapshotRead) throw new Error('snapshot read failed');
       if (typeof keys === 'string') {
-        return Object.prototype.hasOwnProperty.call(storage, keys) ? { [keys]: storage[keys] } : {};
+        return Object.prototype.hasOwnProperty.call(storage, keys)
+          ? { [keys]: cloneStorageValue(storage[keys]) }
+          : {};
       }
       if (Array.isArray(keys)) {
         return Object.fromEntries(keys
           .filter(key => Object.prototype.hasOwnProperty.call(storage, key))
-          .map(key => [key, storage[key]]));
+          .map(key => [key, cloneStorageValue(storage[key])]));
       }
-      return { ...storage };
+      return cloneStorageValue(storage);
     },
     storageSet: async values => {
       calls.set++;
       if (calls.set === 1) {
         commitImages.push(plain(values));
         if (options.commitFailure === 'before') throw new Error('commit failed before write');
-        Object.assign(storage, values);
+        Object.assign(storage, cloneStorageValue(values));
         if (options.commitFailure === 'after') throw new Error('commit failed after write');
         return;
       }
       rollbackBegan = true;
       if (options.failRollbackStorage === 'set') throw new Error('rollback set failed');
-      Object.assign(storage, values);
+      Object.assign(storage, cloneStorageValue(values));
     },
     storageRemove: async keys => {
       calls.remove++;
@@ -535,53 +579,32 @@ test('Security Hardening - background.js', async (t) => {
 
 });
 
-test('Security Hardening - handlers.js', async (t) => {
-  await t.test('marks mutating and private-read message types sensitive', () => {
+test('Security Hardening - background handlers', async (t) => {
+  await t.test('registers only audited content-script message exceptions', () => {
     const sandbox = loadHandlers();
-    const marked = [];
+    const registrations = new Map();
     sandbox.registerAll({
-      markSensitive: type => marked.push(type),
-      registerHandler: () => {}
+      registerHandler: (type, handler, options) => {
+        registrations.set(type, { handler, options: options || {} });
+      }
     });
 
-    for (const type of [
-      MSG.CONFIG_GET,
-      MSG.CONFIG_SET,
-      MSG.CONFIG_EXPORT,
-      MSG.CONFIG_IMPORT,
-      MSG.STATS_GET,
-      MSG.STATS_EVENT_BATCH,
-      MSG.STATS_RESET,
-      MSG.STATS_EXPORT,
-      MSG.STATS_SETTINGS_SET,
-      MSG.LOG_GET,
-      MSG.HEALTH_GET,
-      MSG.UPDATE_PACKAGE_INSPECT,
-      MSG.WHITELIST_GET,
-      MSG.PROXY_CONFIG_GET,
-      MSG.PROXY_CONFIG_SET,
-      MSG.PROXY_TEST,
-      MSG.ZAPPER_START,
-      MSG.ZAPPER_RULES_GET,
-      MSG.ZAPPER_RULE_REMOVE,
-      MSG.ZAPPER_RULE_SET,
-      MSG.SUBSCRIPTION_GET,
-      MSG.SUBSCRIPTION_SET,
-      MSG.SUBSCRIPTION_REFRESH,
-      MSG.SUBSCRIPTION_ADD,
-      MSG.SUBSCRIPTION_REMOVE,
-      MSG.USER_SCRIPTLETS_GET,
-      MSG.USER_SCRIPTLET_SOURCE_ADD,
-      MSG.USER_SCRIPTLET_SOURCE_REFRESH,
-      MSG.USER_SCRIPTLET_SOURCE_REMOVE,
-      MSG.USER_SCRIPTLET_RULES_SET,
-      MSG.WHITELIST_ADD,
-      MSG.WHITELIST_REMOVE,
-      MSG.FPR_WHITELIST_GET,
-      MSG.FPR_WHITELIST_ADD,
-      MSG.FPR_WHITELIST_REMOVE
-    ]) {
-      assert.ok(marked.includes(type), `${type} should be sensitive`);
+    const expectedTypes = Object.values(MSG)
+      .filter(type => type !== MSG.CONFIG_UPDATE)
+      .sort();
+    assert.deepStrictEqual([...registrations.keys()].sort(), expectedTypes);
+
+    const contentScriptTypes = [...registrations]
+      .filter(([, registration]) => registration.options.allowContentScripts === true)
+      .map(([type]) => type)
+      .sort();
+    assert.deepStrictEqual(contentScriptTypes, [MSG.STATS_EVENT_BATCH, MSG.ZAPPER_SAVE_RULE].sort());
+
+    for (const [type, registration] of registrations) {
+      assert.strictEqual(typeof registration.handler, 'function', `${type} should have a handler`);
+      if (!contentScriptTypes.includes(type)) {
+        assert.strictEqual(registration.options.allowContentScripts, undefined, `${type} should default to extension pages`);
+      }
     }
   });
 
@@ -653,6 +676,56 @@ test('Security Hardening - handlers.js', async (t) => {
     ]);
 
     assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['first.example', 'second.example']);
+  });
+
+  await t.test('concurrent FPR whitelist mutations preserve every requested edit', async () => {
+    const sandbox = loadHandlers({ storage: { fprWhitelist: ['remove.example'] } });
+
+    await Promise.all([
+      sandbox.handleFprWhitelistAdd({ domain: 'first.example' }),
+      sandbox.handleFprWhitelistAdd({ domain: 'second.example' }),
+      sandbox.handleFprWhitelistRemove({ domain: 'remove.example' })
+    ]);
+
+    assert.deepStrictEqual(plain(sandbox._storage.fprWhitelist), ['first.example', 'second.example']);
+  });
+
+  await t.test('settings import serializes with main and FPR whitelist mutations', async () => {
+    const storage = makeSettingsImportStorage();
+    let releaseImportCommit;
+    let markImportCommitStarted;
+    const importCommitGate = new Promise(resolve => { releaseImportCommit = resolve; });
+    const importCommitStarted = new Promise(resolve => { markImportCommitStarted = resolve; });
+    const sandbox = loadHandlers({
+      storage,
+      storageSet: async values => {
+        const isImportCommit = Object.prototype.hasOwnProperty.call(values, 'config') &&
+          Object.prototype.hasOwnProperty.call(values, 'whitelist') &&
+          Object.prototype.hasOwnProperty.call(values, 'fprWhitelist');
+        if (isImportCommit) {
+          markImportCommitStarted();
+          await importCommitGate;
+        }
+        Object.assign(storage, cloneStorageValue(values));
+      }
+    });
+
+    const importResult = sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+    await importCommitStarted;
+
+    const mainAdd = sandbox.handleWhitelistAdd({ domain: 'after-import.example' });
+    const fprAdd = sandbox.handleFprWhitelistAdd({ domain: 'login.after-import.example' });
+    await new Promise(resolve => setImmediate(resolve));
+    releaseImportCommit();
+
+    const [imported] = await Promise.all([importResult, mainAdd, fprAdd]);
+
+    assert.strictEqual(imported.ok, true);
+    assert.deepStrictEqual(plain(storage.whitelist), ['imported.example', 'after-import.example']);
+    assert.deepStrictEqual(plain(storage.fprWhitelist), [
+      'login.imported.example',
+      'login.after-import.example'
+    ]);
   });
 
   await t.test('rapid config toggles are stored and reconciled in request order', async () => {
@@ -922,6 +995,28 @@ test('Security Hardening - handlers.js', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
+  await t.test('settings export omits malformed finite global proxy ids', async () => {
+    for (const globalProxyId of [1.25, Number.MAX_SAFE_INTEGER + 1]) {
+      const storage = {
+        config: { enabled: true, globalProxyEnabled: true, globalProxyId },
+        whitelist: [],
+        fprWhitelist: [],
+        proxyConfigs: []
+      };
+      const sandbox = loadHandlers({ storage, validateConfig: realValidateConfig });
+      const exported = await sandbox.handleConfigExport();
+
+      assert.strictEqual(exported.config.enabled, true, String(globalProxyId));
+      assert.strictEqual(exported.config.globalProxyEnabled, true, String(globalProxyId));
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(exported.config, 'globalProxyId'),
+        false,
+        String(globalProxyId)
+      );
+      assert.strictEqual(storage.config.globalProxyId, globalProxyId, String(globalProxyId));
+    }
+  });
+
   await t.test('settings export omits proxy credentials and import clears credential blobs', async () => {
     const storage = {
       config: { enabled: true, acceleration: true },
@@ -970,7 +1065,6 @@ test('Security Hardening - handlers.js', async (t) => {
       })
     });
     sandbox.registerAll({
-      markSensitive: () => {},
       registerHandler: (type, fn) => { handlers[type] = fn; }
     });
 
@@ -1119,6 +1213,36 @@ test('Security Hardening - handlers.js', async (t) => {
       assert.strictEqual(calls.remove, 0, scenario.name);
       assert.strictEqual(calls.dnr + calls.userScripts, 0, scenario.name);
       assert.deepStrictEqual(plain(storage), before, scenario.name);
+    }
+  });
+
+  await t.test('settings import rejects malformed finite global proxy ids before mutation', async () => {
+    for (const globalProxyId of [1.25, Number.MAX_SAFE_INTEGER + 1]) {
+      const { sandbox, storage, calls } = loadTransactionalImportHarness({
+        validateConfig: realValidateConfig
+      });
+      const before = plain(storage);
+      const result = await sandbox.handleConfigImport({
+        settings: makeSettingsImportPayload({
+          config: {
+            enabled: false,
+            networkBlocking: true,
+            globalProxyEnabled: true,
+            globalProxyId
+          }
+        })
+      });
+
+      assert.strictEqual(result.ok, false, String(globalProxyId));
+      assert.strictEqual(result.phase, 'validation', String(globalProxyId));
+      assert.strictEqual(result.step, 'config', String(globalProxyId));
+      assert.match(result.error, /globalProxyId/, String(globalProxyId));
+      assert.strictEqual(result.rollback?.attempted, false, String(globalProxyId));
+      assert.strictEqual(calls.get, 0, String(globalProxyId));
+      assert.strictEqual(calls.set, 0, String(globalProxyId));
+      assert.strictEqual(calls.remove, 0, String(globalProxyId));
+      assert.strictEqual(calls.dnr + calls.userScripts + calls.proxy, 0, String(globalProxyId));
+      assert.deepStrictEqual(plain(storage), before, String(globalProxyId));
     }
   });
 

@@ -190,7 +190,7 @@ test('loaded extension E2E smoke', async (t) => {
   });
 
   await t.test('Prime Video MAIN-world handlers use real browser media APIs', {
-    skip: 'Temporarily disabled while GitHub Chrome/CDP timing flake is investigated.'
+    skip: 'Prime Video acceleration is temporarily dormant and is not registered in the manifest.'
   }, async (t) => {
     const page = await createFulfilledPage(browser.cdp, 'https://www.amazon.com/gp/video/detail/chroma-smoke', `<!doctype html>
       <html>

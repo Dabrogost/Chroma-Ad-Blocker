@@ -92,8 +92,8 @@
 <p>The layer includes style protection, semantic recipe content preservation, anti-adblock containment, scroll-lock recovery, and site-specific cosmetic overrides for major recipe platforms.</p>
 <p>Recipe behavior waits for authenticated configuration and remains inert while master protection is off or the site is whitelisted. Live deactivation disconnects observers, cancels sweeps, removes Chroma-owned styles, and restores only API slots and page styles Chroma still owns, preserving later page changes. Re-enabling does not stack duplicate wrappers or stylesheets.</p>
 <h2 id="dynamic-ad-acceleration" tabindex="-1">Dynamic Ad Acceleration</h2>
-<p>Dynamic Ad Acceleration automatically identifies and accelerates video ads at a configurable speed (<code>x4</code>, <code>x8</code>, <code>x12</code>, or <code>x16</code>, default <code>x8</code>) on YouTube and Amazon Prime Video. It is a fallback for cases where stripping is disabled or platform behavior changes.</p>
-<p>It ships off by default. Twitch uses server-side ad insertion and does not support this acceleration path.</p>
+<p>Dynamic Ad Acceleration identifies and accelerates YouTube video ads at a configurable speed (<code>x4</code>, <code>x8</code>, <code>x12</code>, or <code>x16</code>, default <code>x8</code>). It is a fallback for cases where stripping is disabled or platform behavior changes.</p>
+<p>It ships off by default. The Amazon Prime Video accelerator is temporarily disabled while its implementation is brought up to the extension's current quality bar. Twitch uses server-side ad insertion and does not support this acceleration path.</p>
 <p>For platform-specific behavior, see <a href="youtube.html">YouTube Protection</a>.</p>
 <h2 id="privacy-hardening-fingerprint-randomization" tabindex="-1">Privacy Hardening &amp; Fingerprint Randomization</h2>
 <p>Chroma includes optional browser privacy controls:</p>

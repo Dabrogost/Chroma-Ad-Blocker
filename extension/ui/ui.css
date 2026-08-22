@@ -260,6 +260,24 @@ header {
   font-weight: 500;
 }
 
+.stat-hero-skeleton {
+  display: inline-block;
+  max-width: none;
+  vertical-align: middle;
+}
+
+.stat-hero-skeleton--total {
+  width: 120px;
+  height: 32px;
+  border-radius: var(--r-pill);
+}
+
+.stat-hero-skeleton--breakdown {
+  width: 34px;
+  height: 8px;
+  border-radius: var(--r-pill);
+}
+
 .settings-nav {
   position: sticky;
   top: 10px;
@@ -2922,20 +2940,13 @@ body.popup-page {
   margin-left: 3px;
   font-size: 10px;
 }
-.popup-page .popup-stat-skeleton {
-  display: inline-block;
-  max-width: none;
-  vertical-align: middle;
-}
-.popup-page .popup-stat-skeleton--total {
+.popup-page .stat-hero-skeleton--total {
   width: 108px;
   height: 28px;
-  border-radius: var(--r-pill);
 }
-.popup-page .popup-stat-skeleton--breakdown {
+.popup-page .stat-hero-skeleton--breakdown {
   width: 28px;
   height: 7px;
-  border-radius: var(--r-pill);
 }
 .popup-page .section-title { font-size: 10px; }
 .popup-page .protection-list { margin: 0 12px 16px; }

@@ -60,6 +60,7 @@ const TIERS = {
     'dnr-rulesets.test.js',
     'package-extension.test.js',
     'rules_recipes.test.js',
+    'static-dedupe-index.test.js',
     'subscriptions.budget.test.js',
     'update-oisd-rules.test.js'
   ]

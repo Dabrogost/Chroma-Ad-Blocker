@@ -3,6 +3,7 @@ const path = require('path');
 const http = require('http');
 const https = require('https');
 const { domainToASCII } = require('url');
+const { writeStaticDedupeIndex } = require('./build-static-dedupe-index');
 
 const repoRoot = path.join(__dirname, '..');
 const extensionRoot = path.join(repoRoot, 'extension');
@@ -517,8 +518,9 @@ async function main() {
   });
   writeManifest(manifest, resources, chunks);
   removeObsoleteGeneratedFiles(replacedResources, outputFiles);
+  writeStaticDedupeIndex();
 
-  console.log(`\n${SOURCE_NAME} static rules updated.`);
+  console.log(`\n${SOURCE_NAME} static rules and dedupe index updated.`);
 }
 
 if (require.main === module) {

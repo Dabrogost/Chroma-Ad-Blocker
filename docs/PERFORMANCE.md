@@ -78,8 +78,7 @@ This avoids repeated `<style>` node churn. The browser still has to apply CSS se
 
 MAIN-world code is reserved for cases where isolated content scripts are not enough:
 
-- YouTube payload stripping.
-- Prime Video acceleration fallback.
+- YouTube payload stripping and optional acceleration fallback.
 - Recipe/blog anti-adblock containment.
 - Supported subscription scriptlets.
 - User-provided scriptlet resources.
@@ -150,7 +149,7 @@ For a conservative everyday setup:
 Some surfaces are naturally heavier because the page or feature changes constantly:
 
 - **YouTube**: Large feed DOMs, Shorts, payload interception, player state, and frequent platform changes.
-- **Prime Video**: Media handling and acceleration fallback require page-context observation when enabled.
+- **Prime Video**: The page-context acceleration handler is temporarily disabled; network blocking and configured proxy routing remain separate.
 - **Twitch**: Live chat and streaming pages can produce heavy DOM churn; server-side ad insertion limits what client-side handling can do.
 - **Large subscription sets**: More parsing work, storage use, DNR allocation, cosmetic selector volume, and scriptlet registration.
 - **Global proxy routing**: Adds proxy path latency to broad browser traffic and can make slow proxy providers look like extension overhead.

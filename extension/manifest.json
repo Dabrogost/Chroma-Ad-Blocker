@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "122",
   "name": "Chroma Ad-Blocker",
-  "version": "1.8.11",
+  "version": "1.9.0",
   "description": "Multi-layered ad-blocker using ad-acceleration, network blocking, and cosmetic filtering.",
   "permissions": [
     "declarativeNetRequest",
@@ -40,15 +40,6 @@
     {
       "matches": [
         "*://*.youtube.com/*",
-        "*://*.amazon.com/*",
-        "*://*.amazon.de/*",
-        "*://*.amazon.co.uk/*",
-        "*://*.amazon.co.jp/*",
-        "*://*.amazon.ca/*",
-        "*://*.amazon.fr/*",
-        "*://*.amazon.it/*",
-        "*://*.amazon.es/*",
-        "*://*.primevideo.com/*",
         "*://*.bellyfull.net/*",
         "*://*.allrecipes.com/*",
         "*://*.foodnetwork.com/*",
@@ -82,15 +73,6 @@
     {
       "matches": [
         "*://*.youtube.com/*",
-        "*://*.amazon.com/*",
-        "*://*.amazon.de/*",
-        "*://*.amazon.co.uk/*",
-        "*://*.amazon.co.jp/*",
-        "*://*.amazon.ca/*",
-        "*://*.amazon.fr/*",
-        "*://*.amazon.it/*",
-        "*://*.amazon.es/*",
-        "*://*.primevideo.com/*",
         "*://*.bellyfull.net/*",
         "*://*.allrecipes.com/*",
         "*://*.foodnetwork.com/*",
@@ -127,25 +109,6 @@
       ],
       "js": [
         "content/yt_handler.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "*://*.amazon.com/*",
-        "*://*.amazon.de/*",
-        "*://*.amazon.co.uk/*",
-        "*://*.amazon.co.jp/*",
-        "*://*.amazon.ca/*",
-        "*://*.amazon.fr/*",
-        "*://*.amazon.it/*",
-        "*://*.amazon.es/*",
-        "*://*.primevideo.com/*"
-      ],
-      "js": [
-        "content/prm_handler.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",

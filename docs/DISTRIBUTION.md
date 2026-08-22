@@ -131,7 +131,7 @@ Before sharing a build, complete this checklist from a clean working tree or rev
 - [ ] Manual fallback update test by extracting the release ZIP over the existing unpacked folder.
 - [ ] YouTube normal video test.
 - [ ] YouTube Shorts test.
-- [ ] Prime Video test.
+- [ ] Confirm the dormant Prime Video accelerator is not injected.
 - [ ] Proxy route on/off test.
 - [ ] Global proxy fallback test.
 - [ ] Master off/on releases and restores proxy routes without erasing saved route intent.

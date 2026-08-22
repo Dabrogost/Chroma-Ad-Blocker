@@ -1,5 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  checkStaticDedupeIndexFreshness
+} = require('../../scripts/build-static-dedupe-index');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const extensionRoot = path.join(repoRoot, 'extension');
@@ -205,6 +208,15 @@ function main() {
   const totalRules = counts.reduce((sum, item) => sum + item.count, 0);
   if (totalRules !== 300000) {
     addError(`Total static rule count ${totalRules} must equal the configured budget of 300,000`);
+  }
+
+  try {
+    const indexFreshness = checkStaticDedupeIndexFreshness();
+    if (!indexFreshness.fresh) {
+      addError('Static DNR dedupe index is stale. Run `npm run rules:index`.');
+    }
+  } catch (err) {
+    addError(`Static DNR dedupe index could not be validated: ${err.message}`);
   }
 
   console.log('DNR ruleset validation summary');

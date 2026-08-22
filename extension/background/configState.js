@@ -25,7 +25,7 @@ export function validateConfig(inputConfig) {
             validatedConfig[key] = val;
           }
         } else if (key === 'globalProxyId') {
-          if (val === null || typeof val === 'number') {
+          if (val === null || Number.isSafeInteger(val)) {
             validatedConfig[key] = val;
           }
         } else if (key === 'webRtcLeakProtection') {

@@ -657,6 +657,7 @@ const ChromaApp = (() => {
 
     function failSettingsHydration(message) {
       showConfigLoadError(message);
+      renderStatsHero(null);
       [
         'healthPanelBody',
         'statisticsTopCards',

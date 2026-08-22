@@ -1,16 +1,13 @@
 /**
  * Message router for chrome.runtime.onMessage.
  *
- * Owns origin authentication and dispatch. Handlers register themselves by
- * message type; sensitive types are restricted to trusted extension senders.
+ * Owns sender authentication and dispatch. Registered handlers are restricted
+ * to extension pages unless they explicitly opt in to own content scripts.
  */
-
-import { MSG } from './messageTypes.js';
 
 const DEBUG = false;
 
 const handlers = new Map();
-const sensitive = new Set();
 
 function errorResponse(code, error) {
   return { ok: false, code, error };
@@ -26,12 +23,31 @@ function getSenderOrigin(sender) {
   }
 }
 
-export function registerHandler(type, fn) {
-  handlers.set(type, fn);
-}
+export function registerHandler(type, fn, options = {}) {
+  if (typeof type !== 'string' || type.length === 0) {
+    throw new TypeError('Message handler type must be a non-empty string');
+  }
+  if (typeof fn !== 'function') {
+    throw new TypeError(`Message handler for ${type} must be a function`);
+  }
+  if (handlers.has(type)) {
+    throw new Error(`Message handler already registered for ${type}`);
+  }
+  if (!options || typeof options !== 'object' || Array.isArray(options)) {
+    throw new TypeError(`Message handler options for ${type} must be an object`);
+  }
+  const unknownOptions = Object.keys(options).filter(key => key !== 'allowContentScripts');
+  if (unknownOptions.length > 0 || (
+    Object.prototype.hasOwnProperty.call(options, 'allowContentScripts') &&
+    typeof options.allowContentScripts !== 'boolean'
+  )) {
+    throw new TypeError(`Invalid message handler options for ${type}`);
+  }
 
-export function markSensitive(type) {
-  sensitive.add(type);
+  handlers.set(type, {
+    fn,
+    allowContentScripts: options.allowContentScripts === true
+  });
 }
 
 export function attachListener() {
@@ -41,21 +57,23 @@ export function attachListener() {
         const extensionOrigin = `chrome-extension://${chrome.runtime.id}`;
         const type = msg?.type;
         const isFromExtensionPage = getSenderOrigin(sender) === extensionOrigin;
-        const isStatsBatchFromOwnContentScript = type === MSG.STATS_EVENT_BATCH && sender.id === chrome.runtime.id;
+        const registration = handlers.get(type);
 
-        if (sensitive.has(type) && !isFromExtensionPage && !isStatsBatchFromOwnContentScript) {
+        if (!registration) {
+          sendResponse(errorResponse('unknown_message', 'Unknown message type'));
+          return;
+        }
+
+        const isAllowedContentScript = registration.allowContentScripts &&
+          sender?.id === chrome.runtime.id &&
+          Number.isInteger(sender?.tab?.id);
+        if (!isFromExtensionPage && !isAllowedContentScript) {
           if (DEBUG) console.error('[Chroma Security] Blocked unauthorized message from:', getSenderOrigin(sender), type);
           sendResponse(errorResponse('unauthorized', 'Unauthorized message sender'));
           return;
         }
 
-        const fn = handlers.get(type);
-        if (!fn) {
-          sendResponse(errorResponse('unknown_message', 'Unknown message type'));
-          return;
-        }
-
-        const response = await fn(msg, sender);
+        const response = await registration.fn(msg, sender);
         sendResponse(response);
       } catch (err) {
         if (DEBUG) console.error('[Chroma] Error in message handler:', err);

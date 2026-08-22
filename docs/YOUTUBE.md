@@ -39,7 +39,7 @@ Coarse payload-modified events may appear in the local Event Tracker and are fol
 
 ## Twitch And Server-Side Ad Insertion
 
-Twitch uses server-side ad insertion, which prevents Chroma from applying the same kind of client-side ad acceleration path used for YouTube and Amazon Prime Video. Chroma can still apply cosmetic and scriptlet-related cleanup where supported, but it does not claim Twitch ad acceleration.
+Twitch uses server-side ad insertion, which prevents Chroma from applying the same client-side ad acceleration path used for YouTube. Chroma can still apply cosmetic and scriptlet-related cleanup where supported, but it does not claim Twitch ad acceleration. The separate Amazon Prime Video accelerator is temporarily disabled.
 
 ---
 

@@ -32,7 +32,8 @@ const RECOVERED_DNR_DIAGNOSTIC_IDS = [
   'dnrWakeRecovery',
   'dnrState',
   'dnrDynamicRules',
-  'whitelistSync'
+  'whitelistSync',
+  'dnrStaticCompensation'
 ];
 const WHITELIST_SUBRESOURCE_TYPES = [
   'sub_frame',
@@ -223,6 +224,74 @@ async function commitIsStillAllowed(generation, expectedActive) {
     isNetworkProtectionActive(config) === expectedActive;
 }
 
+function enabledStaticRulesetImage(value) {
+  if (!Array.isArray(value)) {
+    throw new Error('Enabled static DNR rulesets could not be read');
+  }
+  const enabled = new Set(value);
+  return STATIC_RULESETS.filter(id => enabled.has(id));
+}
+
+function buildEnabledRulesetUpdate(currentEnabled, targetEnabled) {
+  const current = new Set(currentEnabled);
+  const target = new Set(targetEnabled);
+  const enableRulesetIds = STATIC_RULESETS.filter(id => target.has(id) && !current.has(id));
+  const disableRulesetIds = STATIC_RULESETS.filter(id => current.has(id) && !target.has(id));
+  if (enableRulesetIds.length === 0 && disableRulesetIds.length === 0) return null;
+
+  return {
+    ...(enableRulesetIds.length > 0 ? { enableRulesetIds } : {}),
+    ...(disableRulesetIds.length > 0 ? { disableRulesetIds } : {})
+  };
+}
+
+async function applyEnabledRulesetImage(currentEnabled, targetEnabled) {
+  const update = buildEnabledRulesetUpdate(currentEnabled, targetEnabled);
+  if (!update) return false;
+  await chrome.declarativeNetRequest.updateEnabledRulesets(update);
+  return true;
+}
+
+async function readDnrPreimage() {
+  const [enabledRulesets, dynamicRules] = await Promise.all([
+    chrome.declarativeNetRequest.getEnabledRulesets(),
+    chrome.declarativeNetRequest.getDynamicRules()
+  ]);
+  if (!Array.isArray(dynamicRules)) {
+    throw new Error('Dynamic DNR rules could not be read');
+  }
+  return {
+    enabledRulesets: enabledStaticRulesetImage(enabledRulesets),
+    dynamicRules
+  };
+}
+
+async function restoreStaticRulesetPreimage(previousEnabled, committedEnabled) {
+  try {
+    await applyEnabledRulesetImage(committedEnabled, previousEnabled);
+  } catch (err) {
+    try {
+      await recordHealthDiagnostic('dnrStaticCompensation', {
+        area: 'dnr',
+        severity: 'error',
+        message: 'Static DNR state could not be restored after an incomplete network reconciliation.',
+        action: 'Reload the extension, then turn Network Blocking off and on.',
+        error: err?.message || err
+      });
+    } catch {
+      // Diagnostics must never replace the original reconciliation failure.
+    }
+    return false;
+  }
+
+  try {
+    await clearHealthDiagnostic('dnrStaticCompensation');
+  } catch {
+    // The browser state was restored; stale diagnostic cleanup is best-effort.
+  }
+  return true;
+}
+
 function updateClassificationCache(rules) {
   dynamicRuleClassifications.clear();
   for (const rule of rules) {
@@ -372,111 +441,147 @@ async function performReconciliation(generation, reason) {
   if (!await commitIsStillAllowed(generation, active)) {
     return { ok: true, stale: true };
   }
-  await chrome.declarativeNetRequest.updateEnabledRulesets(active
-    ? { enableRulesetIds: STATIC_RULESETS }
-    : { disableRulesetIds: STATIC_RULESETS });
-
-  if (generation !== requestedGeneration) return { ok: true, stale: true };
-
-  const existing = await chrome.declarativeNetRequest.getDynamicRules();
-  const removeRuleIds = existing.map(rule => rule.id);
+  const preimage = await readDnrPreimage();
   if (!await commitIsStillAllowed(generation, active)) {
     return { ok: true, stale: true };
   }
 
-  if (!active) {
-    if (removeRuleIds.length > 0) {
-      dynamicRuleClassificationsReady = false;
-      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds });
-    }
-    dynamicRuleClassifications.clear();
-    dynamicRuleClassificationsReady = true;
-    // This exact empty image is now authoritative even if a newer desired
-    // generation was queued while Chrome committed it. The serialized newer
-    // generation will replace the snapshot only after its own successful
-    // commit.
-    await storeAppliedSubscriptionCounts(false, subscriptionApplication);
-    await clearRecoveredDnrDiagnostics();
-    if (DEBUG) console.log(`[Chroma DNR] Reconciled inactive state (${reason}).`);
-    return { ok: true, active: false };
-  }
+  const targetEnabledRulesets = active ? STATIC_RULESETS : [];
+  const removeRuleIds = preimage.dynamicRules.map(rule => rule.id);
+  let staticMutationCommitted = false;
+  let dynamicCommitCompleted = false;
+  let compensationAttempted = false;
 
-  // Keep match diagnostics behind the reconciliation boundary. If this
-  // generation becomes stale after Chrome commits, the next generation (or a
-  // runtime hydration after failure) will rebuild the authoritative map.
-  dynamicRuleClassificationsReady = false;
-  let trackingCleanupError = null;
+  const compensateStaticMutation = async () => {
+    if (!staticMutationCommitted || dynamicCommitCompleted || compensationAttempted) return;
+    compensationAttempted = true;
+    const restored = await restoreStaticRulesetPreimage(
+      preimage.enabledRulesets,
+      targetEnabledRulesets
+    );
+    if (restored) staticMutationCommitted = false;
+  };
+
   try {
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds,
-      addRules: desiredRules
-    });
-  } catch (err) {
-    if (!desiredRules.some(isTrackingCleanupRule)) throw err;
-    if (!await commitIsStillAllowed(generation, true)) {
+    staticMutationCommitted = await applyEnabledRulesetImage(
+      preimage.enabledRulesets,
+      targetEnabledRulesets
+    );
+
+    if (generation !== requestedGeneration) {
+      await compensateStaticMutation();
       return { ok: true, stale: true };
     }
-    defaultRules = defaultRules.filter(rule => !isTrackingCleanupRule(rule));
-    subscriptionApplication = await buildSubscriptionApplication(defaultRules);
-    const subscriptionRules = prepareSubscriptionRules(subscriptionApplication.networkRules);
-    desiredRules = [...defaultRules, ...subscriptionRules, ...whitelistRules];
-    if (!await commitIsStillAllowed(generation, true)) {
+    if (!await commitIsStillAllowed(generation, active)) {
+      await compensateStaticMutation();
       return { ok: true, stale: true };
     }
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds,
-      addRules: desiredRules
-    });
-    trackingCleanupError = err;
-  }
 
-  // Chrome has committed this exact runtime image. Publish its action map
-  // before checking whether a newer desired-state generation was requested;
-  // the queued generation has not started its serialized commit yet.
-  updateClassificationCache(desiredRules);
+    if (!active) {
+      if (removeRuleIds.length > 0) {
+        dynamicRuleClassificationsReady = false;
+        await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds });
+      }
+      dynamicCommitCompleted = true;
+      dynamicRuleClassifications.clear();
+      dynamicRuleClassificationsReady = true;
+      // This exact empty image is now authoritative even if a newer desired
+      // generation was queued while Chrome committed it. The serialized newer
+      // generation will replace the snapshot only after its own successful
+      // commit.
+      await storeAppliedSubscriptionCounts(false, subscriptionApplication);
+      await clearRecoveredDnrDiagnostics();
+      if (DEBUG) console.log(`[Chroma DNR] Reconciled inactive state (${reason}).`);
+      return { ok: true, active: false };
+    }
 
-  // Diagnostic persistence is observability only. Keep it outside the DNR
-  // rejection boundary so a storage failure can neither remove healthy
-  // tracking rules nor make a completed browser commit look unsuccessful.
-  try {
-    if (trackingCleanupError) {
-      await recordHealthDiagnostic('trackingUrlCleanupSync', {
-        area: 'trackingUrlCleanup',
-        severity: 'warning',
-        message: 'Tracking URL Cleanup could not register its DNR redirect rule.',
-        action: 'Reload the extension, or turn Tracking URL Cleanup off and on.',
-        error: trackingCleanupError?.message || trackingCleanupError
+    // Keep match diagnostics behind the reconciliation boundary. If this
+    // generation becomes stale after Chrome commits, the next generation (or a
+    // runtime hydration after failure) will rebuild the authoritative map.
+    dynamicRuleClassificationsReady = false;
+    let trackingCleanupError = null;
+    try {
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds,
+        addRules: desiredRules
       });
-    } else {
-      await clearHealthDiagnostic('trackingUrlCleanupSync');
+    } catch (err) {
+      if (!desiredRules.some(isTrackingCleanupRule)) throw err;
+      if (!await commitIsStillAllowed(generation, true)) {
+        await compensateStaticMutation();
+        return { ok: true, stale: true };
+      }
+      defaultRules = defaultRules.filter(rule => !isTrackingCleanupRule(rule));
+      subscriptionApplication = await buildSubscriptionApplication(defaultRules);
+      const subscriptionRules = prepareSubscriptionRules(subscriptionApplication.networkRules);
+      desiredRules = [...defaultRules, ...subscriptionRules, ...whitelistRules];
+      if (!await commitIsStillAllowed(generation, true)) {
+        await compensateStaticMutation();
+        return { ok: true, stale: true };
+      }
+      await chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds,
+        addRules: desiredRules
+      });
+      trackingCleanupError = err;
     }
-  } catch (err) {
-    if (DEBUG) console.warn('[Chroma DNR] Tracking cleanup diagnostic update failed:', err);
-  }
+    dynamicCommitCompleted = true;
 
-  // Publish every successfully committed image. If this generation became
-  // stale during the atomic browser call, its snapshot remains the truthful
-  // fallback should the queued generation fail.
-  await storeAppliedSubscriptionCounts(true, subscriptionApplication);
-  if (generation !== requestedGeneration) return { ok: true, stale: true };
-  await clearRecoveredDnrDiagnostics();
-  if (DEBUG) {
-    console.log(`[Chroma DNR] Reconciled ${desiredRules.length} dynamic rules (${reason}).`);
+    // Chrome has committed this exact runtime image. Publish its action map
+    // before checking whether a newer desired-state generation was requested;
+    // the queued generation has not started its serialized commit yet.
+    updateClassificationCache(desiredRules);
+
+    // Diagnostic persistence is observability only. Keep it outside the DNR
+    // rejection boundary so a storage failure can neither remove healthy
+    // tracking rules nor make a completed browser commit look unsuccessful.
+    try {
+      if (trackingCleanupError) {
+        await recordHealthDiagnostic('trackingUrlCleanupSync', {
+          area: 'trackingUrlCleanup',
+          severity: 'warning',
+          message: 'Tracking URL Cleanup could not register its DNR redirect rule.',
+          action: 'Reload the extension, or turn Tracking URL Cleanup off and on.',
+          error: trackingCleanupError?.message || trackingCleanupError
+        });
+      } else {
+        await clearHealthDiagnostic('trackingUrlCleanupSync');
+      }
+    } catch (err) {
+      if (DEBUG) console.warn('[Chroma DNR] Tracking cleanup diagnostic update failed:', err);
+    }
+
+    // Publish every successfully committed image. If this generation became
+    // stale during the atomic browser call, its snapshot remains the truthful
+    // fallback should the queued generation fail.
+    await storeAppliedSubscriptionCounts(true, subscriptionApplication);
+    if (generation !== requestedGeneration) return { ok: true, stale: true };
+    await clearRecoveredDnrDiagnostics();
+    if (DEBUG) {
+      console.log(`[Chroma DNR] Reconciled ${desiredRules.length} dynamic rules (${reason}).`);
+    }
+    return { ok: true, active: true, dynamicRuleCount: desiredRules.length };
+  } catch (err) {
+    await compensateStaticMutation();
+    throw err;
   }
-  return { ok: true, active: true, dynamicRuleCount: desiredRules.length };
 }
 
 async function reconcileGeneration(generation, reason) {
   try {
     return await performReconciliation(generation, reason);
   } catch (err) {
-    await recordHealthDiagnostic('dnrState', {
-      area: 'dnr',
-      severity: 'error',
-      message: 'Core DNR state could not be synchronized.',
-      action: 'Reload the extension, then turn Network Blocking off and on.',
-      error: err?.message || err
-    });
+    try {
+      await recordHealthDiagnostic('dnrState', {
+        area: 'dnr',
+        severity: 'error',
+        message: 'Core DNR state could not be synchronized.',
+        action: 'Reload the extension, then turn Network Blocking off and on.',
+        error: err?.message || err
+      });
+    } catch {
+      // Diagnostics must never replace the reconciliation failure.
+    }
     if (DEBUG) console.error('[Chroma Ad-Blocker] DNR reconciliation failed:', err);
     throw err;
   }
