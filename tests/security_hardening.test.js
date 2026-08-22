@@ -34,6 +34,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));
+const cloneStorageValue = value => value === undefined ? undefined : structuredClone(value);
 
 const SETTINGS_IMPORT_STORAGE_KEYS = [
   'config',
@@ -279,16 +280,18 @@ function loadHandlers(options = {}) {
         local: {
           get: options.storageGet || (async (key) => {
             if (typeof key === 'string') {
-              return Object.prototype.hasOwnProperty.call(storage, key) ? { [key]: storage[key] } : {};
+              return Object.prototype.hasOwnProperty.call(storage, key)
+                ? { [key]: cloneStorageValue(storage[key]) }
+                : {};
             }
             if (Array.isArray(key)) {
               return Object.fromEntries(key
                 .filter(name => Object.prototype.hasOwnProperty.call(storage, name))
-                .map(name => [name, storage[name]]));
+                .map(name => [name, cloneStorageValue(storage[name])]));
             }
-            return { ...storage };
+            return cloneStorageValue(storage);
           }),
-          set: options.storageSet || (async (values) => Object.assign(storage, values)),
+          set: options.storageSet || (async (values) => Object.assign(storage, cloneStorageValue(values))),
           remove: options.storageRemove || (async (keys) => {
             for (const key of Array.isArray(keys) ? keys : [keys]) delete storage[key];
           })
@@ -378,27 +381,29 @@ function loadTransactionalImportHarness(options = {}) {
       calls.get++;
       if (options.failSnapshotRead) throw new Error('snapshot read failed');
       if (typeof keys === 'string') {
-        return Object.prototype.hasOwnProperty.call(storage, keys) ? { [keys]: storage[keys] } : {};
+        return Object.prototype.hasOwnProperty.call(storage, keys)
+          ? { [keys]: cloneStorageValue(storage[keys]) }
+          : {};
       }
       if (Array.isArray(keys)) {
         return Object.fromEntries(keys
           .filter(key => Object.prototype.hasOwnProperty.call(storage, key))
-          .map(key => [key, storage[key]]));
+          .map(key => [key, cloneStorageValue(storage[key])]));
       }
-      return { ...storage };
+      return cloneStorageValue(storage);
     },
     storageSet: async values => {
       calls.set++;
       if (calls.set === 1) {
         commitImages.push(plain(values));
         if (options.commitFailure === 'before') throw new Error('commit failed before write');
-        Object.assign(storage, values);
+        Object.assign(storage, cloneStorageValue(values));
         if (options.commitFailure === 'after') throw new Error('commit failed after write');
         return;
       }
       rollbackBegan = true;
       if (options.failRollbackStorage === 'set') throw new Error('rollback set failed');
-      Object.assign(storage, values);
+      Object.assign(storage, cloneStorageValue(values));
     },
     storageRemove: async keys => {
       calls.remove++;
@@ -653,6 +658,56 @@ test('Security Hardening - handlers.js', async (t) => {
     ]);
 
     assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['first.example', 'second.example']);
+  });
+
+  await t.test('concurrent FPR whitelist mutations preserve every requested edit', async () => {
+    const sandbox = loadHandlers({ storage: { fprWhitelist: ['remove.example'] } });
+
+    await Promise.all([
+      sandbox.handleFprWhitelistAdd({ domain: 'first.example' }),
+      sandbox.handleFprWhitelistAdd({ domain: 'second.example' }),
+      sandbox.handleFprWhitelistRemove({ domain: 'remove.example' })
+    ]);
+
+    assert.deepStrictEqual(plain(sandbox._storage.fprWhitelist), ['first.example', 'second.example']);
+  });
+
+  await t.test('settings import serializes with main and FPR whitelist mutations', async () => {
+    const storage = makeSettingsImportStorage();
+    let releaseImportCommit;
+    let markImportCommitStarted;
+    const importCommitGate = new Promise(resolve => { releaseImportCommit = resolve; });
+    const importCommitStarted = new Promise(resolve => { markImportCommitStarted = resolve; });
+    const sandbox = loadHandlers({
+      storage,
+      storageSet: async values => {
+        const isImportCommit = Object.prototype.hasOwnProperty.call(values, 'config') &&
+          Object.prototype.hasOwnProperty.call(values, 'whitelist') &&
+          Object.prototype.hasOwnProperty.call(values, 'fprWhitelist');
+        if (isImportCommit) {
+          markImportCommitStarted();
+          await importCommitGate;
+        }
+        Object.assign(storage, cloneStorageValue(values));
+      }
+    });
+
+    const importResult = sandbox.handleConfigImport({ settings: makeSettingsImportPayload() });
+    await importCommitStarted;
+
+    const mainAdd = sandbox.handleWhitelistAdd({ domain: 'after-import.example' });
+    const fprAdd = sandbox.handleFprWhitelistAdd({ domain: 'login.after-import.example' });
+    await new Promise(resolve => setImmediate(resolve));
+    releaseImportCommit();
+
+    const [imported] = await Promise.all([importResult, mainAdd, fprAdd]);
+
+    assert.strictEqual(imported.ok, true);
+    assert.deepStrictEqual(plain(storage.whitelist), ['imported.example', 'after-import.example']);
+    assert.deepStrictEqual(plain(storage.fprWhitelist), [
+      'login.imported.example',
+      'login.after-import.example'
+    ]);
   });
 
   await t.test('rapid config toggles are stored and reconciled in request order', async () => {

@@ -87,13 +87,6 @@ const SETTINGS_IMPORT_SNAPSHOT_KEYS = Object.freeze([
   ...SETTINGS_IMPORT_COMMIT_KEYS
 ]);
 const zapperSessions = new Map();
-let whitelistMutationTail = Promise.resolve();
-
-function serializeWhitelistMutation(task) {
-  const run = whitelistMutationTail.then(task);
-  whitelistMutationTail = run.catch(() => {});
-  return run;
-}
 
 function isValidHostname(host) {
   if (typeof host !== 'string' || host.length < 1 || host.length > 253) return false;
@@ -522,7 +515,7 @@ async function handleWhitelistGet() {
 }
 
 function handleWhitelistAdd(msg) {
-  return serializeWhitelistMutation(async () => {
+  return serializeConfigMutation(async () => {
     const { whitelist = [] } = await chrome.storage.local.get('whitelist');
     const domain = normalizeDomain(msg.domain);
     const valid = domain && !whitelist.includes(domain);
@@ -927,7 +920,7 @@ async function performConfigImport(msg) {
 }
 
 function handleWhitelistRemove(msg) {
-  return serializeWhitelistMutation(async () => {
+  return serializeConfigMutation(async () => {
     const { whitelist = [] } = await chrome.storage.local.get('whitelist');
     const domain = normalizeDomain(msg.domain);
     const next = domain ? whitelist.filter(d => d !== domain) : whitelist;
@@ -950,26 +943,29 @@ async function handleFprWhitelistGet() {
   return { fprWhitelist };
 }
 
-async function handleFprWhitelistAdd(msg) {
-  const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
-  const domain = normalizeDomain(msg.domain);
-  const valid = domain && !fprWhitelist.includes(domain);
+function handleFprWhitelistAdd(msg) {
+  return serializeConfigMutation(async () => {
+    const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
+    const domain = normalizeDomain(msg.domain);
+    const valid = domain && !fprWhitelist.includes(domain);
 
-  if (valid) {
-    fprWhitelist.push(domain);
-    await chrome.storage.local.set({ fprWhitelist });
-  }
-  return { ok: true };
+    if (valid) {
+      await chrome.storage.local.set({ fprWhitelist: [...fprWhitelist, domain] });
+    }
+    return { ok: true };
+  });
 }
 
-async function handleFprWhitelistRemove(msg) {
-  const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
-  const domain = normalizeDomain(msg.domain);
-  const next = domain ? fprWhitelist.filter(d => d !== domain) : fprWhitelist;
-  if (next.length !== fprWhitelist.length) {
-    await chrome.storage.local.set({ fprWhitelist: next });
-  }
-  return { ok: true };
+function handleFprWhitelistRemove(msg) {
+  return serializeConfigMutation(async () => {
+    const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
+    const domain = normalizeDomain(msg.domain);
+    const next = domain ? fprWhitelist.filter(d => d !== domain) : fprWhitelist;
+    if (next.length !== fprWhitelist.length) {
+      await chrome.storage.local.set({ fprWhitelist: next });
+    }
+    return { ok: true };
+  });
 }
 
 // LOCAL ELEMENT ZAPPER

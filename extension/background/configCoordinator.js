@@ -1,5 +1,7 @@
 /**
- * Serializes every read/modify/write mutation of the shared config object.
+ * Serializes mutations of config and other settings replaced by a full import.
+ * Callers that touch the same storage keys must share this queue so imports
+ * cannot interleave with their read/modify/write cycles.
  */
 
 'use strict';
