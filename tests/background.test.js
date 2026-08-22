@@ -6,6 +6,8 @@ const vm = require('vm');
 
 const backgroundJsCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'background.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
+const manifestStaticRulesetIds = manifest.declarative_net_request.rule_resources
+  .map(resource => resource.id);
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
@@ -72,6 +74,7 @@ test('getDefaultDynamicRules', async (t) => {
       onChanged: { addListener: () => {} }
     },
     declarativeNetRequest: {
+      getEnabledRulesets: () => Promise.resolve(manifestStaticRulesetIds),
       getDynamicRules: () => Promise.resolve([]),
       updateDynamicRules: () => Promise.resolve(),
       updateEnabledRulesets: () => Promise.resolve(),
@@ -392,6 +395,7 @@ test('syncDynamicRules successful syncing', async (t) => {
       onChanged: { addListener: () => {} }
     },
     declarativeNetRequest: {
+      getEnabledRulesets: async () => manifestStaticRulesetIds,
       getDynamicRules: async () => {
         getDynamicRulesCalled = true;
         return mockExistingRules;
@@ -619,6 +623,7 @@ test('syncDynamicRules error handling', async (t) => {
       onChanged: { addListener: () => {} }
     },
     declarativeNetRequest: {
+      getEnabledRulesets: () => Promise.resolve(manifestStaticRulesetIds),
       getDynamicRules: () => Promise.resolve([]),
       updateDynamicRules: () => Promise.reject(new Error('Simulated update error')),
       updateEnabledRulesets: () => Promise.resolve(),

@@ -73,7 +73,10 @@ function conditionMatchesRequest(condition, request) {
 function loadDnrState({
   storage = {},
   existingRules = [],
+  existingEnabledRulesets = staticRulesetIds,
+  beforeGetDynamicRules,
   beforeDynamicUpdate,
+  beforeEnabledRulesetsUpdate,
   regexSupport = async () => ({ isSupported: true }),
   maxRegexRules = 1000,
   onClearHealthDiagnostic,
@@ -81,9 +84,13 @@ function loadDnrState({
   onBudgetAllocate
 } = {}) {
   let dynamicRules = plain(existingRules);
+  let enabledRulesets = new Set(existingEnabledRulesets);
   const clearedHealthDiagnostics = [];
   const recordedHealthDiagnostics = [];
+  const getDynamicRulesCalls = [];
   const updateDynamicRulesCalls = [];
+  const getEnabledRulesetsCalls = [];
+  const updateEnabledRulesetsAttempts = [];
   const updateEnabledRulesetsCalls = [];
   const chrome = {
     runtime: {
@@ -106,7 +113,12 @@ function loadDnrState({
     declarativeNetRequest: {
       MAX_NUMBER_OF_REGEX_RULES: maxRegexRules,
       ...(typeof regexSupport === 'function' ? { isRegexSupported: regexSupport } : {}),
-      getDynamicRules: async () => plain(dynamicRules),
+      getDynamicRules: async () => {
+        const callIndex = getDynamicRulesCalls.length;
+        getDynamicRulesCalls.push({});
+        if (beforeGetDynamicRules) await beforeGetDynamicRules(callIndex);
+        return plain(dynamicRules);
+      },
       updateDynamicRules: async (args) => {
         if (beforeDynamicUpdate) await beforeDynamicUpdate(args, updateDynamicRulesCalls.length);
         updateDynamicRulesCalls.push(plain(args));
@@ -114,8 +126,19 @@ function loadDnrState({
         dynamicRules = dynamicRules.filter(rule => !remove.has(rule.id));
         dynamicRules.push(...plain(args.addRules || []));
       },
+      getEnabledRulesets: async () => {
+        getEnabledRulesetsCalls.push({});
+        return [...enabledRulesets];
+      },
       updateEnabledRulesets: async (args) => {
+        const callIndex = updateEnabledRulesetsAttempts.length;
+        updateEnabledRulesetsAttempts.push(plain(args));
+        if (beforeEnabledRulesetsUpdate) {
+          await beforeEnabledRulesetsUpdate(args, callIndex);
+        }
         updateEnabledRulesetsCalls.push(plain(args));
+        for (const id of args.disableRulesetIds || []) enabledRulesets.delete(id);
+        for (const id of args.enableRulesetIds || []) enabledRulesets.add(id);
       }
     }
   };
@@ -157,7 +180,11 @@ function loadDnrState({
     clearedHealthDiagnostics,
     recordedHealthDiagnostics,
     getDynamicRules: () => plain(dynamicRules),
+    getEnabledRulesets: () => [...enabledRulesets],
+    getDynamicRulesCalls,
     updateDynamicRulesCalls,
+    getEnabledRulesetsCalls,
+    updateEnabledRulesetsAttempts,
     updateEnabledRulesetsCalls
   };
 }
@@ -529,6 +556,7 @@ test('Network DNR reconciliation', async (t) => {
     };
     const dnr = loadDnrState({
       storage,
+      existingEnabledRulesets: [],
       maxRegexRules: 2,
       beforeDynamicUpdate: async () => {
         commitAttempts++;
@@ -551,6 +579,7 @@ test('Network DNR reconciliation', async (t) => {
     assert.deepStrictEqual(storage.regexQuotaTrimmedRulesPerSub, { 'quota-list': 0 });
     assert.strictEqual(storage.subscriptionNetworkRuntime.perSub['quota-list'].eligibleNetworkRuleCount, 2);
     assert.strictEqual(storage.subscriptionNetworkRuntime.perSub['quota-list'].appliedNetworkRuleCount, 2);
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), staticRulesetIds);
   });
 
   await t.test('post-commit diagnostic clear failure cannot trigger tracking cleanup fallback', async () => {
@@ -560,6 +589,7 @@ test('Network DNR reconciliation', async (t) => {
     };
     const dnr = loadDnrState({
       storage,
+      existingEnabledRulesets: [],
       beforeDynamicUpdate: async () => { commitAttempts++; },
       onClearHealthDiagnostic: async id => {
         if (id === 'trackingUrlCleanupSync') {
@@ -573,6 +603,7 @@ test('Network DNR reconciliation', async (t) => {
     assert.strictEqual(result.ok, true);
     assert.strictEqual(commitAttempts, 1);
     assert.strictEqual(dnr.getDynamicRules().some(rule => rule.id === 2000), true);
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), staticRulesetIds);
     assert.strictEqual(storage.subscriptionNetworkRuntime.protectionActive, true);
   });
 
@@ -650,6 +681,224 @@ test('Network DNR reconciliation', async (t) => {
       /Browser regex compatibility check failed: simulated compiler failure/
     );
     assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+  });
+
+  await t.test('off-to-on dynamic failure restores the prior static and dynamic image', async () => {
+    const priorRules = [
+      { id: 100000, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||prior.example^' } }
+    ];
+    const dnr = loadDnrState({
+      storage: {
+        config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+        subscriptions: [{ id: 'cached', enabled: true }],
+        sub_network_rules: { cached: [subscriptionRule(4)] }
+      },
+      existingRules: priorRules,
+      existingEnabledRulesets: [],
+      beforeDynamicUpdate: async () => {
+        throw new Error('simulated dynamic activation failure');
+      }
+    });
+
+    await assert.rejects(
+      dnr.updateDNRState(),
+      /simulated dynamic activation failure/
+    );
+
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), []);
+    assert.deepStrictEqual(dnr.getDynamicRules(), priorRules);
+    assert.strictEqual(dnr.updateEnabledRulesetsCalls.length, 2);
+    assert.ok(dnr.clearedHealthDiagnostics.includes('dnrStaticCompensation'));
+  });
+
+  await t.test('on-to-off dynamic removal failure restores the prior static and dynamic image', async () => {
+    const priorRules = [
+      { id: 1000, priority: 4, action: { type: 'allow' }, condition: { urlFilter: '||prior.example^' } }
+    ];
+    const dnr = loadDnrState({
+      storage: { config: { enabled: true, networkBlocking: false } },
+      existingRules: priorRules,
+      existingEnabledRulesets: staticRulesetIds,
+      beforeDynamicUpdate: async () => {
+        throw new Error('simulated dynamic removal failure');
+      }
+    });
+
+    await assert.rejects(
+      dnr.updateDNRState(),
+      /simulated dynamic removal failure/
+    );
+
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), staticRulesetIds);
+    assert.deepStrictEqual(dnr.getDynamicRules(), priorRules);
+    assert.strictEqual(dnr.updateEnabledRulesetsCalls.length, 2);
+    assert.ok(dnr.clearedHealthDiagnostics.includes('dnrStaticCompensation'));
+  });
+
+  await t.test('dynamic snapshot failure leaves both DNR APIs untouched', async () => {
+    const priorRules = [
+      { id: 100000, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||prior.example^' } }
+    ];
+    const dnr = loadDnrState({
+      storage: { config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false } },
+      existingRules: priorRules,
+      existingEnabledRulesets: [],
+      beforeGetDynamicRules: async () => {
+        throw new Error('simulated dynamic snapshot failure');
+      }
+    });
+
+    await assert.rejects(
+      dnr.updateDNRState(),
+      /simulated dynamic snapshot failure/
+    );
+
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), []);
+    assert.deepStrictEqual(dnr.getDynamicRules(), priorRules);
+    assert.strictEqual(dnr.updateEnabledRulesetsCalls.length, 0);
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+  });
+
+  await t.test('static update failure leaves the prior dynamic image untouched', async () => {
+    const priorRules = [
+      { id: 1000, priority: 4, action: { type: 'allow' }, condition: { urlFilter: '||prior.example^' } }
+    ];
+    const dnr = loadDnrState({
+      storage: { config: { enabled: true, networkBlocking: false } },
+      existingRules: priorRules,
+      existingEnabledRulesets: staticRulesetIds,
+      beforeEnabledRulesetsUpdate: async () => {
+        throw new Error('simulated static update failure');
+      }
+    });
+
+    await assert.rejects(
+      dnr.updateDNRState(),
+      /simulated static update failure/
+    );
+
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), staticRulesetIds);
+    assert.deepStrictEqual(dnr.getDynamicRules(), priorRules);
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+  });
+
+  await t.test('compensation failure is diagnosed without hiding the dynamic-stage error', async () => {
+    const priorRules = [
+      { id: 100000, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||prior.example^' } }
+    ];
+    const dnr = loadDnrState({
+      storage: { config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false } },
+      existingRules: priorRules,
+      existingEnabledRulesets: [],
+      beforeDynamicUpdate: async () => {
+        throw new Error('original dynamic-stage failure');
+      },
+      beforeEnabledRulesetsUpdate: async (_args, callIndex) => {
+        if (callIndex === 1) throw new Error('simulated static compensation failure');
+      }
+    });
+
+    await assert.rejects(
+      dnr.updateDNRState(),
+      /original dynamic-stage failure/
+    );
+
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), staticRulesetIds);
+    assert.deepStrictEqual(dnr.getDynamicRules(), priorRules);
+    assert.strictEqual(dnr.updateEnabledRulesetsAttempts.length, 2);
+    const compensationDiagnostic = dnr.recordedHealthDiagnostics.find(
+      diagnostic => diagnostic.id === 'dnrStaticCompensation'
+    );
+    assert.ok(compensationDiagnostic);
+    assert.match(
+      String(compensationDiagnostic.entry.error),
+      /simulated static compensation failure/
+    );
+  });
+
+  await t.test('a failed tracking-cleanup fallback restores the exact partial static preimage', async () => {
+    const priorEnabledRulesets = [staticRulesetIds[1], staticRulesetIds[7]];
+    const priorRules = [
+      { id: 1000, priority: 4, action: { type: 'allow' }, condition: { urlFilter: '||prior.example^' } }
+    ];
+    let dynamicAttempts = 0;
+    const dnr = loadDnrState({
+      storage: { config: { enabled: true, networkBlocking: true, trackingUrlCleanup: true } },
+      existingRules: priorRules,
+      existingEnabledRulesets: priorEnabledRulesets,
+      beforeDynamicUpdate: async () => {
+        dynamicAttempts++;
+        throw new Error(dynamicAttempts === 1
+          ? 'tracking cleanup rejected'
+          : 'fallback dynamic commit failed');
+      }
+    });
+
+    await assert.rejects(
+      dnr.updateDNRState(),
+      /fallback dynamic commit failed/
+    );
+
+    assert.strictEqual(dynamicAttempts, 2);
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), priorEnabledRulesets);
+    assert.deepStrictEqual(dnr.getDynamicRules(), priorRules);
+  });
+
+  await t.test('a retry after compensated activation failure converges to the requested image', async () => {
+    let dynamicAttempts = 0;
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
+      subscriptions: [{ id: 'cached', enabled: true }],
+      sub_network_rules: { cached: [subscriptionRule(9)] }
+    };
+    const dnr = loadDnrState({
+      storage,
+      existingEnabledRulesets: [],
+      beforeDynamicUpdate: async () => {
+        dynamicAttempts++;
+        if (dynamicAttempts === 1) throw new Error('one-shot dynamic failure');
+      }
+    });
+
+    await assert.rejects(dnr.updateDNRState(), /one-shot dynamic failure/);
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), []);
+    assert.deepStrictEqual(dnr.getDynamicRules(), []);
+
+    const result = await dnr.updateDNRState();
+
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), staticRulesetIds);
+    assert.strictEqual(
+      dnr.getDynamicRules().some(rule => rule.condition?.urlFilter === '||subscription-00009.example^'),
+      true
+    );
+    assert.ok(dnr.clearedHealthDiagnostics.includes('dnrStaticCompensation'));
+  });
+
+  await t.test('a generation superseded during the static commit restores its preimage', async () => {
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false }
+    };
+    let queuedDisable = null;
+    let dnr;
+    dnr = loadDnrState({
+      storage,
+      existingEnabledRulesets: [],
+      beforeEnabledRulesetsUpdate: async (_args, callIndex) => {
+        if (callIndex !== 0) return;
+        storage.config.networkBlocking = false;
+        queuedDisable = dnr.updateDNRState();
+      }
+    });
+
+    const staleResult = await dnr.reconcileNetworkDnr('superseded-activation');
+    await queuedDisable;
+
+    assert.strictEqual(staleResult.stale, true);
+    assert.deepStrictEqual(dnr.getEnabledRulesets(), []);
+    assert.deepStrictEqual(dnr.getDynamicRules(), []);
+    assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+    assert.strictEqual(dnr.updateEnabledRulesetsCalls.length, 2);
   });
 
   await t.test('inactive protection disables static rules and removes every dynamic rule', async () => {
