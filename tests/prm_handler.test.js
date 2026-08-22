@@ -139,6 +139,33 @@ function createMockQuerySelector(baseSelection = {}, container = null) {
 
 const primeJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'prm_handler.js'), 'utf8');
 const messagingJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'messaging.js'), 'utf8');
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'extension', 'manifest.json'), 'utf8'));
+
+test('Prime accelerator stays dormant while the YouTube media path remains registered', () => {
+  const entries = manifest.content_scripts || [];
+  const protectionIndex = entries.findIndex(entry => entry.js?.includes('content/protection.js'));
+  const interceptorIndex = entries.findIndex(entry => entry.js?.includes('content/interceptor.js'));
+  const youtubeIndex = entries.findIndex(entry => entry.js?.includes('content/yt_handler.js'));
+  const primeIndex = entries.findIndex(entry => entry.js?.includes('content/prm_handler.js'));
+  const youtubeMatch = '*://*.youtube.com/*';
+  const explicitPrimeBridgeMatches = [protectionIndex, interceptorIndex]
+    .flatMap(index => entries[index]?.matches || [])
+    .filter(match => /amazon|primevideo/i.test(match));
+
+  assert.strictEqual(primeIndex, -1, 'the dormant Prime handler must not be injected');
+  assert.deepStrictEqual(explicitPrimeBridgeMatches, [], 'Prime hosts must not receive the dormant media bridge');
+  assert.ok(protectionIndex > -1, 'YouTube must retain the isolated-world config relay');
+  assert.ok(interceptorIndex > protectionIndex, 'YouTube MAIN bridge must follow its config relay');
+  assert.ok(youtubeIndex > interceptorIndex, 'YouTube handler must follow its MAIN bridge');
+
+  for (const index of [protectionIndex, interceptorIndex, youtubeIndex]) {
+    assert.ok(entries[index].matches.includes(youtubeMatch), `${entries[index].js.join(', ')} must match YouTube`);
+  }
+  assert.strictEqual(entries[interceptorIndex].world, 'MAIN');
+  assert.strictEqual(entries[youtubeIndex].world, 'MAIN');
+  assert.strictEqual(entries[youtubeIndex].run_at, 'document_start');
+  assert.strictEqual(entries[youtubeIndex].all_frames, true);
+});
 
 // ─── AMAZON PRIME VIDEO AD ACCELERATION ─────
 test('Amazon Prime Video ad acceleration', async (t) => {

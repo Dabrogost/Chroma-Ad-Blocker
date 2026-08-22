@@ -40,15 +40,6 @@
     {
       "matches": [
         "*://*.youtube.com/*",
-        "*://*.amazon.com/*",
-        "*://*.amazon.de/*",
-        "*://*.amazon.co.uk/*",
-        "*://*.amazon.co.jp/*",
-        "*://*.amazon.ca/*",
-        "*://*.amazon.fr/*",
-        "*://*.amazon.it/*",
-        "*://*.amazon.es/*",
-        "*://*.primevideo.com/*",
         "*://*.bellyfull.net/*",
         "*://*.allrecipes.com/*",
         "*://*.foodnetwork.com/*",
@@ -82,15 +73,6 @@
     {
       "matches": [
         "*://*.youtube.com/*",
-        "*://*.amazon.com/*",
-        "*://*.amazon.de/*",
-        "*://*.amazon.co.uk/*",
-        "*://*.amazon.co.jp/*",
-        "*://*.amazon.ca/*",
-        "*://*.amazon.fr/*",
-        "*://*.amazon.it/*",
-        "*://*.amazon.es/*",
-        "*://*.primevideo.com/*",
         "*://*.bellyfull.net/*",
         "*://*.allrecipes.com/*",
         "*://*.foodnetwork.com/*",
@@ -127,25 +109,6 @@
       ],
       "js": [
         "content/yt_handler.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN",
-      "all_frames": true
-    },
-    {
-      "matches": [
-        "*://*.amazon.com/*",
-        "*://*.amazon.de/*",
-        "*://*.amazon.co.uk/*",
-        "*://*.amazon.co.jp/*",
-        "*://*.amazon.ca/*",
-        "*://*.amazon.fr/*",
-        "*://*.amazon.it/*",
-        "*://*.amazon.es/*",
-        "*://*.primevideo.com/*"
-      ],
-      "js": [
-        "content/prm_handler.js"
       ],
       "run_at": "document_start",
       "world": "MAIN",

@@ -40,7 +40,7 @@ Chroma is designed to reduce common web tracking, advertising, and clutter at se
 - Browser-engine DNR blocking for supported static, dynamic, subscription, cleanup, and whitelist rules.
 - Local cosmetic cleanup for ad containers, placeholders, warning overlays, and user-created zapper rules.
 - Supported scriptlet behavior from Chroma's bundled scriptlet library, registered through Chrome's `userScripts` API.
-- Platform-specific YouTube and Prime Video handling where client-side interception still works.
+- Platform-specific YouTube handling where client-side interception still works. The dormant Prime Video accelerator is not registered in the manifest.
 - Chroma-owned telemetry collection, because Chroma does not operate telemetry or analytics servers.
 - Page tampering with Chroma's own MAIN-world session state, to the extent possible with early API capture, closure state, and nonce-based setup.
 - Unbounded subscription rule registration by allocating and trimming dynamic DNR rules instead of blindly registering every parsed rule.

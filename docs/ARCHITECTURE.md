@@ -28,11 +28,11 @@ graph TD
     LOAD --> CONTENT["content.js<br/>all URLs, isolated world"]:::ext
     CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
 
-    LOAD --> BRIDGEHOST{"YouTube, Amazon/Prime,<br/>or supported recipe host?"}:::actor
+    LOAD --> BRIDGEHOST{"YouTube or supported<br/>recipe host?"}:::actor
     BRIDGEHOST -->|"yes"| PROTECTION["protection.js<br/>isolated-world config authority"]:::ext
     PROTECTION -->|"authenticated MessagePort"| INTERCEPTOR["interceptor.js<br/>MAIN-world validated snapshot"]:::main
-    INTERCEPTOR --> MEDIA{"Media platform?"}:::actor
-    MEDIA -->|"yes"| HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
+    INTERCEPTOR --> MEDIA{"YouTube?"}:::actor
+    MEDIA -->|"yes"| HANDLERS["yt_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
     HANDLERS --> PAGE
 
     INTERCEPTOR --> RECIPES{"Supported recipe/blog host?"}:::actor
@@ -167,9 +167,11 @@ It implements:
 
 Recipe behavior loads inert and activates only after the trusted bridge reports master protection active and the current site not whitelisted. A disable or whitelist change in an already-open tab disconnects observers, cancels scheduled sweeps, removes Chroma-owned styles, restores Chroma-hidden inline styles when still unchanged, and deactivates API patches. API properties are restored only while Chroma's wrapper still owns the slot, so later page-owned replacements are preserved. Re-enabling does not accumulate wrappers, observers, or stylesheets.
 
-### Layer 7: Dynamic Ad Acceleration (prm_handler.js, yt_handler.js)
+### Layer 7: Dynamic Ad Acceleration (yt_handler.js)
 
-Dynamic Ad Acceleration is an optional fallback and specialized layer for Amazon Prime Video and YouTube. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition. On YouTube it may run alongside stripping and handle ads that still reach playback; it is not conditional on stripping being disabled. Prime Video uses the acceleration path without YouTube JSON stripping.
+Dynamic Ad Acceleration is an optional YouTube fallback. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition. It may run alongside stripping and handle ads that still reach playback; it is not conditional on stripping being disabled.
+
+The Amazon Prime Video implementation (`prm_handler.js`) remains in the source tree and retains unit coverage, but it is temporarily dormant. The manifest does not register that handler or its supporting media bridge on Amazon or Prime Video pages.
 
 Twitch uses server-side ad insertion and does not support this acceleration path.
 

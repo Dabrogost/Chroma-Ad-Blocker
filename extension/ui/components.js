@@ -267,8 +267,8 @@ const ChromaComponents = (() => {
         })}
         ${renderToggleRow({
           inputId: 'toggleAcceleration',
-          name: 'Ad Acceleration',
-          desc: 'Mute + accelerate ads; changes anti-detection network behavior'
+          name: 'YouTube Ad Acceleration',
+          desc: 'Mute + accelerate detected YouTube ads; changes anti-detection network behavior'
         })}
         <div class="toggle-row speed-selector-row" id="speedSelectorRow">
           <div class="toggle-info">

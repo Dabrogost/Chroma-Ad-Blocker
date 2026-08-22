@@ -120,8 +120,7 @@
 <h2 id="main-world-interception-cost" tabindex="-1">MAIN-World Interception Cost</h2>
 <p>MAIN-world code is reserved for cases where isolated content scripts are not enough:</p>
 <ul>
-<li>YouTube payload stripping.</li>
-<li>Prime Video acceleration fallback.</li>
+<li>YouTube payload stripping and optional acceleration fallback.</li>
 <li>Recipe/blog anti-adblock containment.</li>
 <li>Supported subscription scriptlets.</li>
 <li>User-provided scriptlet resources.</li>
@@ -235,7 +234,7 @@
 <p>Some surfaces are naturally heavier because the page or feature changes constantly:</p>
 <ul>
 <li><strong>YouTube</strong>: Large feed DOMs, Shorts, payload interception, player state, and frequent platform changes.</li>
-<li><strong>Prime Video</strong>: Media handling and acceleration fallback require page-context observation when enabled.</li>
+<li><strong>Prime Video</strong>: The page-context acceleration handler is temporarily disabled; network blocking and configured proxy routing remain separate.</li>
 <li><strong>Twitch</strong>: Live chat and streaming pages can produce heavy DOM churn; server-side ad insertion limits what client-side handling can do.</li>
 <li><strong>Large subscription sets</strong>: More parsing work, storage use, DNR allocation, cosmetic selector volume, and scriptlet registration.</li>
 <li><strong>Global proxy routing</strong>: Adds proxy path latency to broad browser traffic and can make slow proxy providers look like extension overhead.</li>

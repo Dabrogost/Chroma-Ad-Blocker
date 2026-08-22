@@ -69,10 +69,10 @@ graph TD
     LOAD --> CONTENT["content.js<br/>all URLs, isolated world"]:::ext
     CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
 
-    LOAD --> MEDIA{"YouTube or Amazon/Prime?"}:::actor
+    LOAD --> MEDIA{"YouTube?"}:::actor
     MEDIA -->|"yes"| PROTECTION["protection.js<br/>isolated-world config relay"]:::ext
     PROTECTION --> BRIDGE["interceptor.js<br/>MAIN-world config bridge"]:::main
-    BRIDGE --> HANDLERS["yt_handler.js / prm_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
+    BRIDGE --> HANDLERS["yt_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
     HANDLERS --> PAGE
 
     LOAD --> SCRIPTLETS["Registered scriptlets / optional FPR<br/>MAIN world, matched by rule"]:::main
@@ -82,6 +82,8 @@ graph TD
 
     PAGE --> USER
 ```
+
+The Amazon Prime Video accelerator is temporarily disabled. Its implementation remains in the source tree for future rehabilitation, but it and its supporting media bridge are not registered on Amazon or Prime Video pages.
 
 For user-facing behavior and lower-overhead configuration choices, see the [Feature Guide](docs/FEATURES.md) and [Performance Guide](docs/PERFORMANCE.md).
 

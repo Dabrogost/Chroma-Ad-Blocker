@@ -114,9 +114,9 @@ Recipe behavior waits for authenticated configuration and remains inert while ma
 
 ## Dynamic Ad Acceleration
 
-Dynamic Ad Acceleration automatically identifies and accelerates video ads at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) on YouTube and Amazon Prime Video. It is a fallback for cases where stripping is disabled or platform behavior changes.
+Dynamic Ad Acceleration identifies and accelerates YouTube video ads at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`). It is a fallback for cases where stripping is disabled or platform behavior changes.
 
-It ships off by default. Twitch uses server-side ad insertion and does not support this acceleration path.
+It ships off by default. The Amazon Prime Video accelerator is temporarily disabled while its implementation is brought up to the extension's current quality bar. Twitch uses server-side ad insertion and does not support this acceleration path.
 
 For platform-specific behavior, see [YouTube Protection](YOUTUBE.md).
 
