@@ -1228,49 +1228,12 @@ async function handleUpdatePackageInspect(msg) {
 // ─── REGISTRATION ─────
 
 export function registerAll(router) {
-  // Sensitive types are rejected when sent from outside the extension origin.
-  router.markSensitive(MSG.CONFIG_GET);
-  router.markSensitive(MSG.CONFIG_SET);
-  router.markSensitive(MSG.CONFIG_EXPORT);
-  router.markSensitive(MSG.CONFIG_IMPORT);
-  router.markSensitive(MSG.STATS_GET);
-  router.markSensitive(MSG.STATS_EVENT_BATCH);
-  router.markSensitive(MSG.STATS_RESET);
-  router.markSensitive(MSG.STATS_EXPORT);
-  router.markSensitive(MSG.STATS_SETTINGS_SET);
-  router.markSensitive(MSG.LOG_GET);
-  router.markSensitive(MSG.HEALTH_GET);
-  router.markSensitive(MSG.UPDATE_PACKAGE_INSPECT);
-  router.markSensitive(MSG.WHITELIST_GET);
-  router.markSensitive(MSG.WHITELIST_ADD);
-  router.markSensitive(MSG.WHITELIST_REMOVE);
-  router.markSensitive(MSG.FPR_WHITELIST_GET);
-  router.markSensitive(MSG.FPR_WHITELIST_ADD);
-  router.markSensitive(MSG.FPR_WHITELIST_REMOVE);
-  router.markSensitive(MSG.PROXY_CONFIG_GET);
-  router.markSensitive(MSG.PROXY_CONFIG_SET);
-  router.markSensitive(MSG.PROXY_TEST);
-  router.markSensitive(MSG.ZAPPER_START);
-  router.markSensitive(MSG.ZAPPER_RULES_GET);
-  router.markSensitive(MSG.ZAPPER_RULE_REMOVE);
-  router.markSensitive(MSG.ZAPPER_RULE_SET);
-  router.markSensitive(MSG.SUBSCRIPTION_GET);
-  router.markSensitive(MSG.SUBSCRIPTION_SET);
-  router.markSensitive(MSG.SUBSCRIPTION_REFRESH);
-  router.markSensitive(MSG.SUBSCRIPTION_ADD);
-  router.markSensitive(MSG.SUBSCRIPTION_REMOVE);
-  router.markSensitive(MSG.USER_SCRIPTLETS_GET);
-  router.markSensitive(MSG.USER_SCRIPTLET_SOURCE_ADD);
-  router.markSensitive(MSG.USER_SCRIPTLET_SOURCE_REFRESH);
-  router.markSensitive(MSG.USER_SCRIPTLET_SOURCE_REMOVE);
-  router.markSensitive(MSG.USER_SCRIPTLET_RULES_SET);
-
   router.registerHandler(MSG.CONFIG_GET,           handleConfigGet);
   router.registerHandler(MSG.CONFIG_SET,           handleConfigSet);
   router.registerHandler(MSG.CONFIG_EXPORT,        handleConfigExport);
   router.registerHandler(MSG.CONFIG_IMPORT,        handleConfigImport);
   router.registerHandler(MSG.STATS_GET,            handleStatsGet);
-  router.registerHandler(MSG.STATS_EVENT_BATCH,    handleStatsEventBatch);
+  router.registerHandler(MSG.STATS_EVENT_BATCH,    handleStatsEventBatch, { allowContentScripts: true });
   router.registerHandler(MSG.WHITELIST_GET,        handleWhitelistGet);
   router.registerHandler(MSG.WHITELIST_ADD,        handleWhitelistAdd);
   router.registerHandler(MSG.WHITELIST_REMOVE,     handleWhitelistRemove);
@@ -1281,7 +1244,7 @@ export function registerAll(router) {
   router.registerHandler(MSG.PROXY_CONFIG_SET,     handleProxyConfigSet);
   router.registerHandler(MSG.PROXY_TEST,           handleProxyTest);
   router.registerHandler(MSG.ZAPPER_START,         handleZapperStart);
-  router.registerHandler(MSG.ZAPPER_SAVE_RULE,     handleZapperSaveRule);
+  router.registerHandler(MSG.ZAPPER_SAVE_RULE,     handleZapperSaveRule, { allowContentScripts: true });
   router.registerHandler(MSG.ZAPPER_RULES_GET,     handleZapperRulesGet);
   router.registerHandler(MSG.ZAPPER_RULE_REMOVE,   handleZapperRuleRemove);
   router.registerHandler(MSG.ZAPPER_RULE_SET,      handleZapperRuleSet);

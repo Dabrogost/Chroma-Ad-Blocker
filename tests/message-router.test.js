@@ -6,8 +6,6 @@ const vm = require('vm');
 
 function loadRouter() {
   const source = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'messageRouter.js'), 'utf8')
-    .replace(/import\s+\{\s*MSG\s*\}\s+from\s+['"]\.\/messageTypes\.js['"];?/,
-      "const MSG = { STATS_EVENT_BATCH: 'STATS_EVENT_BATCH' };")
     .replace(/export\s+function\s+/g, 'function ');
 
   let listener = null;
@@ -31,7 +29,7 @@ function loadRouter() {
   sandbox.globalThis = sandbox;
 
   vm.createContext(sandbox);
-  vm.runInContext(`${source}\nglobalThis.__router = { registerHandler, markSensitive, attachListener };`, sandbox);
+  vm.runInContext(`${source}\nglobalThis.__router = { registerHandler, attachListener };`, sandbox);
   sandbox.__router.attachListener();
   sandbox.__listener = listener;
   return sandbox;
@@ -45,37 +43,110 @@ async function dispatch(sandbox, msg, sender) {
   return JSON.parse(JSON.stringify(response));
 }
 
-test('message router returns structured errors for unauthorized and unknown messages', async () => {
+test('message router defaults registered handlers to extension-page callers', async () => {
   const sandbox = loadRouter();
-  sandbox.__router.markSensitive('PRIVATE_GET');
-  sandbox.__router.registerHandler('PRIVATE_GET', async () => ({ ok: true }));
+  let calls = 0;
+  sandbox.__router.registerHandler('PRIVATE_GET', async () => {
+    calls++;
+    return { ok: true };
+  });
 
   assert.deepStrictEqual(
-    await dispatch(sandbox, { type: 'PRIVATE_GET' }, { id: 'ext-id', url: 'https://example.com/content.js' }),
+    await dispatch(sandbox, { type: 'PRIVATE_GET' }, {
+      id: 'ext-id',
+      origin: 'https://example.com',
+      url: 'https://example.com/content.js',
+      tab: { id: 1 }
+    }),
     { ok: false, code: 'unauthorized', error: 'Unauthorized message sender' }
   );
+  assert.strictEqual(calls, 0);
 
   assert.deepStrictEqual(
-    await dispatch(sandbox, { type: 'NO_SUCH_MESSAGE' }, { origin: 'chrome-extension://ext-id' }),
+    await dispatch(sandbox, { type: 'PRIVATE_GET' }, { id: 'ext-id', origin: 'chrome-extension://ext-id' }),
+    { ok: true }
+  );
+  assert.strictEqual(calls, 1);
+
+  assert.deepStrictEqual(
+    await dispatch(sandbox, { type: 'NO_SUCH_MESSAGE' }, { id: 'ext-id', origin: 'chrome-extension://ext-id' }),
     { ok: false, code: 'unknown_message', error: 'Unknown message type' }
   );
 });
 
-test('message router allows extension pages and own content stats batches', async () => {
+test('message router allows own content scripts only through explicit registration policy', async () => {
   const sandbox = loadRouter();
-  sandbox.__router.markSensitive('PRIVATE_GET');
-  sandbox.__router.markSensitive('STATS_EVENT_BATCH');
-  sandbox.__router.registerHandler('PRIVATE_GET', async () => ({ ok: true, value: 1 }));
-  sandbox.__router.registerHandler('STATS_EVENT_BATCH', async () => ({ ok: true, accepted: 1 }));
-
-  assert.deepStrictEqual(
-    await dispatch(sandbox, { type: 'PRIVATE_GET' }, { origin: 'chrome-extension://ext-id' }),
-    { ok: true, value: 1 }
+  sandbox.__router.registerHandler(
+    'CONTENT_ALLOWED',
+    async () => ({ ok: true, accepted: 1 }),
+    { allowContentScripts: true }
   );
 
   assert.deepStrictEqual(
-    await dispatch(sandbox, { type: 'STATS_EVENT_BATCH' }, { id: 'ext-id', url: 'https://example.com/content.js' }),
+    await dispatch(sandbox, { type: 'CONTENT_ALLOWED' }, {
+      id: 'ext-id',
+      url: 'https://example.com/content.js',
+      tab: { id: 1 }
+    }),
     { ok: true, accepted: 1 }
+  );
+
+  assert.deepStrictEqual(
+    await dispatch(sandbox, { type: 'CONTENT_ALLOWED' }, {
+      id: 'other-extension',
+      url: 'https://example.com/content.js',
+      tab: { id: 1 }
+    }),
+    { ok: false, code: 'unauthorized', error: 'Unauthorized message sender' }
+  );
+
+  assert.deepStrictEqual(
+    await dispatch(sandbox, { type: 'CONTENT_ALLOWED' }, {
+      url: 'https://example.com/content.js',
+      tab: { id: 1 }
+    }),
+    { ok: false, code: 'unauthorized', error: 'Unauthorized message sender' }
+  );
+
+  assert.deepStrictEqual(
+    await dispatch(sandbox, { type: 'CONTENT_ALLOWED' }, {
+      id: 'ext-id',
+      url: 'https://example.com/content.js'
+    }),
+    { ok: false, code: 'unauthorized', error: 'Unauthorized message sender' }
+  );
+
+  assert.deepStrictEqual(
+    await dispatch(sandbox, { type: 'CONTENT_ALLOWED' }, { id: 'ext-id', origin: 'chrome-extension://ext-id' }),
+    { ok: true, accepted: 1 }
+  );
+});
+
+test('message router rejects invalid and duplicate registrations', () => {
+  const sandbox = loadRouter();
+  const handler = async () => ({ ok: true });
+
+  assert.throws(
+    () => sandbox.__router.registerHandler('', handler),
+    /type must be a non-empty string/
+  );
+  assert.throws(
+    () => sandbox.__router.registerHandler('NOT_A_FUNCTION', null),
+    /must be a function/
+  );
+  assert.throws(
+    () => sandbox.__router.registerHandler('BAD_OPTIONS', handler, { allowContentScript: true }),
+    /Invalid message handler options/
+  );
+  assert.throws(
+    () => sandbox.__router.registerHandler('BAD_POLICY', handler, { allowContentScripts: 'yes' }),
+    /Invalid message handler options/
+  );
+
+  sandbox.__router.registerHandler('DUPLICATE', handler);
+  assert.throws(
+    () => sandbox.__router.registerHandler('DUPLICATE', handler, { allowContentScripts: true }),
+    /already registered/
   );
 });
 
@@ -86,7 +157,7 @@ test('message router reports handler failures without throwing into callers', as
   });
 
   assert.deepStrictEqual(
-    await dispatch(sandbox, { type: 'BROKEN' }, { origin: 'chrome-extension://ext-id' }),
+    await dispatch(sandbox, { type: 'BROKEN' }, { id: 'ext-id', origin: 'chrome-extension://ext-id' }),
     { ok: false, code: 'handler_error', error: 'Message handler failed' }
   );
 });

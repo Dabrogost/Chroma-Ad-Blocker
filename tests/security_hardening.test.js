@@ -22,7 +22,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   `)
   .replace(/import\s*\{[^}]*initScriptletEngine[^}]*\}\s*from\s*['"]\.\.\/scriptlets\/engine\.js['"];?/s, "var initScriptletEngine = globalThis._mockInitScriptletEngine; var recoverUserScriptsIfNeeded = globalThis._mockRecoverUserScriptsIfNeeded || (async () => false);")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/core\/messageTypes\.js['"];?/s, "var MSG = {};")
-  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, markSensitive: () => {}, attachListener: () => {} };")
+  .replace(/import\s*\*\s*as\s+router\s+from\s*['"]\.\.\/core\/messageRouter\.js['"];?/s, "var router = { registerHandler: () => {}, attachListener: () => {} };")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/handlers\.js['"];?/s, "var registerAll = () => {};")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\/stats\.js['"];?/s, "var createDefaultStatsV2 = () => ({ version: 1, settings: {}, totals: {}, byDay: {}, bySite: {}, byResourceType: {}, byRule: {}, recentEvents: [] }); var recordStatsEvent = () => {};")
   .replace(/import\s*['"]\.\/proxy\.js['"];?/s, "")
@@ -541,52 +541,31 @@ test('Security Hardening - background.js', async (t) => {
 });
 
 test('Security Hardening - handlers.js', async (t) => {
-  await t.test('marks mutating and private-read message types sensitive', () => {
+  await t.test('registers only audited content-script message exceptions', () => {
     const sandbox = loadHandlers();
-    const marked = [];
+    const registrations = new Map();
     sandbox.registerAll({
-      markSensitive: type => marked.push(type),
-      registerHandler: () => {}
+      registerHandler: (type, handler, options) => {
+        registrations.set(type, { handler, options: options || {} });
+      }
     });
 
-    for (const type of [
-      MSG.CONFIG_GET,
-      MSG.CONFIG_SET,
-      MSG.CONFIG_EXPORT,
-      MSG.CONFIG_IMPORT,
-      MSG.STATS_GET,
-      MSG.STATS_EVENT_BATCH,
-      MSG.STATS_RESET,
-      MSG.STATS_EXPORT,
-      MSG.STATS_SETTINGS_SET,
-      MSG.LOG_GET,
-      MSG.HEALTH_GET,
-      MSG.UPDATE_PACKAGE_INSPECT,
-      MSG.WHITELIST_GET,
-      MSG.PROXY_CONFIG_GET,
-      MSG.PROXY_CONFIG_SET,
-      MSG.PROXY_TEST,
-      MSG.ZAPPER_START,
-      MSG.ZAPPER_RULES_GET,
-      MSG.ZAPPER_RULE_REMOVE,
-      MSG.ZAPPER_RULE_SET,
-      MSG.SUBSCRIPTION_GET,
-      MSG.SUBSCRIPTION_SET,
-      MSG.SUBSCRIPTION_REFRESH,
-      MSG.SUBSCRIPTION_ADD,
-      MSG.SUBSCRIPTION_REMOVE,
-      MSG.USER_SCRIPTLETS_GET,
-      MSG.USER_SCRIPTLET_SOURCE_ADD,
-      MSG.USER_SCRIPTLET_SOURCE_REFRESH,
-      MSG.USER_SCRIPTLET_SOURCE_REMOVE,
-      MSG.USER_SCRIPTLET_RULES_SET,
-      MSG.WHITELIST_ADD,
-      MSG.WHITELIST_REMOVE,
-      MSG.FPR_WHITELIST_GET,
-      MSG.FPR_WHITELIST_ADD,
-      MSG.FPR_WHITELIST_REMOVE
-    ]) {
-      assert.ok(marked.includes(type), `${type} should be sensitive`);
+    const expectedTypes = Object.values(MSG)
+      .filter(type => type !== MSG.CONFIG_UPDATE)
+      .sort();
+    assert.deepStrictEqual([...registrations.keys()].sort(), expectedTypes);
+
+    const contentScriptTypes = [...registrations]
+      .filter(([, registration]) => registration.options.allowContentScripts === true)
+      .map(([type]) => type)
+      .sort();
+    assert.deepStrictEqual(contentScriptTypes, [MSG.STATS_EVENT_BATCH, MSG.ZAPPER_SAVE_RULE].sort());
+
+    for (const [type, registration] of registrations) {
+      assert.strictEqual(typeof registration.handler, 'function', `${type} should have a handler`);
+      if (!contentScriptTypes.includes(type)) {
+        assert.strictEqual(registration.options.allowContentScripts, undefined, `${type} should default to extension pages`);
+      }
     }
   });
 
@@ -1025,7 +1004,6 @@ test('Security Hardening - handlers.js', async (t) => {
       })
     });
     sandbox.registerAll({
-      markSensitive: () => {},
       registerHandler: (type, fn) => { handlers[type] = fn; }
     });
 
