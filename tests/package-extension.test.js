@@ -60,6 +60,7 @@ test('package verification accepts only the selected user-documentation set', ()
   assert.ok(REQUIRED_RELEASE_FILES.includes('guide/index.html'));
   assert.ok(REQUIRED_RELEASE_FILES.includes('guide/search-index.json'));
   assert.ok(REQUIRED_RELEASE_FILES.includes('docs/assets/docs-settings-overview.png'));
+  assert.ok(REQUIRED_RELEASE_FILES.includes('rules/static_dedupe_index.json'));
   assert.strictEqual(UPDATE_MANIFEST_FILE, 'updates.json');
   assert.ok(Array.isArray(FORBIDDEN_RELEASE_PATH_PATTERNS));
   assert.deepStrictEqual(verifyReleaseEntries(validReleaseEntries), []);
@@ -73,6 +74,7 @@ test('release documentation and generated guide references resolve inside the pa
   assert.ok(entries.includes('docs/assets/docs-settings-overview.png'));
   assert.ok(entries.includes('guide/index.html'));
   assert.ok(entries.includes('guide/pages/advanced-user-scriptlets.html'));
+  assert.ok(entries.includes('rules/static_dedupe_index.json'));
   for (const repoOnlyPath of [...repoOnlyDocs, ...repoOnlyGuidePages]) {
     assert.ok(!entries.includes(repoOnlyPath), `${repoOnlyPath} unexpectedly entered releaseFiles()`);
   }

@@ -25,7 +25,10 @@ const ALARM_NAME     = 'chroma-subscription-check';
 const FETCH_TIMEOUT  = 30000; // 30s per-fetch timeout
 const MAX_LIST_BYTES = 10 * 1024 * 1024; // 10 MiB per subscription response
 const NETWORK_COMPILER_VERSION = 1;
-let _staticRuleKeySetPromise = null;
+const STATIC_DEDUPE_INDEX_PATH = 'rules/static_dedupe_index.json';
+const STATIC_DEDUPE_INDEX_SCHEMA_VERSION = 1;
+const DOMAIN_BLOCK_FILTER_RE = /^\|\|([A-Za-z0-9.-]+)\^$/;
+let _staticRuleLookupPromise = null;
 let _subscriptionStateTail = Promise.resolve();
 
 function serializeSubscriptionState(task) {
@@ -293,43 +296,149 @@ function deduplicateCosmeticRules(rules) {
 }
 
 // ─── STATIC RULE DEDUPLICATION ─────
-/**
- * Builds a Set of semantic rule keys from all bundled static rule files.
- * Used to exclude subscription rules that are already covered statically.
- * Cached for the service-worker lifetime; bundled rule resources do not change
- * until the extension is reloaded or updated.
- * @returns {Promise<Set<string>>}
- */
-async function buildStaticRuleKeySet() {
-  if (_staticRuleKeySetPromise) return _staticRuleKeySetPromise;
+function isSortedUniqueStringArray(value) {
+  if (!Array.isArray(value)) return false;
+  for (let index = 0; index < value.length; index++) {
+    if (typeof value[index] !== 'string') return false;
+    if (index > 0 && value[index - 1] >= value[index]) return false;
+  }
+  return true;
+}
 
-  _staticRuleKeySetPromise = (async () => {
-    const files = chrome.runtime
-      .getManifest()
-      .declarative_net_request
-      .rule_resources
-      .map(resource => resource.path);
+function validateStaticDedupeIndex(value) {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    value.schemaVersion !== STATIC_DEDUPE_INDEX_SCHEMA_VERSION ||
+    !value.metadata ||
+    typeof value.metadata !== 'object' ||
+    Array.isArray(value.metadata) ||
+    !/^[a-f0-9]{64}$/.test(value.metadata.sourceDigest) ||
+    !isSortedUniqueStringArray(value.domainBlockDomains) ||
+    !isSortedUniqueStringArray(value.otherRuleKeys)
+  ) {
+    return false;
+  }
 
-    const set = new Set();
-    await Promise.all(files.map(async (file) => {
-      try {
-        const res = await fetch(chrome.runtime.getURL(file));
-        if (!res.ok) return;
-        const rules = await res.json();
-        for (const rule of rules) {
-          if (rule.condition && (rule.condition.urlFilter || rule.condition.regexFilter)) {
-            set.add(networkRuleDedupeKey(rule));
-          }
+  const countFields = [
+    'sourceResourceCount',
+    'sourceRuleCount',
+    'indexedRuleCount',
+    'uniqueKeyCount',
+    'domainBlockDomainCount',
+    'otherRuleKeyCount'
+  ];
+  if (countFields.some(field => !Number.isInteger(value.metadata[field]) || value.metadata[field] < 0)) {
+    return false;
+  }
+
+  return value.metadata.sourceRuleCount >= value.metadata.indexedRuleCount &&
+    value.metadata.indexedRuleCount >= value.metadata.uniqueKeyCount &&
+    value.metadata.domainBlockDomainCount === value.domainBlockDomains.length &&
+    value.metadata.otherRuleKeyCount === value.otherRuleKeys.length &&
+    value.metadata.uniqueKeyCount ===
+      value.metadata.domainBlockDomainCount + value.metadata.otherRuleKeyCount;
+}
+
+function sortedStringArrayIncludes(values, target) {
+  let low = 0;
+  let high = values.length - 1;
+  while (low <= high) {
+    const middle = low + Math.floor((high - low) / 2);
+    const value = values[middle];
+    if (value === target) return true;
+    if (value < target) low = middle + 1;
+    else high = middle - 1;
+  }
+  return false;
+}
+
+function simpleDomainBlockDomain(rule) {
+  const condition = rule?.condition || {};
+  const urlFilter = condition.urlFilter || '';
+  const match = typeof urlFilter === 'string'
+    ? DOMAIN_BLOCK_FILTER_RE.exec(urlFilter)
+    : null;
+  if (
+    rule?.action?.type !== 'block' ||
+    (Number(rule?.priority) || 0) !== 1 ||
+    !match ||
+    (condition.regexFilter || '') !== '' ||
+    sortedArray(condition.resourceTypes).length !== 0 ||
+    (condition.domainType || '') !== '' ||
+    sortedArray(condition.initiatorDomains).length !== 0 ||
+    sortedArray(condition.excludedInitiatorDomains).length !== 0
+  ) {
+    return null;
+  }
+  return match[1];
+}
+
+function staticRuleLookupHasRule(lookup, rule) {
+  if (lookup.type === 'legacy-key-set') {
+    return lookup.ruleKeys.has(networkRuleDedupeKey(rule));
+  }
+
+  const domain = simpleDomainBlockDomain(rule);
+  return domain !== null
+    ? sortedStringArrayIncludes(lookup.domainBlockDomains, domain)
+    : sortedStringArrayIncludes(lookup.otherRuleKeys, networkRuleDedupeKey(rule));
+}
+
+async function buildStaticRuleKeySetFallback() {
+  const files = chrome.runtime
+    .getManifest()
+    .declarative_net_request
+    .rule_resources
+    .map(resource => resource.path);
+
+  const ruleKeys = new Set();
+  await Promise.all(files.map(async (file) => {
+    try {
+      const res = await fetch(chrome.runtime.getURL(file));
+      if (!res.ok) return;
+      const rules = await res.json();
+      for (const rule of rules) {
+        if (rule.condition && (rule.condition.urlFilter || rule.condition.regexFilter)) {
+          ruleKeys.add(networkRuleDedupeKey(rule));
         }
-      } catch {
-        // Static resource failures are non-fatal; deduplication is best-effort.
       }
-    }));
+    } catch {
+      // Static resource failures are non-fatal; deduplication is best-effort.
+    }
+  }));
+  return { type: 'legacy-key-set', ruleKeys };
+}
 
-    return set;
+/**
+ * Loads the compact semantic index generated from all bundled static rules.
+ * Cached for the service-worker lifetime; bundled resources do not change until
+ * the extension is reloaded or updated. Older or malformed packages fall back
+ * to scanning the manifest rule resources so deduplication remains best-effort.
+ */
+async function buildStaticRuleLookup() {
+  if (_staticRuleLookupPromise) return _staticRuleLookupPromise;
+
+  _staticRuleLookupPromise = (async () => {
+    try {
+      const res = await fetch(chrome.runtime.getURL(STATIC_DEDUPE_INDEX_PATH));
+      if (!res.ok) throw new Error('Static DNR dedupe index is unavailable');
+      const index = await res.json();
+      if (!validateStaticDedupeIndex(index)) {
+        throw new Error('Static DNR dedupe index is malformed');
+      }
+      return {
+        type: 'compact-index',
+        domainBlockDomains: index.domainBlockDomains,
+        otherRuleKeys: index.otherRuleKeys
+      };
+    } catch {
+      return buildStaticRuleKeySetFallback();
+    }
   })();
 
-  return _staticRuleKeySetPromise;
+  return _staticRuleLookupPromise;
 }
 
 // ─── REBUILD HELPERS ─────
@@ -668,10 +777,13 @@ export async function refreshSubscription(id) {
     }
 
     const { networkRules: parsedNetworkRules, cosmeticRules, scriptletRules, skipped } = parseList(fetched.text || '');
-    const staticRuleKeys = await buildStaticRuleKeySet();
-    const networkRules = parsedNetworkRules
-      .filter(r => !staticRuleKeys.has(networkRuleDedupeKey(r)))
-      .map((rule, index) => ({ ...rule, _listPosition: index }));
+    let networkRules = [];
+    if (!sub.cosmeticOnly && parsedNetworkRules.length > 0) {
+      const staticRuleLookup = await buildStaticRuleLookup();
+      networkRules = parsedNetworkRules
+        .filter(rule => !staticRuleLookupHasRule(staticRuleLookup, rule))
+        .map((rule, index) => ({ ...rule, _listPosition: index }));
+    }
     const compatibility = buildSubscriptionCompatibility(sub.cosmeticOnly ? [] : networkRules, skipped);
 
     // Only keep scriptlet rules whose name matches an implementation we ship.

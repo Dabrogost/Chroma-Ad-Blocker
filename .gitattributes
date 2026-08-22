@@ -6,4 +6,6 @@
 /extension/guide/*.css text eol=lf
 /extension/guide/*.js text eol=lf
 /extension/guide/*.json text eol=lf
+# The static dedupe index has the same byte-for-byte freshness contract.
+/extension/rules/static_dedupe_index.json text eol=lf
 /extension/docs/assets/*.png binary

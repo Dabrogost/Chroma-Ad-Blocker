@@ -12,6 +12,7 @@
     "test:rules": "node tests/tools/validate-rules.js",
     "docs:build": "node scripts/build-guide.js",
     "docs:check": "node scripts/build-guide.js --check",
+    "rules:index": "node scripts/build-static-dedupe-index.js",
     "rules:update:oisd": "node scripts/update-oisd-rules.js",
     "test:e2e": "node tests/e2e/run-all.js --tier=full",
     "test:e2e:smoke": "node tests/e2e/run-all.js --tier=smoke",

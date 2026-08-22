@@ -3,6 +3,9 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const {
+  buildStaticDedupeIndexFromRules
+} = require('../scripts/build-static-dedupe-index');
 
 const managerJsRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'subscriptions', 'manager.js'), 'utf8');
 const remoteUrlJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'remoteUrl.js'), 'utf8')
@@ -32,6 +35,29 @@ function loadManager(options = {}) {
   const storage = options.storage || {};
   const appliedRules = [];
   const alarmsCreated = [];
+  const ruleResources = options.ruleResources || [
+    { id: 'static_test_rules', enabled: true, path: 'rules/rules_oisd_1.json' }
+  ];
+  const staticDedupeIndex = Object.prototype.hasOwnProperty.call(options, 'staticDedupeIndex')
+    ? options.staticDedupeIndex
+    : buildStaticDedupeIndexFromRules(options.staticRules || [], {
+        sourceResourceCount: ruleResources.length
+      });
+  const fallbackFetch = options.fetch || (async (url) => {
+    if (String(url).startsWith('chrome-extension://')) {
+      return { ok: true, json: async () => options.staticRules || [] };
+    }
+    return { ok: true, text: async () => options.fetchText || '' };
+  });
+  const fetchForManager = async (url, init) => {
+    if (String(url).endsWith('/rules/static_dedupe_index.json')) {
+      if (typeof options.staticDedupeIndexFetch === 'function') {
+        return options.staticDedupeIndexFetch(url, init);
+      }
+      return { ok: true, json: async () => staticDedupeIndex };
+    }
+    return fallbackFetch(url, init);
+  };
   const readStorageValue = value => options.cloneStorageReads && value !== undefined
     ? plain(value)
     : value;
@@ -92,9 +118,7 @@ function loadManager(options = {}) {
     runtime: {
       getManifest: () => ({
         declarative_net_request: {
-          rule_resources: options.ruleResources || [
-            { id: 'static_test_rules', enabled: true, path: 'rules/rules_oisd_1.json' }
-          ]
+          rule_resources: ruleResources
         }
       }),
       getURL: file => `chrome-extension://chroma/${file}`
@@ -105,12 +129,7 @@ function loadManager(options = {}) {
     chrome,
     console,
     URL,
-    fetch: options.fetch || (async (url) => {
-      if (String(url).startsWith('chrome-extension://')) {
-        return { ok: true, json: async () => options.staticRules || [] };
-      }
-      return { ok: true, text: async () => options.fetchText || '' };
-    }),
+    fetch: fetchForManager,
     setTimeout,
     clearTimeout,
     AbortController,
@@ -904,20 +923,29 @@ test('Subscription lifecycle manager', async (t) => {
     }
   });
 
-  await t.test('refreshSubscription reuses static url filter cache across refreshes', async () => {
+  await t.test('refreshSubscription reuses the compact static dedupe index across refreshes', async () => {
     const storage = {
       subscriptions: [
         { id: 'sub-a', name: 'Sub A', url: 'https://lists.example/sub-a.txt', enabled: true },
         { id: 'sub-b', name: 'Sub B', url: 'https://lists.example/sub-b.txt', enabled: true }
       ]
     };
-    let staticFetchCount = 0;
+    const staticRules = [networkRule('||already-static.example^')];
+    const staticDedupeIndex = buildStaticDedupeIndexFromRules(staticRules);
+    let indexFetchCount = 0;
+    let shardFetchCount = 0;
     const manager = loadManager({
       storage,
+      staticRules,
+      staticDedupeIndex,
+      staticDedupeIndexFetch: async () => {
+        indexFetchCount++;
+        return { ok: true, json: async () => staticDedupeIndex };
+      },
       fetch: async (url) => {
         if (String(url).startsWith('chrome-extension://')) {
-          staticFetchCount++;
-          return { ok: true, json: async () => [networkRule('||already-static.example^')] };
+          shardFetchCount++;
+          return { ok: true, json: async () => staticRules };
         }
         return { ok: true, text: async () => 'subscription body' };
       },
@@ -935,9 +963,91 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(plain(await manager.refreshSubscription('sub-a')), { ok: true });
     assert.deepStrictEqual(plain(await manager.refreshSubscription('sub-b')), { ok: true });
 
-    assert.strictEqual(staticFetchCount, 1);
+    assert.strictEqual(indexFetchCount, 1);
+    assert.strictEqual(shardFetchCount, 0);
     assert.deepStrictEqual(plain(storage.sub_network_rules['sub-a'].map(r => r.condition.urlFilter)), ['||fresh.example^']);
     assert.deepStrictEqual(plain(storage.sub_network_rules['sub-b'].map(r => r.condition.urlFilter)), ['||fresh.example^']);
+  });
+
+  await t.test('custom subscriptions fall back to manifest shards when the compact index is malformed', async () => {
+    const staticRules = [networkRule('||already-static.example^')];
+    const storage = {
+      subscriptions: [{
+        id: 'custom-list',
+        name: 'Custom List',
+        url: 'https://lists.example/custom.txt',
+        enabled: true,
+        isCustom: true
+      }]
+    };
+    let indexFetchCount = 0;
+    let shardFetchCount = 0;
+    const manager = loadManager({
+      storage,
+      staticRules,
+      staticDedupeIndexFetch: async () => {
+        indexFetchCount++;
+        return { ok: true, json: async () => ({ schemaVersion: 1 }) };
+      },
+      fetch: async (url) => {
+        if (String(url).startsWith('chrome-extension://')) {
+          shardFetchCount++;
+          return { ok: true, json: async () => staticRules };
+        }
+        return { ok: true, text: async () => 'subscription body' };
+      },
+      parseList: () => ({
+        networkRules: [
+          networkRule('||already-static.example^'),
+          networkRule('||custom-only.example^')
+        ],
+        cosmeticRules: [],
+        scriptletRules: [],
+        skipped: {}
+      })
+    });
+
+    assert.deepStrictEqual(plain(await manager.refreshSubscription('custom-list')), { ok: true });
+    assert.deepStrictEqual(
+      plain(storage.sub_network_rules['custom-list'].map(rule => rule.condition.urlFilter)),
+      ['||custom-only.example^']
+    );
+    assert.strictEqual(indexFetchCount, 1);
+    assert.strictEqual(shardFetchCount, 1);
+  });
+
+  await t.test('cosmetic-only and empty-network refreshes do not load the static index', async () => {
+    for (const scenario of [
+      { id: 'cosmetic-only', cosmeticOnly: true, networkRules: [networkRule('||ignored.example^')] },
+      { id: 'empty-network', cosmeticOnly: false, networkRules: [] }
+    ]) {
+      let indexFetchCount = 0;
+      const manager = loadManager({
+        storage: {
+          subscriptions: [{
+            id: scenario.id,
+            name: scenario.id,
+            url: `https://lists.example/${scenario.id}.txt`,
+            enabled: true,
+            cosmeticOnly: scenario.cosmeticOnly
+          }]
+        },
+        staticDedupeIndexFetch: async () => {
+          indexFetchCount++;
+          throw new Error('index should not be fetched');
+        },
+        parseList: () => ({
+          networkRules: scenario.networkRules,
+          cosmeticRules: [],
+          scriptletRules: [],
+          skipped: {}
+        })
+      });
+
+      assert.deepStrictEqual(plain(await manager.refreshSubscription(scenario.id)), { ok: true });
+      assert.deepStrictEqual(plain(manager.storage.sub_network_rules[scenario.id]), []);
+      assert.strictEqual(indexFetchCount, 0);
+    }
   });
 
   await t.test('setSubscriptionEnabled rebuilds all desired combined stores', async () => {
