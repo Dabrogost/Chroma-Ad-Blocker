@@ -156,15 +156,11 @@ const ChromaComponents = (() => {
   }
 
   function renderStats({ showSettingsIcon }) {
-    const initialTotal = showSettingsIcon
-      ? renderInlineSkeleton('popup-stat-skeleton popup-stat-skeleton--total')
-      : '0';
-    const initialBreakdown = showSettingsIcon
-      ? renderInlineSkeleton('popup-stat-skeleton popup-stat-skeleton--breakdown')
-      : '0';
+    const initialTotal = renderInlineSkeleton('stat-hero-skeleton stat-hero-skeleton--total');
+    const initialBreakdown = renderInlineSkeleton('stat-hero-skeleton stat-hero-skeleton--breakdown');
     return `
       <div class="stats-container">
-        <div class="stat-card" id="cardNetwork" aria-busy="${showSettingsIcon ? 'true' : 'false'}">
+        <div class="stat-card" id="cardNetwork" aria-busy="true">
           <div class="stat-value" id="statProtectionEvents">${initialTotal}</div>
           <div class="stat-label">Protection Events</div>
           <div class="stat-breakdown" id="statHeroBreakdown">

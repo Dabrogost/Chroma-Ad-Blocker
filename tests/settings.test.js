@@ -1974,6 +1974,12 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     sandbox.ChromaComponents.renderPageShell({ settingsMode: true });
 
+    const statsCard = dom.window.document.querySelector('#cardNetwork');
+    assert.strictEqual(statsCard.getAttribute('aria-busy'), 'true');
+    assert.strictEqual(statsCard.querySelectorAll('.stat-hero-skeleton').length, 5);
+    assert.strictEqual(dom.window.document.querySelector('#statProtectionEvents').textContent, '');
+    assert.strictEqual(dom.window.document.querySelector('#statBreakdownNetwork').textContent, '');
+
     const navGuide = dom.window.document.querySelector('.settings-nav__guide');
     assert.ok(navGuide);
     assert.strictEqual(navGuide.href, 'chrome-extension://test/guide/index.html');
@@ -2110,8 +2116,8 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     const statsCard = dom.window.document.querySelector('#cardNetwork');
     assert.strictEqual(statsCard.getAttribute('aria-busy'), 'true');
-    assert.strictEqual(statsCard.querySelectorAll('.popup-stat-skeleton').length, 5);
-    assert.ok(Array.from(statsCard.querySelectorAll('.popup-stat-skeleton'))
+    assert.strictEqual(statsCard.querySelectorAll('.stat-hero-skeleton').length, 5);
+    assert.ok(Array.from(statsCard.querySelectorAll('.stat-hero-skeleton'))
       .every(skeleton => skeleton.getAttribute('aria-hidden') === 'true'));
     assert.strictEqual(dom.window.document.querySelector('#statProtectionEvents').textContent, '');
     assert.strictEqual(dom.window.document.querySelector('#statBreakdownNetwork').textContent, '');
@@ -2149,7 +2155,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     const doc = harness.dom.window.document;
     assert.ok(harness.messages.some(message => message.type === 'STATS_GET' && message.options?.summaryOnly === true));
     assert.strictEqual(doc.querySelector('#cardNetwork').getAttribute('aria-busy'), 'true');
-    assert.strictEqual(doc.querySelectorAll('#cardNetwork .popup-stat-skeleton').length, 5);
+    assert.strictEqual(doc.querySelectorAll('#cardNetwork .stat-hero-skeleton').length, 5);
 
     pendingStats.resolve({
       totals: {
@@ -2164,7 +2170,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     });
     await settleDomAsyncWork();
 
-    assert.strictEqual(doc.querySelectorAll('#cardNetwork .popup-stat-skeleton').length, 0);
+    assert.strictEqual(doc.querySelectorAll('#cardNetwork .stat-hero-skeleton').length, 0);
     assert.strictEqual(doc.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
     assert.strictEqual(doc.querySelector('#statProtectionEvents').textContent, '1.2k');
     assert.strictEqual(doc.querySelector('#statBreakdownNetwork').textContent, '7');
@@ -2193,7 +2199,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await settleDomAsyncWork();
 
     const doc = harness.dom.window.document;
-    assert.strictEqual(doc.querySelectorAll('#cardNetwork .popup-stat-skeleton').length, 0);
+    assert.strictEqual(doc.querySelectorAll('#cardNetwork .stat-hero-skeleton').length, 0);
     assert.strictEqual(doc.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
     assert.strictEqual(doc.querySelector('#statProtectionEvents').textContent, '0');
   });
@@ -2703,6 +2709,9 @@ test('settings page proxy and zapper management safety', async (t) => {
     await settleDomAsyncWork();
 
     assert.ok(success.messages.some(message => message.type === 'STATS_GET' && !message.options?.summaryOnly));
+    assert.strictEqual(success.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
+    assert.strictEqual(success.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
+    assert.strictEqual(success.dom.window.document.querySelector('#statProtectionEvents').textContent, '42');
     assert.strictEqual(success.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
     assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /Total Protection Events/);
     assert.strictEqual(success.dom.window.document.querySelector('#statsModeSelect').disabled, false);
@@ -2711,6 +2720,9 @@ test('settings page proxy and zapper management safety', async (t) => {
     await failure.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
 
+    assert.strictEqual(failure.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
+    assert.strictEqual(failure.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
+    assert.strictEqual(failure.dom.window.document.querySelector('#statProtectionEvents').textContent, '0');
     assert.strictEqual(failure.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
     assert.match(failure.dom.window.document.querySelector('#statsSitesList').textContent, /No stats available/);
     assert.strictEqual(failure.dom.window.document.querySelector('#statsModeSelect').disabled, true);
@@ -2725,15 +2737,20 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, true);
     assert.ok(harness.dom.window.document.querySelector('#toggleNetwork').classList.contains('control-pending'));
+    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'true');
+    assert.strictEqual(harness.dom.window.document.querySelectorAll('#cardNetwork .stat-hero-skeleton').length, 5);
 
     pendingConfig.resolve({ enabled: true, networkBlocking: false, acceleration: true, accelerationSpeed: 12 });
     await initPromise;
+    await settleDomAsyncWork();
 
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, false);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').checked, false);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleAcceleration').checked, true);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleQuietConsole').checked, false);
     assert.ok(harness.dom.window.document.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
+    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
+    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
   });
 
   await t.test('quiet console toggle persists to config', async () => {
@@ -2804,6 +2821,9 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, true);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').disabled, true);
+    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
+    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
+    assert.strictEqual(harness.dom.window.document.querySelector('#statProtectionEvents').textContent, '0');
     assert.match(harness.dom.window.document.querySelector('.hydration-error--inline').textContent, /Settings are unavailable/);
     [
       'healthPanelBody',
