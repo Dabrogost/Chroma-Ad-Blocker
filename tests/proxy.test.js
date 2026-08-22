@@ -394,6 +394,43 @@ test('Proxy PAC hardening', async (t) => {
     assert.strictEqual(harness.proxyClearCalls.length, 0);
   });
 
+  await t.test('rejects malformed stored proxy IDs from global and domain routes', async () => {
+    for (const { label, id } of [
+      { label: 'fractional', id: 1.5 },
+      { label: 'unsafe', id: Number.MAX_SAFE_INTEGER + 1 },
+      { label: 'NaN', id: Number.NaN }
+    ]) {
+      const malformed = baseProxy({
+        id,
+        host: `${label.toLowerCase()}-proxy.example.com`,
+        domains: [{ host: `${label.toLowerCase()}-route.example.com`, enabled: true }]
+      });
+      const valid = baseProxy({
+        id: 7,
+        host: 'valid-proxy.example.com',
+        domains: [{ host: 'valid-route.example.com', enabled: true }]
+      });
+      const harness = createProxySandbox({
+        config: { globalProxyEnabled: true, globalProxyId: id },
+        proxyConfigs: [malformed, valid]
+      });
+
+      const status = await harness.syncProxyState(harness.storage.proxyConfigs);
+      const pac = pacData(harness);
+
+      assert.deepStrictEqual(plain(harness.storage.config), {
+        globalProxyEnabled: false,
+        globalProxyId: null
+      }, `${label} global selection should be cleared`);
+      assert.strictEqual(status.requested.global, false, `${label} global selection should fail closed`);
+      assert.match(pac, /valid-route\.example\.com/);
+      assert.doesNotMatch(pac, new RegExp(`${label.toLowerCase()}-(?:proxy|route)\\.example\\.com`));
+      assert.strictEqual(evaluatePac(pac, 'valid-route.example.com'), 'PROXY valid-proxy.example.com:8080');
+      assert.strictEqual(evaluatePac(pac, `${label.toLowerCase()}-route.example.com`), 'DIRECT');
+      assert.strictEqual(evaluatePac(pac, 'unrelated.example.com'), 'DIRECT');
+    }
+  });
+
   await t.test('uses valid global fallback and clears invalid global state with a guarded write', async () => {
     const valid = createProxySandbox({ config: { globalProxyEnabled: true, globalProxyId: 9 } });
 

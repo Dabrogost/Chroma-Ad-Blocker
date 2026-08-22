@@ -186,6 +186,34 @@ test('getDefaultDynamicRules', async (t) => {
     assert.strictEqual(ids.length, uniqueIds.size, 'Rule IDs must be unique');
   });
 
+  await t.test('config validation accepts only null or safe-integer global proxy ids', () => {
+    for (const value of [null, 0, -1, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER]) {
+      const validated = sandbox.validateConfig({ globalProxyId: value });
+      assert.strictEqual(validated.globalProxyId, value, String(value));
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(validated, 'globalProxyId'),
+        true,
+        String(value)
+      );
+    }
+
+    for (const value of [
+      1.25,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      Number.MAX_SAFE_INTEGER + 1,
+      '7'
+    ]) {
+      const validated = sandbox.validateConfig({ globalProxyId: value });
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(validated, 'globalProxyId'),
+        false,
+        String(value)
+      );
+    }
+  });
+
   await t.test('config validation accepts only valid WebRTC leak protection modes', () => {
     assert.deepStrictEqual(
       JSON.parse(JSON.stringify(sandbox.validateConfig({ webRtcLeakProtection: 'strict' }))),

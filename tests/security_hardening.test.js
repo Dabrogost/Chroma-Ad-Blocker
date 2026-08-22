@@ -208,6 +208,21 @@ function handlerModuleForVm(file) {
 
 const handlersJsCode = HANDLER_MODULE_FILES.map(handlerModuleForVm).join('\n');
 
+const configStateJsCode = fs.readFileSync(
+  path.join(__dirname, '..', 'extension', 'background', 'configState.js'),
+  'utf8'
+).replace(/^export\s+/gm, '');
+
+function loadRealConfigValidator() {
+  const sandbox = { Number, Object, Set };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(`${configStateJsCode}\nglobalThis.__validateConfig = validateConfig;`, sandbox);
+  return sandbox.__validateConfig;
+}
+
+const realValidateConfig = loadRealConfigValidator();
+
 const remoteUrlJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'core', 'remoteUrl.js'), 'utf8')
   .replace(/^export\s+/gm, '');
 
@@ -980,6 +995,28 @@ test('Security Hardening - background handlers', async (t) => {
     assert.strictEqual('authCipher' in result[0], false);
   });
 
+  await t.test('settings export omits malformed finite global proxy ids', async () => {
+    for (const globalProxyId of [1.25, Number.MAX_SAFE_INTEGER + 1]) {
+      const storage = {
+        config: { enabled: true, globalProxyEnabled: true, globalProxyId },
+        whitelist: [],
+        fprWhitelist: [],
+        proxyConfigs: []
+      };
+      const sandbox = loadHandlers({ storage, validateConfig: realValidateConfig });
+      const exported = await sandbox.handleConfigExport();
+
+      assert.strictEqual(exported.config.enabled, true, String(globalProxyId));
+      assert.strictEqual(exported.config.globalProxyEnabled, true, String(globalProxyId));
+      assert.strictEqual(
+        Object.prototype.hasOwnProperty.call(exported.config, 'globalProxyId'),
+        false,
+        String(globalProxyId)
+      );
+      assert.strictEqual(storage.config.globalProxyId, globalProxyId, String(globalProxyId));
+    }
+  });
+
   await t.test('settings export omits proxy credentials and import clears credential blobs', async () => {
     const storage = {
       config: { enabled: true, acceleration: true },
@@ -1176,6 +1213,36 @@ test('Security Hardening - background handlers', async (t) => {
       assert.strictEqual(calls.remove, 0, scenario.name);
       assert.strictEqual(calls.dnr + calls.userScripts, 0, scenario.name);
       assert.deepStrictEqual(plain(storage), before, scenario.name);
+    }
+  });
+
+  await t.test('settings import rejects malformed finite global proxy ids before mutation', async () => {
+    for (const globalProxyId of [1.25, Number.MAX_SAFE_INTEGER + 1]) {
+      const { sandbox, storage, calls } = loadTransactionalImportHarness({
+        validateConfig: realValidateConfig
+      });
+      const before = plain(storage);
+      const result = await sandbox.handleConfigImport({
+        settings: makeSettingsImportPayload({
+          config: {
+            enabled: false,
+            networkBlocking: true,
+            globalProxyEnabled: true,
+            globalProxyId
+          }
+        })
+      });
+
+      assert.strictEqual(result.ok, false, String(globalProxyId));
+      assert.strictEqual(result.phase, 'validation', String(globalProxyId));
+      assert.strictEqual(result.step, 'config', String(globalProxyId));
+      assert.match(result.error, /globalProxyId/, String(globalProxyId));
+      assert.strictEqual(result.rollback?.attempted, false, String(globalProxyId));
+      assert.strictEqual(calls.get, 0, String(globalProxyId));
+      assert.strictEqual(calls.set, 0, String(globalProxyId));
+      assert.strictEqual(calls.remove, 0, String(globalProxyId));
+      assert.strictEqual(calls.dnr + calls.userScripts + calls.proxy, 0, String(globalProxyId));
+      assert.deepStrictEqual(plain(storage), before, String(globalProxyId));
     }
   });
 
