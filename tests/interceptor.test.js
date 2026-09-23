@@ -213,6 +213,14 @@ test('main-world interceptor secure configuration bridge', async t => {
     });
   }
 
+  await t.test('initial authenticated off state advances beyond the pending bridge revision', () => {
+    const { sandbox } = createSandbox({ hostname: 'www.yahoo.com' });
+    assert.strictEqual(sandbox.window.__CHROMA_INTERNAL__.revision, 0);
+    sandbox.simulateHandshake({ enabled: false, stripping: false, acceleration: false });
+    assert.strictEqual(sandbox.window.__CHROMA_INTERNAL__.revision, 1);
+    assert.strictEqual(sandbox.window.__CHROMA_INTERNAL__.config.enabled, false);
+  });
+
   await t.test('initial bridge snapshot exactly preserves authenticated stored values', () => {
     const { sandbox } = createSandbox();
     sandbox.simulateHandshake({
@@ -437,6 +445,19 @@ test('main-world interceptor secure configuration bridge', async t => {
     const { sandbox } = createSandbox({ hostname: 'example.com' });
     sandbox.simulateHandshake({ enabled: true, stripping: true, acceleration: false });
     assert.strictEqual(sandbox.window.__CHROMA_INTERNAL__, undefined);
+  });
+
+  await t.test('Yahoo homepage bridge is limited to the two supported hosts', () => {
+    for (const hostname of ['yahoo.com', 'www.yahoo.com']) {
+      const { sandbox } = createSandbox({ hostname });
+      sandbox.simulateHandshake({ enabled: true, stripping: true, acceleration: false });
+      assert.strictEqual(sandbox.window.__CHROMA_INTERNAL__.config.enabled, true);
+      assert.strictEqual(sandbox.window.scrollTo, sandbox.originalScrollTo);
+    }
+    for (const hostname of ['mail.yahoo.com', 'finance.yahoo.com', 'notyahoo.com', 'www.yahoo.com.example.com']) {
+      const { sandbox } = createSandbox({ hostname });
+      assert.strictEqual(sandbox.window.__CHROMA_INTERNAL__, undefined, hostname);
+    }
   });
 });
 

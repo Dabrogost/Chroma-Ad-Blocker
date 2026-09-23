@@ -26,6 +26,7 @@ const FPR_QUIET_FILE = 'scriptlets/fingerprintConsoleQuiet.js';
 const FPR_FILE = 'scriptlets/fingerprintRandomization.js';
 const QUIET_CONSOLE_ID = 'chroma_quiet_console';
 const QUIET_CONSOLE_FILE = 'content/quiet_console.js';
+const YAHOO_RECIPE_ID = 'chroma_yahoo_recipe';
 const USER_SCRIPTLET_RULES_KEY = 'userScriptletRules';
 const USER_SCRIPTLET_RESOURCES_KEY = 'userScriptletResources';
 const SUBSCRIPTION_SCRIPTLET_ID_PREFIX = 'scriptlet_';
@@ -764,6 +765,56 @@ async function _syncQuietConsoleImpl() {
   }
 }
 
+// Yahoo's recovery bootstrap runs before asynchronous page configuration.
+// Register the recipe from trusted storage so it can start synchronously,
+// while Chrome itself enforces the master switch and whitelist on new pages.
+let yahooRecipeGeneration = 0;
+let yahooRecipeInFlight = null;
+
+function syncYahooRecipe() {
+  yahooRecipeGeneration++;
+  if (yahooRecipeInFlight) return yahooRecipeInFlight;
+  yahooRecipeInFlight = (async () => {
+    try {
+      let generation;
+      do {
+        generation = yahooRecipeGeneration;
+        const { config = {}, whitelist = [] } = await chrome.storage.local.get(['config', 'whitelist']);
+        const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [YAHOO_RECIPE_ID] });
+        if (!isMasterProtectionEnabled(config)) {
+          if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [YAHOO_RECIPE_ID] });
+        } else {
+          const script = {
+            id: YAHOO_RECIPE_ID,
+            js: ['content/recipes.js'],
+            matches: ['*://yahoo.com/*', '*://www.yahoo.com/*'],
+            excludeMatches: whitelistToExcludeMatches(whitelist),
+            runAt: 'document_start',
+            world: 'MAIN',
+            allFrames: true,
+            persistAcrossSessions: true
+          };
+          if (existing.length) await chrome.scripting.updateContentScripts([script]);
+          else await chrome.scripting.registerContentScripts([script]);
+        }
+        if (typeof clearHealthDiagnostic === 'function') await clearHealthDiagnostic('yahooRecipeSync');
+      } while (generation !== yahooRecipeGeneration);
+    } catch (error) {
+      if (typeof recordHealthDiagnostic === 'function') {
+        await recordHealthDiagnostic('yahooRecipeSync', {
+          area: 'scriptlets', severity: 'warning',
+          message: 'Yahoo homepage protection could not be registered.',
+          action: 'Reload the extension and the Yahoo homepage.',
+          error: error?.message || error
+        });
+      }
+    } finally {
+      yahooRecipeInFlight = null;
+    }
+  })();
+  return yahooRecipeInFlight;
+}
+
 // Re-sync when inputs change.
 // - subscription/user-resource rules and config.enabled → userScripts
 // - config.fingerprintRandomization / config.enabled → FPR
@@ -781,6 +832,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const oldC = changes.config.oldValue || {};
     const newC = changes.config.newValue || {};
     const masterChanged = oldC.enabled !== newC.enabled;
+    if (masterChanged) syncYahooRecipe();
     const quietConsoleChanged = oldC.quietConsole !== newC.quietConsole;
     const fingerprintRandomizationChanged =
       oldC.fingerprintRandomization !== newC.fingerprintRandomization;
@@ -798,6 +850,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 
   if (changes.whitelist) {
+    syncYahooRecipe();
     if (DEBUG) console.log('[Chroma Scriptlets] Whitelist changed, re-syncing userScripts.');
     syncUserScripts();
     if (DEBUG) console.log('[Chroma Quiet Console] Whitelist changed, re-syncing.');
@@ -815,5 +868,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
  * service worker startup.
  */
 export async function initScriptletEngine() {
-  await Promise.all([syncUserScripts(), syncFpr(), syncQuietConsole()]);
+  await Promise.all([syncUserScripts(), syncFpr(), syncQuietConsole(), syncYahooRecipe()]);
 }

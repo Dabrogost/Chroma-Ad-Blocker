@@ -189,6 +189,90 @@ test('loaded extension E2E smoke', async (t) => {
     assert.strictEqual(state.querySelectorWorks, true);
   });
 
+  await t.test('Yahoo recipe contains parser-time recovery before asynchronous configuration', async (t) => {
+    await waitFor(() => evaluate(browser.cdp, browser.workerSession,
+      "chrome.scripting.getRegisteredContentScripts({ids:['chroma_yahoo_recipe']}).then(s => s.length === 1)"),
+    'Yahoo early recipe registration');
+    const bootstrapCode = `
+      window.__yahooFixture = { inline: 0, handler: 0, legitimate: 0, loaded: false };
+      const inline = document.createElement('script');
+      inline.textContent = 'window.__yahooFixture.inline++';
+      document.head.appendChild(inline);
+      const loader = document.createElement('script');
+      loader.id = 'fixture-loader';
+      loader.src = 'https://s.yimg.com/du/site/rotated-fixture.js';
+      loader.setAttribute('onload', 'window.__yahooFixture.handler++');
+      loader.setAttribute('onerror', 'window.__yahooFixture.handler++');
+      loader.addEventListener('load', () => { window.__yahooFixture.loaded = true; });
+      document.head.appendChild(loader);
+    `;
+    const html = `<!doctype html><html><head><title>Yahoo fixture</title>
+      <script id="ad-shield-container">${bootstrapCode}</script>
+      <script>window.__yahooFixture.legitimate++;</script></head>
+      <body><main id="content">News remains available</main></body></html>`;
+    const page = await createFulfilledPage(browser.cdp, 'https://www.yahoo.com/chroma-smoke', html);
+    t.after(() => page.close());
+    const state = await waitFor(async () => {
+      const value = await evaluate(browser.cdp, page.sessionId, `(() => {
+        const loader = document.getElementById('fixture-loader');
+        return {
+          ...window.__yahooFixture,
+          src: loader?.src,
+          onload: loader?.getAttribute('onload'),
+          onerror: loader?.getAttribute('onerror'),
+          reloadWritable: Object.getOwnPropertyDescriptor(location, 'reload').writable,
+          content: document.getElementById('content')?.textContent
+        };
+      })()`);
+      return value.loaded ? value : null;
+    }, 'Yahoo neutralized loader completion');
+    assert.strictEqual(state.inline, 0);
+    assert.strictEqual(state.handler, 0);
+    assert.strictEqual(state.legitimate, 1);
+    assert.strictEqual(state.src, 'data:text/javascript,void%200');
+    assert.strictEqual(state.onload, '');
+    assert.strictEqual(state.onerror, '');
+    assert.strictEqual(state.reloadWritable, false, 'Containment must work without replacing native reload');
+    assert.strictEqual(state.content, 'News remains available');
+
+    const originalStorage = await evaluate(browser.cdp, browser.workerSession,
+      "chrome.storage.local.get(['config', 'whitelist'])");
+    const settings = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html');
+    try {
+      for (const mode of ['whitelisted', 'disabled']) {
+        const storage = {
+          config: { ...originalStorage.config, enabled: mode !== 'disabled' },
+          whitelist: mode === 'whitelisted' ? ['yahoo.com'] : []
+        };
+        await evaluate(browser.cdp, browser.workerSession,
+          `chrome.storage.local.set({whitelist: ${JSON.stringify(storage.whitelist)}})`);
+        await sendRuntimeMessage(browser.cdp, settings.sessionId, { type: 'CONFIG_SET', config: storage.config });
+        await waitFor(() => evaluate(browser.cdp, browser.workerSession,
+          `chrome.scripting.getRegisteredContentScripts({ids:['chroma_yahoo_recipe']}).then(s =>
+            ${mode === 'disabled' ? 's.length === 0' : "s[0]?.excludeMatches?.includes('*://*.yahoo.com/*')"})`),
+        `Yahoo ${mode} registration`);
+        const inactivePage = await createFulfilledPage(browser.cdp, 'https://www.yahoo.com/chroma-smoke', html);
+        try {
+          const inactive = await evaluate(browser.cdp, inactivePage.sessionId,
+            '({ ...window.__yahooFixture, src: document.getElementById("fixture-loader")?.src })');
+          assert.strictEqual(inactive.inline, 1, `${mode} must allow the bootstrap's inline script`);
+          assert.strictEqual(inactive.legitimate, 1);
+          assert.strictEqual(inactive.src, 'https://s.yimg.com/du/site/rotated-fixture.js');
+        } finally {
+          await inactivePage.close();
+        }
+      }
+    } finally {
+      await evaluate(browser.cdp, browser.workerSession,
+        `chrome.storage.local.set({whitelist: ${JSON.stringify(originalStorage.whitelist || [])}})`);
+      await sendRuntimeMessage(browser.cdp, settings.sessionId, { type: 'CONFIG_SET', config: originalStorage.config });
+      await waitFor(() => evaluate(browser.cdp, browser.workerSession,
+        "chrome.scripting.getRegisteredContentScripts({ids:['chroma_yahoo_recipe']}).then(s => s.length === 1 && !s[0].excludeMatches?.length)"),
+      'Yahoo registration restored');
+      await closeTarget(browser.cdp, settings.targetId);
+    }
+  });
+
   await t.test('Prime Video MAIN-world handlers use real browser media APIs', {
     skip: 'Prime Video acceleration is temporarily dormant and is not registered in the manifest.'
   }, async (t) => {

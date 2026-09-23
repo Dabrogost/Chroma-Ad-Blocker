@@ -401,7 +401,7 @@
     'halfbakedharvest.com', 'pcgamer.com'
   ];
   const bridgeHostname = String(window.location?.hostname || '').toLowerCase().replace(/\.$/, '');
-  const isBridgeDomain = BRIDGE_DOMAINS.some(domain =>
+  const isBridgeDomain = bridgeHostname === 'yahoo.com' || bridgeHostname === 'www.yahoo.com' || BRIDGE_DOMAINS.some(domain =>
     bridgeHostname === domain || bridgeHostname.endsWith('.' + domain)
   );
 
@@ -515,6 +515,9 @@
     if (isInitialized) return;
     isInitialized = true;
     applyBridgeConfig(config);
+    // Revision zero means no authenticated configuration has arrived yet,
+    // including when the first delivery confirms the inert all-false defaults.
+    if (configRevision === 0) configRevision = 1;
     syncYouTubeScrollProtection();
   }
 

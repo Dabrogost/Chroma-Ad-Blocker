@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const recipesCode = fs.readFileSync(path.join(root, 'extension', 'content', 'recipes.js'), 'utf8');
 
-function createHarness({ enabled = false, bridge = true, readyState = 'complete' } = {}) {
+function createHarness({ enabled = false, bridge = true, readyState = 'complete', hostname = 'www.allrecipes.com' } = {}) {
   const documentListeners = new Map();
   const windowListeners = new Map();
   const frames = new Map();
@@ -158,7 +158,7 @@ function createHarness({ enabled = false, bridge = true, readyState = 'complete'
 
   const document = new Document();
   const location = new Location();
-  location.hostname = 'www.allrecipes.com';
+  location.hostname = hostname;
   const history = new History();
   const window = {
     location,
@@ -202,6 +202,7 @@ function createHarness({ enabled = false, bridge = true, readyState = 'complete'
   if (bridge) installBridge();
 
   const originals = {
+    appendChild: Element.prototype.appendChild,
     setAttribute: Element.prototype.setAttribute,
     getAttribute: Element.prototype.getAttribute,
     scriptDescriptor: Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src'),
@@ -224,7 +225,7 @@ function createHarness({ enabled = false, bridge = true, readyState = 'complete'
     History,
     MutationObserver: FakeMutationObserver,
     CSSStyleSheet: FakeStyleSheet,
-    Node: { ELEMENT_NODE: 1 },
+    Node: { ELEMENT_NODE: 1, prototype: Element.prototype },
     CustomEvent: class CustomEvent {
       constructor(type, options = {}) { this.type = type; this.detail = options.detail; }
     },
@@ -454,6 +455,92 @@ test('recipe MAIN-world lifecycle', async t => {
   });
 });
 
+test('registered Yahoo recipe contains recovery before bridge delivery and restores APIs when disabled', () => {
+  for (const hostname of ['yahoo.com', 'www.yahoo.com']) {
+    const harness = createHarness({ hostname });
+    const { document, classes } = harness;
+    const originalAppend = harness.originals.appendChild;
+    document.currentScript = { id: 'ad-shield-container' };
+    const payload = new classes.HTMLScriptElement();
+    payload.textContent = 'window.recoveryWasExecuted = true';
+    assert.strictEqual(document.head.appendChild(payload), payload);
+    assert.strictEqual(payload.isConnected, false, 'Inline recovery must not reach the document');
+    harness.update(true);
+
+    document.currentScript = { id: 'normal-yahoo-app' };
+    const appScript = new classes.HTMLScriptElement();
+    document.head.appendChild(appScript);
+    assert.strictEqual(appScript.isConnected, true, 'Unrelated inline scripts must still execute');
+
+    for (const src of [
+      'https://s.yimg.com/du/site/fbeasdplgxqkkjim.js',
+      'https://s.yimg.com/du/site/rotated-loader_2.js?v=2'
+    ]) {
+      const loader = new classes.HTMLScriptElement();
+      loader.src = src;
+      assert.strictEqual(loader.src, 'data:text/javascript,void%200');
+      for (const event of ['onload', 'onerror']) {
+        loader.setAttribute(event, 'eval(scrambledRecoveryPayload)');
+        assert.notStrictEqual(loader.getAttribute(event), 'eval(scrambledRecoveryPayload)');
+        // Simulate an attribute already installed by the parser or a saved native setter.
+        harness.originals.setAttribute.call(loader, event, 'eval(scrambledRecoveryPayload)');
+        assert.strictEqual(loader.getAttribute(event), '', 'Sibling scripts must not recover the payload');
+      }
+    }
+
+    for (const src of [
+      'https://s.yimg.com/du/benji/app.js',
+      'https://s.yimg.com/du/site/nested/app.js',
+      'https://s.yimg.com.example.com/du/site/loader.js'
+    ]) {
+      const app = new classes.HTMLScriptElement();
+      app.src = src;
+      assert.strictEqual(app.src, src);
+      app.setAttribute('onload', 'appReady()');
+      assert.strictEqual(app.getAttribute('onload'), 'appReady()');
+    }
+
+    harness.update(false);
+    assert.strictEqual(classes.Element.prototype.appendChild, originalAppend);
+    document.currentScript = { id: 'ad-shield-container' };
+    const restoredScript = new classes.HTMLScriptElement();
+    restoredScript.src = 'https://s.yimg.com/du/site/loader.js';
+    assert.strictEqual(restoredScript.src, 'https://s.yimg.com/du/site/loader.js');
+    document.head.appendChild(restoredScript);
+    assert.strictEqual(restoredScript.isConnected, true);
+  }
+});
+
+test('first authenticated off delivery releases the registered Yahoo startup protection', () => {
+  const harness = createHarness({ hostname: 'www.yahoo.com' });
+  assert.notStrictEqual(harness.classes.Element.prototype.appendChild, harness.originals.appendChild);
+  harness.dispatchDocument('__CHROMA_CONFIG_UPDATE__', { enabled: false });
+  assert.notStrictEqual(harness.classes.Element.prototype.appendChild, harness.originals.appendChild);
+  harness.update(false);
+  assert.strictEqual(harness.classes.Element.prototype.appendChild, harness.originals.appendChild);
+  assert.strictEqual(harness.activeObservers().length, 0);
+  assert.deepStrictEqual(harness.document.adoptedStyleSheets, []);
+});
+
+test('Yahoo containment excludes other Yahoo hosts and unrelated recipe sites', () => {
+  for (const options of [
+    { hostname: 'mail.yahoo.com', enabled: true },
+    { hostname: 'finance.yahoo.com', enabled: true },
+    { hostname: 'notyahoo.com', enabled: true },
+    { hostname: 'www.yahoo.com.example.com', enabled: true },
+    { hostname: 'www.allrecipes.com', enabled: true }
+  ]) {
+    const harness = createHarness(options);
+    const script = new harness.classes.HTMLScriptElement();
+    script.src = 'https://s.yimg.com/du/site/loader.js';
+    assert.strictEqual(script.src, 'https://s.yimg.com/du/site/loader.js');
+    harness.document.currentScript = { id: 'ad-shield-container' };
+    const inline = new harness.classes.HTMLScriptElement();
+    harness.document.head.appendChild(inline);
+    assert.strictEqual(inline.isConnected, true);
+  }
+});
+
 test('recipe manifest entries are covered by the authenticated bridge in execution order', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'extension', 'manifest.json'), 'utf8'));
   const entries = manifest.content_scripts;
@@ -469,6 +556,13 @@ test('recipe manifest entries are covered by the authenticated bridge in executi
   assert.strictEqual(interceptor.world, 'MAIN');
   assert.strictEqual(recipe.run_at, 'document_start');
   assert.strictEqual(recipe.all_frames, true);
+  assert.ok(!recipe.matches.includes('*://yahoo.com/*'), 'Yahoo uses conditional early registration');
+  assert.ok(!recipe.matches.includes('*://www.yahoo.com/*'));
+  for (const match of ['*://yahoo.com/*', '*://www.yahoo.com/*']) {
+    assert.ok(interceptor.matches.includes(match));
+    assert.ok(protection.matches.includes(match));
+  }
+  assert.ok(!recipe.matches.includes('*://*.yahoo.com/*'), 'Yahoo Mail and Finance are outside this fix');
   for (const match of recipe.matches) {
     assert.ok(interceptor.matches.includes(match), `${match} must load interceptor before recipes`);
     assert.ok(protection.matches.includes(match), `${match} must load isolated protection`);

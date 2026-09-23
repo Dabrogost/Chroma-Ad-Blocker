@@ -12,6 +12,7 @@
   // ─── SITE DETECTION ─────
 
   const host = (location.hostname || '').toLowerCase();
+  const isYahooHomepage = host === 'yahoo.com' || host === 'www.yahoo.com';
 
   const SITE_KEYS = [
     'bellyfull.net', 'allrecipes.com', 'foodnetwork.com', 'epicurious.com',
@@ -24,7 +25,7 @@
     'pcgamer.com',
   ];
 
-  const siteKey = SITE_KEYS.find(k => host === k || host.endsWith('.' + k));
+  const siteKey = isYahooHomepage ? 'yahoo.com' : SITE_KEYS.find(k => host === k || host.endsWith('.' + k));
   if (!siteKey) return;
 
   log('loaded inert on', host, 'matched', siteKey);
@@ -333,10 +334,14 @@ ${HIDE_SELECTORS.join(',\n')} {
   ];
   const NOOP_SRC = 'data:text/javascript,void%200';
 
+  function isYahooRecoveryUrl(value) {
+    return isYahooHomepage && /^https:\/\/s\.yimg\.com\/du\/site\/[a-z0-9_-]+\.js(?:[?#]|$)/i.test(value);
+  }
+
   function isBadUrl(v) {
     try {
       const s = String(v);
-      return BAD_SCRIPT_FRAGMENTS.some(f => s.includes(f));
+      return isYahooRecoveryUrl(s) || BAD_SCRIPT_FRAGMENTS.some(f => s.includes(f));
     } catch (_) { return false; }
   }
 
@@ -435,7 +440,8 @@ ${HIDE_SELECTORS.join(',\n')} {
       }
       if (this.tagName === 'SCRIPT' &&
           (lowerName === 'onerror' || lowerName === 'onload') &&
-          looksLikeInjectorPayload(value)) {
+          (looksLikeInjectorPayload(value) || (isYahooHomepage &&
+            Reflect.apply(initialGetAttribute, this, ['data-chroma-neutered']) === '1'))) {
         log('blocked setAttribute', lowerName, 'on injector', this.id || '(no id)');
         return;
       }
@@ -454,7 +460,8 @@ ${HIDE_SELECTORS.join(',\n')} {
       if (this.tagName === 'SCRIPT') {
         const lowerName = String(name).toLowerCase();
         if ((lowerName === 'onerror' || lowerName === 'onload') &&
-            looksLikeInjectorPayload(value)) {
+            (looksLikeInjectorPayload(value) || (isYahooHomepage &&
+              Reflect.apply(initialGetAttribute, this, ['data-chroma-neutered']) === '1'))) {
           log('hid injector', lowerName, 'from getAttribute');
           return '';
         }
@@ -571,6 +578,20 @@ ${HIDE_SELECTORS.join(',\n')} {
       if (patchLifecycle.active && (delta === 0 || delta === '0')) {
         log('blocked history.go(0) for PCGamer');
         return;
+      }
+      return Reflect.apply(original, this, arguments);
+    });
+  }
+
+  function installYahooFeatures() {
+    if (!isYahooHomepage) return;
+    // Yahoo's parser-inserted bootstrap creates an inline recovery payload
+    // before running its async detector. Stop that payload before execution;
+    // an observer is too late, and Chrome's location.reload is non-writable.
+    patchMethod(Node.prototype, 'appendChild', (original, lifecycle) => function (node) {
+      if (lifecycle.active && node?.tagName === 'SCRIPT' && !node.src &&
+          document.currentScript?.id === 'ad-shield-container') {
+        return node;
       }
       return Reflect.apply(original, this, arguments);
     });
@@ -723,6 +744,7 @@ ${HIDE_SELECTORS.join(',\n')} {
     installRedirectPatches();
     installDialogPatches();
     installPcgamerFeatures();
+    installYahooFeatures();
   }
 
   function activate() {
@@ -750,6 +772,10 @@ ${HIDE_SELECTORS.join(',\n')} {
 
   function reconcileTrustedConfig() {
     const bridge = getBridge();
+    // Yahoo is registered by the background only while protection is enabled
+    // and the host is not whitelisted. Keep that authoritative startup state
+    // until the bridge has received its first authenticated configuration.
+    if (isYahooHomepage && (!bridge || getBridgeRevision() === 0)) return;
     if (!bridge) {
       deactivate();
       return;
@@ -770,5 +796,8 @@ ${HIDE_SELECTORS.join(',\n')} {
   // every callback re-reads the immutable bridge and requires a newer revision.
   nativeAddDocEventListener('__CHROMA_BRIDGE_READY__', reconcileTrustedConfig, true);
   nativeAddDocEventListener('__CHROMA_CONFIG_UPDATE__', reconcileTrustedConfig, true);
+  // Yahoo's remembered ad-block detection starts recovery synchronously in
+  // the parser. Waiting for the asynchronous bridge loses that race on reload.
+  if (isYahooHomepage) activate();
   reconcileTrustedConfig();
 })();
