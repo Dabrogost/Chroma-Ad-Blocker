@@ -1280,7 +1280,7 @@ test('scriptlet engine master lifecycle', async (t) => {
     await harness.sandbox.initScriptletEngine();
     assert.deepStrictEqual(
       harness.registeredContentScripts.map(script => script.id).sort(),
-      ['chroma_fpr', 'chroma_quiet_console']
+      ['chroma_fpr', 'chroma_quiet_console', 'chroma_yahoo_recipe']
     );
 
     storageState.config = { enabled: false, fingerprintRandomization: true, quietConsole: true };
@@ -1301,9 +1301,37 @@ test('scriptlet engine master lifecycle', async (t) => {
     assert.deepStrictEqual(harness.registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1']);
     assert.deepStrictEqual(
       harness.registeredContentScripts.map(script => script.id).sort(),
-      ['chroma_fpr', 'chroma_quiet_console']
+      ['chroma_fpr', 'chroma_quiet_console', 'chroma_yahoo_recipe']
     );
   });
+});
+
+test('Yahoo recipe registration follows master and whitelist state without enabling Yahoo subdomains', async () => {
+  const storage = { config: { enabled: true }, whitelist: [] };
+  const harness = loadScriptletEngine(storage);
+  await harness.sandbox.initScriptletEngine();
+  const recipe = () => harness.registeredContentScripts.find(script => script.id === 'chroma_yahoo_recipe');
+  assert.deepStrictEqual(plain(recipe().matches), ['*://yahoo.com/*', '*://www.yahoo.com/*']);
+  assert.deepStrictEqual(plain(recipe().js), ['content/recipes.js']);
+  assert.strictEqual(recipe().world, 'MAIN');
+  assert.strictEqual(recipe().runAt, 'document_start');
+  assert.strictEqual(recipe().persistAcrossSessions, true);
+
+  storage.whitelist = ['yahoo.com'];
+  harness.getChangeListener()({ whitelist: { oldValue: [], newValue: storage.whitelist } }, 'local');
+  await harness.sandbox.syncYahooRecipe();
+  assert.deepStrictEqual(plain(recipe().excludeMatches), ['*://yahoo.com/*', '*://*.yahoo.com/*']);
+
+  storage.config = { enabled: false };
+  harness.getChangeListener()({ config: { oldValue: { enabled: true }, newValue: storage.config } }, 'local');
+  await harness.sandbox.syncYahooRecipe();
+  assert.strictEqual(recipe(), undefined);
+
+  storage.config = { enabled: true };
+  storage.whitelist = [];
+  await harness.sandbox.initScriptletEngine();
+  assert.ok(recipe());
+  assert.deepStrictEqual(plain(recipe().excludeMatches), []);
 });
 
 test('scriptlet engine userScripts API availability', async (t) => {

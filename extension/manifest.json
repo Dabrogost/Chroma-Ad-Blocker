@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "minimum_chrome_version": "122",
   "name": "Chroma Ad-Blocker",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Multi-layered ad-blocker using ad-acceleration, network blocking, and cosmetic filtering.",
   "permissions": [
     "declarativeNetRequest",
@@ -61,7 +61,9 @@
         "*://*.acozykitchen.com/*",
         "*://*.twopeasandtheirpod.com/*",
         "*://*.halfbakedharvest.com/*",
-        "*://*.pcgamer.com/*"
+        "*://*.pcgamer.com/*",
+        "*://yahoo.com/*",
+        "*://www.yahoo.com/*"
       ],
       "js": [
         "core/messaging.js",
@@ -94,7 +96,9 @@
         "*://*.acozykitchen.com/*",
         "*://*.twopeasandtheirpod.com/*",
         "*://*.halfbakedharvest.com/*",
-        "*://*.pcgamer.com/*"
+        "*://*.pcgamer.com/*",
+        "*://yahoo.com/*",
+        "*://www.yahoo.com/*"
       ],
       "js": [
         "content/interceptor.js"
