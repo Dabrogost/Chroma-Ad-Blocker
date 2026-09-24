@@ -12,20 +12,22 @@ const {
   waitFor
 } = require('./helpers/extension-fixture');
 
-async function createFulfilledPage(cdp, url, html) {
+async function createFulfilledPage(cdp, url, html, resources = {}) {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const sessionId = await attach(cdp, targetId);
   await cdp.send('Page.enable', {}, sessionId);
 
   const removeFetchListener = cdp.on('Fetch.requestPaused', (params) => {
     const isDocument = params.resourceType === 'Document';
-    const body = isDocument ? html : '';
+    const resource = resources[params.request.url];
+    const body = isDocument ? html : resource?.body || '';
     cdp.send('Fetch.fulfillRequest', {
       requestId: params.requestId,
-      responseCode: isDocument ? 200 : 204,
-      responsePhrase: isDocument ? 'OK' : 'No Content',
+      responseCode: isDocument || resource ? 200 : 204,
+      responsePhrase: isDocument || resource ? 'OK' : 'No Content',
       responseHeaders: [
-        { name: 'content-type', value: isDocument ? 'text/html; charset=utf-8' : 'text/plain' },
+        { name: 'content-type', value: isDocument ? 'text/html; charset=utf-8' : resource?.type || 'text/plain' },
+        { name: 'access-control-allow-origin', value: 'https://www.youtube.com' },
         { name: 'cache-control', value: 'no-store' }
       ],
       body: Buffer.from(body, 'utf8').toString('base64')
@@ -187,6 +189,74 @@ test('loaded extension E2E smoke', async (t) => {
     assert.strictEqual(typeof state.bridgeConfigEnabled, 'boolean');
     assert.strictEqual(state.fetchCallable, true);
     assert.strictEqual(state.querySelectorWorks, true);
+  });
+
+  await t.test('YouTube SABR startup recovery handles real browser response streams once', async (t) => {
+    const mediaUrl = 'https://rr1.googlevideo.com/videoplayback?sabr=1&chroma-fixture=1';
+    const playerUrl = 'https://www.youtube.com/youtubei/v1/player';
+    const page = await createFulfilledPage(browser.cdp,
+      'https://www.youtube.com/watch?v=chroma-sabr&list=RDchroma-sabr', `<!doctype html>
+      <html><head><title>SABR fixture</title></head><body>
+        <div id="movie_player"><video></video></div><yt-playlist-manager></yt-playlist-manager>
+        <script>
+          const player = document.getElementById('movie_player');
+          const manager = document.querySelector('yt-playlist-manager');
+          const data = { playlistId: 'RDchroma-sabr', currentIndex: 2 };
+          window.__sabrFixture = { cancels: 0, loads: [], restores: 0, videoData: {}, playlistId: data.playlistId };
+          const fixture = window.__sabrFixture;
+          player.getPlayerState = () => 5;
+          player.getPlayerResponse = () => ({ videoDetails: { videoId: 'chroma-sabr' }, playabilityStatus: { status: 'OK' }, playerConfig: { playbackStartConfig: { startSeconds: 23 } } });
+          player.getVideoData = () => fixture.videoData;
+          player.getPlaylistId = () => fixture.playlistId;
+          player.cancelPlayback = () => fixture.cancels++;
+          player.loadVideoById = (...args) => { fixture.loads.push(args); fixture.playlistId = null; };
+          manager.getPlaylistData = () => data;
+          manager.setPlaylistData = value => { fixture.playlistId = value.playlistId; fixture.restores++; };
+          manager.setPlayerPlaybackControlData = value => { fixture.index = value.playlistPanelRenderer.currentIndex; };
+        </script>
+      </body></html>`, {
+        [mediaUrl]: { body: Buffer.from([35, 3, 32, 224, 93]), type: 'application/vnd.yt-ump' },
+        [playerUrl]: { body: '{}', type: 'application/json' }
+      });
+    t.after(() => page.close());
+    await waitFor(() => evaluate(browser.cdp, page.sessionId,
+      'window.__CHROMA_INTERNAL__?.config?.stripping && !JSON.parse(\'{"adPlacements":[]}\').adPlacements'), 'SABR fixture config');
+    const responses = await evaluate(browser.cdp, page.sessionId, `(async () => {
+      const results = [];
+      for (let i = 0; i < 3; i++) {
+        const response = await fetch(${JSON.stringify(mediaUrl)});
+        results.push({ bytes: Array.from(new Uint8Array(await response.arrayBuffer())), url: response.url, type: response.type });
+      }
+      return results;
+    })()`);
+    assert.deepStrictEqual(responses.map(r => r.bytes), [[35, 3, 32, 228, 0], [35, 3, 32, 228, 0], [35, 3, 32, 224, 93]]);
+    assert.ok(responses.every(r => r.url === mediaUrl && r.type === 'cors'));
+    const state = await waitFor(async () => {
+      const value = await evaluate(browser.cdp, page.sessionId, 'window.__sabrFixture');
+      return value.loads.length ? value : null;
+    }, 'one SABR session retry');
+    assert.strictEqual(state.cancels, 1);
+    assert.deepStrictEqual(state.loads, [['chroma-sabr', 23]]);
+    assert.strictEqual(state.videoData.isInlinePlaybackNoAd, true);
+    assert.strictEqual(state.playlistId, 'RDchroma-sabr');
+    assert.strictEqual(state.index, 2);
+    assert.strictEqual(state.restores, 1);
+    let outgoing;
+    const removeListener = browser.cdp.on('Network.requestWillBeSent', event => {
+      if (event.request.url === playerUrl) outgoing = event.request;
+    }, page.sessionId);
+    t.after(removeListener);
+    await browser.cdp.send('Network.enable', {}, page.sessionId);
+    await evaluate(browser.cdp, page.sessionId, `(async () => {
+      const body = JSON.stringify({ videoId: 'chroma-sabr', context: { client: { clientName: 'WEB' } }, playbackContext: { contentPlaybackContext: { signatureTimestamp: 123 } } });
+      const gzip = await new Response(new Response(body).body.pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+      await fetch(${JSON.stringify(playerUrl)}, { method: 'POST', headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' }, body: gzip });
+    })()`);
+    assert.ok(outgoing, 'compressed player request reached the browser network layer');
+    assert.strictEqual(Object.entries(outgoing.headers).find(([key]) => key.toLowerCase() === 'content-encoding')?.[1], 'gzip');
+    const sent = JSON.parse(require('node:zlib').gunzipSync(Buffer.from(outgoing.postData, 'latin1')));
+    assert.deepStrictEqual(sent.playbackContext.contentPlaybackContext, { signatureTimestamp: 123, isInlinePlaybackNoAd: true });
+    assert.strictEqual(sent.params, 'eAFgAQ');
   });
 
   await t.test('Yahoo recipe contains parser-time recovery before asynchronous configuration', async (t) => {
