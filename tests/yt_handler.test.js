@@ -69,7 +69,7 @@ const youtubeJsCode = fs.readFileSync(scriptPath, 'utf8');
 // ─── AD FIELD STRIPPING ─────
 test('Ad field stripping', async (t) => {
   // Minimal sandbox — stripping functions run synchronously, no DOM needed.
-  const createStrippingSandbox = (configOverrides = {}, nativeFetch, hostname = 'www.youtube.com') => {
+  const createStrippingSandbox = (configOverrides = {}, nativeFetch, hostname = 'www.youtube.com', setupSandbox = null) => {
     const sandbox = {
       window: {
         location: { hostname },
@@ -115,7 +115,7 @@ test('Ad field stripping', async (t) => {
         async json() { return JSON.parse(this.body); }
       },
       XMLHttpRequest: class { open() {} send() {} addEventListener() {} },
-      console, Object, Array, Number, String, Boolean, Math, Date, Promise, Error,
+      console, Object, Array, Number, String, Boolean, Math, Date, Promise, Error, URL, Uint8Array,
       // Give each sandbox its own JSON copy so JSON.parse mutations don't leak between test sandboxes.
       JSON: { parse: JSON.parse, stringify: JSON.stringify },
       __CHROMA_INTERNAL_TEST_STRICT__: true,
@@ -135,6 +135,7 @@ test('Ad field stripping', async (t) => {
       },
       config: { enabled: true, stripping: true, acceleration: false, accelerationSpeed: 8, ...configOverrides },
     };
+    if (setupSandbox) setupSandbox(sandbox);
     vm.createContext(sandbox);
     vm.runInContext(youtubeJsCode, sandbox);
     return sandbox;
@@ -374,6 +375,340 @@ test('Ad field stripping', async (t) => {
       sandbox.mightContainYoutubeAdPayloadSignal(JSON.stringify({ contents: [{ adSlotRenderer: {} }] })),
       true
     );
+  });
+
+  await t.test('SABR parses framed policy fields without touching media or opaque bytes', () => {
+    const { patchSabrBackoff } = createStrippingSandbox();
+    // UMP part 35, 9-byte policy: backoff=12000, then a cookie containing
+    // another apparent field-4 tag. Only the actual policy field may change.
+    const original = Uint8Array.from([35, 9, 32, 224, 93, 58, 4, 32, 136, 39, 0]);
+    const before = original.slice();
+    assert.deepStrictEqual(patchSabrBackoff(original), Uint8Array.from([35, 9, 32, 228, 0, 58, 4, 32, 136, 39, 0]));
+    assert.deepStrictEqual(original, before, 'input bytes remain intact');
+    const otherPart = [57, 3, 32, 224, 93];
+    assert.deepStrictEqual(patchSabrBackoff(Uint8Array.from([...otherPart, ...original])).slice(0, 5), Uint8Array.from(otherPart));
+    // 137-byte payload uses UMP's 2-byte integer, not protobuf's varint.
+    const longPolicy = Uint8Array.from([35, 137, 2, 32, 224, 93, 58, 131, 1, ...Array(131).fill(0)]);
+    const patched = patchSabrBackoff(longPolicy);
+    assert.ok(patched);
+    assert.strictEqual(patched.length, longPolicy.length);
+    assert.deepStrictEqual(patched.slice(3, 6), Uint8Array.from([32, 228, 0]));
+    for (const bytes of [
+      [], [35], [35, 9, 32, 224, 93], [35, 3, 0, 224, 93],
+      [35, 2, 32, 128], [35, 2, 32, 100], [35, 3, 40, 224, 93],
+      [35, 3, 34, 10, 0], [35, 1, 39], [35, 3, 32, 224, 93, 240],
+      [21, 3, 32, 224, 93, ...original], [...original, 20, 0],
+      [47, 3, 32, 224, 93], Array(1000).fill(0)
+    ]) assert.strictEqual(patchSabrBackoff(Uint8Array.from(bytes)), null, `unchanged malformed/non-policy input ${bytes.slice(0, 15)}`);
+  });
+
+  const sabrUrl = 'https://rr1.googlevideo.com/videoplayback?sabr=1&rn=1';
+  const backoffBytes = Uint8Array.from([35, 3, 32, 224, 93]);
+  const createSabrSandbox = (options = {}) => {
+    const calls = [], timers = [], requests = [];
+    const video = { readyState: 0, currentTime: 0, buffered: { length: 0 } };
+    const response = {
+      videoDetails: { videoId: '5URefVYaJrA' }, playabilityStatus: { status: 'OK' },
+      playerConfig: { playbackStartConfig: { startSeconds: options.startSeconds || 0 } }
+    };
+    const videoData = {};
+    let playlistId = options.playlist ? 'RD5URefVYaJrA' : null;
+    const playlistData = { playlistId, currentIndex: 4, contents: [{ videoId: '5URefVYaJrA' }] };
+    const manager = {
+      getPlaylistData: () => playlistData,
+      setPlaylistData: data => { calls.push(['playlist', data]); playlistId = data.playlistId; },
+      setPlayerPlaybackControlData: data => calls.push(['playlist-control', data])
+    };
+    const player = {
+      querySelector: () => video,
+      classList: { contains: () => false },
+      getPlayerState: () => 3,
+      getPlayerResponse: () => response,
+      getVideoData: () => videoData,
+      getPlaylistId: () => playlistId,
+      cancelPlayback: () => calls.push(['cancel']),
+      loadVideoById: (...args) => { calls.push(['load', ...args]); playlistId = null; }
+    };
+    let original;
+    const sandbox = createStrippingSandbox(options.config || {}, async (...args) => {
+      requests.push(args);
+      original = options.fetch ? await options.fetch(...args) : new Response(backoffBytes, { headers: { 'content-type': 'application/vnd.yt-ump' } });
+      return original;
+    }, options.hostname || 'www.youtube.com', s => {
+      s.Response = Response;
+      s.Request = Request;
+      s.Headers = Headers;
+      s.DecompressionStream = DecompressionStream;
+      s.CompressionStream = CompressionStream;
+      s.TextDecoder = TextDecoder;
+      s.XMLHttpRequest.prototype.send = function(body) { this.sentBody = body; };
+      s.window.location.href = `https://${options.hostname || 'www.youtube.com'}/watch?v=5URefVYaJrA${options.playlist ? '&list=RD5URefVYaJrA&start_radio=1' : ''}`;
+      s.window.setTimeout = (fn, ms) => { const timer = { fn, ms, cancelled: false }; timers.push(timer); return timer; };
+      s.window.clearTimeout = timer => { timer.cancelled = true; };
+      s.document.querySelector = selector => selector === '#movie_player' ? player : selector === 'yt-playlist-manager' ? manager : null;
+    });
+    return { sandbox, video, player, response, videoData, calls, requests, timers, manager, playlistData,
+      original: () => original,
+      runRetry: () => timers.filter(t => t.ms === 1000 && !t.cancelled).splice(0).forEach(t => { t.cancelled = true; t.fn(); }) };
+  };
+
+  await t.test('SABR startup patches at most two responses and retries one fresh session', async () => {
+    const h = createSabrSandbox({ startSeconds: 42 });
+    h.video.currentTime = 42; // Pre-start seek at HAVE_NOTHING is not playback.
+    const first = await h.sandbox.window.fetch(sabrUrl);
+    assert.deepStrictEqual(new Uint8Array(await first.arrayBuffer()), Uint8Array.from([35, 3, 32, 228, 0]));
+    assert.strictEqual(first.headers.get('content-type'), 'application/vnd.yt-ump');
+    assert.strictEqual(first.url, h.original().url);
+    h.runRetry();
+    assert.deepStrictEqual(h.calls, [['cancel'], ['load', '5URefVYaJrA', 42]]);
+    assert.strictEqual(h.videoData.isInlinePlaybackNoAd, true);
+    await h.sandbox.window.fetch(sabrUrl);
+    h.runRetry();
+    const third = await h.sandbox.window.fetch(sabrUrl);
+    assert.strictEqual(third, h.original(), 'budget exhausted: original response returned');
+    assert.strictEqual(h.calls.filter(c => c[0] === 'load').length, 1);
+  });
+
+  await t.test('SABR intercepts a cued first request before the reported 16-second backoff', async () => {
+    // Synthetic envelope matching the report's 104 bytes and part IDs, with
+    // inert context payloads instead of the user's private context/cookie data.
+    const control = Uint8Array.from([57, 91, ...Array(91).fill(0), 67, 4, 0, 0, 0, 0, 35, 3, 32, 128, 125]);
+    assert.strictEqual(control.length, 104);
+    for (const responseState of [5, 3]) {
+      const h = createSabrSandbox({ playlist: true, fetch: () => {
+        h.player.getPlayerState = () => responseState;
+        return new Response(control);
+      } });
+      h.player.getPlayerState = () => 5;
+      const response = await h.sandbox.window.fetch(sabrUrl);
+      const patched = new Uint8Array(await response.arrayBuffer());
+      assert.deepStrictEqual(patched, Uint8Array.from([...control.slice(0, -2), 228, 0]),
+        'first response must be intercepted even when request starts in state 5');
+      h.runRetry();
+      assert.strictEqual(h.calls.filter(c => c[0] === 'load').length, 1);
+      assert.strictEqual(h.videoData.isInlinePlaybackNoAd, true);
+      assert.deepStrictEqual(h.calls.find(c => c[0] === 'playlist')[1], h.playlistData);
+    }
+  });
+
+  await t.test('SABR retry preserves radio context and adds no-ad flag only to its own player request', async () => {
+    const h = createSabrSandbox({ playlist: true });
+    await h.sandbox.window.fetch(sabrUrl);
+    h.runRetry();
+    assert.deepStrictEqual(h.calls.map(c => c[0]), ['cancel', 'load', 'playlist', 'playlist-control']);
+    assert.deepStrictEqual(h.calls[2][1], h.playlistData);
+    assert.notStrictEqual(h.calls[2][1], h.playlistData, 'snapshot survives player-owned data mutation');
+    assert.deepStrictEqual(h.calls[3][1].playlistPanelRenderer, h.playlistData);
+    const body = JSON.stringify({ videoId: '5URefVYaJrA', playbackContext: { contentPlaybackContext: { signatureTimestamp: 123 } } });
+    const init = { method: 'POST', body };
+    await h.sandbox.window.fetch('/youtubei/v1/player', init);
+    const sent = JSON.parse(h.requests.at(-1)[1].body);
+    assert.strictEqual(sent.playbackContext.contentPlaybackContext.isInlinePlaybackNoAd, true);
+    assert.strictEqual(sent.playbackContext.contentPlaybackContext.signatureTimestamp, 123);
+    assert.strictEqual(init.body, body, 'caller-owned options not mutated');
+    await h.sandbox.window.fetch('/youtubei/v1/next', init);
+    assert.strictEqual(h.requests.at(-1)[1].body, body);
+    await h.sandbox.window.fetch('https://example.com/youtubei/v1/player', init);
+    assert.strictEqual(h.requests.at(-1)[1].body, body);
+    const different = { ...init, body: body.replace('5URefVYaJrA', 'anotherVideo') };
+    await h.sandbox.window.fetch('/youtubei/v1/player', different);
+    assert.strictEqual(h.requests.at(-1)[1].body, different.body);
+    const xhr = new h.sandbox.XMLHttpRequest();
+    xhr.open('POST', '/youtubei/v1/player');
+    xhr.send(body);
+    assert.strictEqual(JSON.parse(xhr.sentBody).playbackContext.contentPlaybackContext.isInlinePlaybackNoAd, true);
+    const request = new Request('https://www.youtube.com/youtubei/v1/player', {
+      method: 'POST', body, credentials: 'include', headers: { 'content-type': 'application/json' }
+    });
+    await h.sandbox.window.fetch(request);
+    const forwarded = h.requests.at(-1)[0];
+    assert.strictEqual(forwarded.credentials, 'include');
+    assert.strictEqual(forwarded.headers.get('content-type'), 'application/json');
+    assert.strictEqual(JSON.parse(await forwarded.text()).playbackContext.contentPlaybackContext.isInlinePlaybackNoAd, true);
+    assert.strictEqual(await request.text(), body, 'original Request body remains readable');
+  });
+
+  await t.test('SABR retry adds the hint to gzip WEB requests while preserving their encoding and caller bodies', async () => {
+    const { gzipSync, gunzipSync } = require('node:zlib');
+    const h = createSabrSandbox();
+    const url = 'https://www.youtube.com/youtubei/v1/player';
+    const data = { videoId: '5URefVYaJrA', context: { client: { clientName: 'WEB' } }, playbackContext: { contentPlaybackContext: { signatureTimestamp: 123 } } };
+    const body = gzipSync(JSON.stringify(data));
+    const saved = Buffer.from(body);
+    const headers = { 'content-type': 'application/json', 'content-encoding': 'gzip' };
+    const init = { method: 'POST', headers, body };
+    await h.sandbox.window.fetch(url, init);
+    assert.strictEqual(h.requests.at(-1)[1], init, 'ordinary requests are untouched');
+    await h.sandbox.window.fetch(sabrUrl);
+    h.runRetry();
+    for (const payload of [body, new Blob([body]), body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength)]) {
+      await h.sandbox.window.fetch(url, { ...init, body: payload });
+      const forwarded = h.requests.at(-1)[1];
+      const sent = JSON.parse(gunzipSync(forwarded.body));
+      assert.deepStrictEqual(sent, { ...data, params: 'eAFgAQ', playbackContext: { contentPlaybackContext: { signatureTimestamp: 123, isInlinePlaybackNoAd: true } } });
+      assert.strictEqual(forwarded.headers, headers);
+    }
+    assert.deepStrictEqual(body, saved);
+    const request = new Request(url, { ...init, credentials: 'include' });
+    await h.sandbox.window.fetch(request);
+    const forwarded = h.requests.at(-1)[0];
+    assert.strictEqual(forwarded.credentials, 'include');
+    assert.strictEqual(forwarded.headers.get('content-encoding'), 'gzip');
+    const requestData = JSON.parse(gunzipSync(Buffer.from(await forwarded.arrayBuffer())));
+    assert.strictEqual(requestData.playbackContext.contentPlaybackContext.isInlinePlaybackNoAd, true);
+    assert.strictEqual(requestData.params, 'eAFgAQ');
+    assert.deepStrictEqual(Buffer.from(await request.arrayBuffer()), saved);
+  });
+
+  await t.test('SABR experimental params affect only the matching WEB retry request', async () => {
+    const h = createSabrSandbox();
+    const url = 'https://www.youtube.com/youtubei/v1/player';
+    const payload = { videoId: '5URefVYaJrA', context: { client: { clientName: 'WEB' } }, params: 'original', playbackContext: { contentPlaybackContext: { signatureTimestamp: 123 } } };
+    const init = { method: 'POST', body: JSON.stringify(payload) };
+    await h.sandbox.window.fetch(url, init);
+    assert.strictEqual(h.requests.at(-1)[1], init);
+    await h.sandbox.window.fetch(sabrUrl);
+    h.runRetry();
+    await h.sandbox.window.fetch(url, init);
+    assert.strictEqual(JSON.parse(h.requests.at(-1)[1].body).params, 'eAFgAQ');
+    assert.strictEqual(JSON.parse(init.body).params, 'original', 'caller data is unchanged');
+    for (const clientName of ['WEB_REMIX', 'MWEB', 'TVHTML5', undefined]) {
+      const body = JSON.stringify({ ...payload, context: { client: { clientName } } });
+      await h.sandbox.window.fetch(url, { ...init, body });
+      assert.strictEqual(JSON.parse(h.requests.at(-1)[1].body).params, 'original');
+    }
+    const different = { ...init, body: JSON.stringify({ ...payload, videoId: 'different' }) };
+    await h.sandbox.window.fetch(url, different);
+    assert.strictEqual(h.requests.at(-1)[1], different);
+    await h.sandbox.window.fetch(url.replace('/player', '/next'), init);
+    assert.strictEqual(h.requests.at(-1)[1], init);
+    h.sandbox.document.dispatchEvent({ type: 'yt-navigate-start' });
+    await h.sandbox.window.fetch(url, init);
+    assert.strictEqual(h.requests.at(-1)[1], init);
+  });
+
+  await t.test('SABR gzip rewriting fails open on invalid, oversized, unrelated and unavailable compression', async () => {
+    const { gzipSync } = require('node:zlib');
+    const h = createSabrSandbox();
+    await h.sandbox.window.fetch(sabrUrl);
+    h.runRetry();
+    const headers = { 'content-encoding': 'gzip' };
+    const valid = gzipSync(JSON.stringify({ videoId: '5URefVYaJrA', playbackContext: { contentPlaybackContext: {} } }));
+    const url = 'https://www.youtube.com/youtubei/v1/player';
+    for (const [target, body] of [
+      [url, Uint8Array.from([31, 139, 8, 0])],
+      [url, gzipSync('invalid JSON')],
+      [url, gzipSync('x'.repeat(1000001))],
+      [url, new Uint8Array(1000001)],
+      [url, gzipSync('{"videoId":"different","playbackContext":{"contentPlaybackContext":{}}}')],
+      ['https://example.com/youtubei/v1/player', valid],
+      ['https://www.youtube.com/youtubei/v1/next', valid],
+      [url, new Response(valid).body]
+    ]) {
+      const init = { method: 'POST', headers, body };
+      await h.sandbox.window.fetch(target, init);
+      assert.strictEqual(h.requests.at(-1)[1], init);
+      if (body.getReader) assert.strictEqual(body.locked, false, 'caller-owned streams are never consumed');
+    }
+    h.sandbox.DecompressionStream = undefined;
+    const init = { method: 'POST', headers, body: valid };
+    await h.sandbox.window.fetch(url, init);
+    assert.strictEqual(h.requests.at(-1)[1], init);
+  });
+
+  await t.test('SABR gzip preparation stops at its deadline or a navigation change', async () => {
+    const { gzipSync } = require('node:zlib');
+    const init = { method: 'POST', headers: { 'content-encoding': 'gzip' }, body: gzipSync(JSON.stringify({ videoId: '5URefVYaJrA', playbackContext: { contentPlaybackContext: {} } })) };
+    for (const reason of ['timeout', 'navigation']) {
+      const h = createSabrSandbox();
+      await h.sandbox.window.fetch(sabrUrl);
+      h.runRetry();
+      if (reason === 'timeout') h.sandbox.DecompressionStream = class {
+        constructor() { return new TransformStream({ transform() { return new Promise(() => {}); } }); }
+      };
+      const pending = h.sandbox.window.fetch('https://www.youtube.com/youtubei/v1/player', init);
+      if (reason === 'timeout') h.timers.find(timer => timer.ms === 200 && !timer.cancelled).fn();
+      else h.sandbox.document.dispatchEvent({ type: 'yt-navigate-start' });
+      await pending;
+      assert.strictEqual(h.requests.at(-1)[1], init, reason);
+    }
+  });
+
+  await t.test('SABR skips session reload if radio context cannot be preserved', async () => {
+    const h = createSabrSandbox({ playlist: true });
+    h.manager.getPlaylistData = () => null;
+    await h.sandbox.window.fetch(sabrUrl);
+    h.runRetry();
+    assert.deepStrictEqual(h.calls, []);
+  });
+
+  await t.test('SABR leaves ordinary playback, ads, excluded clients and malformed bodies alone', async () => {
+    const cases = [
+      h => { h.sandbox.CONFIG.enabled = false; },
+      h => { h.sandbox.CONFIG.stripping = false; },
+      h => { h.video.currentTime = 10; },
+      h => { h.video.readyState = 3; },
+      h => { h.video.buffered.length = 1; },
+      h => { h.player.getPlayerState = () => 2; },
+      h => { h.player.classList.contains = () => true; },
+      h => { h.response.videoDetails.isLive = true; },
+      h => { h.response.videoDetails.isLiveContent = true; },
+      h => { h.response.videoDetails.videoId = 'differentVideo'; },
+      h => { h.response.playabilityStatus.status = 'UNPLAYABLE'; },
+      h => { h.sandbox.window.location.href = 'https://music.youtube.com/watch?v=5URefVYaJrA'; },
+      h => { h.sandbox.window.location.href = 'https://www.youtube.com/shorts/5URefVYaJrA'; },
+      h => { h.sandbox.window.ytInitialData = { topbar: { desktopTopbarRenderer: { logo: { topbarLogoRenderer: { iconImage: { iconType: 'YOUTUBE_PREMIUM_LOGO' } } } } } }; }
+    ];
+    for (const change of cases) {
+      const h = createSabrSandbox();
+      change(h);
+      assert.strictEqual(await h.sandbox.window.fetch(sabrUrl), h.original());
+      h.runRetry();
+      assert.deepStrictEqual(h.calls, []);
+    }
+    for (const bytes of [Uint8Array.from([35, 99, 32, 224, 93]), Uint8Array.from([21, 3, 32, 224, 93]), new Uint8Array(2000)]) {
+      const h = createSabrSandbox({ fetch: () => new Response(bytes) });
+      const result = await h.sandbox.window.fetch(sabrUrl);
+      assert.strictEqual(result, h.original());
+      assert.deepStrictEqual(new Uint8Array(await result.arrayBuffer()), bytes);
+      h.runRetry();
+      assert.deepStrictEqual(h.calls, []);
+    }
+    for (const url of [sabrUrl.replace('sabr=1', 'sabr=0'), sabrUrl.replace('rr1.googlevideo.com', 'googlevideo.com.evil.test'), sabrUrl.replace('/videoplayback', '/other')]) {
+      const h = createSabrSandbox();
+      assert.strictEqual(await h.sandbox.window.fetch(url), h.original());
+    }
+  });
+
+  await t.test('SABR cancels stale retry after navigation, config change, or first playback', async () => {
+    for (const change of [
+      h => h.sandbox.document.dispatchEvent({ type: 'yt-navigate-start' }),
+      h => { h.sandbox.CONFIG.enabled = false; },
+      h => { h.sandbox.CONFIG.stripping = false; },
+      h => h.sandbox.document.dispatchEvent({ type: 'playing', target: h.video }),
+      h => { h.video.readyState = 2; }
+    ]) {
+      const h = createSabrSandbox();
+      await h.sandbox.window.fetch(sabrUrl);
+      change(h);
+      h.runRetry();
+      assert.deepStrictEqual(h.calls, []);
+    }
+  });
+
+  await t.test('SABR times out an incomplete control response and passes its stream through', async () => {
+    let source;
+    const stream = new ReadableStream({ start(controller) { source = controller; controller.enqueue(Uint8Array.from([35])); } });
+    const h = createSabrSandbox({ fetch: () => new Response(stream) });
+    const pending = h.sandbox.window.fetch(sabrUrl);
+    await new Promise(resolve => setImmediate(resolve));
+    h.timers.find(t => t.ms === 100).fn();
+    const result = await pending;
+    assert.strictEqual(result, h.original());
+    source.enqueue(Uint8Array.from([3, 32, 224, 93]));
+    source.close();
+    assert.deepStrictEqual(new Uint8Array(await result.arrayBuffer()), backoffBytes);
+    assert.deepStrictEqual(h.calls, []);
   });
 
   // ── shouldAccelerate ──

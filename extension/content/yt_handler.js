@@ -1,7 +1,7 @@
 /**
  * Chroma Ad-Blocker — YouTube Handler
  * 
- * Portions of the YouTube ad-stripping logic (specifically payload field pruning) 
+ * Portions of the YouTube ad-stripping and SABR startup recovery logic
  * are derived from Brave Browser's ad-blocking scriptlets and are subject to 
  * the Mozilla Public License, v. 2.0. You can obtain a copy of the MPL 2.0 
  * at https://mozilla.org/MPL/2.0/.
@@ -306,6 +306,304 @@
   const _nativeXHRSend = XMLHttpRequest.prototype.send;
   const _nativeJSONParse = JSON.parse;
 
+  // Brave's fresh-session/backoff approach, adapted to Chroma's config and
+  // navigation lifecycle: https://github.com/brave/adblock-resources/pull/334
+  // Decode UMP framing and NextRequestPolicy field 4 explicitly; never scan
+  // arbitrary media/cookie bytes for 0x20. Wire definitions are documented at
+  // https://github.com/LuanRT/googlevideo/tree/main/protos/video_streaming
+  const SABR_CONTROL_LIMIT = 1000;
+  let sabrNavigation = 0;
+  let sabrRecovery = null;
+
+  function requestUrl(resource) {
+    return typeof resource === 'string' ? resource : resource?.url || resource?.href || '';
+  }
+
+  function readUmpInteger(bytes, cursor) {
+    if (cursor.pos >= bytes.length) throw new Error('Truncated UMP integer');
+    const first = bytes[cursor.pos++];
+    const extra = first < 128 ? 0 : first < 192 ? 1 : first < 224 ? 2 : first < 240 ? 3 : 4;
+    if (cursor.pos + extra > bytes.length) throw new Error('Truncated UMP integer');
+    let value = extra === 4 ? 0 : first & (127 >> extra);
+    let factor = extra === 4 ? 1 : 2 ** (7 - extra);
+    for (let i = 0; i < extra; i++, factor *= 256) value += bytes[cursor.pos++] * factor;
+    return value;
+  }
+
+  function readProtoInteger(bytes, cursor, end) {
+    let value = 0;
+    for (let i = 0; i < 8 && cursor.pos < end; i++) {
+      const byte = bytes[cursor.pos++];
+      value += (byte & 127) * 2 ** (7 * i);
+      if (!Number.isSafeInteger(value)) break;
+      if (!(byte & 128)) return value;
+    }
+    throw new Error('Invalid protobuf integer');
+  }
+
+  function patchSabrBackoff(bytes) {
+    if (!bytes.length || bytes.length >= SABR_CONTROL_LIMIT) return null;
+    const cursor = { pos: 0 };
+    const fields = [];
+    try {
+      while (cursor.pos < bytes.length) {
+        const type = readUmpInteger(bytes, cursor);
+        const length = readUmpInteger(bytes, cursor);
+        const end = cursor.pos + length;
+        if (end > bytes.length || type === 20 || type === 21 || type === 22) return null;
+        if (type === 35) { // NEXT_REQUEST_POLICY; its payload is protobuf.
+          while (cursor.pos < end) {
+            const tag = readProtoInteger(bytes, cursor, end);
+            const field = Math.floor(tag / 8);
+            const wire = tag % 8;
+            if (!field) return null;
+            if (wire === 0) {
+              const start = cursor.pos;
+              const value = readProtoInteger(bytes, cursor, end);
+              if (field === 4 && value > 500 && value < 100000) fields.push([start, cursor.pos]);
+            } else if (wire === 1) cursor.pos += 8;
+            else if (wire === 2) {
+              const size = readProtoInteger(bytes, cursor, end);
+              cursor.pos += size;
+            } else if (wire === 5) cursor.pos += 4;
+            else return null;
+            if (cursor.pos > end) return null;
+          }
+        }
+        cursor.pos = end;
+      }
+    } catch (_) { return null; }
+    if (!fields.length) return null;
+    const patched = bytes.slice();
+    // Preserve encoded widths (and consequently every enclosing UMP length).
+    for (const [start, end] of fields) {
+      let remaining = 100;
+      for (let pos = start; pos < end; pos++) {
+        patched[pos] = (remaining & 127) | (pos < end - 1 ? 128 : 0);
+        remaining = Math.floor(remaining / 128);
+      }
+    }
+    return patched;
+  }
+
+  function getSabrStartup(expected = null) {
+    try {
+      if (!(CONFIG.enabled && CONFIG.stripping)) return null;
+      const page = new URL(window.location.href);
+      if (!['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(page.hostname) || page.pathname !== '/watch') return null;
+      const videoId = page.searchParams.get('v');
+      const player = document.querySelector('#movie_player');
+      const video = player?.querySelector('video');
+      const response = player?.getPlayerResponse?.();
+      if (!videoId || response?.videoDetails?.videoId !== videoId || response.playabilityStatus?.status !== 'OK') return null;
+      if (response.videoDetails.isLive || response.videoDetails.isLiveContent || response.videoDetails.isPostLiveDvr) return null;
+      const logo = document.querySelector('a#logo[title]');
+      if (/premium/i.test(logo?.getAttribute('title') || '') ||
+          _ytInitialData?.topbar?.desktopTopbarRenderer?.logo?.topbarLogoRenderer?.iconImage?.iconType === 'YOUTUBE_PREMIUM_LOGO') return null;
+      if (expected && (sabrRecovery !== expected || expected.navigation !== sabrNavigation || expected.videoId !== videoId || expected.player !== player)) return null;
+      if (!sabrRecovery || sabrRecovery.videoId !== videoId || sabrRecovery.player !== player) {
+        sabrRecovery = { navigation: sabrNavigation, videoId, player, retried: false, patches: 0, played: false, requestUntil: 0, playlistRestores: 0 };
+      }
+      const state = sabrRecovery;
+      if (!video || state.played) return null;
+      const requestedStart = response.playerConfig?.playbackStartConfig?.startSeconds;
+      const startSeconds = Number.isFinite(requestedStart) && requestedStart >= 0 ? requestedStart : 0;
+      // A pre-start seek can expose currentTime=startSeconds at HAVE_NOTHING.
+      if ((video.currentTime > 1 && Math.abs(video.currentTime - startSeconds) > 1) ||
+          video.readyState >= 2 || video.buffered?.length > 0) {
+        state.played = true;
+        return null;
+      }
+      // The first SABR request can start while cued (5), before buffering (3).
+      // Rejecting it here loses the response carrying the initial ad backoff.
+      if (video.readyState !== 0 || ![-1, 3, 5].includes(player.getPlayerState?.()) ||
+          player.classList?.contains('ad-showing') || player.classList?.contains('ad-interrupting')) return null;
+      return state;
+    } catch (_) { return null; }
+  }
+
+  function restoreSabrPlaylist(state) {
+    try {
+      const page = new URL(window.location.href);
+      if (sabrRecovery !== state || state.navigation !== sabrNavigation || !state.playlist || state.playlistRestores >= 2 ||
+          !(CONFIG.enabled && CONFIG.stripping) || Date.now() > state.requestUntil ||
+          page.searchParams.get('v') !== state.videoId || page.searchParams.get('list') !== state.playlist.id) return;
+      if (state.player.getPlaylistId?.() === state.playlist.id) return;
+      state.playlistRestores++;
+      state.playlist.manager.setPlaylistData(state.playlist.data);
+      state.playlist.manager.setPlayerPlaybackControlData({ playlistPanelRenderer: state.playlist.data });
+    } catch (_) {}
+  }
+
+  function retrySabrSession(state) {
+    if (state.retried || !getSabrStartup(state)) return;
+    const player = state.player;
+    if (typeof player.cancelPlayback !== 'function' || typeof player.loadVideoById !== 'function') return;
+    try {
+      const page = new URL(window.location.href);
+      const list = page.searchParams.get('list');
+      if (list) {
+        const manager = document.querySelector('yt-playlist-manager');
+        const data = manager?.getPlaylistData?.();
+        // A retry must not silently turn a radio/playlist session into a single video.
+        if (!data || typeof manager.setPlaylistData !== 'function' || typeof manager.setPlayerPlaybackControlData !== 'function') return;
+        state.playlist = { id: list, manager, data: _nativeJSONParse(JSON.stringify(data)) };
+      }
+      const start = player.getPlayerResponse?.()?.playerConfig?.playbackStartConfig?.startSeconds;
+      state.startSeconds = Number.isFinite(start) && start >= 0 ? start : 0;
+      state.retried = true;
+      // Let the shortened backoff succeed first. Cancel only if still stalled,
+      // then reload immediately; never temporarily replace the player's methods.
+      window.setTimeout(() => {
+        if (!getSabrStartup(state)) return;
+        try {
+          const data = player.getVideoData?.();
+          if (data) data.isInlinePlaybackNoAd = true;
+          state.requestUntil = Date.now() + 5000;
+          player.cancelPlayback();
+          player.loadVideoById(state.videoId, state.startSeconds);
+          restoreSabrPlaylist(state);
+        } catch (_) { state.requestUntil = 0; }
+      }, 1000);
+    } catch (_) {}
+  }
+
+  function sabrPlayerRequestState(url) {
+    const state = sabrRecovery;
+    if (!state || !state.requestUntil || Date.now() > state.requestUntil ||
+        !(CONFIG.enabled && CONFIG.stripping)) return null;
+    try {
+      const target = new URL(url, window.location.href);
+      if (!isYouTubeHost(target.hostname) || target.pathname !== '/youtubei/v1/player' ||
+          new URL(window.location.href).searchParams.get('v') !== state.videoId) return null;
+      return state;
+    } catch (_) { return null; }
+  }
+
+  function prepareSabrPlayerBody(url, body) {
+    const state = sabrPlayerRequestState(url);
+    if (!state || typeof body !== 'string' || body.length > 1000000) return body;
+    try {
+      const data = _nativeJSONParse(body);
+      if (data.videoId !== state.videoId || !data.playbackContext?.contentPlaybackContext) return body;
+      data.playbackContext.contentPlaybackContext.isInlinePlaybackNoAd = true;
+      // Experimental WEB player context from uAssets. The inline hint alone
+      // can still receive another ad backoff on the fresh session.
+      // https://github.com/uBlockOrigin/uAssets/blob/master/filters/experimental.txt
+      if (data.context?.client?.clientName === 'WEB') data.params = 'eAFgAQ';
+      return JSON.stringify(data);
+    } catch (_) { return body; }
+  }
+
+  async function prepareSabrFetchBody(url, body, headers, ownedStream = false) {
+    const state = sabrPlayerRequestState(url);
+    if (!state || (!ownedStream && typeof body?.getReader === 'function')) return body;
+    let reader, timer, expired = false;
+    try {
+      if (new Headers(headers).get('content-encoding')?.toLowerCase() !== 'gzip') {
+        return prepareSabrPlayerBody(url, body);
+      }
+      if (typeof DecompressionStream !== 'function' || typeof CompressionStream !== 'function') return body;
+      // Current WEB player requests are gzip-compressed before fetch. Bound
+      // both encoded and decoded bodies, retaining the caller's original on failure.
+      const read = async stream => {
+        if (expired) throw new Error('Expired player request');
+        reader = stream.getReader();
+        const chunks = [];
+        let size = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (expired) throw new Error('Expired player request');
+          if (done) break;
+          size += value.length;
+          if (size > 1000000) throw new Error('Oversized player request');
+          chunks.push(value);
+        }
+        reader.releaseLock();
+        reader = null;
+        const bytes = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        return bytes;
+      };
+      const prepare = async () => {
+        const compressed = await read(new Response(body).body);
+        const decoded = await read(new Response(compressed).body.pipeThrough(new DecompressionStream('gzip')));
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(decoded);
+        const prepared = prepareSabrPlayerBody(url, text);
+        if (prepared === text) return body;
+        const encoded = await read(new Response(prepared).body.pipeThrough(new CompressionStream('gzip')));
+        return sabrPlayerRequestState(url) === state ? encoded : body;
+      };
+      return await Promise.race([
+        prepare(),
+        new Promise(resolve => { timer = window.setTimeout(() => { expired = true; resolve(body); }, 200); })
+      ]);
+    } catch (_) { return body; }
+    finally {
+      expired = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (reader) reader.cancel().catch(() => {});
+    }
+  }
+
+  function sabrRequestState(url) {
+    try {
+      const target = new URL(url);
+      if (target.protocol !== 'https:' || !target.hostname.endsWith('.googlevideo.com') ||
+          target.pathname !== '/videoplayback' || target.searchParams.get('sabr') !== '1') return null;
+      const state = getSabrStartup();
+      return state && state.patches < 2 ? state : null;
+    } catch (_) { return null; }
+  }
+
+  async function recoverSabrResponse(response, state) {
+    if (!response.ok || !response.body || !getSabrStartup(state) || state.patches >= 2) return response;
+    let reader;
+    let timeout;
+    try {
+      // Inspect a clone with both a size and time bound. The original response
+      // remains usable on unknown framing, normal media, cancellation, or errors.
+      reader = response.clone().body.getReader();
+      const chunks = [];
+      let total = 0;
+      const read = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            const bytes = new Uint8Array(total);
+            let offset = 0;
+            for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+            return bytes;
+          }
+          total += value.length;
+          if (total >= SABR_CONTROL_LIMIT) return null;
+          chunks.push(value);
+        }
+      };
+      const bytes = await Promise.race([
+        read(),
+        new Promise(resolve => { timeout = window.setTimeout(() => resolve(null), 100); })
+      ]);
+      if (!bytes || !getSabrStartup(state) || state.patches >= 2) return response;
+      const patched = patchSabrBackoff(bytes);
+      if (!patched) return response;
+      const result = new Response(patched, { status: response.status, statusText: response.statusText, headers: response.headers });
+      for (const key of ['url', 'type', 'redirected']) {
+        Object.defineProperty(result, key, { value: response[key], configurable: true });
+      }
+      state.patches++;
+      retrySabrSession(state);
+      // No consumer will read the original branch after returning patched bytes.
+      response.body.cancel().catch(() => {});
+      return result;
+    } catch (_) { return response; }
+    finally {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      if (reader) reader.cancel().catch(() => {});
+    }
+  }
+
   const YT_API_PATHS = [
     '/youtubei/v1/player',
     '/youtubei/v1/next',
@@ -316,10 +614,26 @@
 
   // Fetch wrapper — intercepts YouTube API responses and strips ad fields before returning.
   window.fetch = async function(...args) {
+    const url = requestUrl(args[0]);
+    if (args[1]?.body) {
+      const headers = args[1].headers ?? args[0]?.headers;
+      const body = await prepareSabrFetchBody(url, args[1].body, headers);
+      if (body !== args[1].body) args[1] = { ...args[1], body };
+    } else if (CONFIG.enabled && CONFIG.stripping && sabrRecovery?.requestUntil >= Date.now() &&
+        url.includes('/youtubei/v1/player') && typeof Request === 'function' && args[0] instanceof Request) {
+      try {
+        const headers = new Headers(args[1]?.headers ?? args[0].headers);
+        const body = headers.get('content-encoding')?.toLowerCase() === 'gzip'
+          ? args[0].clone().body : await args[0].clone().text();
+        const prepared = await prepareSabrFetchBody(url, body, headers, true);
+        if (prepared !== body) args[0] = new Request(args[0], { body: prepared });
+      } catch (_) {} // A consumed/uncloneable request follows native fetch semantics.
+    }
+    const sabrState = sabrRequestState(url);
     const response = await _nativeFetch.apply(this, args);
     if (!(CONFIG.enabled && CONFIG.stripping)) return response;
 
-    const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+    if (sabrState) return recoverSabrResponse(response, sabrState);
     if (YT_API_PATHS.some(p => url.includes(p))) {
       try {
         const clone = response.clone();
@@ -350,6 +664,7 @@
 
   XMLHttpRequest.prototype.send = function(...args) {
     const url = this._chromaYTUrl || '';
+    if (args.length) args[0] = prepareSabrPlayerBody(url, args[0]);
     if (CONFIG.enabled && CONFIG.stripping && YT_API_PATHS.some(p => url.includes(p))) {
       this.addEventListener('readystatechange', function() {
         if (this.readyState !== 4) return;
@@ -1006,6 +1321,16 @@
 
   API.addDocEventListener('yt-navigate-finish', onYTNavigate);
   API.addDocEventListener('yt-page-data-updated', onYTNavigate);
+  API.addDocEventListener('yt-navigate-start', () => {
+    sabrNavigation++;
+    sabrRecovery = null;
+  });
+  API.addDocEventListener('playing', event => {
+    if (sabrRecovery && event.target === sabrRecovery.player.querySelector('video')) sabrRecovery.played = true;
+  }, true);
+  API.addDocEventListener('yt-page-data-updated', () => {
+    if (sabrRecovery) restoreSabrPlaylist(sabrRecovery);
+  });
 
   API.addDocEventListener('__CHROMA_CONFIG_UPDATE__', () => {
     const revision = getBridgeRevision();
@@ -1126,6 +1451,7 @@
     globalThis.stripAdFields = stripAdFields;
     globalThis.stripResponseAds = stripResponseAds;
     globalThis.mightContainYoutubeAdPayloadSignal = mightContainYoutubeAdPayloadSignal;
+    globalThis.patchSabrBackoff = patchSabrBackoff;
     globalThis.shouldAccelerate = shouldAccelerate;
     globalThis.initAdOverlay = initAdOverlay;
     globalThis.handleAdAcceleration = handleAdAcceleration;

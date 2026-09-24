@@ -16,7 +16,13 @@ Instead of waiting for an ad to appear and then speeding it up or hiding it, the
 - **Feed & Search Optimization**: Strips promoted Sparkles ads, suggested products, and sponsored results from home feed and search payloads.
 - **Sponsored Shorts Blocking**: Prunes sponsored Shorts payloads such as `adsOverlay`, `shortsAdsRenderer`, `sequenceItemInPlayerAdLayoutRenderer`, and `reelWatchEndpoint.adClientParams.isAd` before the Shorts player renders the sponsored overlay.
 
-The stripper can still have a slight delay while YouTube processes cleaned data, and behavior can change when YouTube changes its delivery pipeline. Proxy-side ad-free payloads can reduce delay in supported setups because the payload starts without ad data.
+## Startup Recovery
+
+YouTube can tell its player to wait even after ad metadata has been removed, leaving a black screen or startup spinner. With YouTube Ad Stripping enabled, Chroma detects these startup waits and can retry the current video once to request content playback sooner. This recovery supplements the existing ad stripping and runs automatically.
+
+Recovery preserves the requested start position and restores available radio or playlist context. If playlist context cannot be captured, Chroma skips the reload. Recovery is limited to videos that have not started playing; it skips YouTube Music, Shorts, embedded players, live content, detected Premium sessions, and visible ads. Turning off YouTube Ad Stripping or master protection also disables recovery.
+
+The recovery combines approaches from [Brave](https://github.com/brave/adblock-resources/pull/334) and [uAssets](https://github.com/uBlockOrigin/uAssets/blob/master/filters/experimental.txt). It can reduce startup delays, but playback may still take longer because of server waits, network conditions, or changes to YouTube.
 
 ## Relationship To Acceleration
 
