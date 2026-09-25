@@ -138,8 +138,6 @@ header {
 
 .logo {
   width: 40px; height: 40px;
-  border-radius: 6px;
-  box-shadow: 0 0 10px var(--glow-magenta);
 }
 
 .title-group { flex: 1; min-width: 0; }
@@ -440,27 +438,11 @@ header {
   background: rgba(0, 255, 204, 0.045);
 }
 
-.icon-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--c-cyan);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
 .icon-action-btn__icon {
   filter: drop-shadow(0 0 3px var(--c-cyan));
 }
 
-button:focus-visible,
-a:focus-visible,
-select:focus-visible,
-input:focus-visible,
-[role="button"]:focus-visible {
+:root:not(.pointer-navigation) :is(button, a, select, input, textarea, [role="button"]):focus-visible {
   outline: 2px solid var(--c-cyan);
   outline-offset: 3px;
 }
@@ -566,6 +548,7 @@ input:focus-visible,
 }
 
 .proxy-chrome-service-bypass-warning {
+  display: block;
   margin-top: 6px;
   color: var(--c-red);
   font-size: 12px;
@@ -602,7 +585,7 @@ input:checked + .slider {
 }
 input:checked + .slider::before { transform: translateX(16px); background: #fff; }
 
-.switch input:focus-visible + .slider {
+:root:not(.pointer-navigation) .switch input:focus-visible + .slider {
   outline: 2px solid var(--c-cyan);
   outline-offset: 3px;
   box-shadow: 0 0 14px rgba(0, 255, 204, 0.35);
@@ -1951,8 +1934,8 @@ input.control-pending + .slider {
   line-height: 1;
   transition: transform 0.2s, color 0.15s, border-color 0.15s, background 0.15s;
 }
-.log-toggle-btn:hover,
-.log-toggle-btn:focus-visible {
+.log-disclosure:hover .log-toggle-btn,
+.log-disclosure:focus-visible .log-toggle-btn {
   color: var(--text);
   border-color: rgba(0,255,204,0.28);
   background: rgba(0,255,204,0.055);
@@ -2318,25 +2301,6 @@ input.control-pending + .slider {
   border-color: rgba(255, 0, 85, 0.24);
 }
 
-.section-title--inline .icon-action-btn {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  padding: 0;
-  border: 1px solid rgba(0, 255, 204, 0.22);
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0)),
-    rgba(0, 255, 204, 0.045);
-}
-
-.section-title--inline .icon-action-btn:hover,
-.section-title--inline .icon-action-btn:focus-visible {
-  color: var(--text);
-  border-color: rgba(0, 255, 204, 0.42);
-  background: rgba(0, 255, 204, 0.075);
-}
-
 .visually-hidden {
   position: absolute !important;
   width: 1px !important;
@@ -2406,19 +2370,6 @@ input.control-pending + .slider {
 .subscription-icon-btn {
   min-width: 62px;
   padding: 4px 9px;
-}
-
-.user-scriptlet-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 2px 9px;
-}
-
-.user-scriptlet-add-btn .icon-action-btn__icon {
-  width: 10px;
-  height: 10px;
 }
 
 .user-scriptlet-warning {
@@ -3139,23 +3090,467 @@ body.popup-page {
   }
 }
 
+/* Settings layout and readable controls. */
+.settings-page {
+  --text-muted: #a69bbb;
+  --text-dim: #bcb3d0;
+}
+
+.settings-page .main-container {
+  max-width: 1080px;
+  margin: 24px auto;
+}
+
+.settings-page header {
+  padding: 0 0 20px;
+}
+
+.settings-page .pill-nav-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  padding: 16px 20px;
+}
+
+.settings-page .title-group {
+  text-align: center;
+}
+
+.settings-page .logo {
+  margin-left: 8px;
+}
+
+.settings-page .title-group h1 {
+  font-size: 22px;
+}
+
+.settings-page .title-group span {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.settings-page .status-group {
+  gap: 10px;
+  justify-self: end;
+}
+
+.protection-status {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-page .status-dot {
+  display: none;
+}
+
+.settings-page .settings-nav {
+  flex-wrap: wrap;
+  justify-content: center;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  margin-bottom: 24px;
+}
+
+.settings-page :is(.settings-nav__link, .settings-nav__guide) {
+  flex: 0 0 auto;
+  font-size: 12px;
+  min-height: 36px;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 6px 10px;
+}
+
+.settings-page .section-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: 0 0 10px;
+  margin-top: 28px;
+  scroll-margin-top: var(--settings-scroll-margin, 100px);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.settings-page .section-title-text {
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 700;
+  margin: 0;
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.settings-page .section-guide-link {
+  font-size: 12px;
+  min-height: 32px;
+  color: var(--text-dim);
+}
+
+.settings-page .section-title .action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+}
+
+.settings-page .section-title .section-guide-link {
+  grid-row: 1;
+}
+
+.settings-page .protection-group {
+  margin-bottom: 16px;
+}
+
+.protection-group-title {
+  text-align: center;
+  font-size: 14px;
+  color: var(--c-cyan);
+  font-weight: 650;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.settings-page :is(.stats-subsection-title, .health-section__title, .user-scriptlet-subsection-title) {
+  text-align: center;
+}
+
+.settings-page .settings-detail__summary {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  text-align: center;
+}
+
+.settings-page .settings-detail__title {
+  grid-column: 2;
+}
+
+.settings-page .settings-detail__hint {
+  grid-column: 3;
+}
+
+.settings-page .stats-detail > .settings-detail__summary,
+.settings-page .user-scriptlet-rules-detail > .settings-detail__summary {
+  display: flex;
+  text-align: left;
+}
+
+.toggle-info > .name, .toggle-info > .desc {
+  display: block;
+}
+
+.fpr-toggle-row .toggle-info > .name {
+  display: flex;
+}
+
+label.toggle-info {
+  cursor: pointer;
+}
+
+.settings-page .toggle-row {
+  cursor: default;
+  padding: 14px 20px;
+}
+
+.settings-page .toggle-row:has(input[type="checkbox"]):hover {
+  background: rgba(108,92,231,.08);
+}
+
+.settings-page .toggle-row:not(:has(input[type="checkbox"])):hover {
+  background: transparent;
+}
+
+.settings-page .switch {
+  width: 46px;
+  height: 38px;
+  cursor: pointer;
+}
+
+.settings-page .switch .slider {
+  inset: 8px 3px;
+}
+
+.settings-page .switch .slider::before {
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 3px;
+}
+
+.settings-page .switch input:checked + .slider::before {
+  transform: translateX(18px);
+}
+
+.settings-page .speed-selector-row {
+  padding-left: 32px;
+  background: rgba(255,255,255,.02);
+}
+
+.settings-page #speedSelectorRow.disabled {
+  opacity: 1;
+  filter: none;
+  pointer-events: auto;
+}
+
+.settings-page .speed-btn {
+  font-size: 13px;
+  min-height: 36px;
+}
+
+.settings-page .speed-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.settings-page :is(.reset-btn, .compact-action-btn, .chroma-input) {
+  font-size: 13px;
+  min-height: 36px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.settings-page .reset-btn {
+  padding: 7px 12px;
+  white-space: normal;
+}
+
+.settings-page :is(.desc, .loading-text, .proxy-empty, .user-scriptlet-warning, .subscription-summary, .proxy-credential-help, .settings-empty-state) {
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.settings-page :is(.desc, .loading-text, .proxy-empty, .user-scriptlet-warning, .subscription-summary, .settings-empty-state) {
+  font-size: 13px;
+}
+
+.settings-page :is(.health-summary-chip__label, .health-metric__label, .stats-mini-card__label, .stats-subsection-title, .settings-detail__title, .user-scriptlet-subsection-title, .user-scriptlet-overview-card__label, .zapper-overview-card__label, .request-log-summary-card__label, .updater-step__label, .updater-action-group__label, .stats-row__meta, .log-time, .proxy-meta-text) {
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.settings-page :is(.health-summary-chip__value, .stats-row__title) {
+  font-size: 14px;
+}
+
+.settings-page .stats-actions {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-page .stats-controls-grid {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.form-field .chroma-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.proxy-domain-tools > .form-field {
+  flex: 1;
+}
+
+.settings-page :is(.log-url, .log-rt, .health-section__title, .user-scriptlet-chip__name, .user-scriptlet-chip__status, .proxy-status-text, .proxy-credential-help, .subscription-error) {
+  font-size: 12px;
+}
+
+.settings-page .chroma-input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.settings-page .add-subscription-grid {
+  gap: 8px;
+}
+
+.settings-page .form-actions {
+  margin-top: 8px;
+}
+
+.settings-page .settings-backup {
+  padding: 20px;
+}
+
+.settings-page .settings-backup .stats-actions {
+  margin-top: 14px;
+}
+
+.settings-feedback:not(:empty), .control-feedback:not(:empty) {
+  display: block;
+  padding: 8px 0;
+  font-size: 13px;
+  color: #ffb3c9;
+  line-height: 1.5;
+}
+
+.settings-feedback:empty, .control-feedback:empty {
+  display: none;
+}
+
+.settings-empty-state {
+  padding: 20px;
+}
+
+.settings-empty-state .reset-btn, .settings-empty-state .section-guide-link {
+  margin-top: 12px;
+}
+
+.log-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-page .log-header {
+  cursor: default;
+}
+
+.settings-page .log-disclosure {
+  min-height: 44px;
+}
+
+.settings-page [hidden] {
+  display: none !important;
+}
+
+.settings-page .action-btn--danger {
+  color: #ffb3c9;
+}
+
+.settings-page .form-error {
+  font-size: 13px;
+  color: #ffb3c9;
+}
+
+
+@media (max-width: 900px) {
+  .settings-page .pill-nav-inner {
+    grid-template-columns: 48px minmax(0, 1fr) 48px;
+  }
+
+  .settings-page .status-group {
+    grid-column: 1 / -1;
+    justify-self: center;
+    margin: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .settings-page .main-container {
+    margin: 16px auto;
+    padding: 0 16px;
+  }
+
+  .settings-page .pill-nav-inner {
+    gap: 10px;
+  }
+
+  .settings-page .title-group {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .settings-page .title-group h1 {
+    font-size: 20px;
+  }
+
+  .settings-page .status-group {
+    width: 100%;
+    justify-content: center;
+    margin: 0;
+    border-top: 1px solid var(--border-glass);
+    padding-top: 8px;
+  }
+
+  .settings-page .section-title {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .settings-page .section-title-text {
+    grid-column: 1 / -1;
+  }
+
+  .settings-page .section-title .action-btn {
+    grid-row: 2;
+  }
+
+  .settings-page .section-title .section-guide-link {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .settings-page :is(.stats-controls-grid, .stats-actions) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-page .toggle-row {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .settings-page .speed-selector-row {
+    padding-left: 22px;
+  }
+
+  .settings-page .protection-group-title {
+    padding: 12px 14px;
+  }
+
+  .settings-page .proxy-grid .form-field {
+    width: 100%;
+  }
+
+  .settings-page .log-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+}
+
+html.reduce-motion,
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .skeleton-block::after,
-  .skeleton-line::after,
-  .skeleton-row::after,
-  .skeleton-card::after,
-  .skeleton-bar::after,
-  .hydration-fade-in,
-  .pill-nav-inner,
-  .settings-nav,
-  .settings-page footer,
-  .updater-reload-dialog,
-  .stat-card,
-  .stat-value,
-  .stat-label,
-  .title-group h1,
-  .protection-list,
-  .updater-result--checking::before {
+  *,
+  *::before,
+  *::after {
     animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

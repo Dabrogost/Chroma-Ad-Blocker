@@ -134,16 +134,17 @@ const ChromaComponents = (() => {
     `).join('');
   }
 
-  function renderHeader() {
+  function renderHeader({ settingsMode = false } = {}) {
     return `
       <header>
         <div class="pill-nav-inner">
           <img src="../icons/icon48.png" class="logo" alt="Logo" />
           <div class="title-group">
             <h1>Chroma Ad-Blocker</h1>
-            <span>Ad-Blocker & Annoyance Eliminator</span>
+            <span>${settingsMode ? 'Settings' : 'Ad-Blocker & Annoyance Eliminator'}</span>
           </div>
           <div class="status-group">
+            ${settingsMode ? '<label for="toggleEnabled" class="protection-status" id="protectionStatusText" aria-live="polite">Loading protection…</label>' : ''}
             <label class="switch header-switch">
               <input type="checkbox" id="toggleEnabled" checked aria-label="Enable Chroma protection" />
               <span class="slider"></span>
@@ -178,12 +179,12 @@ const ChromaComponents = (() => {
   function renderToggleRow({ inputId, rowId = '', rowClass = '', name, desc, badge = '', label = name }) {
     return `
       <div class="toggle-row${rowClass ? ` ${rowClass}` : ''}"${rowId ? ` id="${rowId}"` : ''}>
-        <div class="toggle-info">
-          <div class="name">${name}${badge}</div>
-          <div class="desc">${desc}</div>
-        </div>
+        <label class="toggle-info" for="${inputId}">
+          <span class="name">${name}${badge}</span>
+          <span class="desc" id="${inputId}Description">${desc}</span>
+        </label>
         <label class="switch">
-          <input type="checkbox" id="${inputId}" aria-label="${label}" />
+          <input type="checkbox" id="${inputId}" aria-label="${label}" aria-describedby="${inputId}Description" />
           <span class="slider"></span>
         </label>
       </div>
@@ -226,14 +227,15 @@ const ChromaComponents = (() => {
   function renderSettingsNav() {
     const links = [
       ['#protectionSection', 'Protection'],
-      ['#filterListsSection', 'Lists'],
+      ['#filterListsSection', 'Filter lists'],
       ['#proxySection', 'Proxy'],
       ['#healthSection', 'Health'],
-      ['#statsSection', 'Stats'],
+      ['#statsSection', 'Statistics'],
       ['#updatesSection', 'Updates'],
       ['#userScriptletsSection', 'Scriptlets'],
       ['#zapperRulesSection', 'Zapper'],
-      ['#requestLogSection', 'Log']
+      ['#requestLogSection', 'Request log'],
+      ['#backupSection', 'Backup']
     ];
 
     return `
@@ -250,31 +252,47 @@ const ChromaComponents = (() => {
   function renderProtectionControls() {
     return `
       <div class="section-title section-title--with-guide" id="protectionSection">
-        <span class="section-title-text">Protection Layers</span>
+        <h2 class="section-title-text">Protection</h2>
         ${renderGuideLink(GUIDE_PATHS.protection, 'Protection')}
       </div>
-      <div class="protection-list">
+      <div id="protectionFeedback" class="settings-feedback" role="status" aria-live="polite"></div>
+      <div class="protection-list protection-group">
+        <h3 class="protection-group-title">Ad blocking</h3>
         ${renderToggleRow({
           inputId: 'toggleNetwork',
-          name: 'Network Blocking',
+          name: 'Network blocking',
           badge: ' <span class="badge" title="Core filtering engine">Primary</span>',
           desc: 'Blocks known ad and tracker requests'
         })}
         ${renderToggleRow({
+          inputId: 'toggleCosmetic',
+          name: 'Cosmetic filtering',
+          desc: 'Hides banners, sponsored content, and overlays'
+        })}
+        ${renderToggleRow({
+          inputId: 'toggleWarnings',
+          name: 'Hide ad-blocker warnings',
+          desc: 'Hides “ad blocker detected” messages'
+        })}
+      </div>
+      <div class="protection-list protection-group">
+        <h3 class="protection-group-title">YouTube</h3>
+        ${renderToggleRow({
           inputId: 'toggleStripping',
-          name: 'YouTube Ad Block',
-          desc: 'Strips ads from YouTube API before playback'
+          name: 'YouTube ad blocking',
+          desc: 'Removes ads from YouTube video data before playback'
         })}
         ${renderToggleRow({
           inputId: 'toggleAcceleration',
-          name: 'YouTube Ad Acceleration',
-          desc: 'Mute + accelerate detected YouTube ads; changes anti-detection network behavior'
+          name: 'YouTube ad acceleration',
+          desc: 'Mutes and speeds up detected YouTube ads. Also adjusts blocking to reduce ad-blocker detection.'
         })}
         <div class="toggle-row speed-selector-row" id="speedSelectorRow">
           <div class="toggle-info">
-            <div class="name speed-selector-title">Acceleration Speed</div>
+            <div class="name speed-selector-title" id="accelerationSpeedLabel">Acceleration speed</div>
+            <div class="desc" id="accelerationSpeedHelp">Enable YouTube ad acceleration to choose a speed.</div>
           </div>
-          <div id="speedButtons" class="speed-buttons">
+          <div id="speedButtons" class="speed-buttons" role="group" aria-labelledby="accelerationSpeedLabel" aria-describedby="accelerationSpeedHelp">
             <button class="speed-btn" data-speed="4" aria-label="Set acceleration speed to 4x">&times;4</button>
             <button class="speed-btn" data-speed="8" aria-label="Set acceleration speed to 8x">&times;8</button>
             <button class="speed-btn" data-speed="12" aria-label="Set acceleration speed to 12x">&times;12</button>
@@ -282,73 +300,65 @@ const ChromaComponents = (() => {
           </div>
         </div>
         ${renderToggleRow({
-          inputId: 'toggleCosmetic',
-          name: 'Cosmetic Filtering',
-          desc: 'Hides banners, sponsored slots, overlays'
-        })}
-        ${renderToggleRow({
-          inputId: 'toggleTrackingUrlCleanup',
-          name: 'Tracking URL Cleanup',
-          desc: 'Removes known tracking parameters from page URLs'
-        })}
-        ${renderToggleRow({
           inputId: 'toggleShorts',
-          name: 'Hide YT Shorts',
+          name: 'Hide YouTube Shorts',
           desc: 'Hides Shorts shelves and sidebar tabs'
         })}
         ${renderToggleRow({
           inputId: 'toggleMerch',
-          name: 'Hide YT Merch',
+          name: 'Hide YouTube merchandise',
           desc: 'Removes creator product carousels'
         })}
         ${renderToggleRow({
           inputId: 'toggleOffers',
-          name: 'Hide Watch on YT',
+          name: 'Hide YouTube movie and TV offers',
           desc: 'Removes movie/TV purchase offers'
         })}
+      </div>
+      <div class="protection-list protection-group">
+        <h3 class="protection-group-title">Privacy</h3>
         ${renderToggleRow({
-          inputId: 'toggleWarnings',
-          name: 'Warning Suppression',
-          desc: 'Removes "ad blocker detected" dialogs'
-        })}
-        ${renderToggleRow({
-          inputId: 'toggleQuietConsole',
-          name: 'Quiet Console',
-          desc: 'Opt-in adblock noise reduction in page DevTools'
+          inputId: 'toggleTrackingUrlCleanup',
+          name: 'Tracking URL cleanup',
+          desc: 'Removes known tracking parameters from page URLs'
         })}
         ${renderToggleRow({
           inputId: 'toggleFingerprintRandomization',
           rowClass: 'fpr-toggle-row',
-          name: 'Fingerprint Randomization',
-          badge: '<span class="badge purple" title="May affect bot checks, captchas, or device checks">Compat</span>',
-          desc: 'Per-page canvas, audio, WebGL, navigator, and language API farbling'
+          name: 'Fingerprint randomization',
+          badge: '<span class="badge purple">May affect sites</span>',
+          desc: 'Adds noise to browser signals used for tracking. May affect sign-in and bot checks.'
         })}
         ${renderToggleRow({
           inputId: 'toggleBrowserPrivacyHardening',
-          name: 'Chrome Privacy Hardening',
-          desc: 'Blocks third-party cookies, keeps DNT off, and disables Chrome ad APIs'
+          name: 'Chrome privacy hardening',
+          desc: 'Blocks third-party cookies and disables Chrome advertising features. See the guide for all browser changes.'
         })}
         ${renderToggleRow({
           inputId: 'toggleGeolocationProtection',
-          name: 'Geolocation Protection',
+          name: 'Geolocation protection',
           desc: 'Blocks sites from accessing your real physical location'
         })}
         ${renderToggleRow({
           inputId: 'toggleDeAmpLinks',
-          name: 'De-AMP Links',
+          name: 'Open original pages instead of AMP',
           desc: 'Redirects supported AMP viewer pages to publisher URLs'
         })}
+      </div>
+      <div class="protection-list protection-group">
+        <h3 class="protection-group-title">Advanced</h3>
         ${renderToggleRow({
-          inputId: 'toggleFprWhitelist',
-          rowId: 'rowFprWhitelist',
-          rowClass: 'fpr-whitelist-row',
-          name: 'Disable FPR on this site',
-          desc: 'For sites broken by canvas/audio noise (bot checks, captchas)'
+          inputId: 'toggleQuietConsole',
+          name: 'Quiet console',
+          desc: 'Reduces ad-blocking messages in developer tools. Works independently of the protection switch.'
         })}
+      </div>
+      <div class="protection-list protection-group">
+        <h3 class="protection-group-title">Appearance</h3>
         ${renderToggleRow({
-          inputId: 'toggleWhitelist',
-          name: 'Whitelist this site',
-          desc: 'Disable blocking on current domain'
+          inputId: 'toggleReduceMotion',
+          name: 'Reduce motion',
+          desc: 'Turn off animated borders, moving backgrounds, and smooth scrolling. Your system’s reduced-motion preference is also respected.'
         })}
       </div>
     `;
@@ -357,23 +367,26 @@ const ChromaComponents = (() => {
   function renderFilterListShell({ settingsMode = false } = {}) {
     return `
       <div class="section-title section-title--inline" id="filterListsSection">
-        <span class="section-title-text">Filter Lists</span>
-        <button id="addSubscriptionBtn" class="reset-btn icon-action-btn" title="Add Filter List" aria-label="Add Filter List" type="button">
-          ${plusIcon}
+        <h2 class="section-title-text">Filter lists</h2>
+        <button id="addSubscriptionBtn" class="reset-btn compact-action-btn action-btn" type="button">
+          ${plusIcon}<span>Add filter list</span>
         </button>
         ${renderGuideLink(GUIDE_PATHS.filterLists, 'Filter Lists')}
       </div>
       <div id="addSubscriptionForm" class="protection-list add-subscription-form is-hidden">
         <div class="add-subscription-grid">
-          <input type="text" id="newSubName" class="chroma-input chroma-input--compact" placeholder="Name (optional)" />
-          <input type="text" id="newSubUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/list.txt" />
-          <div id="newSubError" class="form-error is-hidden"></div>
+          <label class="field-label" for="newSubName">Name (optional)</label>
+          <input type="text" id="newSubName" class="chroma-input chroma-input--compact" />
+          <label class="field-label" for="newSubUrl">Filter list URL</label>
+          <input type="url" id="newSubUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/list.txt" aria-describedby="newSubError" />
+          <div id="newSubError" class="form-error is-hidden" role="alert"></div>
           <div class="form-actions">
             <button id="newSubAddBtn" class="reset-btn form-submit-btn action-btn action-btn--primary">Add</button>
-            <button id="newSubCancelBtn" class="reset-btn inline-danger-btn compact-action-btn action-btn action-btn--danger" title="Cancel" aria-label="Cancel adding filter list" type="button">Cancel</button>
+            <button id="newSubCancelBtn" class="reset-btn compact-action-btn action-btn" aria-label="Cancel adding filter list" type="button">Cancel</button>
           </div>
         </div>
       </div>
+      <div id="subscriptionFeedback" class="settings-feedback" role="status" aria-live="polite"></div>
       <div class="protection-list" id="subscriptionList">
         ${settingsMode ? renderSkeletonRows(3, 'subscription-skeleton-row') : `
           <div class="toggle-row loading-row">
@@ -387,7 +400,7 @@ const ChromaComponents = (() => {
   function renderHealthPanelShell() {
     return `
       <div class="section-title section-title--spaced section-title--with-guide" id="healthSection">
-        <span class="section-title-text">Health</span>
+        <h2 class="section-title-text">Health</h2>
         ${renderGuideLink(GUIDE_PATHS.health, 'Health')}
       </div>
       <div class="protection-list health-panel" id="healthPanel">
@@ -417,7 +430,7 @@ const ChromaComponents = (() => {
   function renderUpdaterShell() {
     return `
       <div class="section-title section-title--spaced section-title--with-guide" id="updatesSection">
-        <span class="section-title-text">Updates</span>
+        <h2 class="section-title-text">Updates</h2>
         ${renderGuideLink(GUIDE_PATHS.updates, 'Updates')}
       </div>
       <div class="protection-list updater-panel" id="updaterPanel">
@@ -527,16 +540,16 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderStatisticsShell({ settingsMode = false } = {}) {
+  function renderStatisticsShell() {
     return `
       <div class="section-title section-title--spaced section-title--with-guide" id="statsSection">
-        <span class="section-title-text">Protection Intelligence</span>
-        ${renderGuideLink(GUIDE_PATHS.stats, 'Protection Intelligence')}
+        <h2 class="section-title-text">Statistics</h2>
+        ${renderGuideLink(GUIDE_PATHS.stats, 'Statistics')}
       </div>
       <div class="protection-list stats-panel" id="statisticsPanel">
         <div class="stats-panel-header">
           <div class="toggle-info">
-            <div class="name">Local Analytics</div>
+            <div class="name">Statistics stored on this device</div>
             <div class="desc">All statistics are stored locally. Full request URLs are only kept when Debug Mode is enabled.</div>
           </div>
         </div>
@@ -596,37 +609,33 @@ const ChromaComponents = (() => {
           <div class="stats-subsection stats-privacy">
             <div class="stats-subsection-title">Privacy</div>
             <div class="stats-controls-grid">
-              <select id="statsModeSelect" class="chroma-input chroma-input--compact control-pending" disabled>
-                <option value="basic">Basic: totals only</option>
-                <option value="aggregated">Aggregated: domains and rule sources</option>
-                <option value="debug">Debug: include recent full URLs</option>
-              </select>
-              <select id="statsRetentionSelect" class="chroma-input chroma-input--compact control-pending" disabled>
-                <option value="30">30 days</option>
-                <option value="90">90 days</option>
-                <option value="180">180 days</option>
-                <option value="365">365 days</option>
-              </select>
+              <label class="form-field">
+                <span class="field-label">Collection mode</span>
+                <select id="statsModeSelect" class="chroma-input chroma-input--compact control-pending" disabled>
+                  <option value="basic">Basic: totals only</option>
+                  <option value="aggregated">Aggregated: domains and rule sources</option>
+                  <option value="debug">Debug: include recent full URLs</option>
+                </select>
+              </label>
+              <label class="form-field">
+                <span class="field-label">Retention period</span>
+                <select id="statsRetentionSelect" class="chroma-input chroma-input--compact control-pending" disabled>
+                  <option value="30">30 days</option>
+                  <option value="90">90 days</option>
+                  <option value="180">180 days</option>
+                  <option value="365">365 days</option>
+                </select>
+              </label>
             </div>
             <div class="stats-actions">
-              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetAllStats">Reset all stats</button>
-              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetSiteStats">Reset site stats</button>
-              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetRequestLogOnly">Reset request log</button>
-              <button class="reset-btn compact-action-btn action-btn" id="exportStatsJson">Export JSON</button>
+              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetAllStats">Reset all statistics</button>
+              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetSiteStats">Reset statistics for all sites</button>
+              <button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetRequestLogOnly">Clear request log</button>
+              <button class="reset-btn compact-action-btn action-btn" id="exportStatsJson">Export statistics</button>
             </div>
+            <div id="statsFeedback" class="settings-feedback" role="status" aria-live="polite"></div>
           </div>
 
-          ${settingsMode ? `
-            <div class="stats-subsection settings-backup">
-              <div class="stats-subsection-title">Settings Backup</div>
-              <div class="stats-actions">
-                <button class="reset-btn compact-action-btn action-btn" id="exportConfigJson">Export settings</button>
-                <button class="reset-btn compact-action-btn action-btn" id="importConfigJson">Import settings</button>
-                <input type="file" id="importConfigFile" class="visually-hidden" accept="application/json,.json" />
-              </div>
-              <div class="desc settings-backup-status" id="settingsBackupStatus"></div>
-            </div>
-          ` : ''}
         </details>
       </div>
     `;
@@ -635,13 +644,14 @@ const ChromaComponents = (() => {
   function renderUserScriptletsShell() {
     return `
       <div class="section-title section-title--inline" id="userScriptletsSection">
-        <span class="section-title-text">User Scriptlets</span>
-        <button id="addUserScriptletSourceBtn" class="reset-btn compact-action-btn user-scriptlet-add-btn" title="Add Resource URL" aria-label="Add Resource URL" type="button">
+        <h2 class="section-title-text">User scriptlets</h2>
+        <button id="addUserScriptletSourceBtn" class="reset-btn compact-action-btn action-btn" type="button">
           ${plusIcon}
-          <span>Add URL</span>
+          <span>Add resource URL</span>
         </button>
         ${renderGuideLink(GUIDE_PATHS.userScriptlets, 'User Scriptlets')}
       </div>
+      <div id="scriptletFeedback" class="settings-feedback" role="status" aria-live="polite"></div>
       <div class="protection-list user-scriptlet-panel is-loading" id="userScriptletPanel">
         <div class="user-scriptlet-warning">
           User scriptlet resources run code you choose through Chrome's User Scripts API. Add only resources you trust.
@@ -666,21 +676,23 @@ const ChromaComponents = (() => {
         </div>
         <div id="addUserScriptletSourceForm" class="user-scriptlet-source-form is-hidden">
           <div class="add-subscription-grid">
-            <input type="text" id="newUserScriptletSourceName" class="chroma-input chroma-input--compact" placeholder="Name (optional)" />
-            <input type="text" id="newUserScriptletSourceUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/scriptlet-resources.js" />
-            <div id="newUserScriptletSourceError" class="form-error is-hidden"></div>
+            <label class="field-label" for="newUserScriptletSourceName">Name (optional)</label>
+            <input type="text" id="newUserScriptletSourceName" class="chroma-input chroma-input--compact" />
+            <label class="field-label" for="newUserScriptletSourceUrl">Resource URL</label>
+            <input type="url" id="newUserScriptletSourceUrl" class="chroma-input chroma-input--compact" placeholder="https://example.com/scriptlet-resources.js" aria-describedby="newUserScriptletSourceError" />
+            <div id="newUserScriptletSourceError" class="form-error is-hidden" role="alert"></div>
             <div class="form-actions">
               <button id="newUserScriptletSourceAddBtn" class="reset-btn form-submit-btn action-btn action-btn--primary">Add</button>
-              <button id="newUserScriptletSourceCancelBtn" class="reset-btn inline-danger-btn compact-action-btn action-btn action-btn--danger" title="Cancel" aria-label="Cancel adding user scriptlet resource" type="button">Cancel</button>
+              <button id="newUserScriptletSourceCancelBtn" class="reset-btn compact-action-btn action-btn" aria-label="Cancel adding user scriptlet resource" type="button">Cancel</button>
             </div>
           </div>
         </div>
-        <div class="user-scriptlet-subsection-title">Resource URLs</div>
+        <h3 class="user-scriptlet-subsection-title">Resource URLs</h3>
         <div id="userScriptletSourceList" class="user-scriptlet-source-list">
           ${renderSkeletonRows(2, 'user-scriptlet-skeleton-row')}
         </div>
         <div class="user-scriptlet-available" id="userScriptletAvailableResources">
-          <div class="user-scriptlet-subsection-title">Available Resources</div>
+          <h3 class="user-scriptlet-subsection-title">Available resources</h3>
           <div class="user-scriptlet-chip-list is-loading" id="userScriptletAvailableResourceList">
             ${renderSkeletonLine('skeleton-line--long')}
           </div>
@@ -691,10 +703,10 @@ const ChromaComponents = (() => {
             <span class="settings-detail__hint" aria-hidden="true"></span>
           </summary>
           <div class="user-scriptlet-rules">
-            <div class="user-scriptlet-subsection-title">Rules</div>
+            <label class="field-label" for="userScriptletRulesText">Rules</label>
             <textarea id="userScriptletRulesText" class="chroma-input user-scriptlet-rules-text control-pending" spellcheck="false" readonly aria-busy="true" placeholder="example.com##+js(resource-name)&#10;another.example##+js(other-resource)"></textarea>
             <div class="user-scriptlet-rule-actions">
-              <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status">Loading rules...</div>
+              <div id="userScriptletRulesStatus" class="desc user-scriptlet-rules-status" role="status" aria-live="polite">Loading rules...</div>
               <button id="saveUserScriptletRulesBtn" class="reset-btn compact-action-btn action-btn action-btn--primary control-pending" type="button" disabled>Save Rules</button>
             </div>
           </div>
@@ -706,14 +718,15 @@ const ChromaComponents = (() => {
   function renderProxyShell({ settingsMode }) {
     return `
       <div class="section-title section-title--inline"${settingsMode ? ' id="proxySection"' : ''}>
-        <span class="section-title-text">Media Proxy Router</span>
+        <h2 class="section-title-text">Proxy</h2>
         ${settingsMode ? `
-          <button id="addProxyServerBtn" class="reset-btn icon-action-btn" title="Add Proxy Server" aria-label="Add Proxy Server" type="button">
-            ${plusIcon}
+          <button id="addProxyServerBtn" class="reset-btn compact-action-btn action-btn" type="button">
+            ${plusIcon}<span>Add proxy</span>
           </button>
           ${renderGuideLink(GUIDE_PATHS.proxy, 'Media Proxy Router')}
         ` : ''}
       </div>
+      <div id="proxyFeedback" class="settings-feedback" role="status" aria-live="polite"></div>
       <div id="proxyRouterContainer">
         ${settingsMode ? renderSkeletonRows(2, 'proxy-skeleton-row') : '<!-- Proxy entries will be injected here -->'}
       </div>
@@ -723,10 +736,13 @@ const ChromaComponents = (() => {
   function renderLocalZapperShell() {
     return `
       <div class="section-title section-title--spaced section-title--with-guide" id="zapperRulesSection">
-        <span class="section-title-text">Local Zapper Rules</span>
+        <h2 class="section-title-text">Zapper rules</h2>
         ${renderGuideLink(GUIDE_PATHS.zapper, 'Element Zapper')}
       </div>
       <div class="protection-list zapper-rules-panel">
+        <div id="zapperEmptyState" class="settings-empty-state" hidden>
+          <p>No saved elements yet. Open Chroma’s popup on a website, choose “Zap Element,” and save an element to hide it on future visits.</p>
+        </div>
         <div class="zapper-overview" id="zapperOverview" aria-label="Local zapper summary">
           <div class="zapper-overview-card">
             <span class="zapper-overview-card__label">Domains</span>
@@ -761,7 +777,7 @@ const ChromaComponents = (() => {
   function renderRequestLogShell() {
     return `
       <div class="section-title section-title--spaced section-title--with-guide" id="requestLogSection">
-        <span class="section-title-text">Request Log</span>
+        <h2 class="section-title-text">Request log</h2>
         ${renderGuideLink(GUIDE_PATHS.requestLog, 'Request Log')}
       </div>
       <div class="protection-list request-log-panel" id="requestLogPanel">
@@ -783,14 +799,16 @@ const ChromaComponents = (() => {
             <span class="request-log-summary-card__value request-log-summary-card__value--small" id="logStreamState">Live</span>
           </div>
         </div>
-        <div class="log-header" id="logToggleRow" role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries">
-          <div class="toggle-info">
-            <div class="name">Matched Requests</div>
-            <div class="desc" id="logHeaderDesc">Rules fired on this session</div>
-          </div>
+        <div class="log-header">
+          <button class="log-disclosure" id="logToggleRow" type="button" aria-expanded="false" aria-controls="logEntries">
+            <span class="toggle-info">
+              <span class="name">Matched requests</span>
+              <span class="desc" id="logHeaderDesc">Rules fired in this session</span>
+            </span>
+            <span class="log-toggle-btn" id="logToggleBtn" aria-hidden="true">&#x25bc;</span>
+          </button>
           <div class="log-actions">
             <button class="reset-btn compact-action-btn action-btn log-freeze-btn" id="logFreezeBtn" title="Freeze request log" aria-label="Freeze request log" type="button">Freeze</button>
-            <button class="log-toggle-btn" id="logToggleBtn" title="Expand log" aria-label="Expand request log" type="button">&#x25bc;</button>
           </div>
         </div>
         <div class="log-entries" id="logEntries">
@@ -800,15 +818,31 @@ const ChromaComponents = (() => {
     `;
   }
 
-  function renderFooter({ showResetStats = true } = {}) {
+  function renderBackupShell() {
+    return `
+      <div class="section-title section-title--spaced" id="backupSection">
+        <h2 class="section-title-text">Backup and restore</h2>
+      </div>
+      <div class="protection-list settings-backup">
+        <p class="desc">Export your settings to a file, or restore settings from a previous backup.</p>
+        <div class="stats-actions">
+          <button class="reset-btn compact-action-btn action-btn" id="exportConfigJson">Export settings</button>
+          <button class="reset-btn compact-action-btn action-btn" id="importConfigJson">Import settings</button>
+          <input type="file" id="importConfigFile" hidden accept="application/json,.json" aria-label="Settings backup file" />
+        </div>
+        <div class="desc settings-backup-status" id="settingsBackupStatus" role="status" aria-live="polite"></div>
+      </div>
+    `;
+  }
+
+  function renderFooter() {
     return `
       <footer>
-        ${showResetStats ? '<button class="reset-btn compact-action-btn action-btn action-btn--danger" id="resetStats">Reset Stats</button>' : ''}
         <div class="footer-right">
           <a href="https://github.com/Dabrogost/Chroma-Ad-Blocker" target="_blank" class="github-link" title="View Source on GitHub">
             ${githubIcon}
           </a>
-          <span class="version" id="versionText">v1.3.0 &middot; MV3</span>
+          <span class="version" id="versionText"></span>
         </div>
       </footer>
     `;
@@ -819,19 +853,20 @@ const ChromaComponents = (() => {
     if (!shell) return;
 
     const content = `
-      ${renderHeader()}
+      ${renderHeader({ settingsMode })}
       ${renderStats({ showSettingsIcon: !settingsMode })}
       ${settingsMode ? renderSettingsNav() : ''}
       ${settingsMode ? renderProtectionControls() : renderSiteQuickActions()}
       ${settingsMode ? renderFilterListShell({ settingsMode }) : ''}
       ${settingsMode ? renderProxyShell({ settingsMode }) : ''}
       ${settingsMode ? renderHealthPanelShell() : ''}
-      ${settingsMode ? renderStatisticsShell({ settingsMode }) : ''}
+      ${settingsMode ? renderStatisticsShell() : ''}
       ${settingsMode ? renderUpdaterShell() : ''}
       ${settingsMode ? renderUserScriptletsShell() : ''}
       ${settingsMode ? renderLocalZapperShell() : ''}
       ${settingsMode ? renderRequestLogShell() : ''}
-      ${renderFooter({ showResetStats: settingsMode })}
+      ${settingsMode ? renderBackupShell() : ''}
+      ${renderFooter()}
     `;
 
     shell.innerHTML = settingsMode ? `<div class="main-container">${content}</div>` : content;
@@ -852,6 +887,7 @@ const ChromaComponents = (() => {
     renderLocalZapperShell,
     renderRequestLogShell,
     renderFooter,
+    renderBackupShell,
     renderPageShell
   };
 })();

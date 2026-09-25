@@ -1519,7 +1519,7 @@ test('settings page proxy and zapper management safety', async (t) => {
   });
 
   await t.test('proxy credential UI never hydrates password fields from stored config', () => {
-    assert.match(proxyUiJs, /appendInput\(inputGroup, 'password', 'chroma-input proxy-pass', '', pc\.hasCredentials \? 'Password saved' : 'Password'\)/);
+    assert.match(proxyUiJs, /appendInput\(inputGroup, 'password', 'chroma-input proxy-pass', '', pc\.hasCredentials \? 'Password saved' : '', 'Password \(optional\)'\)/);
     assert.doesNotMatch(proxyUiJs, /value="\$\{[^}]*password/i);
     assert.match(proxyUiJs, /delete pc\.username;/);
     assert.match(proxyUiJs, /delete pc\.password;/);
@@ -1686,7 +1686,7 @@ test('settings page proxy and zapper management safety', async (t) => {
   });
 
   await t.test('proxy destructive actions use compact button styling', () => {
-    assert.match(proxyUiJs, /proxy-del-server-btn inline-danger-btn compact-action-btn/);
+    assert.match(proxyUiJs, /proxy-del-server-btn compact-action-btn action-btn/);
     assert.match(proxyUiJs, /d-del-btn inline-danger-btn compact-action-btn/);
     assert.match(proxyUiJs, /proxy-clear-settings-btn inline-danger-btn compact-action-btn/);
     assert.match(appJs, /zapper-rule-delete inline-danger-btn compact-action-btn/);
@@ -1744,6 +1744,8 @@ test('settings page proxy and zapper management safety', async (t) => {
         PROXY_TEST: 'PROXY_TEST'
       },
       ChromaApp: {
+        scrollBehavior: () => 'smooth',
+        sendMutation: message => sandbox.notifyBackground(message),
         $: id => dom.window.document.getElementById(id),
         escapeHTML: value => String(value ?? '').replace(/[&<>"']/g, ch => ({
           '&': '&amp;',
@@ -1794,7 +1796,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(chromeBypassToggle.checked, true);
     assert.match(
       dom.window.document.querySelector('.proxy-chrome-service-bypass-control .desc').textContent,
-      /browser-managed features/
+      /keep browser services working/
     );
     assert.strictEqual(chromeBypassWarning.classList.contains('is-hidden'), true);
 
@@ -1909,7 +1911,7 @@ test('settings page proxy and zapper management safety', async (t) => {
   });
 
   await t.test('active proxy global button has a distinct highlighted style', () => {
-    assert.match(proxyUiJs, /appendProxyButton\(line, 'reset-btn proxy-global-btn compact-action-btn', 'GLOBAL', 'Use as Global Fallback'\)/);
+    assert.match(proxyUiJs, /appendProxyButton\(line, 'reset-btn proxy-global-btn compact-action-btn action-btn', 'Global fallback', 'Use as global fallback'\)/);
     assert.match(proxyUiJs, /proxy-enabled-toggle/);
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{/);
     assert.match(uiCss, /\.proxy-global-btn\.is-active\s*\{[\s\S]*box-shadow:/);
@@ -1936,11 +1938,11 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(componentsJs, /id="proxySection"/);
     assert.match(appJs, /PROXY_SETTINGS_PATH = 'ui\/settings\.html#proxySection'/);
     assert.match(appJs, /\['#proxy', '#proxySection'\]\.includes\(globalThis\.location\?\.hash\)/);
-    assert.match(appJs, /scrollIntoView\(\{ behavior, block: 'start' \}\)/);
+    assert.match(appJs, /scrollIntoView\(\{ behavior: scrollBehavior\(behavior\), block: 'start' \}\)/);
   });
 
   await t.test('settings statistics panel is local-only and uses stats messages', () => {
-    assert.match(componentsJs, /Protection Intelligence/);
+    assert.match(componentsJs, /<h2 class="section-title-text">Statistics<\/h2>/);
     assert.match(componentsJs, /All statistics are stored locally/);
     assert.match(componentsJs, /statBreakdownProxy/);
     assert.doesNotMatch(componentsJs, /statBreakdownYoutube/);
@@ -1977,8 +1979,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     const statsCard = dom.window.document.querySelector('#cardNetwork');
     assert.strictEqual(statsCard.getAttribute('aria-busy'), 'true');
     assert.strictEqual(statsCard.querySelectorAll('.stat-hero-skeleton').length, 5);
-    assert.strictEqual(dom.window.document.querySelector('#statProtectionEvents').textContent, '');
-    assert.strictEqual(dom.window.document.querySelector('#statBreakdownNetwork').textContent, '');
+    assert.match(dom.window.document.querySelector('#protectionStatusText').textContent, /Loading protection/);
 
     const navGuide = dom.window.document.querySelector('.settings-nav__guide');
     assert.ok(navGuide);
@@ -1987,7 +1988,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(navGuide.rel, 'noopener');
     assert.match(navGuide.getAttribute('aria-label'), /new tab/i);
     assert.strictEqual(navGuide.classList.contains('settings-nav__link'), false);
-    assert.strictEqual(dom.window.document.querySelectorAll('.settings-nav__link').length, 9);
+    assert.strictEqual(dom.window.document.querySelectorAll('.settings-nav__link').length, 10);
 
     const expectedGuideTargets = {
       protectionSection: 'chrome-extension://test/guide/pages/features.html#master-protection-lifecycle',
@@ -2020,7 +2021,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(dom.window.document.querySelector('#userScriptletRulesText').readOnly, true);
     assert.strictEqual(dom.window.document.querySelector('#saveUserScriptletRulesBtn').disabled, true);
     assert.strictEqual(dom.window.document.querySelector('#userScriptletRulesStatus').textContent, 'Loading rules...');
-    assert.strictEqual(dom.window.document.querySelector('#addUserScriptletSourceBtn').textContent.trim(), 'Add URL');
+    assert.strictEqual(dom.window.document.querySelector('#addUserScriptletSourceBtn').textContent.trim(), 'Add resource URL');
     assert.ok(dom.window.document.querySelector('#proxyRouterContainer .skeleton-row'));
     assert.ok(dom.window.document.querySelector('#localZapperRules .skeleton-row'));
     assert.strictEqual(dom.window.document.querySelector('.zapper-rules-detail').open, false);
@@ -2583,7 +2584,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     await harness.sandbox.ChromaApp.initSharedUI();
     await settleDomAsyncWork();
 
-    assert.strictEqual(harness.getStorageChangeListenerCount(), 1);
+    assert.strictEqual(harness.getStorageChangeListenerCount(), 2);
     const healthBefore = countMessages(harness.messages, 'HEALTH_GET');
     const statsBefore = countMessages(harness.messages, 'STATS_GET');
 
@@ -2710,8 +2711,8 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     assert.ok(success.messages.some(message => message.type === 'STATS_GET' && !message.options?.summaryOnly));
     assert.strictEqual(success.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
-    assert.strictEqual(success.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
     assert.strictEqual(success.dom.window.document.querySelector('#statProtectionEvents').textContent, '42');
+    assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /42/);
     assert.strictEqual(success.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
     assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /Total Protection Events/);
     assert.strictEqual(success.dom.window.document.querySelector('#statsModeSelect').disabled, false);
@@ -2721,7 +2722,6 @@ test('settings page proxy and zapper management safety', async (t) => {
     await settleDomAsyncWork();
 
     assert.strictEqual(failure.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
-    assert.strictEqual(failure.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
     assert.strictEqual(failure.dom.window.document.querySelector('#statProtectionEvents').textContent, '0');
     assert.strictEqual(failure.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
     assert.match(failure.dom.window.document.querySelector('#statsSitesList').textContent, /No stats available/);
@@ -2737,8 +2737,7 @@ test('settings page proxy and zapper management safety', async (t) => {
 
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, true);
     assert.ok(harness.dom.window.document.querySelector('#toggleNetwork').classList.contains('control-pending'));
-    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'true');
-    assert.strictEqual(harness.dom.window.document.querySelectorAll('#cardNetwork .stat-hero-skeleton').length, 5);
+    assert.match(harness.dom.window.document.querySelector('#protectionStatusText').textContent, /Loading protection/);
 
     pendingConfig.resolve({ enabled: true, networkBlocking: false, acceleration: true, accelerationSpeed: 12 });
     await initPromise;
@@ -2749,7 +2748,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleAcceleration').checked, true);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleQuietConsole').checked, false);
     assert.ok(harness.dom.window.document.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
-    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
+    assert.strictEqual(harness.dom.window.document.querySelector('#protectionStatusText').textContent, 'Protection on');
     assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
   });
 
@@ -2822,8 +2821,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleEnabled').disabled, true);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').disabled, true);
     assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork .stat-hero-skeleton'), null);
-    assert.strictEqual(harness.dom.window.document.querySelector('#cardNetwork').getAttribute('aria-busy'), 'false');
-    assert.strictEqual(harness.dom.window.document.querySelector('#statProtectionEvents').textContent, '0');
+    assert.strictEqual(harness.dom.window.document.querySelector('#protectionStatusText').textContent, 'Protection unavailable');
     assert.match(harness.dom.window.document.querySelector('.hydration-error--inline').textContent, /Settings are unavailable/);
     [
       'healthPanelBody',
@@ -2881,14 +2879,29 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(master.checked, true);
     assert.strictEqual(harness.dom.window.document.querySelector('#toggleNetwork').checked, true);
 
-    const whitelist = harness.dom.window.document.querySelector('#toggleWhitelist');
+    assert.strictEqual(harness.dom.window.document.querySelector('#toggleWhitelist'), null);
+    assert.match(harness.dom.window.document.querySelector('#protectionFeedback').textContent, /Could not save/);
+    assert.match(acceleration.closest('.toggle-row').textContent, /Could not save/);
+
+    const popup = createSettingsHarness({
+      url: 'chrome-extension://test/ui/popup.html',
+      responses: {
+        CONFIG_GET: { enabled: true, fingerprintRandomization: true },
+        WHITELIST_ADD: { ok: false },
+        FPR_WHITELIST_ADD: { ok: false }
+      }
+    });
+    popup.sandbox.chrome.tabs.reload = id => reloads.push(id);
+    await popup.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const whitelist = popup.dom.window.document.querySelector('#toggleWhitelist');
     whitelist.checked = true;
     whitelist.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
     await settleDomAsyncWork();
 
     assert.strictEqual(whitelist.checked, false);
 
-    const fprWhitelist = harness.dom.window.document.querySelector('#toggleFprWhitelist');
+    const fprWhitelist = popup.dom.window.document.querySelector('#toggleFprWhitelist');
     fprWhitelist.checked = true;
     fprWhitelist.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
     await settleDomAsyncWork();
@@ -3216,6 +3229,120 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(scrollCalls.at(-1)?.block, 'start');
   });
 
+  await t.test('settings labels activate controls once and forms have persistent names', async () => {
+    const harness = createSettingsHarness();
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const doc = harness.dom.window.document;
+    const network = doc.querySelector('#toggleNetwork');
+    const previous = network.checked;
+    harness.messages.length = 0;
+    doc.querySelector('label[for="toggleNetwork"]').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(network.checked, !previous);
+    assert.strictEqual(countMessages(harness.messages, 'CONFIG_SET'), 1);
+    assert.ok(doc.querySelector('#statsSection h2'));
+    assert.strictEqual(doc.querySelector('#toggleWhitelist'), null);
+    assert.strictEqual(doc.querySelector('#toggleFprWhitelist'), null);
+    assert.strictEqual(doc.querySelector('#statisticsPanel #exportConfigJson'), null);
+    assert.ok(doc.querySelector('.settings-backup #exportConfigJson'));
+    for (const id of ['statsModeSelect', 'statsRetentionSelect', 'newSubName', 'newSubUrl', 'newUserScriptletSourceName', 'newUserScriptletSourceUrl', 'userScriptletRulesText']) {
+      const control = doc.getElementById(id);
+      assert.ok([...control.labels].some(label => label.textContent.trim()), `${id} needs a persistent label`);
+    }
+    assert.strictEqual(doc.querySelector('#logToggleRow').tagName, 'BUTTON');
+    assert.strictEqual(doc.querySelector('#logToggleRow button'), null);
+    assert.strictEqual(doc.querySelectorAll('#zapperRulesSection .section-guide-link').length, 1);
+    assert.strictEqual(doc.querySelector('#zapperEmptyState .section-guide-link'), null);
+    assert.strictEqual(doc.querySelectorAll('#proxyRouterContainer button').length, 0);
+    assert.strictEqual(doc.querySelectorAll('#userScriptletSourceList .settings-empty-state button').length, 0);
+  });
+
+  await t.test('acceleration controls disable unavailable actions and restore failed selections', async () => {
+    const write = deferred();
+    let writes = 0;
+    const harness = createSettingsHarness({ responses: {
+      CONFIG_GET: { enabled: true, acceleration: false, accelerationSpeed: 8 },
+      CONFIG_SET: () => ++writes === 1 ? write.promise : { ok: false }
+    } });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const doc = harness.dom.window.document;
+    const speed = doc.querySelector('[data-speed="12"]');
+    assert.strictEqual(speed.disabled, true);
+    speed.click();
+    assert.strictEqual(writes, 0);
+    doc.querySelector('label[for="toggleAcceleration"]').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(speed.disabled, true, 'speed stays disabled while activation is saving');
+    write.resolve({ ok: true });
+    await settleDomAsyncWork();
+    assert.strictEqual(speed.disabled, false);
+    speed.click();
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.querySelector('[data-speed="8"]').getAttribute('aria-pressed'), 'true');
+    assert.strictEqual(speed.getAttribute('aria-pressed'), 'false');
+    assert.strictEqual(speed.disabled, false);
+    assert.match(doc.querySelector('#toggleAcceleration').closest('.toggle-row').textContent, /Could not save/);
+  });
+
+  await t.test('all statistics reset actions require confirmation and use explicit scopes', async () => {
+    let allow = false;
+    const prompts = [];
+    const harness = createSettingsHarness({ confirm: text => { prompts.push(text); return allow; } });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const doc = harness.dom.window.document;
+    assert.strictEqual(doc.querySelector('#resetStats'), null);
+    for (const id of ['resetAllStats', 'resetSiteStats', 'resetRequestLogOnly']) doc.getElementById(id).click();
+    await settleDomAsyncWork();
+    assert.strictEqual(countMessages(harness.messages, 'STATS_RESET'), 0);
+    assert.strictEqual(prompts.length, 3);
+    assert.match(prompts[1], /all sites/);
+    allow = true;
+    for (const id of ['resetAllStats', 'resetSiteStats', 'resetRequestLogOnly']) doc.getElementById(id).click();
+    await settleDomAsyncWork();
+    assert.deepStrictEqual(harness.messages.filter(msg => msg.type === 'STATS_RESET').map(msg => msg.scope), ['all', 'sites', 'debugLog']);
+  });
+
+  await t.test('motion preference persists, synchronizes, and rolls back failed saves', async () => {
+    const harness = createSettingsHarness({ storage: { uiReduceMotion: true } });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const doc = harness.dom.window.document;
+    const toggle = doc.querySelector('#toggleReduceMotion');
+    assert.strictEqual(toggle.checked, true);
+    assert.ok(doc.documentElement.classList.contains('reduce-motion'));
+    assert.strictEqual(harness.sandbox.ChromaApp.scrollBehavior(), 'instant');
+    toggle.click();
+    await settleDomAsyncWork();
+    assert.strictEqual(harness.storageState.uiReduceMotion, false);
+    assert.strictEqual(doc.documentElement.classList.contains('reduce-motion'), false);
+    assert.strictEqual(harness.sandbox.ChromaApp.scrollBehavior(), 'smooth');
+
+    await harness.emitStorageChange({ uiReduceMotion: { newValue: true } });
+    assert.strictEqual(toggle.checked, true);
+    assert.ok(doc.documentElement.classList.contains('reduce-motion'));
+    harness.sandbox.chrome.storage.local.set = async () => { throw new Error('Save failed'); };
+    toggle.click();
+    await settleDomAsyncWork();
+    assert.strictEqual(toggle.checked, true);
+    assert.strictEqual(toggle.disabled, false);
+    assert.match(toggle.closest('.toggle-row').textContent, /Could not save the motion preference/);
+  });
+
+  await t.test('reduced-motion navigation avoids animated scrolling', async () => {
+    const harness = createSettingsHarness({ url: 'chrome-extension://test/ui/settings.html#proxy' });
+    harness.sandbox.matchMedia = () => ({ matches: true });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    const calls = [];
+    harness.dom.window.document.querySelector('#proxySection').scrollIntoView = options => calls.push(options);
+    harness.sandbox.ChromaApp.scrollToProxyHash();
+    await new Promise(resolve => setTimeout(resolve, 180));
+    assert.ok(calls.length);
+    assert.ok(calls.every(call => call.behavior === 'instant'));
+  });
+
   await t.test('skeleton CSS includes reduced-motion handling', () => {
     assert.match(uiCss, /\.skeleton-line/);
     assert.match(uiCss, /@keyframes skeleton-shimmer/);
@@ -3231,7 +3358,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     );
     assert.match(
       uiCss,
-      /@media \(prefers-reduced-motion: reduce\)\s*{[\s\S]*?\.settings-nav,[\s\S]*?\.settings-page footer,[\s\S]*?animation:\s*none !important;[\s\S]*?}/
+      /@media \(prefers-reduced-motion: reduce\)\s*{\s*\*,\s*\*::before,\s*\*::after\s*{\s*animation:\s*none !important;\s*transition:\s*none !important;\s*scroll-behavior:\s*auto !important;/
     );
     assert.match(
       uiCss,

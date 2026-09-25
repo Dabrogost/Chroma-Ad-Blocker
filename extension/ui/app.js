@@ -21,7 +21,8 @@ const ChromaApp = (() => {
     'updatesSection',
     'userScriptletsSection',
     'zapperRulesSection',
-    'requestLogSection'
+    'requestLogSection',
+    'backupSection'
   ];
   const CONFIG_TOGGLES = [
     ['toggleNetwork',      'networkBlocking',          true],
@@ -78,7 +79,7 @@ const ChromaApp = (() => {
     if (isSettingsPage()) {
       globalThis.location.hash = '#updatesSection';
       const section = $('updatesSection') || $('updaterPanel');
-      section?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      section?.scrollIntoView?.({ behavior: scrollBehavior(), block: 'start' });
     } else if (chrome.tabs?.create) {
       chrome.tabs.create({ url });
     } else {
@@ -97,7 +98,7 @@ const ChromaApp = (() => {
     if (!SETTINGS_SECTION_IDS.includes(sectionId)) return;
 
     const scroll = (behavior = 'smooth') => {
-      $(sectionId)?.scrollIntoView?.({ behavior, block: 'start' });
+      $(sectionId)?.scrollIntoView?.({ behavior: scrollBehavior(behavior), block: 'start' });
     };
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => scroll());
@@ -281,13 +282,73 @@ const ChromaApp = (() => {
     return healthPanel.loadHealthPanel();
   }
 
-  async function sendMutation(message) {
+  let reduceMotion = false;
+
+  function scrollBehavior(behavior = 'smooth') {
+    return reduceMotion || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : behavior;
+  }
+
+  async function initMotionPreference() {
+    const toggle = $('toggleReduceMotion');
+    const feedback = toggle ? controlFeedback('toggleReduceMotion') : null;
+    const apply = value => {
+      reduceMotion = value === true;
+      document.documentElement.classList.toggle('reduce-motion', reduceMotion);
+      if (toggle) toggle.checked = reduceMotion;
+    };
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.uiReduceMotion) apply(changes.uiReduceMotion.newValue);
+    });
+    if (toggle) toggle.disabled = true;
+    try {
+      const stored = await chrome.storage.local.get('uiReduceMotion');
+      apply(stored.uiReduceMotion);
+    } catch (error) {
+      if (feedback) feedback.textContent = 'Could not load the motion preference. Choose it again to retry.';
+      console.error('Chroma motion preference could not be loaded:', error);
+    } finally {
+      if (toggle) toggle.disabled = false;
+    }
+    toggle?.addEventListener('change', async () => {
+      const previous = reduceMotion;
+      apply(toggle.checked);
+      toggle.disabled = true;
+      if (feedback) feedback.textContent = '';
+      try {
+        await chrome.storage.local.set({ uiReduceMotion: reduceMotion });
+      } catch (error) {
+        apply(previous);
+        if (feedback) feedback.textContent = 'Could not save the motion preference. Please try again.';
+        console.error('Chroma motion preference could not be saved:', error);
+      } finally {
+        toggle.disabled = false;
+      }
+    });
+  }
+
+  function controlFeedback(id) {
+    const control = $(id);
+    const parent = control?.closest('.toggle-row')?.querySelector('.toggle-info');
+    if (!parent) return $('protectionFeedback');
+    let feedback = parent.querySelector('.control-feedback');
+    if (!feedback) {
+      feedback = appendElement(parent, 'span', 'control-feedback');
+      feedback.setAttribute('role', 'status');
+      feedback.setAttribute('aria-live', 'polite');
+    }
+    return feedback;
+  }
+
+  async function sendMutation(message, feedback = null) {
+    if (typeof feedback === 'string') feedback = $(feedback);
+    if (feedback) feedback.textContent = '';
     try {
       const result = await notifyBackground(message);
-      if (!result || result.ok === false) return null;
+      if (!result || result.ok === false) throw new Error(result?.error || 'No response');
       return result;
     } catch (error) {
       console.error('Chroma mutation failed:', error);
+      if (feedback) feedback.textContent = 'Could not save this change. Please try again.';
       return null;
     }
   }
@@ -526,6 +587,15 @@ const ChromaApp = (() => {
   async function initSharedUI() {
     const settingsMode = isSettingsPage();
     globalThis.ChromaComponents?.renderPageShell({ settingsMode });
+    // Text fields can match :focus-visible after a pointer click. Keep the
+    // navigation ring separate from their normal editing focus highlight.
+    document.addEventListener('pointerdown', () => {
+      document.documentElement.classList.add('pointer-navigation');
+    }, true);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Tab') document.documentElement.classList.remove('pointer-navigation');
+    }, true);
+    safeHydrateSection('motion preference', initMotionPreference);
 
     const refreshStatsOnStorageChange = (changes, area) => {
       if (area === 'local' && changes.statsV2) {
@@ -604,8 +674,14 @@ const ChromaApp = (() => {
       const row = $('speedSelectorRow');
       if (row) row.classList.toggle('disabled', !accelerationOn);
       document.querySelectorAll('.speed-btn').forEach(btn => {
-        btn.classList.toggle('active', parseInt(btn.dataset.speed) === speed);
+        const selected = parseInt(btn.dataset.speed) === speed;
+        btn.classList.toggle('active', selected);
+        btn.setAttribute('aria-pressed', String(selected));
+        btn.disabled = !accelerationOn || !!$('toggleAcceleration')?.disabled || btn.classList.contains('control-pending');
       });
+      setText('accelerationSpeedHelp', accelerationOn
+        ? 'Choose how quickly detected ads play while muted.'
+        : 'Enable YouTube ad acceleration to choose a speed.');
     }
 
     function getActiveSpeed() {
@@ -634,6 +710,7 @@ const ChromaApp = (() => {
     }
 
     function updateStatusDot(active) {
+      setText('protectionStatusText', active ? 'Protection on' : 'Protection off');
       const dot = $('statusDot');
       if (!dot) return;
       if (active) {
@@ -656,6 +733,7 @@ const ChromaApp = (() => {
     }
 
     function failSettingsHydration(message) {
+      setText('protectionStatusText', 'Protection unavailable');
       showConfigLoadError(message);
       renderStatsHero(null);
       [
@@ -706,13 +784,15 @@ const ChromaApp = (() => {
       updateStatusDot(isEnabled);
     }
     syncUI(config, isEnabled);
-    syncSpeedUI(config.accelerationSpeed ?? 8, isEnabled && (config.acceleration !== false));
     setControlsPending(false);
+    syncSpeedUI(config.accelerationSpeed ?? 8, isEnabled && !!config.acceleration);
+    CONFIG_TOGGLES.forEach(([id]) => controlFeedback(id));
     setControlPending('toggleWhitelist', true);
     setControlPending('toggleFprWhitelist', true);
 
     document.querySelectorAll('.speed-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
+        if (btn.disabled || !$('toggleAcceleration')?.checked || !$('toggleEnabled')?.checked) return;
         const previous = captureProtectionState();
         const speed = parseInt(btn.dataset.speed);
         syncSpeedUI(speed, $('toggleAcceleration')?.checked);
@@ -720,16 +800,16 @@ const ChromaApp = (() => {
           speedBtn.disabled = true;
           speedBtn.classList.add('control-pending');
         });
-        const result = await sendMutation({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } });
+        const result = await sendMutation({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } }, controlFeedback('toggleAcceleration'));
         if (result) {
           config.accelerationSpeed = speed;
         } else {
           restoreProtectionState(previous);
         }
         document.querySelectorAll('.speed-btn').forEach(speedBtn => {
-          speedBtn.disabled = false;
           speedBtn.classList.remove('control-pending');
         });
+        syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
       });
     });
 
@@ -758,15 +838,17 @@ const ChromaApp = (() => {
           }
         }
 
-        const result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig });
+        const result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig }, controlFeedback(elId));
         if (!result) {
           restoreProtectionState(previous);
           setProtectionTogglePending(elId, false);
+          syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
           return;
         }
         config[key] = isChecked;
         if (typeof nextEnabled === 'boolean') config.enabled = nextEnabled;
         setProtectionTogglePending(elId, false);
+        syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
       });
     }
 
@@ -782,7 +864,8 @@ const ChromaApp = (() => {
       updateStatusDot(active);
       if (!settingsMode) syncUI(config, active);
       setProtectionTogglePending('toggleEnabled', true);
-      const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } });
+      syncSpeedUI(getActiveSpeed(), false);
+      const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } }, 'protectionFeedback');
       if (!result) {
         restoreProtectionState(previous);
         setProtectionTogglePending('toggleEnabled', false);
@@ -802,6 +885,7 @@ const ChromaApp = (() => {
         }
       }
       setProtectionTogglePending('toggleEnabled', false);
+      syncSpeedUI(config.accelerationSpeed ?? 8, active && !!config.acceleration);
     });
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
@@ -816,7 +900,7 @@ const ChromaApp = (() => {
     wireRequestLog();
     wireSettingsNav();
 
-    safeHydrateSection('site controls', hydrateSiteControls);
+    if (!settingsMode) safeHydrateSection('site controls', hydrateSiteControls);
     if (settingsMode) {
       safeHydrateSection('stats', loadStatsUI);
       safeHydrateSection('subscriptions', loadSubscriptionUI);
@@ -830,30 +914,33 @@ const ChromaApp = (() => {
       async function saveStatsSettingsFromControls() {
         const mode = $('statsModeSelect')?.value || 'aggregated';
         const retentionDays = Number($('statsRetentionSelect')?.value || 90);
-        await notifyBackground({
+        setStatsControlsPending(true);
+        await sendMutation({
           type: MSG.STATS_SETTINGS_SET,
           settings: {
             mode,
             retentionDays,
             storeFullUrls: mode === 'debug'
           }
-        });
+        }, 'statsFeedback');
         await loadStatsUI();
       }
 
       $('statsModeSelect')?.addEventListener('change', saveStatsSettingsFromControls);
       $('statsRetentionSelect')?.addEventListener('change', saveStatsSettingsFromControls);
       $('resetAllStats')?.addEventListener('click', async () => {
-        if (!confirm('Reset all local statistics?')) return;
-        await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
+        if (!confirm('Reset all local statistics? This cannot be undone.')) return;
+        await sendMutation({ type: MSG.STATS_RESET, scope: 'all' }, 'statsFeedback');
         await loadStatsUI();
       });
       $('resetSiteStats')?.addEventListener('click', async () => {
-        await notifyBackground({ type: MSG.STATS_RESET, scope: 'sites' });
+        if (!confirm('Reset statistics for all sites? This cannot be undone.')) return;
+        await sendMutation({ type: MSG.STATS_RESET, scope: 'sites' }, 'statsFeedback');
         await loadStatsUI();
       });
       $('resetRequestLogOnly')?.addEventListener('click', async () => {
-        await notifyBackground({ type: MSG.STATS_RESET, scope: 'debugLog' });
+        if (!confirm('Clear the request log? This cannot be undone.')) return;
+        await sendMutation({ type: MSG.STATS_RESET, scope: 'debugLog' }, 'statsFeedback');
       });
       $('exportStatsJson')?.addEventListener('click', async () => {
         const exported = await notifyBackground({ type: MSG.STATS_EXPORT });
@@ -932,10 +1019,6 @@ const ChromaApp = (() => {
         }
       });
 
-      $('resetStats')?.addEventListener('click', async () => {
-        await notifyBackground({ type: MSG.STATS_RESET, scope: 'all' });
-        await loadStatsUI();
-      });
     }
 
     function wireSharedLinks() {
@@ -1231,7 +1314,7 @@ const ChromaApp = (() => {
           const previous = !e.target.checked;
           e.target.disabled = true;
           e.target.classList.add('control-pending');
-          const result = await sendMutation({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked });
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_SET, id: e.target.dataset.id, enabled: e.target.checked }, 'subscriptionFeedback');
           if (!result) e.target.checked = previous;
           await loadSubscriptionUI();
           await loadHealthPanel();
@@ -1242,7 +1325,7 @@ const ChromaApp = (() => {
           const id = e.target.dataset.id;
           e.target.textContent = 'Refreshing';
           e.target.disabled = true;
-          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REFRESH, id });
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REFRESH, id }, 'subscriptionFeedback');
           e.target.textContent = result?.networkApplied === false
             ? 'Cached'
             : (result && result.ok ? 'Updated' : 'Failed');
@@ -1258,7 +1341,7 @@ const ChromaApp = (() => {
         btn.addEventListener('click', async (e) => {
           if (e.target.dataset.pendingRemoval !== 'true' && !confirm('Remove this filter list?')) return;
           e.target.disabled = true;
-          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id });
+          const result = await sendMutation({ type: MSG.SUBSCRIPTION_REMOVE, id: e.target.dataset.id }, 'subscriptionFeedback');
           loadSubscriptionUI();
           loadHealthPanel();
         });
@@ -1426,6 +1509,7 @@ const ChromaApp = (() => {
       const overview = $('userScriptletOverview');
       if (!overview) return;
       overview.classList.remove('is-loading');
+      overview.hidden = !sources?.length && !settings?.parsedRuleCount && !settings?.availableResourceNames?.length;
       setText('userScriptletSourceCount', Number(sources?.length || 0).toLocaleString());
       setText('userScriptletResourceCount', Number(settings?.availableResourceNames?.length || 0).toLocaleString());
       setText('userScriptletRuleCount', Number(settings?.parsedRuleCount || 0).toLocaleString());
@@ -1440,6 +1524,7 @@ const ChromaApp = (() => {
       clearElement(list);
       const resources = linkState?.resources || getUserScriptletLinkState(names, '').resources;
       const missing = linkState?.missing || [];
+      wrap.hidden = resources.length === 0 && missing.length === 0;
       list.classList.remove('is-loading');
       resources.slice(0, 30).forEach(resource => {
         const linked = resource.ruleCount > 0;
@@ -1497,10 +1582,11 @@ const ChromaApp = (() => {
       const summary = document.createElement('div');
       summary.className = 'subscription-summary';
       summary.textContent = `${sources.length.toLocaleString()} resource URL(s) \u00b7 ${Number(settings.availableResourceNames?.length || 0).toLocaleString()} resource(s) \u00b7 ${Number(settings.parsedRuleCount || 0).toLocaleString()} rule(s)`;
-      list.appendChild(summary);
+      if (sources.length) list.appendChild(summary);
 
       if (sources.length === 0) {
-        appendLoadingRow(list, 'No user scriptlet resources added.');
+        const empty = appendElement(list, 'div', 'settings-empty-state');
+        appendElement(empty, 'p', '', 'No custom resources yet. Add a resource URL from a source you trust, then use the rules editor to choose where it runs.');
       } else {
         for (const source of sources) {
           const row = document.createElement('div');
@@ -1551,7 +1637,7 @@ const ChromaApp = (() => {
           const target = event.target;
           target.disabled = true;
           target.textContent = 'Refreshing';
-          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REFRESH, id: target.dataset.id });
+          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REFRESH, id: target.dataset.id }, 'scriptletFeedback');
           target.textContent = result?.ok ? 'Updated' : 'Failed';
           setTimeout(() => {
             loadUserScriptletUI();
@@ -1565,7 +1651,7 @@ const ChromaApp = (() => {
           if (!confirm('Remove this user scriptlet resource?')) return;
           const target = event.target;
           target.disabled = true;
-          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REMOVE, id: target.dataset.id });
+          const result = await sendMutation({ type: MSG.USER_SCRIPTLET_SOURCE_REMOVE, id: target.dataset.id }, 'scriptletFeedback');
           if (result) {
             await loadUserScriptletUI();
             await loadHealthPanel();
@@ -1705,6 +1791,10 @@ const ChromaApp = (() => {
       setText('zapperRulesSummaryCount', safeRules.length ? `(${formatCount(safeRules.length)})` : '(0)');
 
       const overview = $('zapperOverview');
+      if (overview) overview.hidden = safeRules.length === 0;
+      if ($('zapperEmptyState')) $('zapperEmptyState').hidden = safeRules.length > 0;
+      const detail = $('localZapperRules')?.closest('details');
+      if (detail) detail.hidden = safeRules.length === 0;
       overview?.classList.toggle('is-empty', safeRules.length === 0);
       overview?.classList.toggle('has-paused', disabledCount > 0);
     }
@@ -1738,6 +1828,9 @@ const ChromaApp = (() => {
       } catch (error) {
         console.error('Chroma local zapper rules failed to load:', error);
         updateZapperOverview([]);
+        if ($('zapperEmptyState')) $('zapperEmptyState').hidden = true;
+        const detail = list.closest('details');
+        if (detail) { detail.hidden = false; detail.open = true; }
         setSectionError('localZapperRules', 'Local zapper rules unavailable.');
         return;
       }
@@ -1838,14 +1931,10 @@ const ChromaApp = (() => {
 
     function wireRequestLog() {
       const toggleRow = $('logToggleRow');
-      const toggleBtn = $('logToggleBtn');
+      const toggleIndicator = $('logToggleBtn');
       const freezeBtn = $('logFreezeBtn');
       const entries = $('logEntries');
       if (!toggleRow || !entries) return;
-      toggleRow.setAttribute('role', 'button');
-      toggleRow.setAttribute('tabindex', '0');
-      toggleRow.setAttribute('aria-expanded', 'false');
-      toggleRow.setAttribute('aria-controls', 'logEntries');
 
       const RT_BADGE = {
         script: { label: 'JS', className: 'script' },
@@ -1951,8 +2040,7 @@ const ChromaApp = (() => {
       async function toggleRequestLog() {
         isOpen = !isOpen;
         toggleRow.setAttribute('aria-expanded', String(isOpen));
-        if (toggleBtn) toggleBtn.setAttribute('aria-label', isOpen ? 'Collapse request log' : 'Expand request log');
-        toggleBtn?.classList.toggle('open', isOpen);
+        toggleIndicator?.classList.toggle('open', isOpen);
         entries.classList.toggle('visible', isOpen);
         if (isOpen) await renderLog();
       }
@@ -1968,7 +2056,7 @@ const ChromaApp = (() => {
         updateLogState();
         if (!isFrozen && isOpen) await renderLog();
       });
-      addKeyboardActivation(toggleRow, toggleRequestLog);
+      toggleRow.addEventListener('click', toggleRequestLog);
     }
 
     function wireSettingsNav() {
@@ -1981,6 +2069,16 @@ const ChromaApp = (() => {
 
       let activeId = '';
       let framePending = false;
+
+      const updateScrollMargin = () => {
+        const navTop = Number.parseFloat(globalThis.getComputedStyle?.(nav)?.top) || 10;
+        const margin = Math.max(100, nav.offsetHeight + navTop + 24);
+        document.documentElement.style.setProperty('--settings-scroll-margin', `${margin}px`);
+      };
+      updateScrollMargin();
+      if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(updateScrollMargin).observe(nav);
+      }
 
       const setActive = (sectionId) => {
         if (!sectionId || sectionId === activeId) return;
@@ -2004,7 +2102,8 @@ const ChromaApp = (() => {
         if ((globalThis.scrollY || 0) >= bottom) return sections[sections.length - 1]?.id;
 
         const navBottom = nav.getBoundingClientRect().bottom;
-        const threshold = Math.max(96, navBottom + 24);
+        const scrollMargin = Number.parseFloat(globalThis.getComputedStyle?.(sections[0])?.scrollMarginTop) || 100;
+        const threshold = Math.max(scrollMargin + 4, navBottom + 24);
         let current = sections[0]?.id;
         for (const section of sections) {
           if (section.getBoundingClientRect().top <= threshold) {
@@ -2038,7 +2137,10 @@ const ChromaApp = (() => {
         });
       });
       globalThis.window?.addEventListener?.('scroll', scheduleRefresh, { passive: true });
-      globalThis.window?.addEventListener?.('resize', scheduleRefresh);
+      globalThis.window?.addEventListener?.('resize', () => {
+        updateScrollMargin();
+        scheduleRefresh();
+      });
       globalThis.window?.addEventListener?.('hashchange', () => {
         scrollToSettingsHash();
         scheduleRefresh();
@@ -2052,7 +2154,7 @@ const ChromaApp = (() => {
     if (!['#proxy', '#proxySection'].includes(globalThis.location?.hash)) return;
     const scroll = (behavior = 'smooth') => {
       const section = $('proxySection') || $('proxyRouterContainer');
-      section?.scrollIntoView({ behavior, block: 'start' });
+      section?.scrollIntoView({ behavior: scrollBehavior(behavior), block: 'start' });
     };
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => scroll());
@@ -2071,6 +2173,8 @@ const ChromaApp = (() => {
     openProxySettings,
     openUpdatesSettings,
     initSharedUI,
+    scrollBehavior,
+    sendMutation,
     scrollToProxyHash
   };
 })();
