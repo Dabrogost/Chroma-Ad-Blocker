@@ -3258,6 +3258,50 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(doc.querySelectorAll('#userScriptletSourceList .settings-empty-state button').length, 0);
   });
 
+  await t.test('Spotify has an independent labeled toggle with persisted true and false values', async () => {
+    for (const saved of [true, false, undefined]) {
+      const config = { enabled: true, stripping: false };
+      if (saved !== undefined) config.spotifyAdBlocking = saved;
+      const harness = createSettingsHarness({ responses: { CONFIG_GET: config } });
+      await harness.sandbox.ChromaApp.initSharedUI();
+      await settleDomAsyncWork();
+      const doc = harness.dom.window.document;
+      const spotify = doc.querySelector('#toggleSpotifyAdBlocking');
+      assert.strictEqual(spotify.checked, saved ?? false);
+      assert.strictEqual(spotify.closest('.protection-group').querySelector('h3').textContent, 'Spotify');
+      doc.querySelector('label[for="toggleSpotifyAdBlocking"]').click();
+      await settleDomAsyncWork();
+      const update = harness.messages.filter(message => message.type === 'CONFIG_SET').at(-1);
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(update.config)), { spotifyAdBlocking: !(saved ?? false) });
+      assert.strictEqual(doc.querySelector('#toggleStripping').checked, false);
+      const spotifyValue = spotify.checked;
+      doc.querySelector('label[for="toggleStripping"]').click();
+      await settleDomAsyncWork();
+      assert.strictEqual(spotify.checked, spotifyValue);
+    }
+  });
+
+  await t.test('Spotify toggle restores its saved state when a pending save fails', async () => {
+    const write = deferred();
+    const harness = createSettingsHarness({ responses: {
+      CONFIG_GET: { enabled: true, stripping: false, spotifyAdBlocking: true },
+      CONFIG_SET: () => write.promise
+    } });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const doc = harness.dom.window.document;
+    const spotify = doc.querySelector('#toggleSpotifyAdBlocking');
+    doc.querySelector('label[for="toggleSpotifyAdBlocking"]').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(spotify.disabled, true);
+    write.resolve({ ok: false, error: 'Could not save settings' });
+    await settleDomAsyncWork();
+    assert.strictEqual(spotify.disabled, false);
+    assert.strictEqual(spotify.checked, true);
+    assert.strictEqual(doc.querySelector('#toggleStripping').checked, false);
+    assert.match(spotify.closest('.toggle-row').textContent, /Could not save/);
+  });
+
   await t.test('acceleration controls disable unavailable actions and restore failed selections', async () => {
     const write = deferred();
     let writes = 0;

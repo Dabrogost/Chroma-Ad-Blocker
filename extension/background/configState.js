@@ -5,7 +5,7 @@
 'use strict';
 
 export const CONFIG_KEYS = Object.freeze([
-  'networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts',
+  'networkBlocking', 'stripping', 'spotifyAdBlocking', 'acceleration', 'cosmetic', 'hideShorts',
   'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled',
   'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass',
   'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening',

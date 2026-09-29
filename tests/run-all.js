@@ -23,6 +23,7 @@ const TIERS = {
     'recipes.test.js',
     'scriptlets.test.js',
     'settings.test.js',
+    'spotify_handler.test.js',
     'stats.test.js',
     'subscriptions.manager.test.js',
     'update-check.test.js',

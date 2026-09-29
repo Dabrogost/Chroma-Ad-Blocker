@@ -2807,6 +2807,7 @@ select.chroma-input {
 }
 
 .proxy-domain-tools {
+  align-items: flex-end;
   padding: 10px 14px;
   border-top: 1px solid rgba(255,255,255,0.03);
 }
@@ -3208,7 +3209,7 @@ body.popup-page {
 }
 
 .protection-group-title {
-  text-align: center;
+  text-align: left;
   font-size: 14px;
   color: var(--c-cyan);
   font-weight: 650;

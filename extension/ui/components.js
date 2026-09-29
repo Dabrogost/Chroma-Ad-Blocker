@@ -316,6 +316,14 @@ const ChromaComponents = (() => {
         })}
       </div>
       <div class="protection-list protection-group">
+        <h3 class="protection-group-title">Spotify</h3>
+        ${renderToggleRow({
+          inputId: 'toggleSpotifyAdBlocking',
+          name: 'Spotify ad blocking',
+          desc: 'Redirects known Spotify ad media to a brief silent clip'
+        })}
+      </div>
+      <div class="protection-list protection-group">
         <h3 class="protection-group-title">Privacy</h3>
         ${renderToggleRow({
           inputId: 'toggleTrackingUrlCleanup',

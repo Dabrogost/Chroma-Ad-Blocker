@@ -22,6 +22,7 @@ const subscriptionDnrCode = '{\n' + fs.readFileSync(path.join(__dirname, '..', '
 
 const dnrStateCode = '{\n' + fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'dnrState.js'), 'utf8')
   .replace('const DEBUG = false;', 'var DEBUG = false;')
+  .replace("import { getSpotifyRules } from './spotifyRules.js';", fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'spotifyRules.js'), 'utf8').replace('export function', 'function'))
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", 'var getDefaultDynamicRules = globalThis._getDefaultDynamicRules;')
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", 'var clearHealthDiagnostic = globalThis._clearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._recordHealthDiagnostic || (async () => {});')
   .replace(/import\s*\{[\s\S]*?\}\s*from\s*['"]\.\.\/subscriptions\/dnr\.js['"];?/, `

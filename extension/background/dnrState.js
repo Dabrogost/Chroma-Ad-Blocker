@@ -5,6 +5,7 @@
 'use strict';
 
 import { getDefaultDynamicRules } from './defaultDynamicRules.js';
+import { getSpotifyRules } from './spotifyRules.js';
 import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';
 import {
   buildSubscriptionRuleApplication,
@@ -74,8 +75,8 @@ function normalizeMatchedAction(actionType) {
 }
 
 /**
- * The only predicate used to decide whether browser-engine network protection
- * may be installed.
+ * Controls general network blocking. Spotify media redirects have their own
+ * toggle and share this coordinator's atomic rule updates.
  */
 export function isNetworkProtectionActive(config) {
   return config?.enabled !== false && config?.networkBlocking !== false;
@@ -400,16 +401,17 @@ async function performReconciliation(generation, reason) {
 
   const active = isNetworkProtectionActive(desired.config);
   let subscriptionApplication = await buildSubscriptionRuleApplication([], {});
-  let desiredRules = [];
+  const spotifyRules = getSpotifyRules(desired.config, desired.whitelist);
+  let desiredRules = spotifyRules;
   let defaultRules = [];
   let whitelistRules = [];
   let buildSubscriptionApplication = null;
   if (active) {
-    defaultRules = buildDefaultRules(
+    defaultRules = [...buildDefaultRules(
       desired.config,
       desired.whitelist,
       desired.dynamicRules
-    );
+    ), ...spotifyRules];
     const regexLimit = dynamicRegexRuleLimit();
     const dnrApi = chrome.declarativeNetRequest;
     buildSubscriptionApplication = async currentDefaultRules => {
@@ -478,14 +480,13 @@ async function performReconciliation(generation, reason) {
     }
 
     if (!active) {
-      if (removeRuleIds.length > 0) {
+      if (removeRuleIds.length > 0 || desiredRules.length > 0) {
         dynamicRuleClassificationsReady = false;
-        await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds });
+        await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules: desiredRules });
       }
       dynamicCommitCompleted = true;
-      dynamicRuleClassifications.clear();
-      dynamicRuleClassificationsReady = true;
-      // This exact empty image is now authoritative even if a newer desired
+      updateClassificationCache(desiredRules);
+      // This image (possibly Spotify-only) is authoritative even if a newer desired
       // generation was queued while Chrome committed it. The serialized newer
       // generation will replace the snapshot only after its own successful
       // commit.

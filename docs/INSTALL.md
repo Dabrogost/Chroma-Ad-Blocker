@@ -61,6 +61,7 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 | `trackingUrlCleanup` | Removes known tracking query parameters from top-level navigation URLs. | `true` |
 | `deAmpLinks` | Redirects supported AMP viewer pages to publisher URLs. | `false` |
 | `stripping` | Enables YouTube Ad Stripping, the primary blocker. | `true` |
+| `spotifyAdBlocking` | Redirects known Spotify ad media to a packaged silent clip without changing playback data. Independent of YouTube and Network Blocking; respects master protection and the site whitelist. | `true` |
 | `acceleration` | Enables accelerated ad playback as a fallback. | `false` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (`x4`, `x8`, `x12`, or `x16`). | `8` |
 | `cosmetic` | Enables hiding ad placeholders through CSS. | `true` |

@@ -29,6 +29,7 @@ const ChromaApp = (() => {
     ['toggleTrackingUrlCleanup', 'trackingUrlCleanup', true],
     ['toggleDeAmpLinks',   'deAmpLinks',               false],
     ['toggleStripping',    'stripping',                true],
+    ['toggleSpotifyAdBlocking', 'spotifyAdBlocking',   false],
     ['toggleAcceleration', 'acceleration',             false],
     ['toggleCosmetic',     'cosmetic',                 true],
     ['toggleShorts',       'hideShorts',               false],

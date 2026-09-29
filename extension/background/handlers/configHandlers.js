@@ -46,7 +46,9 @@ export function handleConfigSet(msg) {
       currentConfig.globalProxyEnabled !== newConfig.globalProxyEnabled ||
       currentConfig.globalProxyId !== newConfig.globalProxyId ||
       currentConfig.chromeServiceProxyBypass !== newConfig.chromeServiceProxyBypass;
-    const dynamicBehaviorChanged = currentConfig.acceleration !== newConfig.acceleration ||
+    const dynamicBehaviorChanged = masterStateChanged ||
+      currentConfig.spotifyAdBlocking !== newConfig.spotifyAdBlocking ||
+      currentConfig.acceleration !== newConfig.acceleration ||
       currentConfig.trackingUrlCleanup !== newConfig.trackingUrlCleanup;
     if (networkStateChanged || dynamicBehaviorChanged) {
       await updateDNRState();
