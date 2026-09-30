@@ -37,15 +37,6 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - **[Local Event Tracker](docs/STATISTICS.md)**: A local-only Protection Intelligence dashboard for network, cleanup, scriptlet, proxy, and payload-cleanup events, plus a separate bounded DNR request log when Chrome exposes match feedback.
 - **[Local-First Privacy](docs/PRIVACY_POLICY.md)**: Keeps settings, diagnostics, subscriptions, proxy configuration, and protection statistics on the user's device without Chroma telemetry.
 
-## What's New In 1.9.3
-
-- **Spotify protection:** Independent ad-media redirects for the Spotify web player on Chrome and Edge. See [Spotify setup and troubleshooting](docs/SPOTIFY.md).
-- **Organized settings:** Protection controls are grouped into Ad blocking, YouTube, Spotify, Privacy, Advanced, and Appearance, with clearer labels and protection status. Site whitelisting remains in the popup; import/export is under **Backup and restore**.
-- **Accessible controls:** Persistent **Reduce motion**, system motion preferences, keyboard focus indicators, labeled forms, and a keyboard-accessible request-log disclosure.
-- **Clearer feedback:** Visible save failures, pending states, and confirmations for clearing the request log or resetting statistics. Layout and control sizing improvements include the proxy **Add Domain** button.
-
-See [settings navigation and controls](docs/INSTALL.md#settings-navigation-and-controls) for details.
-
 ## Quick Start
 
 1. Get the latest release from [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest), and extract the ZIP file.
