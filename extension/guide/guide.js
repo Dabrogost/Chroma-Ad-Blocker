@@ -348,7 +348,7 @@
       }
 
       if (loading) {
-        showMessage('Loading the offline guide index\u2026', 'Guide search index is loading.');
+        showMessage('Loading the guide index\u2026', 'Guide search index is loading.');
         return;
       }
 

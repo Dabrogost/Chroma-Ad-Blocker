@@ -14,6 +14,8 @@ const {
 const repoRoot = path.join(__dirname, '..');
 const generatedPagesRoot = path.join(repoRoot, 'extension', 'guide', 'pages');
 const generatedAssetsRoot = path.join(repoRoot, 'extension', 'docs', 'assets');
+const webOutput = 'dist/guide-site';
+const releaseUrl = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest';
 const htmlEscape = MarkdownIt().utils.escapeHtml;
 
 function toPosix(value) {
@@ -146,7 +148,7 @@ function splitReference(value) {
   };
 }
 
-function createMarkdownRenderer(sourceToPage) {
+function createMarkdownRenderer(sourceToPage, target) {
   const md = new MarkdownIt({
     html: false,
     linkify: false,
@@ -206,7 +208,7 @@ function createMarkdownRenderer(sourceToPage) {
     if (!GUIDE_ASSETS.includes(resolved)) {
       throw new Error(`${page.source} references an undeclared guide image: ${src}`);
     }
-    return `../../${resolved}`;
+    return `${target === 'web' ? '../' : '../../'}${resolved}`;
   }
 
   md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
@@ -371,7 +373,7 @@ function renderSidebar(currentSlug, root) {
   ].join('');
 }
 
-function renderShell({ root, currentSlug = '', title, description, mainHtml }) {
+function renderShell({ root, currentSlug = '', title, description, mainHtml, target }) {
   const assetPrefix = root === '.' ? '' : '../';
   const bodySlug = currentSlug || 'home';
   return [
@@ -400,7 +402,9 @@ function renderShell({ root, currentSlug = '', title, description, mainHtml }) {
     mainHtml,
     '</div>',
     '<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>',
-    '<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>',
+    target === 'web'
+      ? '<footer class="guide-footer"><p>The same guide is available offline with Chroma Ad-Blocker.</p></footer>'
+      : '<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>',
     `<script src="${assetPrefix}guide.js" defer></script>`,
     '</body>',
     '</html>',
@@ -420,7 +424,7 @@ function renderTaskCard(page, href) {
   ].join('');
 }
 
-function renderIndex() {
+function renderIndex(target) {
   const featured = GUIDE_PAGES.filter(page => page.featured)
     .map(page => renderTaskCard(page, `pages/${page.slug}.html`))
     .join('');
@@ -448,9 +452,13 @@ function renderIndex() {
     '<section class="guide-hero" aria-labelledby="guideHeroTitle">',
     '<p class="guide-eyebrow">Chroma Ad-Blocker user manual</p>',
     '<h1 id="guideHeroTitle">What would you like to do?</h1>',
-    '<p>Find practical setup help, feature explanations, privacy details, and performance guidance—all available offline.</p>',
+    target === 'web'
+      ? '<p>Explore setup help, features, privacy details, and performance guidance before installing Chroma.</p>'
+      : '<p>Find practical setup help, feature explanations, privacy details, and performance guidance—all available offline.</p>',
     '<div class="guide-hero-actions">',
-    '<a class="guide-primary-action" href="../ui/settings.html">Open Chroma settings</a>',
+    target === 'web'
+      ? `<a class="guide-primary-action" href="${releaseUrl}" target="_blank" rel="noopener noreferrer">Download Chroma</a>`
+      : '<a class="guide-primary-action" href="../ui/settings.html">Open Chroma settings</a>',
     '<a class="guide-secondary-action" href="pages/install.html">Start with installation</a>',
     '</div>',
     '</section>',
@@ -460,7 +468,9 @@ function renderIndex() {
     '</section>',
     '<aside class="guide-callout" aria-label="Guide privacy note">',
     '<h2>Private by design</h2>',
-    '<p>This guide is packaged with Chroma. Reading and searching it does not send your questions or browsing activity anywhere.</p>',
+    target === 'web'
+      ? '<p>Search runs in your browser. This guide has no analytics or tracking scripts. GitHub Pages serves the pages and images; your search terms stay on your device.</p>'
+      : '<p>This guide is packaged with Chroma. Reading and searching it does not send your questions or browsing activity anywhere.</p>',
     '</aside>',
     categories,
     '</main>'
@@ -469,8 +479,9 @@ function renderIndex() {
   return renderShell({
     root: '.',
     title: 'Home',
-    description: 'Offline user manual for Chroma Ad-Blocker.',
-    mainHtml
+    description: target === 'web' ? 'Explore the Chroma Ad-Blocker user guide before installing.' : 'Offline user manual for Chroma Ad-Blocker.',
+    mainHtml,
+    target
   });
 }
 
@@ -495,11 +506,13 @@ function settingsHref(settings) {
   return `../../${settings.path}`;
 }
 
-function renderArticle(page, rendered, index) {
+function renderArticle(page, rendered, index, target) {
   const category = categoryFor(page);
   const previous = index > 0 ? GUIDE_PAGES[index - 1] : null;
   const next = index < GUIDE_PAGES.length - 1 ? GUIDE_PAGES[index + 1] : null;
-  const cta = page.settings
+  const cta = target === 'web'
+    ? `<a class="guide-settings-cta" href="${releaseUrl}" target="_blank" rel="noopener noreferrer"><span>Download Chroma</span><span aria-hidden="true">↗</span></a>`
+    : page.settings
     ? [
       `<a class="guide-settings-cta" href="${htmlEscape(settingsHref(page.settings))}" `,
       `data-settings-path="${htmlEscape(page.settings.path)}">`,
@@ -544,11 +557,12 @@ function renderArticle(page, rendered, index) {
     currentSlug: page.slug,
     title: page.title,
     description: page.summary,
-    mainHtml
+    mainHtml,
+    target
   });
 }
 
-function buildSearchIndex(renderedPages) {
+function buildSearchIndex(renderedPages, target) {
   return {
     version: 1,
     pages: GUIDE_PAGES.map(page => {
@@ -564,7 +578,7 @@ function buildSearchIndex(renderedPages) {
           .map(heading => ({ text: heading.text, id: heading.id })),
         text: rendered.searchText,
         url: `pages/${page.slug}.html`,
-        settingsPath: page.settings?.path || null,
+        settingsPath: target === 'web' ? null : page.settings?.path || null,
         tasks: page.tasks.slice()
       };
     })
@@ -603,14 +617,15 @@ function validateRenderedGuide(renderedPages) {
   return errors;
 }
 
-function buildGuideArtifacts() {
+function buildGuideArtifacts({ target = 'extension' } = {}) {
+  if (!['extension', 'web'].includes(target)) throw new Error(`Unknown guide target: ${target}`);
   const manifestErrors = validateGuideManifest();
   if (manifestErrors.length > 0) {
     throw new Error(`Invalid guide manifest:\n- ${manifestErrors.join('\n- ')}`);
   }
 
   const sourceToPage = new Map(GUIDE_PAGES.map(page => [page.source, page]));
-  const md = createMarkdownRenderer(sourceToPage);
+  const md = createMarkdownRenderer(sourceToPage, target);
   const renderedPages = new Map();
   for (const page of GUIDE_PAGES) {
     renderedPages.set(page.slug, renderCanonicalPage(page, md));
@@ -622,14 +637,15 @@ function buildGuideArtifacts() {
   }
 
   const artifacts = new Map();
-  artifacts.set('extension/guide/index.html', Buffer.from(renderIndex(), 'utf8'));
+  const guideRoot = target === 'web' ? webOutput : 'extension/guide';
+  artifacts.set(`${guideRoot}/index.html`, Buffer.from(renderIndex(target), 'utf8'));
   GUIDE_PAGES.forEach((page, index) => {
-    const output = renderArticle(page, renderedPages.get(page.slug), index);
-    artifacts.set(`extension/guide/pages/${page.slug}.html`, Buffer.from(output, 'utf8'));
+    const output = renderArticle(page, renderedPages.get(page.slug), index, target);
+    artifacts.set(`${guideRoot}/pages/${page.slug}.html`, Buffer.from(output, 'utf8'));
   });
   artifacts.set(
-    'extension/guide/search-index.json',
-    Buffer.from(`${JSON.stringify(buildSearchIndex(renderedPages), null, 2)}\n`, 'utf8')
+    `${guideRoot}/search-index.json`,
+    Buffer.from(`${JSON.stringify(buildSearchIndex(renderedPages, target), null, 2)}\n`, 'utf8')
   );
 
   for (const source of GUIDE_ASSETS) {
@@ -637,7 +653,14 @@ function buildGuideArtifacts() {
     if (!fs.existsSync(sourcePath)) {
       throw new Error(`Missing canonical guide asset: ${source}`);
     }
-    artifacts.set(`extension/${source}`, fs.readFileSync(sourcePath));
+    artifacts.set(`${target === 'web' ? webOutput : 'extension'}/${source}`, fs.readFileSync(sourcePath));
+  }
+
+  if (target === 'web') {
+    for (const name of ['guide.css', 'guide.js']) {
+      artifacts.set(`${webOutput}/${name}`, fs.readFileSync(path.join(repoRoot, 'extension', 'guide', name)));
+    }
+    artifacts.set(`${webOutput}/.nojekyll`, Buffer.alloc(0));
   }
 
   return artifacts;
@@ -715,6 +738,26 @@ function checkGuideFreshness(artifacts = buildGuideArtifacts()) {
 }
 
 function main() {
+  if (process.argv.includes('--web')) {
+    // This directory contains only generated site files and is ignored by Git.
+    const artifacts = buildGuideArtifacts({ target: 'web' });
+    const outputRoot = path.resolve(repoRoot, webOutput);
+    if (outputRoot !== path.join(repoRoot, 'dist', 'guide-site')) {
+      throw new Error('Refusing to clean an unexpected guide output directory.');
+    }
+    fs.rmSync(outputRoot, { recursive: true, force: true });
+    for (const [relativePath, bytes] of artifacts) {
+      const absolute = path.resolve(repoRoot, relativePath);
+      if (!absolute.startsWith(`${outputRoot}${path.sep}`)) {
+        throw new Error(`Refusing to write outside web guide output: ${relativePath}`);
+      }
+      fs.mkdirSync(path.dirname(absolute), { recursive: true });
+      fs.writeFileSync(absolute, bytes);
+    }
+    console.log(`Web guide: ${artifacts.size} files written to ${webOutput}/`);
+    return;
+  }
+
   if (process.argv.includes('--check')) {
     const errors = checkGuideFreshness();
     if (errors.length > 0) {
