@@ -190,13 +190,54 @@ If a patch needs the page body to exist first, use an explicit later timing flag
 example.com##+js(unlock-scroll, runAt=end)
 ```
 
-### Run A Trusted Video-Site Patch
+## Experimental Alternatives
 
-If a project you personally trust publishes a uBO-style resource file, add its raw HTTPS URL, verify the parsed resource name, then save the narrowest matching rule possible:
+These optional Spotify and Twitch scriptlets can be added through **Settings -> Scriptlets**. They are experimental, and website changes may affect playback or ad blocking. Keep Chroma's master protection and User Scripts access enabled, as described in [Setup Flow](#setup-flow).
+
+### Spotify Ad Skip
+
+[Spotify Ad Skip](https://github.com/Dabrogost/Spotify-Scripts) is an alternative to Chroma's built-in Spotify ad-media redirects. It attempts to skip ad states and continue music playback in the Spotify web player.
+
+1. Open **Settings -> Protection -> Spotify** and turn **Spotify ad blocking** off. Leave master protection on.
+2. Open **Settings -> Scriptlets**, click **Add resource URL**, paste the resource URL below, and click **Add**.
+3. Expand **Rules editor**, add the matching rule below, and click **Save Rules**.
+4. Reload Spotify.
+
+Resource URL:
+
+```text
+https://raw.githubusercontent.com/Dabrogost/Spotify-Scripts/refs/heads/main/spotify-ad-skip.txt
+```
+
+Rule:
+
+```adblock
+open.spotify.com##+js(spotify-ad-skip)
+```
+
+This applies to playback in the Spotify browser tab, not the desktop or mobile apps or another Spotify Connect device. To stop using it, remove the rule and reload Spotify. Turn **Spotify ad blocking** back on if you want to return to Chroma's built-in protection.
+
+### Twitch VAFT
+
+[VAFT from TwitchAdSolutions](https://github.com/ryanbr/TwitchAdSolutions) attempts to obtain an ad-free Twitch stream. Playback may pause while it looks for one. Use the uBlock resource version linked below.
+
+1. Open **Settings -> Scriptlets**, click **Add resource URL**, paste the resource URL below, and click **Add**.
+2. Expand **Rules editor**, add the matching rule below, and click **Save Rules**.
+3. Reload Twitch. Avoid running another Twitch-specific ad blocker alongside VAFT.
+
+Resource URL:
+
+```text
+https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/master/vaft/vaft-ublock-origin.js
+```
+
+Rule:
 
 ```adblock
 twitch.tv##+js(twitch-videoad)
 ```
+
+To stop using VAFT, remove the rule and reload Twitch. You can also remove its resource URL from **User scriptlets**.
 
 ## Troubleshooting
 

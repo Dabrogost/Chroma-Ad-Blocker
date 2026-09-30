@@ -167,11 +167,38 @@ news.example##+js(unlock-scroll)
 </div><p>If a patch needs the page body to exist first, use an explicit later timing flag:</p>
 <div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(unlock-scroll, runAt=end)
 </code></pre>
-</div><h3 id="run-a-trusted-video-site-patch" tabindex="-1">Run A Trusted Video-Site Patch</h3>
-<p>If a project you personally trust publishes a uBO-style resource file, add its raw HTTPS URL, verify the parsed resource name, then save the narrowest matching rule possible:</p>
+</div><h2 id="experimental-alternatives" tabindex="-1">Experimental Alternatives</h2>
+<p>These optional Spotify and Twitch scriptlets can be added through <strong>Settings -&gt; Scriptlets</strong>. They are experimental, and website changes may affect playback or ad blocking. Keep Chroma's master protection and User Scripts access enabled, as described in <a href="#setup-flow">Setup Flow</a>.</p>
+<h3 id="spotify-ad-skip" tabindex="-1">Spotify Ad Skip</h3>
+<p><a href="https://github.com/Dabrogost/Spotify-Scripts" target="_blank" rel="noopener noreferrer">Spotify Ad Skip</a> is an alternative to Chroma's built-in Spotify ad-media redirects. It attempts to skip ad states and continue music playback in the Spotify web player.</p>
+<ol>
+<li>Open <strong>Settings -&gt; Protection -&gt; Spotify</strong> and turn <strong>Spotify ad blocking</strong> off. Leave master protection on.</li>
+<li>Open <strong>Settings -&gt; Scriptlets</strong>, click <strong>Add resource URL</strong>, paste the resource URL below, and click <strong>Add</strong>.</li>
+<li>Expand <strong>Rules editor</strong>, add the matching rule below, and click <strong>Save Rules</strong>.</li>
+<li>Reload Spotify.</li>
+</ol>
+<p>Resource URL:</p>
+<div class="guide-code-block" data-language="text"><pre><code class="language-text">https://raw.githubusercontent.com/Dabrogost/Spotify-Scripts/refs/heads/main/spotify-ad-skip.txt
+</code></pre>
+</div><p>Rule:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">open.spotify.com##+js(spotify-ad-skip)
+</code></pre>
+</div><p>This applies to playback in the Spotify browser tab, not the desktop or mobile apps or another Spotify Connect device. To stop using it, remove the rule and reload Spotify. Turn <strong>Spotify ad blocking</strong> back on if you want to return to Chroma's built-in protection.</p>
+<h3 id="twitch-vaft" tabindex="-1">Twitch VAFT</h3>
+<p><a href="https://github.com/ryanbr/TwitchAdSolutions" target="_blank" rel="noopener noreferrer">VAFT from TwitchAdSolutions</a> attempts to obtain an ad-free Twitch stream. Playback may pause while it looks for one. Use the uBlock resource version linked below.</p>
+<ol>
+<li>Open <strong>Settings -&gt; Scriptlets</strong>, click <strong>Add resource URL</strong>, paste the resource URL below, and click <strong>Add</strong>.</li>
+<li>Expand <strong>Rules editor</strong>, add the matching rule below, and click <strong>Save Rules</strong>.</li>
+<li>Reload Twitch. Avoid running another Twitch-specific ad blocker alongside VAFT.</li>
+</ol>
+<p>Resource URL:</p>
+<div class="guide-code-block" data-language="text"><pre><code class="language-text">https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/master/vaft/vaft-ublock-origin.js
+</code></pre>
+</div><p>Rule:</p>
 <div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">twitch.tv##+js(twitch-videoad)
 </code></pre>
-</div><h2 id="troubleshooting" tabindex="-1">Troubleshooting</h2>
+</div><p>To stop using VAFT, remove the rule and reload Twitch. You can also remove its resource URL from <strong>User scriptlets</strong>.</p>
+<h2 id="troubleshooting" tabindex="-1">Troubleshooting</h2>
 <div class="guide-table-wrap"><table>
 <thead>
 <tr>
@@ -233,7 +260,7 @@ news.example##+js(unlock-scroll)
 </ul>
 <hr>
 <p>Next: <a href="statistics.html">Statistics &amp; Health</a></p>
-</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="filter-lists.html"><span>Previous</span><strong>Filter List Subscriptions</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="statistics.html"><span>Next</span><strong>Statistics &amp; Health</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#when-to-use-this">When To Use This</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#trust-model">Trust Model</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#setup-flow">Setup Flow</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-file-format">Resource File Format</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-count-and-operational-bounds">Resource Count And Operational Bounds</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#reading-the-status-badges">Reading The Status Badges</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#real-examples">Real Examples</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#restore-selection-on-one-site">Restore Selection On One Site</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#remove-a-persistent-scroll-lock">Remove A Persistent Scroll Lock</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#run-a-trusted-video-site-patch">Run A Trusted Video-Site Patch</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#troubleshooting">Troubleshooting</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#backup-behavior">Backup Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#safer-rule-habits">Safer Rule Habits</a></li></ol></aside></div></main>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="filter-lists.html"><span>Previous</span><strong>Filter List Subscriptions</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="statistics.html"><span>Next</span><strong>Statistics &amp; Health</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#when-to-use-this">When To Use This</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#trust-model">Trust Model</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#setup-flow">Setup Flow</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-file-format">Resource File Format</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-count-and-operational-bounds">Resource Count And Operational Bounds</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#reading-the-status-badges">Reading The Status Badges</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#real-examples">Real Examples</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#restore-selection-on-one-site">Restore Selection On One Site</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#remove-a-persistent-scroll-lock">Remove A Persistent Scroll Lock</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#experimental-alternatives">Experimental Alternatives</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#spotify-ad-skip">Spotify Ad Skip</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#twitch-vaft">Twitch VAFT</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#troubleshooting">Troubleshooting</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#backup-behavior">Backup Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#safer-rule-habits">Safer Rule Habits</a></li></ol></aside></div></main>
 </div>
 <button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
 <footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
