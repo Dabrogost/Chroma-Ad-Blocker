@@ -88,10 +88,10 @@ async function runGuide(relativePath, { mobile = false } = {}) {
 
 test('guide manifest is explicit, complete, and free of local-only docs', () => {
   assert.deepStrictEqual(validateGuideManifest(), []);
-  assert.strictEqual(GUIDE_PAGES.length, 13);
-  assert.strictEqual(GUIDE_CATEGORIES.length, 5);
+  assert.strictEqual(GUIDE_PAGES.length, 12);
+  assert.strictEqual(GUIDE_CATEGORIES.length, 4);
   assert.strictEqual(new Set(USER_DOC_FILES).size, USER_DOC_FILES.length);
-  assert.strictEqual(USER_DOC_FILES.length, 13);
+  assert.strictEqual(USER_DOC_FILES.length, 12);
   assert.deepStrictEqual(USER_DOC_FILES, GUIDE_PAGES.map(page => page.source));
   assert.ok(!USER_DOC_FILES.includes(GUIDE_HUB_SOURCE));
   assert.ok(USER_DOC_FILES.includes('docs/ADVANCED_USER_SCRIPTLETS.md'));
@@ -216,7 +216,7 @@ test('article pages expose stable headings, TOCs, settings CTAs, and safe extern
 
 test('Markdown features render accessibly while repository-only diagrams stay out of the guide', () => {
   const filters = artifactDocument('extension/guide/pages/filter-lists.html');
-  const philosophy = artifactDocument('extension/guide/pages/project-philosophy.html');
+  const installation = artifactDocument('extension/guide/pages/install.html');
 
   for (const source of ['docs/ARCHITECTURE.md', 'docs/SECURITY.md']) {
     assert.match(fs.readFileSync(path.join(repoRoot, ...source.split('/')), 'utf8'), /```mermaid/);
@@ -231,8 +231,8 @@ test('Markdown features render accessibly while repository-only diagrams stay ou
   assert.ok(filters.querySelector('.guide-table-wrap > table'));
   assert.ok(filters.querySelector('.guide-align-right'));
   assert.ok(filters.querySelector('.guide-callout.guide-callout--note'));
-  assert.ok(philosophy.querySelector('.guide-callout.guide-callout--important'));
-  assert.doesNotMatch(philosophy.body.textContent, /\[!IMPORTANT\]/);
+  assert.ok(installation.querySelector('.guide-callout.guide-callout--important'));
+  assert.doesNotMatch(installation.body.textContent, /\[!IMPORTANT\]/);
 });
 
 test('every rendered documentation image has useful alt text and a byte-identical local copy', () => {

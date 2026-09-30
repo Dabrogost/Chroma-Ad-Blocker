@@ -21,7 +21,6 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - [Permissions](docs/PERMISSIONS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Performance Guide](docs/PERFORMANCE.md)
-- [Project Philosophy](docs/PROJECT_PHILOSOPHY.md)
 - [Terms of Service](docs/ToS.md)
 
 ## Key Features
@@ -40,7 +39,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 
 ## What's New In 1.9.3
 
-- **Spotify protection:** Independent ad-media redirects for the Spotify web player on Chrome and Edge. The current implementation replaces the earlier playback-response handler. See [Spotify setup and troubleshooting](docs/SPOTIFY.md).
+- **Spotify protection:** Independent ad-media redirects for the Spotify web player on Chrome and Edge. See [Spotify setup and troubleshooting](docs/SPOTIFY.md).
 - **Organized settings:** Protection controls are grouped into Ad blocking, YouTube, Spotify, Privacy, Advanced, and Appearance, with clearer labels and protection status. Site whitelisting remains in the popup; import/export is under **Backup and restore**.
 - **Accessible controls:** Persistent **Reduce motion**, system motion preferences, keyboard focus indicators, labeled forms, and a keyboard-accessible request-log disclosure.
 - **Clearer feedback:** Visible save failures, pending states, and confirmations for clearing the request log or resetting statistics. Layout and control sizing improvements include the proxy **Add Domain** button.
@@ -58,7 +57,7 @@ See [settings navigation and controls](docs/INSTALL.md#settings-navigation-and-c
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
 6. Done. Network rules become active immediately. Reload tabs that were already open so Chroma's page-side cosmetic, scriptlet, and platform handlers can initialize. Browser-restricted pages remain outside extension access. Pin Chroma from the extensions menu to access the popup.
 
-When a newer GitHub release is available, Chroma can guide unpacked-extension updates from **Settings -> Updates** if the release includes the exact direct ZIP asset and signed `updates.json`. Chroma fetches those release assets internally, so users do not manually download `updates.json` and the extension does not need Chrome's download permission or download dialog. It verifies the update signature and package hash, builds a dry-run install plan, probes folder write access, backs up changed files, writes `manifest.json` last, and then shows a **Reload Chroma** action to load the updated files.
+When an update is available, open **Settings -> Updates** and follow the guided updater. Chroma verifies the release package before installation. Select your existing Chroma folder, review the install plan, install the update, and click **Reload Chroma**.
 
 For the expanded install and update flow, troubleshooting table, configuration reference, and Health panel notes, see [Installation & Configuration](docs/INSTALL.md).
 
@@ -96,7 +95,7 @@ graph TD
     PAGE --> USER
 ```
 
-The Amazon Prime Video accelerator is temporarily disabled. Its implementation remains in the source tree for future rehabilitation, but it and its supporting media bridge are not registered on Amazon or Prime Video pages.
+Ad acceleration supports YouTube. It is not available for Amazon Prime Video or Twitch.
 
 For user-facing behavior and lower-overhead configuration choices, see the [Feature Guide](docs/FEATURES.md) and [Performance Guide](docs/PERFORMANCE.md).
 
@@ -118,13 +117,13 @@ Review these before installing:
 
 - [Permissions](docs/PERMISSIONS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
-- [Project Philosophy](docs/PROJECT_PHILOSOPHY.md#why-not-the-chrome-web-store)
+- [GitHub distribution](docs/INSTALL.md#why-not-the-chrome-web-store)
 
 ## Companion Extensions & Alternatives
 
 Chroma already includes network blocking, cosmetic filtering, scriptlets, proxy routing, and platform-specific handling, so another ad blocker is not recommended by default. Extensions that do something different can still pair well with it, such as [SponsorBlock](https://chromewebstore.google.com/detail/sponsorblock-for-youtube-s/mnjggcdmjocbbbhaepdhchncahnbgone) for skipping sponsor segments on YouTube.
 
-If you prefer a store-installed extension, a Firefox-first setup, or a dedicated proxy manager, see [Recommended Alternatives](docs/PROJECT_PHILOSOPHY.md#recommended-alternatives).
+If you prefer a store-installed extension, a Firefox-first setup, or a dedicated proxy manager, see [Recommended Alternatives](docs/FEATURES.md#recommended-alternatives).
 
 ## Support The Project
 
@@ -142,7 +141,7 @@ Chroma uses logic and patterns derived from Brave Browser's YouTube ad-stripping
 
 Spotify media redirects are adapted from [uBlock Origin's uAssets filters](https://github.com/uBlockOrigin/uAssets/blob/master/filters/filters-2020.txt), with the [uBlock Origin silent MP4 resource](https://github.com/gorhill/uBlock/blob/master/src/web_accessible_resources/noop-1s.mp4). See [Spotify implementation and limits](docs/SPOTIFY.md#implementation-and-limits) for the Chrome MV3 differences.
 
-Portions of this codebase, including initial logic structures and documentation, were developed with assistance from agentic AI coding assistants. AI-assisted changes are reviewed and tested before release under the same project process as other contributions; this is a development practice, not an independent security certification.
+AI coding assistants were used in developing portions of Chroma's code and documentation. Contributions are subject to the project's review and testing process.
 
 YouTube, Google, Chrome, Amazon, Amazon Prime Video, Twitch, Netflix, Spotify, Disney+, Hulu, Max, HBO, NordVPN, ExpressVPN, PIA, Brave, and other names are trademarks of their respective owners. Chroma Ad-Blocker is an independent project and is not affiliated with, endorsed by, or sponsored by those entities.
 

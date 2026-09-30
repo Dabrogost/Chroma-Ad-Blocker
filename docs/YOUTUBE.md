@@ -11,7 +11,7 @@ Instead of waiting for an ad to appear and then speeding it up or hiding it, the
 ## How It Works
 
 - **Upstream Neutralization**: Deletes fields such as `adPlacements`, `adSlots`, and `playerAds` from raw JSON responses before the player reads them.
-- **Seamless Viewing Experience**: Because ads are stripped before they load, there is no ad countdown, black-screen wait, or need for the acceleration engine in the ideal path.
+- **Playback Cleanup**: Removing ad metadata can prevent ads from reaching playback. Startup delays can still occur; see Startup Recovery below.
 - **Payload Interception**: Uses hooks into `window.fetch`, `XMLHttpRequest`, and `JSON.parse` so batched or delayed requests can still be cleaned.
 - **Feed & Search Optimization**: Strips promoted Sparkles ads, suggested products, and sponsored results from home feed and search payloads.
 - **Sponsored Shorts Blocking**: Prunes sponsored Shorts payloads such as `adsOverlay`, `shortsAdsRenderer`, `sequenceItemInPlayerAdLayoutRenderer`, and `reelWatchEndpoint.adClientParams.isAd` before the Shorts player renders the sponsored overlay.
@@ -39,13 +39,11 @@ Acceleration is most useful when stripping is disabled, temporarily degraded by 
 
 ## Privacy Boundary
 
-Session state is private to the handler closure. Host-page scripts cannot directly read or write acceleration state, session flags, or stripping internals, although they can observe visible player behavior and infer that cleanup occurred. Stripping, acceleration, and scroll behavior start inert until authenticated configuration arrives over the private bridge; page-dispatched config notifications carry no authoritative values.
-
-Coarse payload-modified events may appear in the local Event Tracker and are folded into broader cleanup statistics instead of being promoted as platform-specific telemetry. Caller-provided field counts or object details are discarded. Because the MAIN-world signal crosses a page-visible event, a hostile page can forge the coarse event within fixed rate limits; these approximate diagnostics do not affect enforcement or privileged state.
+YouTube protection processes playback data locally. Cleanup activity can appear in the local Event Tracker; these page-level counts are approximate. See [Statistics & Health](STATISTICS.md) for details. Websites can observe changes to their player or page and may detect ad blocking.
 
 ## Twitch And Server-Side Ad Insertion
 
-Twitch uses server-side ad insertion, which prevents Chroma from applying the same client-side ad acceleration path used for YouTube. Chroma can still apply cosmetic and scriptlet-related cleanup where supported, but it does not claim Twitch ad acceleration. The separate Amazon Prime Video accelerator is temporarily disabled.
+Twitch uses server-side ad insertion, which prevents Chroma from applying the same client-side ad acceleration path used for YouTube. Chroma can still apply cosmetic and scriptlet-related cleanup where supported. Ad acceleration is not available for Twitch or Amazon Prime Video.
 
 ---
 

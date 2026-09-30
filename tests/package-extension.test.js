@@ -293,12 +293,15 @@ test('docs describe reconciled master lifecycle, import rollback, and bounded di
   const stats = fs.readFileSync(path.join(__dirname, '..', 'docs', 'STATISTICS.md'), 'utf8');
   const userScriptlets = fs.readFileSync(path.join(__dirname, '..', 'docs', 'ADVANCED_USER_SCRIPTLETS.md'), 'utf8');
 
-  assert.match(features, /Master off removes active network and whitelist DNR/i);
+  assert.match(features, /master switch pauses Chroma's blocking, page cleanup, scriptlets, proxy routing, and optional browser privacy controls/i);
+  assert.match(features, /settings, lists, proxy configurations, and custom resources remain saved/i);
   assert.match(proxy, /Master off releases `chrome\.proxy\.settings`/i);
-  assert.match(install, /Import is transactional/i);
-  assert.match(install, /rollback is incomplete/i);
+  assert.match(install, /validates the backup before applying it/i);
+  assert.match(install, /Invalid or unsupported backups leave your settings unchanged/i);
+  assert.match(install, /restore your previous settings and reports any incomplete restoration/i);
   assert.match(stats, /approximate diagnostics rather than an audit log/i);
-  assert.match(userScriptlets, /100 is a registration batch size, not a resource ceiling/i);
+  assert.match(userScriptlets, /2 MiB maximum response per resource URL/i);
+  assert.match(userScriptlets, /512 KiB maximum code size for one parsed resource/i);
 });
 
 test('docs document guided updater requirements and fallback', () => {

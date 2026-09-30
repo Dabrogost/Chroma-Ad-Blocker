@@ -1,6 +1,6 @@
 # Permissions
 
-Chroma requests the following permissions. Each is tied to current, documented behavior, although this table does not claim that every future implementation would require the same permission set.
+Chroma requests the following permissions for its protection, settings, and proxy features.
 
 | Permission | Reason |
 |---|---|
@@ -8,8 +8,8 @@ Chroma requests the following permissions. Each is tied to current, documented b
 | `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired when Chrome exposes DNR feedback events to the unpacked extension. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
 | `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB, which is insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets, user configuration, statistics, health diagnostics, and a separate DNR request log. When Chrome exposes matched-rule feedback, that log can retain the newest 500 full matched URLs—including allow matches—in every statistics mode until browser-profile startup or a manual reset. Chroma does not transmit this local storage to a Chroma telemetry service. |
-| `tabs` | Chroma currently uses tab queries and URL visibility for current-site whitelist controls and state rebroadcasts, and uses the Tabs API to open extension pages and reload a tab after whitelist changes. Chrome does not require the `tabs` permission for every Tabs API method, and Chroma already has broad web host access, so this permission remains appropriate to reevaluate for minimization rather than describe as universally required. |
-| `alarms` | Powers periodic subscription refresh checks. Chrome MV3 service workers are ephemeral and cannot use `setInterval`; `chrome.alarms` is the reliable timer mechanism available. |
+| `tabs` | Gives Chroma access to tab information for current-site controls and communicating settings changes to open tabs. |
+| `alarms` | Schedules subscription refresh checks that can wake the extension's service worker. |
 | `userScripts` | The primary API for the scriptlet engine. Allows bundled subscription scriptlets and explicit user-added scriptlet resources to execute in the page's MAIN world context with native lifecycle management. User-added resources are executable code and can read, modify, or transmit page-accessible data; add only code you trust. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
 | `scripting` | Used for extension-controlled script work, including Element Zapper injection and optional Fingerprint Randomization content-script registration. |
 | `proxy` | Enables the split-tunnel proxy router, Chrome ownership inspection, and PAC script generation for domain-specific routing while master protection is active. |
@@ -39,4 +39,4 @@ Related docs:
 
 ---
 
-Next: [Statistics & Health](STATISTICS.md)
+Next: [Privacy Policy](PRIVACY_POLICY.md)

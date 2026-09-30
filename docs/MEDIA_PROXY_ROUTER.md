@@ -40,7 +40,14 @@ SOCKS4/SOCKS5 proxies are supported only when they do not require username/passw
 
 For authenticated SOCKS providers, use provider-side IP allowlisting if available, or choose an HTTP/HTTPS proxy endpoint instead.
 
-This limitation is specific to browser-level proxy routing in Chromium. It does not mean authenticated SOCKS5 is impossible everywhere. Apps that implement their own SOCKS connection can accept SOCKS credentials directly. For example, [NordVPN documents SOCKS5 setup in qBittorrent](https://support.nordvpn.com/hc/en-us/articles/20195967385745-NordVPN-proxy-setup-for-qBittorrent) with a SOCKS5 host, port `1080`, and service username/password. That works because qBittorrent owns the SOCKS connection; Chroma only controls Chrome's PAC/proxy route.
+## Add A Proxy
+
+1. Open **Settings -> Proxy** and click **Add proxy**.
+2. Select the proxy protocol and enter the host and port supplied by your provider.
+3. For an HTTP/HTTPS proxy, enter a username and password if required.
+4. Click **Save proxy**.
+5. Enter a domain under **Routed domain** and click **Add Domain**, or select **Global fallback** to route unmatched browser traffic through this proxy.
+6. Use **Test** to check the connection and review **Health** if routing is unavailable.
 
 ## Security
 
@@ -54,15 +61,15 @@ The Chroma popup includes a **Connection Verification** system. When you request
 
 ## Global Proxy Fallback
 
-In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. Click the **GLOBAL** button on a proxy card to select that proxy as the fallback for browser traffic that does not match a domain-specific rule.
+In addition to domain-specific routing, Chroma supports a **Global Fallback** mode. Click **Global fallback** on a settings proxy card, or **GLOBAL** in the popup, to select that proxy for browser traffic that does not match a domain-specific rule.
 
 This is browser-level proxy routing, not a system VPN, while still allowing you to send specific traffic, such as YouTube, to a different proxy server simultaneously.
 
 The main switch on each proxy card is a per-proxy enabled/disabled control:
 
-- **Switch ON**: The proxy can route its enabled domain rules and can act as the selected global fallback if its **GLOBAL** button is active.
-- **Switch OFF**: The proxy routes nothing while disabled. Its domain rows are kept, and if it was selected as **GLOBAL**, that global selection is preserved but inactive until the switch is turned back on.
-- **GLOBAL button**: Selects or clears the global fallback independently from the main switch. The active **GLOBAL** button is highlighted. The selected global card hides its domain add/list controls while it is global; non-global proxy cards keep their domain controls visible.
+- **Switch ON**: The proxy can route its enabled domains and serve as the selected global fallback.
+- **Switch OFF**: Routing pauses. Saved domains and the global fallback selection are preserved until the switch is turned back on.
+- **Global fallback**: Selects or clears the global fallback independently from the switch. The selected button is highlighted, and the card's domain controls are hidden while it is the global fallback.
 
 ### Master Protection Lifecycle
 
@@ -108,13 +115,11 @@ Proxy cards summarize saved route intent and the latest connection-test result:
 
 These card labels are not proof that Chrome accepted Chroma's PAC settings. The **Health** panel is authoritative for requested, master-paused, effective, externally controlled, and incomplete-release state. In particular, a saved GLOBAL selection is not effective while master protection is off or another controller owns Chrome's proxy setting.
 
-## Example: Checking NordVPN Compatibility
+## Choosing A Compatible Proxy
 
-As reviewed on July 27, 2026, [NordVPN's current proxy instructions](https://support.nordvpn.com/hc/en-us/articles/20195967385745-NordVPN-proxy-setup-for-qBittorrent) document authenticated SOCKS5 endpoints on port `1080` for applications such as qBittorrent. Those instructions require NordVPN service credentials.
+Use the protocol, host, port, and authentication method supplied by your proxy provider. Chroma supports HTTP/HTTPS authentication and SOCKS proxies that do not require username/password authentication. A VPN subscription alone does not provide the proxy details needed here.
 
-That authenticated SOCKS5 setup is not directly compatible with Chroma because Chromium does not expose SOCKS username/password authentication to extensions. Do not derive an HTTPS hostname or substitute a different port unless NordVPN currently documents that endpoint. NordVPN would work with Chroma only if it provides a current browser-compatible HTTP/HTTPS endpoint or an unauthenticated/IP-allowlisted SOCKS endpoint. Provider offerings change, so confirm the protocol, hostname, port, authentication method, and permitted use in the provider's current documentation before saving a route.
-
-Proxy-region performance can vary by provider, route, and streaming service. If YouTube buffers above 1080p or struggles in fullscreen, try another nearby proxy region before assuming the extension is at fault.
+If streaming buffers through a proxy, test another route or temporarily disable the proxy to compare playback on your direct connection.
 
 ## Smart-Link Auto-Expansion
 
@@ -135,4 +140,4 @@ Supported services include:
 
 ---
 
-Next: [YouTube Protection](YOUTUBE.md)
+Next: [Filter List Subscriptions](FILTER_LISTS.md)

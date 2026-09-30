@@ -1,8 +1,8 @@
 # Chroma Documentation
 
-This directory is the long-form home for Chroma Ad-Blocker. The root [README](../README.md) is the public front door; these docs preserve user help as well as repository-only engineering, security-review, and release notes.
+Find setup instructions, feature guides, and project reference material for Chroma Ad-Blocker here. For an overview, see the [README](../README.md).
 
-Only the documents under **User Documentation** are included in the in-extension guide and release package. The remaining sections are repository references for development and review. The two tracks use separate `Next` navigation: the user track stays within packaged help, while the repository track returns here after Contributing.
+The **User Documentation** is also available in Chroma's offline guide. Engineering, testing, and release documentation is intended for contributors.
 
 <div align="center">
   <img src="assets/docs-settings-overview.png" alt="Chroma settings dashboard" width="760">
@@ -11,9 +11,9 @@ Only the documents under **User Documentation** are included in the in-extension
 ## User Documentation
 
 - [Installation & Configuration](INSTALL.md) - install Chroma, use guided or manual updates, enable User Scripts, troubleshoot common setup issues, review settings, and understand the Health panel.
-- [Feature Guide](FEATURES.md) - expanded feature descriptions for the protection layers, local controls, privacy hardening, and user workflows.
+- [Feature Guide](FEATURES.md) - protection layers, local controls, privacy hardening, companion extensions, and alternatives.
 - [YouTube Protection](YOUTUBE.md) - YouTube payload stripping, Sponsored Shorts cleanup, feed/search cleanup, and acceleration fallback behavior.
-- [Spotify Protection](SPOTIFY.md) - independent web-player ad-media redirects, podcast exceptions, migration from the earlier handler, and playback troubleshooting.
+- [Spotify Protection](SPOTIFY.md) - independent web-player ad-media redirects, podcast exceptions, and playback troubleshooting.
 - [Media Proxy Router](MEDIA_PROXY_ROUTER.md) - split-tunnel proxy routing, Global Fallback, Smart-Link expansion, protocol support, WebRTC behavior, and provider setup notes.
 - [Filter List Subscriptions](FILTER_LISTS.md) - bundled and remote list behavior, custom subscriptions, MV3 rule allocation, and third-party credits.
 - [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md) - trusted user-provided scriptlet resources, linked rule status, examples, and troubleshooting.
@@ -21,7 +21,6 @@ Only the documents under **User Documentation** are included in the in-extension
 - [Permissions](PERMISSIONS.md) - each requested extension permission and why it exists.
 - [Privacy Policy](PRIVACY_POLICY.md) - local storage, no Chroma telemetry, optional network requests, and third-party service boundaries.
 - [Performance Guide](PERFORMANCE.md) - resource cost, service-worker lifecycle, page-side overhead, proxy routing, stats batching, and lower-overhead settings.
-- [Project Philosophy](PROJECT_PHILOSOPHY.md) - distribution outside the Chrome Web Store, companion extensions, alternatives, AI disclosure, and legal notes.
 - [Terms of Service](ToS.md) - use terms and legal disclaimers.
 
 ## Engineering And Security Review (Repository Only)

@@ -23,7 +23,7 @@ The **Events** section in settings shows recent local activity from the protecti
 - Coarse payload-modified events from supported platform handling.
 - Proxy test and proxy authentication activity.
 
-Payload cleanup remains visible in the Event Tracker for transparency, but it is folded into the broader **Ad Cleanups** stat instead of being promoted as a platform-specific headline badge.
+Payload cleanup appears in the Event Tracker and contributes to **Ad Cleanups**.
 
 ### Approximate Page-Level Counts
 
@@ -49,13 +49,13 @@ Chroma clears this request log when the browser profile starts and Chrome fires 
 
 ## Retention, Reset, And Export
 
-The request-log disclosure is a keyboard-accessible button. Clearing the log and resetting statistics require confirmation, and action labels distinguish all local statistics from statistics for all sites. Statistics exports remain in **Privacy and exports**; configuration backups are in **Settings -> Backup -> Backup and restore**.
+Open **Privacy and exports** in Statistics to export your data or use the reset controls. Each reset asks for confirmation. Configuration backups are in **Settings -> Backup -> Backup and restore**.
 
 The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all `statsV2` statistics, reset site statistics only, reset the separate DNR request log, or export a local JSON statistics snapshot.
 
 Resetting `statsV2` statistics does not erase the separate request log, configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.
 
-The **Time Saved (est.)** card is deliberately conservative. It uses a small sub-second estimate per protection event and floors the displayed value, so ordinary page-load activity does not inflate into unrealistic minutes.
+The **Time Saved (est.)** card estimates savings from protection events. It does not measure actual page-load time.
 
 ## Health Panel
 
@@ -88,4 +88,4 @@ Request Log availability depends on Chrome exposing matched-rule feedback to the
 
 ---
 
-Next: [Privacy Policy](PRIVACY_POLICY.md)
+Next: [Permissions](PERMISSIONS.md)
