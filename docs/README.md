@@ -2,7 +2,7 @@
 
 Find setup instructions, feature guides, and project reference material for Chroma Ad-Blocker here. For an overview, see the [README](../README.md).
 
-The **User Documentation** is also available in Chroma's offline guide. Engineering, testing, and release documentation is intended for contributors.
+The **User Documentation** is also available in the [online Chroma Guide](https://dabrogost.github.io/Chroma-Ad-Blocker/) before installation and in Chroma's offline guide afterward. Both are generated from the same Markdown files listed below. Engineering, testing, and release documentation is intended for contributors.
 
 <div align="center">
   <img src="assets/docs-settings-overview.png" alt="Chroma settings dashboard" width="760">

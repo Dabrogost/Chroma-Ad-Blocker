@@ -10,6 +10,8 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 
 ## Documentation
 
+[Explore the Chroma Guide online](https://dabrogost.github.io/Chroma-Ad-Blocker/) before installing. The website and Chroma's bundled offline guide are generated from the same documentation below.
+
 - [Installation & Configuration](docs/INSTALL.md)
 - [Feature Guide](docs/FEATURES.md)
 - [YouTube Protection](docs/YOUTUBE.md)

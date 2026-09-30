@@ -11,6 +11,7 @@
     "test:ci": "node tests/run-all.js && node tests/tools/validate-rules.js && node scripts/package-extension.js",
     "test:rules": "node tests/tools/validate-rules.js",
     "docs:build": "node scripts/build-guide.js",
+    "docs:build:web": "node scripts/build-guide.js --web",
     "docs:check": "node scripts/build-guide.js --check",
     "rules:index": "node scripts/build-static-dedupe-index.js",
     "rules:update:oisd": "node scripts/update-oisd-rules.js",
