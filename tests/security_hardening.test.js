@@ -63,7 +63,7 @@ const DNR_DERIVED_STORAGE_KEYS = [
   'subscriptionNetworkRuntime'
 ];
 const CONFIG_KEYS = [
-  'networkBlocking', 'stripping', 'acceleration', 'cosmetic', 'hideShorts',
+  'networkBlocking', 'stripping', 'spotifyAdBlocking', 'acceleration', 'cosmetic', 'hideShorts',
   'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled',
   'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass',
   'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening',
@@ -1014,6 +1014,31 @@ test('Security Hardening - background handlers', async (t) => {
         String(globalProxyId)
       );
       assert.strictEqual(storage.config.globalProxyId, globalProxyId, String(globalProxyId));
+    }
+  });
+
+  await t.test('Spotify toggle validates booleans and survives settings backup and restore', async () => {
+    for (const spotifyAdBlocking of [true, false]) {
+      assert.strictEqual(realValidateConfig({ spotifyAdBlocking }).spotifyAdBlocking, spotifyAdBlocking);
+      const { sandbox, storage } = loadTransactionalImportHarness({ validateConfig: realValidateConfig });
+      const result = await sandbox.handleConfigImport({
+        settings: makeSettingsImportPayload({ config: { enabled: true, stripping: false, spotifyAdBlocking } })
+      });
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(storage.config.spotifyAdBlocking, spotifyAdBlocking);
+      const exported = await sandbox.handleConfigExport();
+      assert.strictEqual(exported.config.spotifyAdBlocking, spotifyAdBlocking);
+      assert.strictEqual(exported.config.stripping, false);
+    }
+    for (const value of ['true', 1, null]) {
+      assert.deepStrictEqual(plain(realValidateConfig({ spotifyAdBlocking: value })), {});
+      const { sandbox, calls } = loadTransactionalImportHarness({ validateConfig: realValidateConfig });
+      const result = await sandbox.handleConfigImport({
+        settings: makeSettingsImportPayload({ config: { spotifyAdBlocking: value } })
+      });
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(result.phase, 'validation');
+      assert.strictEqual(calls.set, 0);
     }
   });
 

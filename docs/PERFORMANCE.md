@@ -30,17 +30,9 @@ Chroma also registers Chrome's developer-mode `onRuleMatchedDebug` feedback even
 
 ## Service-Worker Lifecycle And Startup Work
 
-Manifest V3 service workers are ephemeral. Chroma stores persistent state in `chrome.storage.local` and treats the worker as a coordinator rather than a long-running process. Chrome lifecycle events are distinct; `runtime.onStartup` does not run for an ordinary worker recreation.
+Chrome pauses Chroma's background worker when it is idle. Browser-managed network rules continue working while it sleeps, and saved settings and rules are restored when needed.
 
-Work is divided as follows:
-
-- **New worker instance / ordinary wake:** module evaluation registers handlers, initializes request-log classification, restores proxy state, reconciles DNR and cached subscription runtime state, checks persisted `userScripts`, and reconciles browser privacy controls.
-- **Install or extension update:** `runtime.onInstalled` writes defaults only for a fresh install, then initializes subscriptions and their alarm, refreshes stale lists, reconciles DNR/browser controls/scriptlets, and sends configuration to reachable open tabs.
-- **Browser profile startup:** `runtime.onStartup` reconciles browser controls, DNR, cached subscription state, and scriptlets; clears the request log; ensures the subscription alarm exists; and sends configuration to reachable open tabs.
-- **Subscription alarm:** refreshes only enabled lists whose interval has elapsed.
-- **UI message or settings change:** performs that request's targeted work. It does not repeat every startup task.
-
-Most of this work happens during lifecycle and settings events instead of the enforcement decision path. DNR match feedback is the exception: where Chrome exposes the debug feedback event, matches can wake the worker for logging and statistics. Opening the popup or changing settings may also pay a cold-start and recovery cost before showing fresh state.
+Opening settings, changing protection, or refreshing large lists can take a moment while the worker starts and applies changes. Wait for pending indicators to clear. If a section remains unavailable, check **Health** for an error.
 
 ## Content Script Cost
 
@@ -58,9 +50,7 @@ The cost rises on pages that constantly add or replace DOM nodes. Large video pa
 
 ## MutationObserver Behavior
 
-Chroma uses `MutationObserver` for DOM cleanup that cannot be handled by static CSS alone. The observer tracks added element nodes, collects them into a pending set, and processes the batch on the next animation frame.
-
-This keeps repeated mutations from triggering immediate repeated scans, but it does not make DOM cleanup free. On high-churn pages, every batch still has to inspect relevant added nodes for warning overlays and leftover ad containers.
+Chroma watches for new page elements so it can remove ad containers and warning overlays added after loading. Infinite feeds and live chat can require more cleanup work than static pages.
 
 Lower-overhead habits:
 
@@ -70,9 +60,7 @@ Lower-overhead habits:
 
 ## Constructable Stylesheet Behavior
 
-Chroma uses constructable stylesheets where supported. It keeps Chroma-owned sheets in a map, replaces the sheet only when the CSS content changes, and updates `document.adoptedStyleSheets` without clobbering sheets from the page or other extensions.
-
-This avoids repeated `<style>` node churn. The browser still has to apply CSS selectors, so very broad selector lists can still affect style calculation on large documents.
+Chroma reuses stylesheets for cosmetic filtering. The browser still has to apply the selectors, so very broad custom rules can slow down large pages. Prefer rules scoped to the site and element you want to hide.
 
 ## MAIN-World Interception Cost
 
@@ -88,9 +76,7 @@ These hooks add checks around page APIs such as `fetch`, `XMLHttpRequest`, `JSON
 
 ## `userScripts` Registration Cost
 
-Chroma registers supported subscription scriptlets and explicit user scriptlets through Chrome's `userScripts` API. Registration is synchronized from stored rules, chunked so one bad entry does not reject the whole batch, and retried per script when a chunk fails.
-
-The 100-script registration chunk is not a total resource limit. Advanced resource files may contain any number of resources that fit the documented response and per-resource byte limits; only resources referenced by valid user rules become registrations.
+Chroma registers supported subscription scriptlets and user-added scriptlets with Chrome. Large rule sets can take longer to apply. Only resources referenced by valid user rules are activated.
 
 Performance implications:
 
@@ -121,7 +107,7 @@ Chroma batches stats and request-log writes to avoid writing to storage for ever
 - DNR request-log feedback is buffered before writing to `chrome.storage.local`.
 - Background stats are queued, flushed, and pruned under retention caps.
 
-MAIN-world page-event diagnostics are additionally enum-gated and rate-limited. They are approximate local counters rather than authenticated enforcement evidence; their transport does not affect the blocking path.
+Page-level activity counts are approximate. See [Statistics & Health](STATISTICS.md) for how these counts differ from network events.
 
 The request log and statistics history are separate stores. Whenever Chrome exposes DNR match feedback, the request log keeps up to 500 recent entries with full matched URLs regardless of whether statistics mode is Basic, Aggregated, or Debug. Statistics mode controls the detail retained in `statsV2`; only Debug permits full URLs in its recent-event records. Debug therefore adds detail to statistics, but switching away from Debug does not disable or redact the separate request log.
 
@@ -149,7 +135,6 @@ For a conservative everyday setup:
 Some surfaces are naturally heavier because the page or feature changes constantly:
 
 - **YouTube**: Large feed DOMs, Shorts, payload interception, player state, and frequent platform changes.
-- **Prime Video**: The page-context acceleration handler is temporarily disabled; network blocking and configured proxy routing remain separate.
 - **Twitch**: Live chat and streaming pages can produce heavy DOM churn; server-side ad insertion limits what client-side handling can do.
 - **Large subscription sets**: More parsing work, storage use, DNR allocation, cosmetic selector volume, and scriptlet registration.
 - **Global proxy routing**: Adds proxy path latency to broad browser traffic and can make slow proxy providers look like extension overhead.
@@ -158,4 +143,4 @@ When troubleshooting performance, change one layer at a time and check the Healt
 
 ---
 
-Next: [Project Philosophy](PROJECT_PHILOSOPHY.md)
+Next: [Terms of Service](ToS.md)

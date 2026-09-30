@@ -45,11 +45,11 @@ Resource URLs must use `https://` on the default port and cannot contain a usern
 ## Setup Flow
 
 1. Open Chroma settings.
-2. Go to **User Scriptlets**.
-3. Click **Add URL**.
-4. Paste a raw HTTPS resource URL.
+2. Select **Scriptlets** in the settings navigation.
+3. Click **Add resource URL**.
+4. Paste a raw HTTPS resource URL and click **Add**.
 5. Confirm that Chroma shows parsed resources under **Available Resources**.
-6. Add rules in the **Rules** box.
+6. Expand **Rules editor** and add rules in the **Rules** box.
 7. Click **Save Rules**.
 8. Reload affected tabs so newly registered scriptlets run with the intended page timing.
 
@@ -109,9 +109,7 @@ news.example##+js(unlock-scroll)
 
 ## Resource Count And Operational Bounds
 
-Chroma does not impose a total number-of-resources limit on an accepted resource file. Chrome registration is sent in groups of 100 so a rejected batch can be retried one script at a time; 100 is a registration batch size, not a resource ceiling.
-
-The advanced lane retains these operational safeguards:
+Resource files and saved rules have these limits:
 
 - 2 MiB maximum response per resource URL.
 - 512 KiB maximum code size for one parsed resource.
@@ -120,7 +118,7 @@ The advanced lane retains these operational safeguards:
 - 1,000 parsed user rules.
 - 8,192 characters per rule line.
 
-Malformed, duplicate, unsupported-MIME, empty, or overlong resource entries are skipped while valid siblings remain available. Chrome registration failures are likewise isolated within their 100-script batch so one malformed registration does not discard later batches.
+Chroma skips malformed, duplicate, empty, oversized, or unsupported resource entries. Other valid resources remain available. Check **Available resources** and **Health** if a resource is missing or cannot run.
 
 ## Reading The Status Badges
 
@@ -192,13 +190,54 @@ If a patch needs the page body to exist first, use an explicit later timing flag
 example.com##+js(unlock-scroll, runAt=end)
 ```
 
-### Run A Trusted Video-Site Patch
+## Experimental Alternatives
 
-If a project you personally trust publishes a uBO-style resource file, add its raw HTTPS URL, verify the parsed resource name, then save the narrowest matching rule possible:
+These optional Spotify and Twitch scriptlets can be added through **Settings -> Scriptlets**. They are experimental, and website changes may affect playback or ad blocking. Keep Chroma's master protection and User Scripts access enabled, as described in [Setup Flow](#setup-flow).
+
+### Spotify Ad Skip
+
+[Spotify Ad Skip](https://github.com/Dabrogost/Spotify-Scripts) is an alternative to Chroma's built-in Spotify ad-media redirects. It attempts to skip ad states and continue music playback in the Spotify web player.
+
+1. Open **Settings -> Protection -> Spotify** and turn **Spotify ad blocking** off. Leave master protection on.
+2. Open **Settings -> Scriptlets**, click **Add resource URL**, paste the resource URL below, and click **Add**.
+3. Expand **Rules editor**, add the matching rule below, and click **Save Rules**.
+4. Reload Spotify.
+
+Resource URL:
+
+```text
+https://raw.githubusercontent.com/Dabrogost/Spotify-Scripts/refs/heads/main/spotify-ad-skip.txt
+```
+
+Rule:
+
+```adblock
+open.spotify.com##+js(spotify-ad-skip)
+```
+
+This applies to playback in the Spotify browser tab, not the desktop or mobile apps or another Spotify Connect device. To stop using it, remove the rule and reload Spotify. Turn **Spotify ad blocking** back on if you want to return to Chroma's built-in protection.
+
+### Twitch VAFT
+
+[VAFT from TwitchAdSolutions](https://github.com/ryanbr/TwitchAdSolutions) attempts to obtain an ad-free Twitch stream. Playback may pause while it looks for one. Use the uBlock resource version linked below.
+
+1. Open **Settings -> Scriptlets**, click **Add resource URL**, paste the resource URL below, and click **Add**.
+2. Expand **Rules editor**, add the matching rule below, and click **Save Rules**.
+3. Reload Twitch. Avoid running another Twitch-specific ad blocker alongside VAFT.
+
+Resource URL:
+
+```text
+https://raw.githubusercontent.com/ryanbr/TwitchAdSolutions/master/vaft/vaft-ublock-origin.js
+```
+
+Rule:
 
 ```adblock
 twitch.tv##+js(twitch-videoad)
 ```
+
+To stop using VAFT, remove the rule and reload Twitch. You can also remove its resource URL from **User scriptlets**.
 
 ## Troubleshooting
 
@@ -214,9 +253,9 @@ twitch.tv##+js(twitch-videoad)
 
 ## Backup Behavior
 
-Settings export stores resource URLs and saved rules, but not cached executable code. Import validates the complete versioned backup and all user-scriptlet rule text before changing storage. If runtime reconciliation fails after commit, Chroma attempts to restore the previous storage and runtime state and reports an incomplete rollback instead of hiding it.
+Settings backups contain resource URLs and saved rules, but not downloaded resource code.
 
-After importing settings on another browser profile, refresh the resource URLs, confirm the resources parse, and reload affected tabs before expecting the rules to run. See [Settings Backup And Import](INSTALL.md#settings-backup-and-import) for the complete transaction boundary.
+After importing settings, refresh the resource URLs, confirm the resources appear, and reload affected tabs. See [Settings Backup And Import](INSTALL.md#settings-backup-and-import) for backup contents and error handling.
 
 ## Safer Rule Habits
 
@@ -230,4 +269,4 @@ After importing settings on another browser profile, refresh the resource URLs, 
 
 ---
 
-Next: [Filter List Subscriptions](FILTER_LISTS.md)
+Next: [Statistics & Health](STATISTICS.md)

@@ -35,6 +35,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       config: {
         networkBlocking: true,
         stripping: true,
+        spotifyAdBlocking: true,
         acceleration: false,
         cosmetic: true,
         hideShorts: false,

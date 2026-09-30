@@ -10,6 +10,7 @@ const manifestStaticRulesetIds = manifest.declarative_net_request.rule_resources
   .map(resource => resource.id);
 const backgroundJsCode = backgroundJsCodeRaw
   .replace('const DEBUG = false;', 'var DEBUG = true;')
+  .replace("import { getSpotifyRules } from './spotifyRules.js';", fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'spotifyRules.js'), 'utf8').replace('export function', 'function'))
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
   .replace(/import\s*\{[^}]*\}\s*from\s*['"]\.\.\/subscriptions\/manager\.js['"];?/s, `
     var initSubscriptions   = globalThis._mockInitSubscriptions;
@@ -43,6 +44,7 @@ const configStateCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 
 
 const dnrStateCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'dnrState.js'), 'utf8')
   .replace('const DEBUG = false;', 'var DEBUG = false;')
+  .replace("import { getSpotifyRules } from './spotifyRules.js';", fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'spotifyRules.js'), 'utf8').replace('export function', 'function'))
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", "var getDefaultDynamicRules = globalThis.getDefaultDynamicRules;")
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = globalThis._mockClearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._mockRecordHealthDiagnostic || (async () => {});")
   .replace(/import\s*\{[\s\S]*?\}\s*from\s*['"]\.\.\/subscriptions\/dnr\.js['"];?/, `

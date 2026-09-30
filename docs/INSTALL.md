@@ -5,7 +5,7 @@ This guide covers installing Chroma, enabling required browser features, trouble
 ## Quick Start
 
 1. Get the latest release from [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest), and extract the ZIP file.
-2. Open `chrome://extensions` in Chrome.
+2. Open `chrome://extensions` in Chrome or `edge://extensions` in Microsoft Edge.
 3. Toggle on **Developer Mode** in the top-right corner.
 4. Click **Load unpacked** and select the extracted folder that contains `manifest.json`.
 5. Enable User Scripts support:
@@ -19,26 +19,26 @@ Chroma is installed unpacked, so updates are handled through the same local fold
 
 Normal popup and settings loads use a cached GitHub release check for up to 6 hours. The **Check Latest Release** button forces a fresh check when you want to look for a newly published release immediately.
 
-When Chroma detects a newer GitHub release with the expected direct package asset and signed `updates.json`, the popup shows an update banner. Click it to open **Settings -> Updates**, then:
+When Chroma detects a newer release, the popup shows an update banner. Click it to open **Settings -> Updates**. If guided installation is available:
 
-1. Check the latest release. The popup handoff may already have this information, but this button verifies the direct GitHub ZIP asset and `updates.json` again.
-2. Choose the unpacked Chroma folder that you originally loaded into Chrome, the one that contains `manifest.json`. Chroma checks that the selected folder looks like a matching Chroma installation, but Chrome does not expose the loaded filesystem path to the extension. A same-version copy or backup can therefore pass this plausibility check even though updating it would not change the running extension.
-3. Approve Chrome's folder picker prompt when it appears. Chroma stores the directory handle locally so future update checks can reuse it when the browser still grants access.
-4. Inspect the package ZIP. Chroma downloads signed `updates.json` and the release package into memory, verifies the Chroma signature and expected SHA-256, checks the manifest, rejects unsafe ZIP paths, and confirms manifest-referenced files are present. Users do not manually download `updates.json`, and guided updates do not use Chrome's Downloads permission or download dialog.
-5. Build the install plan. This is a dry run that shows files to add, overwrite, remove, and ignore.
-6. Run the write probe. Chroma creates and removes a small temporary probe file to confirm write access.
-7. Install the update. Chroma creates a temporary backup, writes the verified package into the selected folder, removes stale files from the plan, writes `manifest.json` last, and attempts rollback if installation fails.
+1. Click **Check Latest Release**.
+2. Click **Choose Chroma Folder** and select the folder you originally loaded into Chrome, containing `manifest.json`. Select the installed folder, not a backup or a new download.
+3. Approve the browser's folder-access prompt.
+4. Click **Inspect Package ZIP**. Chroma downloads and verifies the signed release package automatically.
+5. Click **Build Install Plan** and review the files to be changed.
+6. Click **Run Write Probe** to confirm Chroma can write to the folder.
+7. Install the update. Chroma backs up affected files and attempts to restore them if installation fails.
 8. Click **Reload Chroma** to load the updated files. If direct reload is unavailable, Chroma opens `chrome://extensions` as a fallback.
 
-If Chroma is already current, the Updates panel settles on **Chroma Is Current** instead of walking through install steps. You can still keep the selected folder handle for the next update. If you are uncertain whether it is the folder Chrome currently loads, do not run the install step until you have identified the folder originally selected with **Load unpacked**.
+If the panel shows **Chroma Is Current**, no update is needed.
 
-If the popup says the update is available **on GitHub** instead of **guided install**, the release does not expose the exact `chroma-ad-blocker-vX.Y.Z.zip` asset and signed `updates.json` needed for the guided updater. You may use the manual flow below after confirming that you trust the GitHub release and repository state.
+If the popup links to an update **on GitHub** without offering **guided install**, use the manual update steps below for a trusted GitHub release.
 
 Do not use the manual flow to bypass a failed signature, hash, package, or manifest verification. A verification failure means Chroma could not authenticate that release package; stop and wait for a corrected release.
 
 ### Manual Update Fallback
 
-The manual flow is intended for a trusted release that lacks the assets required by the guided updater. Chroma does not authenticate a manually copied ZIP with its bundled update key, so review the release source and contents before replacing the installed files.
+Manual updates do not receive the guided updater's signature verification. Download the package from Chroma's GitHub releases.
 
 1. Download the latest `chroma-ad-blocker-vX.Y.Z.zip` from [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest).
 2. Extract it to a temporary folder.
@@ -46,7 +46,19 @@ The manual flow is intended for a trusted release that lacks the assets required
 4. Copy the extracted package contents over the current Chroma folder, keeping `manifest.json` at the folder root.
 5. Open `chrome://extensions` and click Chroma's refresh button.
 
-If Chrome prompts for folder access again after a restart, choose the same unpacked Chroma folder and rerun the write probe. The prompt is part of Chromium's File System Access API, not a hidden Chrome settings page.
+If the guided updater asks for folder access again after a browser restart, select the same installed Chroma folder and rerun the write probe.
+
+## Settings Navigation And Controls
+
+Protection controls are grouped under **Ad blocking**, **YouTube**, **Spotify**, **Privacy**, **Advanced**, and **Appearance**. Use the navigation links to jump to a section.
+
+The master switch shows whether protection is on or off. Wait for a pending save to finish before making another change; a failed save displays an error. Enable both master protection and **YouTube ad acceleration** to choose an acceleration speed.
+
+Under **Appearance**, **Reduce motion** turns off animated borders, moving backgrounds, and smooth scrolling. The preference persists locally, and the system's reduced-motion preference is respected even when the toggle is off. This UI preference is separate from protection and is not included in settings backups.
+
+Use Tab to move between controls and navigation links. Focus indicators show the selected control, and the request log can be expanded with Enter or Space.
+
+Use the **popup** to change protection for the current site. Open **Settings -> Backup -> Backup and restore** to export or import settings.
 
 ## Configuration
 
@@ -61,6 +73,7 @@ If Chrome prompts for folder access again after a restart, choose the same unpac
 | `trackingUrlCleanup` | Removes known tracking query parameters from top-level navigation URLs. | `true` |
 | `deAmpLinks` | Redirects supported AMP viewer pages to publisher URLs. | `false` |
 | `stripping` | Enables YouTube Ad Stripping, the primary blocker. | `true` |
+| `spotifyAdBlocking` | Redirects known Spotify ad media to a packaged silent clip without changing playback data. Independent of YouTube and Network Blocking; respects master protection and the site whitelist. | `true` |
 | `acceleration` | Enables accelerated ad playback as a fallback. | `false` |
 | `accelerationSpeed` | Playback rate multiplier for accelerated ads (`x4`, `x8`, `x12`, or `x16`). | `8` |
 | `cosmetic` | Enables hiding ad placeholders through CSS. | `true` |
@@ -83,14 +96,11 @@ Master off pauses active protection but does not rewrite the requested values in
 
 ## Settings Backup And Import
 
+Open **Settings -> Backup -> Backup and restore** to export or import a settings file. The section displays export, import, and validation feedback. The local Reduce motion preference is not included in this backup.
+
 Settings export writes a versioned `chroma-settings` JSON backup containing validated configuration, whitelists, proxy definitions without credentials, custom-subscription definitions without cached list data, and Advanced User Scriptlet URLs/rules without cached executable code.
 
-Import is transactional:
-
-1. Chroma validates the exact schema/version and every section before mutation. Unknown config keys, malformed domains, invalid proxy or remote-source definitions, and malformed user-scriptlet rules fail without replacing existing state.
-2. It snapshots all affected storage keys and builds a complete staged storage image.
-3. It commits related keys together, then reconciles DNR/subscription aggregates, `userScripts`, proxy, WebRTC, browser privacy, and geolocation state.
-4. A commit or reconciliation failure triggers restoration of the old snapshot and reconciliation of the previous runtime. If either storage or runtime rollback is incomplete, the returned error says so rather than reporting success.
+Chroma validates the backup before applying it. Invalid or unsupported backups leave your settings unchanged. If applying a valid backup fails, Chroma attempts to restore your previous settings and reports any incomplete restoration.
 
 Imported custom subscriptions and Advanced User Scriptlet URLs must be refreshed because backups intentionally omit their cached remote content. See [Filter List Subscriptions](FILTER_LISTS.md#protection-lifecycle-and-cached-restoration) and [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md#backup-behavior).
 
@@ -101,7 +111,7 @@ Imported custom subscriptions and Advanced User Scriptlet URLs must be refreshed
 | Scriptlets or fingerprint randomization show unavailable in Health. | On Chrome 138+, open `chrome://extensions`, select Chroma **Details**, and enable **Allow User Scripts**. On Chrome 122-137, confirm **Developer Mode** is enabled. |
 | Quiet Console is off but an already-open tab still behaves differently. | Reload that tab. Turning Quiet Console off unregisters the page helper for new documents, but Chrome cannot remove page-context code that already ran in an existing document. |
 | Quiet Console is on but DevTools still shows blocked resource rows. | Chrome can still log browser-generated failures for blocked subresources. Quiet Console only handles known scriptlet/fingerprint warnings and known ad/tracker `fetch`, `XMLHttpRequest`, and `sendBeacon` paths. |
-| Guided updater is unavailable. | Use a recent Chromium browser with the File System Access directory picker. The manual fallback below is reserved for a trusted release that lacks the assets required by the guided updater; do not use it to bypass an updater or browser verification failure. |
+| Guided updater is unavailable. | Use a Chromium browser that supports folder selection, or follow [Manual Update Fallback](#manual-update-fallback) for a trusted GitHub release. Do not use manual installation to bypass a failed package verification. |
 | Guided updater reports a missing release ZIP or `updates.json`. | The GitHub release must include the exact direct asset name `chroma-ad-blocker-vX.Y.Z.zip` and signed `updates.json`. Wait for corrected assets, or use the manual fallback only after independently confirming that you trust the release. |
 | Guided updater reports an invalid update signature. | Stop and do not install that release, including through the manual fallback. The `updates.json` file was not signed with Chroma's bundled update key or changed after signing; wait for a corrected authenticated release. |
 | Guided updater says Chroma is current. | No newer release is available for this install. Use **Check Latest Release** to force a fresh GitHub release check if a new release was just published. |
@@ -129,6 +139,35 @@ The panel is diagnostic-only. It reports counts and coarse status information, b
 DNR match logging is shown separately because it depends on Chrome exposing `chrome.declarativeNetRequest.onRuleMatchedDebug` to the unpacked extension. When that feedback API is unavailable, blocking can still work normally.
 
 For deeper local analytics behavior, see [Statistics & Health](STATISTICS.md).
+
+## Why Not The Chrome Web Store?
+
+Ad blocking on the modern web changes quickly, and trust is the most valuable currency. Chroma is deliberately not hosted on the Chrome Web Store. This is a strategic decision rooted in transparency and technical freedom.
+
+### Conflict Of Interest
+
+Google is an advertising company first. As the gatekeeper of the Chrome Web Store, it has an inherent conflict of interest regarding tools that neutralize its primary revenue stream.
+
+By remaining independent, Chroma is not subject to Chrome Web Store review delays, listing removal, or the store's publication cadence. It remains subject to Chrome and Chromium API changes, Manifest V3 limits, browser policies, and feature deprecations.
+
+### Full Auditability
+
+Web Store extensions often arrive as bundled packages that are harder for ordinary users to inspect. Chroma is distributed as raw, human-readable source code. By loading it as an unpacked extension, users and contributors can audit the JavaScript that is actually running.
+
+There are no hidden analytics, telemetry backdoors, or Acceptable Ads-style paid bypass programs.
+
+### Transparent MV3 API Use
+
+Chroma uses MV3 APIs such as the `userScripts` engine and multi-part `declarativeNetRequest` rulesets within Chromium's permissions and quotas. Release-package distribution does not grant extra browser API power; it keeps the implementation inspectable and allows releases without waiting on store review cycles.
+
+### Fast GitHub Releases
+
+When YouTube or other platforms update their ad-delivery algorithms, Chroma can ship a reviewed GitHub release package quickly. Web Store reviews can take days or weeks. In ad blocking, that delay matters.
+
+Staying off the store helps keep the engine responsive to platform changes while keeping updates tied to inspectable releases.
+
+> [!IMPORTANT]
+> Sideloading an extension requires a higher level of trust. Review [Permissions](PERMISSIONS.md) and the [Privacy Policy](PRIVACY_POLICY.md) before installing.
 
 ---
 

@@ -13,6 +13,7 @@ const dnrStateCode = '{\n' + fs.readFileSync(
   path.join(__dirname, '..', 'extension', 'background', 'dnrState.js'),
   'utf8'
 )
+  .replace("import { getSpotifyRules } from './spotifyRules.js';", fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'spotifyRules.js'), 'utf8').replace('export function', 'function'))
   .replace("import { getDefaultDynamicRules } from './defaultDynamicRules.js';", 'var getDefaultDynamicRules = () => [];')
   .replace(
     "import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';",

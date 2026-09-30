@@ -4,15 +4,21 @@ This guide expands the feature summary from the root README and explains how Chr
 
 ## Master Protection Lifecycle
 
-The global master switch controls active protection rather than erasing requested settings. Master off removes active network and whitelist DNR, unregisters Chroma-managed subscription and advanced `userScripts`, releases proxy PAC routing, clears Chroma-owned WebRTC/browser-privacy/geolocation settings, and keeps recipe/platform MAIN behavior inert. Cached subscription rules, proxy records, feature toggles, and user resources remain stored.
+The master switch pauses Chroma's blocking, page cleanup, scriptlets, proxy routing, and optional browser privacy controls. Your settings, lists, proxy configurations, and custom resources remain saved.
 
-Master on restores the latest requested state from those caches and settings. Startup and service-worker recovery use the same reconciliation paths, and generation checks prevent an older refresh or registration operation from overwriting a newer toggle. A subscription refresh may update cached data while protection is off, but it cannot reactivate an inactive runtime layer.
+Turn protection back on to restore your selected features. Lists may still refresh while protection is paused. Reload a tab to remove effects from scriptlets or fingerprint randomization that already ran on that page.
 
 ## YouTube Ad Stripping
 
 Chroma's primary YouTube defense intercepts and cleans ad-related metadata from JSON payloads before they reach the player. This includes sponsored Shorts overlay payloads and player ad metadata. The goal is a seamless, high-performance viewing experience without relying on playback acceleration.
 
 For the full platform-specific breakdown, see [YouTube Protection](YOUTUBE.md).
+
+## Spotify Ad Blocking
+
+Spotify ad blocking redirects known ad-media requests from the web player to a short packaged silent clip. Its browser-native rules are adapted from uBlock Origin and include podcast exceptions.
+
+Use **Settings -> Protection -> Spotify** to control it independently of YouTube and general Network blocking. Master protection and the site whitelist still apply. See [Spotify Protection](SPOTIFY.md) for setup and troubleshooting.
 
 ## Split-Tunnel Proxy Router
 
@@ -110,13 +116,13 @@ Chroma provides specialized protection for high-clutter recipe and lifestyle sit
 
 The layer includes style protection, semantic recipe content preservation, anti-adblock containment, scroll-lock recovery, and site-specific cosmetic overrides for major recipe platforms.
 
-Recipe behavior waits for authenticated configuration and remains inert while master protection is off or the site is whitelisted. Live deactivation disconnects observers, cancels sweeps, removes Chroma-owned styles, and restores only API slots and page styles Chroma still owns, preserving later page changes. Re-enabling does not stack duplicate wrappers or stylesheets.
+Recipe protection pauses when master protection is off or the site is whitelisted.
 
 ## Dynamic Ad Acceleration
 
 Dynamic Ad Acceleration identifies and accelerates YouTube video ads at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`). It is a fallback for cases where stripping is disabled or platform behavior changes.
 
-It ships off by default. The Amazon Prime Video accelerator is temporarily disabled while its implementation is brought up to the extension's current quality bar. Twitch uses server-side ad insertion and does not support this acceleration path.
+It ships off by default. Ad acceleration is not available for Amazon Prime Video or Twitch.
 
 For platform-specific behavior, see [YouTube Protection](YOUTUBE.md).
 
@@ -154,6 +160,23 @@ For retention, privacy modes, and export behavior, see [Statistics & Health](STA
 Chroma is designed for Windows, macOS, and Linux versions of Google Chrome 122+ and other Chromium-based browsers with engine version 122+. Chrome 122 is Chroma's declared minimum supported version across its feature set; the 12-part static ruleset alone does not require Chrome 122.
 
 Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. Chrome 122-137 uses Developer Mode to enable the `userScripts` API.
+
+## Recommended Companion Extensions
+
+Chroma already includes network blocking, cosmetic filtering, scriptlets, proxy routing, and platform-specific handling. Running it alongside another ad blocker can cause overlapping rules, false positives, and broken pages.
+
+Extensions with a different purpose can complement Chroma:
+
+- **[SponsorBlock](https://chromewebstore.google.com/detail/sponsorblock-for-youtube-s/mnjggcdmjocbbbhaepdhchncahnbgone)**: Skips sponsor segments and other interruptions on YouTube.
+
+## Recommended Alternatives
+
+Chroma is built for users who want a transparent, source-auditable, Chrome/Chromium-focused MV3 extension with integrated proxy routing, YouTube ad stripping, custom subscriptions, and no store-mediated update delay. If that fits your workflow, Chroma is the right tool.
+
+If you prefer a store-installed extension, a Firefox-first setup, or a dedicated proxy manager, alternatives include:
+
+- **Chrome / Chromium:** [uBlock Origin Lite](https://chromewebstore.google.com/detail/ublock-origin-lite/ddkjiahejlhfcafbddmgiahcphecmpfh?hl=en) + [FoxyProxy](https://chromewebstore.google.com/detail/foxyproxy/gcknhkkoolaabfmlnjonogaaifnjlfnp?hl=en). Recommended for users who want the Chrome Web Store path. uBlock Origin Lite comes from the uBlock Origin project and is a more reputable choice than most generic store ad blockers. FoxyProxy adds focused proxy management without bundling unrelated ad-blocking behavior.
+- **Firefox:** [uBlock Origin](https://addons.mozilla.org/firefox/addon/ublock-origin/) + [FoxyProxy](https://getfoxyproxy.org/). Recommended for users who want the strongest traditional content-blocking setup. Full uBlock Origin has more browser API power on Firefox than MV3 Chrome blockers, and FoxyProxy is a mature, dedicated proxy-routing tool.
 
 ---
 

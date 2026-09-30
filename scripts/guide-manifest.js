@@ -25,17 +25,12 @@ const GUIDE_CATEGORIES = [
   {
     id: 'trust',
     title: 'Privacy & Trust',
-    description: 'Understand requested permissions, local data, and optional network activity.'
+    description: 'Understand requested permissions, local data, optional network activity, and terms.'
   },
   {
     id: 'optimize',
     title: 'Tune Performance',
     description: 'Choose lower-overhead settings and troubleshoot resource-heavy protection layers.'
-  },
-  {
-    id: 'project',
-    title: 'Project Context',
-    description: 'Read the project rationale, recommendations, license context, and terms.'
   }
 ];
 
@@ -76,6 +71,18 @@ const GUIDE_PAGES = [
     settings: {
       path: 'ui/settings.html#protectionSection',
       label: 'Open YouTube protection settings'
+    }
+  },
+  {
+    source: 'docs/SPOTIFY.md',
+    slug: 'spotify',
+    title: 'Spotify Protection',
+    category: 'customize',
+    summary: 'Configure Spotify ad-media redirects, understand podcast exceptions, and troubleshoot web-player playback.',
+    tasks: ['Block Spotify ads', 'Configure Spotify protection', 'Troubleshoot playback'],
+    settings: {
+      path: 'ui/settings.html#protectionSection',
+      label: 'Open Spotify protection settings'
     }
   },
   {
@@ -157,18 +164,10 @@ const GUIDE_PAGES = [
     }
   },
   {
-    source: 'docs/PROJECT_PHILOSOPHY.md',
-    slug: 'project-philosophy',
-    title: 'Project Philosophy',
-    category: 'project',
-    summary: 'Read why Chroma exists, why it is distributed outside the Chrome Web Store, and which alternatives fit other needs.',
-    tasks: ['Understand project choices', 'Compare alternatives', 'Review AI disclosure']
-  },
-  {
     source: 'docs/ToS.md',
     slug: 'terms',
     title: 'Terms of Service for Chroma Ad-Blocker',
-    category: 'project',
+    category: 'trust',
     summary: 'Review the terms, GPLv3 usage context, warranty disclaimer, and limitation of liability.',
     tasks: ['Review terms', 'Understand warranty limits']
   }

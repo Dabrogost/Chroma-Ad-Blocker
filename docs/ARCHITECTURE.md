@@ -112,7 +112,7 @@ Users often wonder how static rules can operate without moving every request thr
 - **Enforcement Outside JavaScript**: DNR matching and enforcement do not require Chroma's service worker. In unpacked profiles where Chrome exposes `onRuleMatchedDebug`, a separate matched-rule feedback event may still wake the worker to update local statistics and the request log.
 - **Deduplication Budgeting**: Subscription rules from Hagezi Pro Mini are automatically deduplicated against the static ruleset on each refresh. This reserves the dynamic rule budget for unique, high-priority threats.
 
-All dynamic network application flows through one serialized, generation-checked reconciliation coordinator. The coordinator derives desired state from the master and Network Blocking settings, rechecks that state immediately before committing to Chrome, and lets the newest requested state win over older refresh work. Turning protection back on, worker recovery, and `304 Not Modified` refreshes rebuild active subscription DNR from cached per-list rules rather than depending on a new download.
+All dynamic network application flows through one serialized, generation-checked reconciliation coordinator. General network rules depend on the master and Network Blocking settings; Spotify media rules depend on the master switch, their independent toggle, and the site whitelist. The coordinator rechecks desired state immediately before committing to Chrome and lets the newest requested state win over older refresh work. Turning protection back on, worker recovery, and `304 Not Modified` refreshes rebuild active subscription DNR from cached per-list rules rather than depending on a new download.
 
 ### Layer 1b: URL Cleanup & De-AMP (defaultDynamicRules.js, content.js)
 
@@ -171,7 +171,7 @@ Recipe behavior loads inert and activates only after the trusted bridge reports 
 
 Dynamic Ad Acceleration is an optional YouTube fallback. It ships off by default, detects active ads, and accelerates them at a configurable speed (`x4`, `x8`, `x12`, or `x16`, default `x8`) while synchronizing with a custom overlay to deliver a smoother transition. It may run alongside stripping and handle ads that still reach playback; it is not conditional on stripping being disabled.
 
-The Amazon Prime Video implementation (`prm_handler.js`) remains in the source tree and retains unit coverage, but it is temporarily dormant. The manifest does not register that handler or its supporting media bridge on Amazon or Prime Video pages.
+The source tree contains `prm_handler.js`, but the manifest does not register it or its supporting media bridge on Amazon or Prime Video pages. It is not an active release feature.
 
 Twitch uses server-side ad insertion and does not support this acceleration path.
 

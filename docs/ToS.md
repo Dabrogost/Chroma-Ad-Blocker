@@ -7,7 +7,7 @@ description: Chroma Ad-Blocker license, warranty, and service notice for Chroma-
 
 # Terms of Service for Chroma Ad-Blocker
 
-**Effective Date:** July 27, 2026
+**Effective Date:** September 30, 2026
 
 ## 1. Status Of This Notice
 Receiving or running GPL-covered portions of Chroma Ad-Blocker ("the Extension") does not require acceptance of the GNU GPL. Permission to copy, modify, or distribute material is governed by its applicable license; the GPL explains when exercising those permissions indicates acceptance for GPL-covered material.
@@ -39,6 +39,8 @@ The Extension is designed to interact with third-party services. The following f
 - Use of the Extension may conflict with a third-party service's terms and may result in account restrictions, access loss, or other enforcement by that service.
 - A proxy provider selected by the user can impose its own terms and may log or alter routed traffic as described in Chroma's security and privacy documentation.
 
+**Trademark Disclaimer:** YouTube, Google, and Chrome are trademarks of Google LLC. Amazon and Amazon Prime Video are trademarks of Amazon.com, Inc. Twitch is a trademark of Twitch Interactive, Inc. Netflix is a trademark of Netflix, Inc. Spotify is a trademark of Spotify AB. Disney+ is a trademark of Disney Enterprises, Inc. Hulu is a trademark of Hulu, LLC. Max and HBO are trademarks of Home Box Office, Inc. NordVPN is a trademark of Nord Security. ExpressVPN and Private Internet Access are trademarks of their respective owners. Brave is a trademark of Brave Software, Inc. All other trademarks, service marks, and company names mentioned are the property of their respective owners. Chroma Ad-Blocker is an independent project and is not affiliated with, endorsed by, or sponsored by any of these entities or their respective platforms.
+
 ## 5. Disclaimer of Warranties
 CONSISTENT WITH SECTION 15 OF THE GPL AND TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE EXTENSION IS PROVIDED "AS IS," WITHOUT WARRANTY, INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE. THE APPLICABLE LICENSE AND SOURCE NOTICE CONTROL THE WARRANTY TERMS FOR EACH COVERED COMPONENT.
 
@@ -56,4 +58,4 @@ For questions regarding these Terms, please contact the developer at dabrogost@g
 
 ---
 
-Back to [Project Philosophy](PROJECT_PHILOSOPHY.md)
+Back to [Installation & Configuration](INSTALL.md)

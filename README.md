@@ -1,6 +1,6 @@
 # Chroma Ad-Blocker
 
-**Chroma Ad-Blocker** is a free, open-source Manifest V3 browser extension built for local, auditable ad blocking on Chrome and Chromium-based browsers. It combines browser-engine DNR blocking, YouTube payload stripping, scriptlets, cosmetic filtering, media-aware proxy routing, local statistics, and optional privacy hardening without Chroma-operated telemetry. Chroma processes browsing activity locally and, when Chrome exposes DNR match feedback, keeps a bounded local request log as documented in the [Privacy Policy](docs/PRIVACY_POLICY.md).
+**Chroma Ad-Blocker** is a free, open-source Manifest V3 browser extension built for local, auditable ad blocking on Chrome and Chromium-based browsers. It combines browser-engine DNR blocking, YouTube payload stripping, Spotify ad-media redirects, scriptlets, cosmetic filtering, media-aware proxy routing, local statistics, and optional privacy hardening without Chroma-operated telemetry. Chroma processes browsing activity locally and, when Chrome exposes DNR match feedback, keeps a bounded local request log as documented in the [Privacy Policy](docs/PRIVACY_POLICY.md).
 
 For best results, disable other ad-blocking extensions while using Chroma. Layering multiple blockers can cause overlapping rules, false positives, and broken pages.
 
@@ -13,6 +13,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - [Installation & Configuration](docs/INSTALL.md)
 - [Feature Guide](docs/FEATURES.md)
 - [YouTube Protection](docs/YOUTUBE.md)
+- [Spotify Protection](docs/SPOTIFY.md)
 - [Media Proxy Router](docs/MEDIA_PROXY_ROUTER.md)
 - [Filter List Subscriptions](docs/FILTER_LISTS.md)
 - [Advanced User Scriptlets](docs/ADVANCED_USER_SCRIPTLETS.md)
@@ -20,12 +21,12 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - [Permissions](docs/PERMISSIONS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
 - [Performance Guide](docs/PERFORMANCE.md)
-- [Project Philosophy](docs/PROJECT_PHILOSOPHY.md)
 - [Terms of Service](docs/ToS.md)
 
 ## Key Features
 
 - **[YouTube Ad Stripping](docs/YOUTUBE.md)**: Removes ad-related metadata from YouTube JSON payloads before the player reads them, including sponsored Shorts overlay payloads.
+- **[Spotify Ad Blocking](docs/SPOTIFY.md)**: Redirects known web-player ad media to a brief packaged silent clip using browser-native rules adapted from uBlock Origin. Includes a separate toggle and podcast exceptions; leaves playback data untouched.
 - **[Split-Tunnel Proxy Router](docs/MEDIA_PROXY_ROUTER.md)**: Routes selected media domains through HTTP, HTTPS, SOCKS4, or SOCKS5 proxies while keeping unrelated browser traffic direct. Includes Global Fallback, Smart-Link media/CDN expansion, connection verification, WebRTC leak protection, and local-only proxy credential handling.
 - **[Source-Generated DNR Network Blocking](docs/FEATURES.md#source-generated-dnr-network-blocking)**: Uses OISD Small and Big first, then fills otherwise-unused static capacity with a stable selection of adult and shock-site domains from OISD NSFW. Protected custom and recipe rules bring the packaged corpus to exactly 300,000 static rules.
 - **[Live Filter List Subscriptions](docs/FILTER_LISTS.md)**: Supports Hagezi Pro Mini, EasyList, Fanboy Annoyance, the bundled Chroma Scriptlet Library, and user-added custom lists with local parsing and rule-budget allocation.
@@ -39,7 +40,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 ## Quick Start
 
 1. Get the latest release from [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest), and extract the ZIP file.
-2. Open `chrome://extensions` in Chrome.
+2. Open `chrome://extensions` in Chrome or `edge://extensions` in Microsoft Edge.
 3. Toggle on **Developer Mode** in the top-right corner.
 4. Click **Load unpacked** and select the extracted folder that contains `manifest.json`.
 5. Enable User Scripts support:
@@ -47,13 +48,15 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
    - **Chrome 122-137**: The **Developer Mode** toggle from step 3 enables the `userScripts` API.
 6. Done. Network rules become active immediately. Reload tabs that were already open so Chroma's page-side cosmetic, scriptlet, and platform handlers can initialize. Browser-restricted pages remain outside extension access. Pin Chroma from the extensions menu to access the popup.
 
-When a newer GitHub release is available, Chroma can guide unpacked-extension updates from **Settings -> Updates** if the release includes the exact direct ZIP asset and signed `updates.json`. Chroma fetches those release assets internally, so users do not manually download `updates.json` and the extension does not need Chrome's download permission or download dialog. It verifies the update signature and package hash, builds a dry-run install plan, probes folder write access, backs up changed files, writes `manifest.json` last, and then shows a **Reload Chroma** action to load the updated files.
+When an update is available, open **Settings -> Updates** and follow the guided updater. Chroma verifies the release package before installation. Select your existing Chroma folder, review the install plan, install the update, and click **Reload Chroma**.
 
 For the expanded install and update flow, troubleshooting table, configuration reference, and Health panel notes, see [Installation & Configuration](docs/INSTALL.md).
 
 ## Architecture At A Glance
 
 Chroma is built around a layered MV3 model. Browser-engine DNR rules handle request blocking without waking extension JavaScript for every request. Content scripts handle cosmetic cleanup in the isolated world. MAIN-world handlers are used only where needed for platform-specific interception, scriptlets, optional fingerprint randomization, and media handling.
+
+Spotify protection uses 14 dynamic DNR rules and a packaged silent media resource. It does not inject a dedicated page handler or change the 300,000-rule static corpus.
 
 ```mermaid
 graph TD
@@ -83,7 +86,7 @@ graph TD
     PAGE --> USER
 ```
 
-The Amazon Prime Video accelerator is temporarily disabled. Its implementation remains in the source tree for future rehabilitation, but it and its supporting media bridge are not registered on Amazon or Prime Video pages.
+Ad acceleration supports YouTube. It is not available for Amazon Prime Video or Twitch.
 
 For user-facing behavior and lower-overhead configuration choices, see the [Feature Guide](docs/FEATURES.md) and [Performance Guide](docs/PERFORMANCE.md).
 
@@ -105,13 +108,13 @@ Review these before installing:
 
 - [Permissions](docs/PERMISSIONS.md)
 - [Privacy Policy](docs/PRIVACY_POLICY.md)
-- [Project Philosophy](docs/PROJECT_PHILOSOPHY.md#why-not-the-chrome-web-store)
+- [GitHub distribution](docs/INSTALL.md#why-not-the-chrome-web-store)
 
 ## Companion Extensions & Alternatives
 
 Chroma already includes network blocking, cosmetic filtering, scriptlets, proxy routing, and platform-specific handling, so another ad blocker is not recommended by default. Extensions that do something different can still pair well with it, such as [SponsorBlock](https://chromewebstore.google.com/detail/sponsorblock-for-youtube-s/mnjggcdmjocbbbhaepdhchncahnbgone) for skipping sponsor segments on YouTube.
 
-If you prefer a store-installed extension, a Firefox-first setup, or a dedicated proxy manager, see [Recommended Alternatives](docs/PROJECT_PHILOSOPHY.md#recommended-alternatives).
+If you prefer a store-installed extension, a Firefox-first setup, or a dedicated proxy manager, see [Recommended Alternatives](docs/FEATURES.md#recommended-alternatives).
 
 ## Support The Project
 
@@ -127,7 +130,9 @@ Chroma is a solo project dedicated to restoring the web to its fast, private, an
 
 Chroma uses logic and patterns derived from Brave Browser's YouTube ad-stripping scriptlets and data from third-party filter lists including Hagezi Pro Mini, OISD Small/Big/NSFW, EasyList, and Fanboy Annoyance. See [Filter List Subscriptions](docs/FILTER_LISTS.md#third-party-credits) for details.
 
-Portions of this codebase, including initial logic structures and documentation, were developed with assistance from agentic AI coding assistants. AI-assisted changes are reviewed and tested before release under the same project process as other contributions; this is a development practice, not an independent security certification.
+Spotify media redirects are adapted from [uBlock Origin's uAssets filters](https://github.com/uBlockOrigin/uAssets/blob/master/filters/filters-2020.txt), with the [uBlock Origin silent MP4 resource](https://github.com/gorhill/uBlock/blob/master/src/web_accessible_resources/noop-1s.mp4). See [Spotify implementation and limits](docs/SPOTIFY.md#implementation-and-limits) for the Chrome MV3 differences.
+
+AI coding assistants were used in developing portions of Chroma's code and documentation. Contributions are subject to the project's review and testing process.
 
 YouTube, Google, Chrome, Amazon, Amazon Prime Video, Twitch, Netflix, Spotify, Disney+, Hulu, Max, HBO, NordVPN, ExpressVPN, PIA, Brave, and other names are trademarks of their respective owners. Chroma Ad-Blocker is an independent project and is not affiliated with, endorsed by, or sponsored by those entities.
 

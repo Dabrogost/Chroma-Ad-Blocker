@@ -224,6 +224,8 @@ test('popup.js functionality', async (t) => {
     const sandbox = {
       chrome: chromeMock,
       document: {
+        addEventListener: () => {},
+        documentElement: ensureElement('documentElement'),
         getElementById: getElement,
         createElement: (tag) => {
           const el = ensureElement('temp-' + Math.random());
@@ -584,32 +586,32 @@ test('popup.js functionality', async (t) => {
 });
 
 test('UI hardening copy', () => {
-  assert.match(componentsJsCode, /changes anti-detection network behavior/);
-  assert.match(componentsJsCode, /De-AMP Links/);
-  assert.match(componentsJsCode, /Geolocation Protection/);
+  assert.match(componentsJsCode, /adjusts blocking to reduce ad-blocker detection/);
+  assert.match(componentsJsCode, /Open original pages instead of AMP/);
+  assert.match(componentsJsCode, /Geolocation protection/);
   assert.match(componentsJsCode, /Blocks sites from accessing your real physical location/);
   assert.match(componentsJsCode, /Redirects supported AMP viewer pages to publisher URLs/);
   assert.ok(
-    componentsJsCode.indexOf("name: 'Chrome Privacy Hardening'") < componentsJsCode.indexOf("name: 'Geolocation Protection'"),
+    componentsJsCode.indexOf("name: 'Chrome privacy hardening'") < componentsJsCode.indexOf("name: 'Geolocation protection'"),
     'Geolocation Protection should render below Chrome Privacy Hardening'
   );
   assert.ok(
-    componentsJsCode.indexOf("name: 'Geolocation Protection'") < componentsJsCode.indexOf("name: 'De-AMP Links'"),
+    componentsJsCode.indexOf("name: 'Geolocation protection'") < componentsJsCode.indexOf("name: 'Open original pages instead of AMP'"),
     'De-AMP Links should render below Geolocation Protection'
   );
   assert.ok(
-    componentsJsCode.indexOf("name: 'Cosmetic Filtering'") < componentsJsCode.indexOf("name: 'Tracking URL Cleanup'"),
+    componentsJsCode.indexOf("name: 'Cosmetic filtering'") < componentsJsCode.indexOf("name: 'Tracking URL cleanup'"),
     'Tracking URL Cleanup should render below Cosmetic Filtering'
   );
   assert.match(componentsJsCode, /rowClass: 'fpr-toggle-row'/);
-  assert.match(componentsJsCode, /Compat/);
+  assert.match(componentsJsCode, /May affect sites/);
   assert.match(uiCssCode, /\.fpr-toggle-row \.name\s*\{[\s\S]*white-space: nowrap/);
   assert.match(componentsJsCode, /Protection Events/);
-  assert.match(componentsJsCode, /Protection Intelligence/);
+  assert.match(componentsJsCode, />Statistics<\/h2>/);
   assert.match(componentsJsCode, /aria-label="Enable Chroma protection"/);
   assert.match(componentsJsCode, /aria-label="\$\{label\}"/);
   assert.match(componentsJsCode, /id="settingsIcon" class="settings-icon" type="button"/);
-  assert.match(componentsJsCode, /role="button" tabindex="0" aria-expanded="false" aria-controls="logEntries"/);
+  assert.match(componentsJsCode, /<button class="log-disclosure" id="logToggleRow" type="button" aria-expanded="false" aria-controls="logEntries"/);
   assert.match(componentsJsCode, /id="logFreezeBtn"[\s\S]*Freeze/);
   assert.match(componentsJsCode, /id="exportConfigJson"/);
   assert.match(componentsJsCode, /id="importConfigFile"/);
@@ -651,7 +653,10 @@ test('UI hardening copy', () => {
   assert.doesNotMatch(settingsHtmlCode, /style-src[^;"]*https:|font-src[^;"]*https:/i);
   assert.doesNotMatch(popupHtmlCode, /unsafe-inline/i);
   assert.doesNotMatch(settingsHtmlCode, /unsafe-inline/i);
-  assert.doesNotMatch(appJsCode, /\.style\./);
+  // A measured scroll offset uses CSSOM; presentation still lives in the stylesheet.
+  const measuredScrollOffset = "document.documentElement.style.setProperty('--settings-scroll-margin', `${margin}px`);";
+  assert.ok(appJsCode.includes(measuredScrollOffset));
+  assert.doesNotMatch(appJsCode.replace(measuredScrollOffset, ''), /\.style\./);
   assert.match(uiCssCode, /--font-sans:\s+system-ui/);
   assert.match(uiCssCode, /--font-mono:\s+"Cascadia Mono"/);
   assert.doesNotMatch(uiCssCode, /Inter|Outfit|JetBrains Mono/);

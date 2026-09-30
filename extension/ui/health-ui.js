@@ -150,7 +150,7 @@ const ChromaHealthUI = (() => {
       const browserPrivacy = health.browserPrivacy || {};
       addHealthSummaryChip(
         summary,
-        'Privacy',
+        'Chrome privacy hardening',
         browserPrivacy.enabled
           ? (browserPrivacy.active ? 'Hardened' : `${formatCount(browserPrivacy.hardenedCount)} / ${formatCount(browserPrivacy.totalCount)}`)
           : 'Off',

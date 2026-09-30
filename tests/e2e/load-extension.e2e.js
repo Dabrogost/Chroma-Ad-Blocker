@@ -191,6 +191,80 @@ test('loaded extension E2E smoke', async (t) => {
     assert.strictEqual(state.querySelectorWorks, true);
   });
 
+  await t.test('Spotify uses native media redirects, preserves playback JSON and respects settings', async (t) => {
+    const original = await evaluate(browser.cdp, browser.workerSession, 'chrome.storage.local.get("config")');
+    const settings = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/settings.html#protectionSection');
+    t.after(async () => {
+      try { await sendRuntimeMessage(browser.cdp, settings.sessionId, { type: 'CONFIG_SET', config: original.config }); }
+      finally { await closeTarget(browser.cdp, settings); }
+    });
+    const configure = async config => {
+      const result = await sendRuntimeMessage(browser.cdp, settings.sessionId, { type: 'CONFIG_SET', config });
+      assert.strictEqual(result.ok, true);
+    };
+    const installed = () => evaluate(browser.cdp, browser.workerSession,
+      'chrome.declarativeNetRequest.getDynamicRules().then(r => r.filter(x => x.id >= 3000 && x.id < 3100))');
+    await configure({ enabled: true, networkBlocking: true, stripping: false, spotifyAdBlocking: true });
+    assert.strictEqual((await installed()).length, 14);
+    const match = request => evaluate(browser.cdp, browser.workerSession,
+      'chrome.declarativeNetRequest.testMatchOutcome(' + JSON.stringify(request) + ')');
+    const ad = { url: 'https://audio.scdn.co/mp3-ad/chroma-fixture.mp3', type: 'media', initiator: 'https://open.spotify.com' };
+    assert.ok((await match(ad)).matchedRules.some(r => r.ruleId === 3002));
+    for (const request of [
+      { ...ad, type: 'xmlhttprequest' }, { ...ad, initiator: 'https://example.com' },
+      { ...ad, type: 'xmlhttprequest', url: 'https://audio-ak-spotify-com.akamaized.net/audio/normal-song' },
+      { ...ad, url: 'https://audio.example.com/song.mp3' },
+      { ...ad, url: 'https://gew4-spclient.spotify.com/track-playback/v1/devices/device' },
+      { ...ad, url: 'https://gew4-spclient.spotify.com/connect-state/v1' }
+    ]) {
+      assert.ok(!(await match(request)).matchedRules.some(r => r.ruleId >= 3000 && r.ruleId < 3100), JSON.stringify(request));
+    }
+    for (const [url, id] of [['https://podscribe.com/rss/show.mp3', 3010], ['https://mgln.ai/e/show.mp3', 3011],
+      ['https://traffic.megaphone.fm/ABC123.mp3', 3012], ['https://tracking.test/e/traffic.megaphone.fm/ABC123.mp3', 3013]]) {
+      assert.ok((await match({ ...ad, url })).matchedRules.some(r => r.ruleId === id), url);
+    }
+    const endpoint = 'https://open.spotify.com/track-playback/v1/test';
+    const payload = { state_machine: { tracks: [{ metadata: { uri: 'spotify:ad:test' },
+      manifest: { file_urls_mp3: [{ file_url: ad.url, file_id: 'original' }] } }] } };
+    const page = await createFulfilledPage(browser.cdp, 'https://open.spotify.com/',
+      '<!doctype html><meta http-equiv="Content-Security-Policy" content="media-src https: blob:"><title>Spotify fixture</title>', {
+        [endpoint]: { type: 'application/json', body: JSON.stringify(payload) }
+      });
+    t.after(async () => { await page.close(); });
+    assert.deepStrictEqual(await evaluate(browser.cdp, page.sessionId,
+      'fetch(' + JSON.stringify(endpoint) + ').then(r => r.json())'), payload);
+    assert.strictEqual(await evaluate(browser.cdp, page.sessionId,
+      'Object.hasOwn(window, "__CHROMA_SPOTIFY_HANDLER__")'), false);
+    // Let Chrome process the media request and extension resource itself.
+    await browser.cdp.send('Fetch.disable', {}, page.sessionId);
+    const playback = await evaluate(browser.cdp, page.sessionId, `
+      new Promise(resolve => {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.crossOrigin = 'anonymous';
+        const timer = setTimeout(() => resolve({ error: 'timeout' }), 8000);
+        video.onerror = () => { clearTimeout(timer); resolve({ error: video.error?.message }); };
+        video.onended = () => { clearTimeout(timer); resolve({ duration: video.duration }); };
+        video.src = 'https://audio.scdn.co/mp3-ad/chroma-fixture.mp3';
+        document.body.append(video);
+        video.play().catch(error => { clearTimeout(timer); resolve({ error: error.message }); });
+      })
+    `);
+    assert.ok(playback.duration >= 1 && playback.duration < 1.2, JSON.stringify(playback));
+    await browser.cdp.send('Page.reload', {}, settings.sessionId);
+    await waitFor(() => evaluate(browser.cdp, settings.sessionId,
+      'document.getElementById("toggleSpotifyAdBlocking")?.checked && !document.getElementById("toggleSpotifyAdBlocking").disabled'), 'Spotify toggle ready');
+    await evaluate(browser.cdp, settings.sessionId, 'document.getElementById("toggleSpotifyAdBlocking").click()');
+    await waitFor(async () => (await installed()).length === 0, 'Spotify rules removed');
+    await browser.cdp.send('Page.reload', {}, settings.sessionId);
+    await waitFor(() => evaluate(browser.cdp, settings.sessionId,
+      'document.getElementById("toggleSpotifyAdBlocking")?.disabled === false && !document.getElementById("toggleSpotifyAdBlocking").checked'), 'Spotify off persisted');
+    await configure({ spotifyAdBlocking: true, networkBlocking: false });
+    assert.strictEqual((await installed()).length, 14);
+    await configure({ enabled: false });
+    assert.strictEqual((await installed()).length, 0);
+  });
+
   await t.test('YouTube SABR startup recovery handles real browser response streams once', async (t) => {
     const mediaUrl = 'https://rr1.googlevideo.com/videoplayback?sabr=1&chroma-fixture=1';
     const playerUrl = 'https://www.youtube.com/youtubei/v1/player';
