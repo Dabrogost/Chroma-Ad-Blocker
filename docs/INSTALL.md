@@ -124,8 +124,6 @@ Imported custom subscriptions and Advanced User Scriptlet URLs must be refreshed
 
 ## Health Panel
 
-For Spotify ads or playback errors, see [Spotify troubleshooting](SPOTIFY.md#troubleshooting-playback). Its dedicated toggle is independent of general Network blocking. Fresh installs enable it; older configurations without a saved Spotify preference leave it off until explicitly enabled.
-
 The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state.
 
 <div align="center">
