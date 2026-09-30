@@ -13,6 +13,7 @@ Only the documents under **User Documentation** are included in the in-extension
 - [Installation & Configuration](INSTALL.md) - install Chroma, use guided or manual updates, enable User Scripts, troubleshoot common setup issues, review settings, and understand the Health panel.
 - [Feature Guide](FEATURES.md) - expanded feature descriptions for the protection layers, local controls, privacy hardening, and user workflows.
 - [YouTube Protection](YOUTUBE.md) - YouTube payload stripping, Sponsored Shorts cleanup, feed/search cleanup, and acceleration fallback behavior.
+- [Spotify Protection](SPOTIFY.md) - independent web-player ad-media redirects, podcast exceptions, migration from the earlier handler, and playback troubleshooting.
 - [Media Proxy Router](MEDIA_PROXY_ROUTER.md) - split-tunnel proxy routing, Global Fallback, Smart-Link expansion, protocol support, WebRTC behavior, and provider setup notes.
 - [Filter List Subscriptions](FILTER_LISTS.md) - bundled and remote list behavior, custom subscriptions, MV3 rule allocation, and third-party credits.
 - [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md) - trusted user-provided scriptlet resources, linked rule status, examples, and troubleshooting.
@@ -20,7 +21,7 @@ Only the documents under **User Documentation** are included in the in-extension
 - [Permissions](PERMISSIONS.md) - each requested extension permission and why it exists.
 - [Privacy Policy](PRIVACY_POLICY.md) - local storage, no Chroma telemetry, optional network requests, and third-party service boundaries.
 - [Performance Guide](PERFORMANCE.md) - resource cost, service-worker lifecycle, page-side overhead, proxy routing, stats batching, and lower-overhead settings.
-- [Project Philosophy](PROJECT_PHILOSOPHY.md) - why Chroma exists, why it is not on the Chrome Web Store, companion extensions, alternatives, AI disclosure, and legal notes.
+- [Project Philosophy](PROJECT_PHILOSOPHY.md) - distribution outside the Chrome Web Store, companion extensions, alternatives, AI disclosure, and legal notes.
 - [Terms of Service](ToS.md) - use terms and legal disclaimers.
 
 ## Engineering And Security Review (Repository Only)

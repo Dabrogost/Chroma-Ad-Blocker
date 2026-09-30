@@ -49,4 +49,4 @@ Twitch uses server-side ad insertion, which prevents Chroma from applying the sa
 
 ---
 
-Next: [Filter List Subscriptions](FILTER_LISTS.md)
+Next: [Spotify Protection](SPOTIFY.md)

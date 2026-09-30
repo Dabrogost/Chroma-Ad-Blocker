@@ -88,10 +88,10 @@ async function runGuide(relativePath, { mobile = false } = {}) {
 
 test('guide manifest is explicit, complete, and free of local-only docs', () => {
   assert.deepStrictEqual(validateGuideManifest(), []);
-  assert.strictEqual(GUIDE_PAGES.length, 12);
+  assert.strictEqual(GUIDE_PAGES.length, 13);
   assert.strictEqual(GUIDE_CATEGORIES.length, 5);
   assert.strictEqual(new Set(USER_DOC_FILES).size, USER_DOC_FILES.length);
-  assert.strictEqual(USER_DOC_FILES.length, 12);
+  assert.strictEqual(USER_DOC_FILES.length, 13);
   assert.deepStrictEqual(USER_DOC_FILES, GUIDE_PAGES.map(page => page.source));
   assert.ok(!USER_DOC_FILES.includes(GUIDE_HUB_SOURCE));
   assert.ok(USER_DOC_FILES.includes('docs/ADVANCED_USER_SCRIPTLETS.md'));

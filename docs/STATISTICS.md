@@ -49,6 +49,8 @@ Chroma clears this request log when the browser profile starts and Chrome fires 
 
 ## Retention, Reset, And Export
 
+The request-log disclosure is a keyboard-accessible button. Clearing the log and resetting statistics require confirmation, and action labels distinguish all local statistics from statistics for all sites. Statistics exports remain in **Privacy and exports**; configuration backups are in **Settings -> Backup -> Backup and restore**.
+
 The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all `statsV2` statistics, reset site statistics only, reset the separate DNR request log, or export a local JSON statistics snapshot.
 
 Resetting `statsV2` statistics does not erase the separate request log, configuration, subscriptions, proxy settings, whitelists, local zapper rules, or filter lists.

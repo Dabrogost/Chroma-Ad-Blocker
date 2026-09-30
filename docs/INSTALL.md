@@ -5,7 +5,7 @@ This guide covers installing Chroma, enabling required browser features, trouble
 ## Quick Start
 
 1. Get the latest release from [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest), and extract the ZIP file.
-2. Open `chrome://extensions` in Chrome.
+2. Open `chrome://extensions` in Chrome or `edge://extensions` in Microsoft Edge.
 3. Toggle on **Developer Mode** in the top-right corner.
 4. Click **Load unpacked** and select the extracted folder that contains `manifest.json`.
 5. Enable User Scripts support:
@@ -48,6 +48,18 @@ The manual flow is intended for a trusted release that lacks the assets required
 
 If Chrome prompts for folder access again after a restart, choose the same unpacked Chroma folder and rerun the write probe. The prompt is part of Chromium's File System Access API, not a hidden Chrome settings page.
 
+## Settings Navigation And Controls
+
+Protection controls are grouped under **Ad blocking**, **YouTube**, **Spotify**, **Privacy**, **Advanced**, and **Appearance**. Group headings are left-aligned for scanning. Navigation and main section headings remain centered; section links keep headings visible below the navigation bar.
+
+The master switch shows explicit protection status. Controls display pending saves and visible errors; supported failed saves restore the previous selection. YouTube acceleration-speed buttons are unavailable while acceleration is off, protection is paused, or a relevant save is pending.
+
+Under **Appearance**, **Reduce motion** turns off animated borders, moving backgrounds, and smooth scrolling. The preference persists locally, and the system's reduced-motion preference is respected even when the toggle is off. This UI preference is separate from protection and is not included in settings backups.
+
+Keyboard users can reach labeled controls, navigation links, and the request-log disclosure with Tab. Cyan navigation focus rings appear for keyboard navigation; mouse focus uses a subtler highlight. Layouts adapt to narrower windows, and the proxy **Add Domain** button stays compact at full-window sizes.
+
+Current-site whitelist controls remain in the **popup**. Use **Settings -> Backup** for **Backup and restore**, rather than looking for import/export controls in Protection.
+
 ## Configuration
 
 <div align="center">
@@ -84,6 +96,8 @@ Master off pauses active protection but does not rewrite the requested values in
 
 ## Settings Backup And Import
 
+Open **Settings -> Backup -> Backup and restore** to export or import a settings file. The section displays export, import, and validation feedback. The local Reduce motion preference is not included in this backup.
+
 Settings export writes a versioned `chroma-settings` JSON backup containing validated configuration, whitelists, proxy definitions without credentials, custom-subscription definitions without cached list data, and Advanced User Scriptlet URLs/rules without cached executable code.
 
 Import is transactional:
@@ -114,6 +128,8 @@ Imported custom subscriptions and Advanced User Scriptlet URLs must be refreshed
 | Request Log is empty. | Chroma is installed unpacked, so DNR match logging should normally be available when Chrome exposes `chrome.declarativeNetRequest.onRuleMatchedDebug`. If the browser does not expose that feedback API, blocking can still work normally. |
 
 ## Health Panel
+
+For Spotify ads or playback errors, see [Spotify troubleshooting](SPOTIFY.md#troubleshooting-playback). Its dedicated toggle is independent of general Network blocking. Fresh installs enable it; older configurations without a saved Spotify preference leave it off until explicitly enabled.
 
 The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state.
 

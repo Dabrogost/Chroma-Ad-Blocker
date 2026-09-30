@@ -14,6 +14,12 @@ Chroma's primary YouTube defense intercepts and cleans ad-related metadata from 
 
 For the full platform-specific breakdown, see [YouTube Protection](YOUTUBE.md).
 
+## Spotify Ad Blocking
+
+Spotify ad blocking redirects known ad-media requests from the web player to a short packaged silent clip. It uses browser-native dynamic rules adapted from full uBlock Origin, including podcast exceptions, without changing playback responses or installing dedicated page hooks.
+
+Use **Settings -> Protection -> Spotify** to control it independently of YouTube and general Network blocking. Master protection and the site whitelist still apply. See [Spotify Protection](SPOTIFY.md) for setup, update instructions, and compatibility limits.
+
 ## Split-Tunnel Proxy Router
 
 Chroma can route selected media domains through a user-configured HTTP, HTTPS, SOCKS4, or SOCKS5 proxy while keeping unrelated browser traffic direct. It is designed for media-site routing: sending supported services through proxy regions that reduce ad serving or match country-specific media delivery.

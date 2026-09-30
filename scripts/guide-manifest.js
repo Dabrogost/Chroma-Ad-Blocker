@@ -79,6 +79,18 @@ const GUIDE_PAGES = [
     }
   },
   {
+    source: 'docs/SPOTIFY.md',
+    slug: 'spotify',
+    title: 'Spotify Protection',
+    category: 'customize',
+    summary: 'Configure Spotify ad-media redirects, understand podcast exceptions, and troubleshoot web-player playback.',
+    tasks: ['Block Spotify ads', 'Update Spotify protection', 'Troubleshoot playback'],
+    settings: {
+      path: 'ui/settings.html#protectionSection',
+      label: 'Open Spotify protection settings'
+    }
+  },
+  {
     source: 'docs/MEDIA_PROXY_ROUTER.md',
     slug: 'media-proxy-router',
     title: 'Media Proxy Router',
@@ -161,7 +173,7 @@ const GUIDE_PAGES = [
     slug: 'project-philosophy',
     title: 'Project Philosophy',
     category: 'project',
-    summary: 'Read why Chroma exists, why it is distributed outside the Chrome Web Store, and which alternatives fit other needs.',
+    summary: 'Review distribution outside the Chrome Web Store, companion extensions, and alternatives.',
     tasks: ['Understand project choices', 'Compare alternatives', 'Review AI disclosure']
   },
   {
