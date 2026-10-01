@@ -324,6 +324,32 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(snapshot.bySite['example.com'].protectionEvents || 0, 0);
   });
 
+  await t.test('counts a YouTube cleanup once and excludes diagnostic activity from protections', async () => {
+    const stats = loadStatsSandbox();
+    stats.recordStatsEvents([
+      { layer: 'youtube', type: 'payload', payloadsInspected: 1, payloadsModified: 0 },
+      { layer: 'youtube', type: 'payload', payloadsInspected: 1, payloadsModified: 1, cleans: 1, fieldsPruned: 50, adObjectsRemoved: 9 },
+      { layer: 'network', type: 'allow', count: 10 },
+      { layer: 'network', type: 'match', count: 11 },
+      { layer: 'scriptlet', type: 'error', count: 12 },
+      { layer: 'proxy', type: 'test_pass', count: 13 },
+      { layer: 'proxy', type: 'test_failure', count: 14 },
+      { layer: 'proxy', type: 'auth_challenge', count: 15 },
+      { layer: 'fingerprint', type: 'activation', count: 16 }
+    ]);
+    const snapshot = await stats.getStatsSnapshot();
+    assert.strictEqual(snapshot.totals.youtubePayloadInspections, 2);
+    assert.strictEqual(snapshot.totals.youtubePayloadsModified, 1);
+    assert.strictEqual(snapshot.totals.youtubePayloadCleans, 1);
+    assert.strictEqual(snapshot.totals.youtubeFieldsPruned, 50);
+    assert.strictEqual(snapshot.totals.youtubeAdObjectsRemoved, 9);
+    for (const bucket of [snapshot.totals, ...Object.values(snapshot.byDay), ...Object.values(snapshot.ranges)]) {
+      assert.strictEqual(bucket.protectionEvents, 1);
+      assert.strictEqual(bucket.proxyTests, 27);
+      assert.strictEqual(bucket.proxyTests, bucket.proxyTestPasses + bucket.proxyTestFailures);
+    }
+  });
+
   await t.test('estimates time saved with a tiny sub-second event weight', async () => {
     const stats = loadStatsSandbox();
 
@@ -375,6 +401,7 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(snapshot.recentEvents, undefined);
     assert.strictEqual(snapshot.timeSavedSeconds, undefined);
     assert.strictEqual(snapshot.limits, undefined);
+    assert.strictEqual(snapshot.collection, undefined);
   });
 
   await t.test('does not store raw URLs by default and sanitizes errors', async () => {
@@ -571,6 +598,11 @@ test('statsV2 core aggregation and privacy', async (t) => {
     const cutoffDay = new Date(Date.now() - 89 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     assert.ok(Object.keys(snapshot.byDay).every(day => day >= cutoffDay));
     assert.ok(Object.keys(snapshot.byDay).length <= 90);
+    assert.strictEqual(snapshot.totals.networkBlocks, 620);
+    assert.strictEqual(snapshot.ranges.allTime.protectionEvents, 620);
+    assert.strictEqual(snapshot.ranges.today.protectionEvents, 1);
+    assert.strictEqual(snapshot.ranges.last7Days.protectionEvents, 7);
+    assert.strictEqual(snapshot.ranges.last30Days.protectionEvents, 30);
   });
 
   await t.test('reset all stats and reset site stats only are scoped', async () => {
@@ -700,6 +732,53 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.strictEqual(snapshot.totals.protectionEvents, 1);
   });
 
+  await t.test('settings, partial resets, and normalization cannot overwrite a concurrent flush', async () => {
+    for (const kind of ['settings', 'sites', 'rules', 'events', 'timeline', 'normalization']) {
+      const stats = loadStatsSandbox({ statsV2: seededDetailedStats() });
+      if (kind !== 'normalization') await stats.getStatsSnapshot();
+      const originalSet = stats.chrome.storage.local.set;
+      let releaseWrite;
+      let signalWrite;
+      const writeStarted = new Promise(resolve => { signalWrite = resolve; });
+      const writeGate = new Promise(resolve => { releaseWrite = resolve; });
+      let intercepted = false;
+      stats.chrome.storage.local.set = async value => {
+        if (!intercepted) {
+          intercepted = true;
+          signalWrite();
+          await writeGate;
+        }
+        return originalSet(value);
+      };
+      const mutation = kind === 'settings' ? stats.setStatsSettings({ retentionDays: 30 })
+        : kind === 'normalization' ? stats.getStatsSnapshot() : stats.resetStats(kind);
+      await writeStarted;
+      stats.recordStatsEvent({ layer: 'network', type: 'allow', domain: 'new.example', ruleId: 99 });
+      const flush = stats.flushStatsQueue();
+      // Let an incorrectly unqueued flush finish before releasing the stale write.
+      await new Promise(resolve => setImmediate(resolve));
+      releaseWrite();
+      await Promise.all([mutation, flush]);
+      const snapshot = await stats.getStatsSnapshot();
+      assert.strictEqual(snapshot.totals.networkAllows, 1, kind);
+      assert.strictEqual(snapshot.totals.networkBlocks, 4, kind);
+      assert.strictEqual(snapshot.bySite['new.example'].networkAllows, 1, kind);
+      if (kind === 'settings') assert.strictEqual(snapshot.settings.retentionDays, 30);
+      if (kind === 'sites') assert.strictEqual(snapshot.bySite['ads.example.com'], undefined);
+    }
+  });
+
+  await t.test('missing rule IDs remain absent through recording and reload', async () => {
+    const stats = loadStatsSandbox();
+    stats.recordStatsEvent({ layer: 'network', type: 'match', ruleId: null });
+    stats.recordStatsEvent({ layer: 'scriptlet', type: 'hit', scriptlet: 'legacy', ruleId: null });
+    const snapshot = await stats.getStatsSnapshot();
+    assert.strictEqual(snapshot.totals.unknownDnrMatches, 1);
+    assert.strictEqual(Object.keys(snapshot.byRule).length, 1);
+    assert.strictEqual(snapshot.byRule['scriptlet:subscription:legacy'].ruleId, null);
+    assert.ok(snapshot.recentEvents.every(event => !Object.hasOwn(event, 'ruleId')));
+  });
+
   await t.test('export returns sanitized JSON-safe data', async () => {
     const stats = loadStatsSandbox();
 
@@ -717,5 +796,12 @@ test('statsV2 core aggregation and privacy', async (t) => {
     assert.ok(exported.exportedAt);
     assert.strictEqual(serialized.includes('token=secret'), false);
     assert.strictEqual(exported.stats.totals.networkBlocks, 1);
+    assert.strictEqual(exported.stats.collection.dayTimezone, 'UTC');
+    assert.match(exported.stats.collection.youtubePayloadInspections, /legacy alias/);
+    assert.match(exported.stats.collection.youtubeFieldsPruned, /no longer collected/);
+    assert.match(exported.stats.collection.youtubeAdObjectsRemoved, /no longer collected/);
+    assert.match(exported.stats.collection.scriptletHits, /initializations/);
+    assert.match(exported.stats.collection.networkAllows, /explicit allow-rule matches/);
+    assert.strictEqual(stats.storage.statsV2.collection, undefined);
   });
 });

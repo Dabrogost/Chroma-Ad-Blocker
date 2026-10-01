@@ -716,6 +716,24 @@ test('scriptlet engine whitelist hardening', async (t) => {
     ]);
   });
 
+  await t.test('subscription and remote resource wrappers report runs and synchronous errors', () => {
+    const { sandbox } = loadScriptletEngine({});
+    const runs = [
+      [sandbox.buildSubscriptionScriptletCode(function noOp() {}, []), 'hit'],
+      [sandbox.buildSubscriptionScriptletCode(function fails() { throw new Error('private'); }, [], true), 'error'],
+      [sandbox.buildUserResourceCode({ code: 'return;' }, []), 'hit'],
+      [sandbox.buildUserResourceCode({ code: 'throw new Error("private");' }, [], true), 'error']
+    ];
+    for (const [code, expected] of runs) {
+      const events = [];
+      vm.runInNewContext(code, {
+        document: { dispatchEvent: event => events.push(event) },
+        CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init.detail; } }
+      });
+      assert.deepStrictEqual(plain(events), [{ type: '__CHROMA_SCRIPTLET_STATS__', detail: { type: expected } }]);
+    }
+  });
+
   await t.test('registered telemetry does not expose scriptlet metadata to the page', async () => {
     const { sandbox, registered } = loadScriptletEngine({
       subscriptionScriptletRules: [{

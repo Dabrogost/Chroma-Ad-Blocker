@@ -163,12 +163,12 @@ const ChromaComponents = (() => {
       <div class="stats-container">
         <div class="stat-card" id="cardNetwork" aria-busy="true">
           <div class="stat-value" id="statProtectionEvents">${initialTotal}</div>
-          <div class="stat-label">Protection Events</div>
+          <div class="stat-label" title="Approximate recorded activity, including scriptlet runs; not a count of unique ads.">Protection Events</div>
           <div class="stat-breakdown" id="statHeroBreakdown">
             <span>Network <strong id="statBreakdownNetwork">${initialBreakdown}</strong></span>
             <span>Cleanup <strong id="statBreakdownCleanup">${initialBreakdown}</strong></span>
             <span>Scriptlets <strong id="statBreakdownScriptlets">${initialBreakdown}</strong></span>
-            <span>Proxy <strong id="statBreakdownProxy">${initialBreakdown}</strong></span>
+            <span title="Separate proxy activity; excluded from Protection Events.">Proxy <strong id="statBreakdownProxy">${initialBreakdown}</strong></span>
           </div>
           ${showSettingsIcon ? settingsIcon : ''}
         </div>
@@ -558,7 +558,8 @@ const ChromaComponents = (() => {
         <div class="stats-panel-header">
           <div class="toggle-info">
             <div class="name">Statistics stored on this device</div>
-            <div class="desc">All statistics are stored locally. Full request URLs are only kept when Debug Mode is enabled.</div>
+            <div class="desc">All statistics are stored locally. Statistics keep full request URLs only in Debug Mode; the separate Request Log may keep them whenever available.</div>
+            <div class="desc">Protection Events are approximate recorded activity, including scriptlet runs. Allow-rule matches and proxy activity are excluded. Network Actions include blocks and redirects; allow-rule matches are explicit rule matches, not all permitted traffic.</div>
           </div>
         </div>
 
@@ -568,6 +569,7 @@ const ChromaComponents = (() => {
 
         <div class="stats-subsection">
           <div class="stats-subsection-title">Overview</div>
+          <div class="desc">Date ranges use retained UTC daily history. Basic mode and timeline resets leave gaps. Totals persist until reset; capped site and rule tables can be incomplete.</div>
           <div class="stats-range-grid is-loading" id="statsRangeSummary">
             ${renderSkeletonCards(4)}
           </div>
@@ -626,7 +628,7 @@ const ChromaComponents = (() => {
                 </select>
               </label>
               <label class="form-field">
-                <span class="field-label">Retention period</span>
+                <span class="field-label">Daily history retention</span>
                 <select id="statsRetentionSelect" class="chroma-input chroma-input--compact control-pending" disabled>
                   <option value="30">30 days</option>
                   <option value="90">90 days</option>

@@ -63,7 +63,7 @@ test('Content script generic functionality', async (t) => {
         },
         storage: {
           local: {
-            get: () => Promise.resolve(options.storage || {}),
+            get: () => options.storageGet ? options.storageGet() : Promise.resolve(options.storage || {}),
             set: () => Promise.resolve()
           },
           onChanged: {
@@ -327,6 +327,43 @@ test('Content script generic functionality', async (t) => {
     assert.ok(events.some(event => event.eventType === 'cosmetic_hide'));
     assert.ok(events.some(event => event.eventType === 'zapper_hit'));
     assert.ok(events.every(event => Object.keys(event).length === 1));
+  });
+
+  await t.test('buffers bounded scriptlet startup events until configuration allows reporting', async () => {
+    for (const outcome of ['enabled', 'disabled', 'whitelisted', 'failed']) {
+      let resolveConfig;
+      let rejectConfig;
+      const configReady = new Promise((resolve, reject) => {
+        resolveConfig = resolve;
+        rejectConfig = reject;
+      });
+      const sandbox = createSandbox(null, { storageGet: () => configReady });
+      for (let index = 0; index < 1000; index++) {
+        sandbox.document.dispatchEvent({
+          type: '__CHROMA_SCRIPTLET_STATS__',
+          detail: { type: index % 2 ? 'error' : 'hit', count: 100000, source: 'private' }
+        });
+      }
+      const events = () => sandbox.__sentMessages
+        .filter(msg => msg.type === 'STATS_EVENT_BATCH').flatMap(msg => msg.events);
+      assert.strictEqual(events().length, 0, 'nothing leaves the page before config is known');
+      if (outcome === 'failed') rejectConfig(new Error('storage unavailable'));
+      else resolveConfig({
+        config: { enabled: outcome !== 'disabled' },
+        whitelist: outcome === 'whitelisted' ? ['youtube.com'] : []
+      });
+      await new Promise(resolve => setImmediate(resolve));
+      sandbox.flushStatsQueue();
+      assert.strictEqual(events().length, outcome === 'enabled' ? 20 : 0, outcome);
+      assert.ok(events().every(event => Object.keys(event).length === 1));
+      if (outcome === 'enabled') {
+        assert.strictEqual(events().filter(event => event.eventType === 'scriptlet_hit').length, 10);
+        assert.strictEqual(events().filter(event => event.eventType === 'scriptlet_error').length, 10);
+        sandbox.document.dispatchEvent({ type: '__CHROMA_SCRIPTLET_STATS__', detail: { type: 'hit' } });
+        sandbox.flushStatsQueue();
+        assert.strictEqual(events().length, 20, 'startup events share the normal quota');
+      }
+    }
   });
 
   await t.test('scriptlet telemetry bridge records only aggregate event type', async (st) => {
