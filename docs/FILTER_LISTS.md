@@ -62,6 +62,10 @@ This is why custom lists can still be useful in MV3 while staying inside Chrome'
 
 ## Rule Allocation
 
+Enabled third-party and custom subscriptions share the browser's remaining dynamic-rule capacity. Chroma reads Chrome's dynamic-rule limit (currently 30,000), reserves the exact number of local/default, Tracking URL Cleanup, Spotify, and site-whitelist rules, then allocates the remaining slots to subscriptions. Each whitelisted site uses two rules. This replaces the former fixed 25,000 subscription cap; changing settings or the whitelist recalculates the allocation automatically, including when restoring cached subscriptions.
+
+With the shipped defaults, Tracking URL Cleanup enabled, Spotify protection enabled, and no whitelisted sites, Chroma uses 38 dynamic rules, leaving 29,962 subscription slots. Stored custom local rules can change that count. Regex rules also share Chrome's separate 1,000-rule dynamic regex limit, with Chroma's own regex rules reserved first. Cosmetic rules and scriptlets do not consume these DNR slots.
+
 Network rules are allocated by Chroma's internal priority score before being applied to DNR:
 
 - Exception/allow rules are preserved first.

@@ -80,6 +80,7 @@ function loadDnrState({
   beforeEnabledRulesetsUpdate,
   regexSupport = async () => ({ isSupported: true }),
   maxRegexRules = 1000,
+  maxDynamicRules = 30000,
   onClearHealthDiagnostic,
   onRecordHealthDiagnostic,
   onBudgetAllocate
@@ -112,6 +113,7 @@ function loadDnrState({
       }
     },
     declarativeNetRequest: {
+      MAX_NUMBER_OF_DYNAMIC_RULES: maxDynamicRules,
       MAX_NUMBER_OF_REGEX_RULES: maxRegexRules,
       ...(typeof regexSupport === 'function' ? { isRegexSupported: regexSupport } : {}),
       getDynamicRules: async () => {
@@ -941,6 +943,86 @@ test('Network DNR reconciliation', async (t) => {
     assert.strictEqual(restored[24999].condition.urlFilter, '||subscription-24999.example^');
     assert.strictEqual(storage.appliedNetworkRuleCount, 25000);
     assert.ok(dnr.clearedHealthDiagnostics.includes('dnrWakeRecovery'));
+  });
+
+  await t.test('subscriptions fill remaining capacity and resize when local features change', async () => {
+    const cachedRules = Array.from({ length: 30010 }, (_, index) => subscriptionRule(index));
+    // A late exception must survive capacity trimming across both list sources.
+    cachedRules[cachedRules.length - 1].action = { type: 'allow' };
+    const storage = {
+      config: { enabled: true, networkBlocking: true, spotifyAdBlocking: true },
+      subscriptions: [{ id: 'third-party', enabled: true }, { id: 'custom', enabled: true }],
+      sub_network_rules: { 'third-party': cachedRules.slice(0, 15000), custom: cachedRules.slice(15000) },
+      whitelist: ['one.example']
+    };
+    const dnr = loadDnrState({ storage });
+    const checkCapacity = async (reserved) => {
+      await dnr.updateDNRState();
+      const rules = dnr.getDynamicRules();
+      const subscriptions = rules.filter(rule => rule.id >= 100000 && rule.id < 9000000);
+      assert.strictEqual(rules.length, 30000);
+      assert.strictEqual(subscriptions.length, 30000 - reserved);
+      assert.strictEqual(storage.appliedNetworkRuleCount, subscriptions.length);
+      assert.strictEqual(Object.values(storage.appliedNetworkRulesPerSub).reduce((sum, n) => sum + n, 0), subscriptions.length);
+      assert.strictEqual(Object.values(storage.subscriptionNetworkRuntime.perSub).reduce((sum, s) => sum + s.budgetTrimCount, 0), cachedRules.length - subscriptions.length);
+      assert.ok(subscriptions.some(rule => rule.action.type === 'allow'));
+      assert.strictEqual(new Set(rules.map(rule => rule.id)).size, rules.length);
+    };
+
+    await checkCapacity(18); // Two mocked defaults, fourteen Spotify rules, two whitelist rules.
+    storage.whitelist.push('two.example');
+    await checkCapacity(20);
+    storage.config.spotifyAdBlocking = false;
+    storage.config.trackingUrlCleanup = false;
+    await checkCapacity(5);
+    storage.config.networkBlocking = false;
+    await dnr.updateDNRState();
+    assert.strictEqual(storage.appliedNetworkRuleCount, 0);
+    storage.config.networkBlocking = true;
+    storage.whitelist = [];
+    await checkCapacity(1);
+  });
+
+  await t.test('browser limit reserves local rules even when no subscription slots remain', async () => {
+    const storage = {
+      config: { enabled: true, trackingUrlCleanup: false },
+      subscriptions: [{ id: 'custom', enabled: true }],
+      sub_network_rules: { custom: [subscriptionRule(0), subscriptionRule(1)] },
+      whitelist: ['one.example']
+    };
+    const dnr = loadDnrState({ storage, maxDynamicRules: 3 });
+    await dnr.updateDNRState();
+    assert.strictEqual(dnr.getDynamicRules().length, 3);
+    assert.strictEqual(storage.appliedNetworkRuleCount, 0);
+    assert.strictEqual(storage.subscriptionNetworkRuntime.perSub.custom.budgetTrimCount, 2);
+
+    storage.whitelist = [];
+    await dnr.syncWhitelistRules();
+    assert.strictEqual(storage.appliedNetworkRuleCount, 2);
+    storage.whitelist = ['one.example', 'two.example'];
+    const preimage = dnr.getDynamicRules();
+    await assert.rejects(dnr.syncWhitelistRules(), /Local dynamic rules exceed the browser quota/);
+    assert.deepStrictEqual(dnr.getDynamicRules(), preimage);
+    assert.strictEqual(storage.appliedNetworkRuleCount, 2);
+  });
+
+  await t.test('cleanup fallback releases its reserved slot for a subscription', async () => {
+    const storage = {
+      config: { enabled: true },
+      subscriptions: [{ id: 'custom', enabled: true }],
+      sub_network_rules: { custom: [subscriptionRule(0), subscriptionRule(1)] }
+    };
+    const dnr = loadDnrState({
+      storage,
+      maxDynamicRules: 3,
+      beforeDynamicUpdate: async ({ addRules }) => {
+        assert.strictEqual(addRules.length, 3);
+        if (addRules.some(rule => rule.id === 2000)) throw new Error('Cleanup rejected');
+      }
+    });
+    await dnr.updateDNRState();
+    assert.strictEqual(storage.appliedNetworkRuleCount, 2);
+    assert.strictEqual(dnr.getDynamicRules().length, 3);
   });
 
   await t.test('active reconciliation repairs missing runtime subscription rules from cache', async () => {

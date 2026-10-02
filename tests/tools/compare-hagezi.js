@@ -86,7 +86,7 @@ async function main() {
   console.log(`Hagezi Pro Mini rules    : ${hageziPatterns.size.toLocaleString()}`);
   console.log(`Already in static rules  : ${overlap.toLocaleString()} (${overlapPct}%)`);
   console.log(`Net new coverage         : ${unique.toLocaleString()} (${uniquePct}%)`);
-  console.log(`Dynamic budget needed    : ~${Math.min(unique, 25000).toLocaleString()} slots`);
+  console.log(`Dynamic budget needed    : ${unique.toLocaleString()} slots (applied count depends on remaining browser capacity)`);
 
   if (process.argv.includes('--write-unique')) {
     const outPath = path.join(__dirname, 'hagezi-unique.txt');
