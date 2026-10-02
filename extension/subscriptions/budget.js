@@ -9,10 +9,6 @@
 export const SUBSCRIPTION_ID_START = 100000;
 export const SUBSCRIPTION_ID_END   = 8999999;
 
-// Target cap: 25,000 — leaves ~5,000 buffer below DNR 30,000 dynamic limit
-// after accounting for default dynamic rules (1001–1015) and whitelist (9,000,000+)
-const SUBSCRIPTION_RULE_CAP = 25000;
-
 /**
  * Scores a parsed network rule for budget prioritization.
  * Higher score = higher priority = kept first when trimming.
@@ -43,11 +39,13 @@ function scoreRule(rule) {
 /**
  * Allocates an array of parsed network rules within the budget cap.
  * Sorts by score descending, returns the top N rules.
+ * The DNR coordinator supplies the remaining browser capacity at commit time.
+ * Without a cap, preserve all candidates (useful for preparation only).
  * @param {Object[]} rules - Parsed network rule objects (no IDs)
- * @param {number} [cap=SUBSCRIPTION_RULE_CAP]
+ * @param {number} [cap=rules.length]
  * @returns {{ allocated: Object[], trimCount: number }}
  */
-export function allocate(rules, cap = SUBSCRIPTION_RULE_CAP) {
+export function allocate(rules, cap = rules.length) {
   if (rules.length <= cap) {
     return {
       allocated: rules.map(({ _listPosition, ...rule }) => rule),

@@ -89,6 +89,9 @@
   let statsQueue = [];
   let statsTimer = null;
   let statsConfigReady = false;
+  // document_start scriptlets can report before the async config read finishes.
+  // Retain only bounded enums; normal gates and quotas still decide acceptance.
+  let pendingScriptletStats = [];
   const STATS_FLUSH_MS = 750;
   const STATS_BATCH_CAP = 50;
   const STATS_WINDOW_MS = 60_000;
@@ -818,6 +821,12 @@
       return;
     }
     if (!eventType) return;
+    if (!statsConfigReady) {
+      if (pendingScriptletStats && pendingScriptletStats.length < STATS_WINDOW_CAP) {
+        pendingScriptletStats.push(eventType);
+      }
+      return;
+    }
     queueStatsEvent({
       layer: 'scriptlet',
       type: eventType
@@ -841,12 +850,16 @@
         deAmpTarget &&
         !shouldSkipDeAmpRedirect(deAmpTarget, hostname, whitelist)
       ) {
+        pendingScriptletStats = null;
         try { window.location.replace(deAmpTarget); } catch (_) {}
         return;
       }
 
       IS_WHITELISTED = whitelist.some(domain => isHostOrSubdomain(hostname.toLowerCase(), domain));
       statsConfigReady = true;
+      const startupEvents = pendingScriptletStats;
+      pendingScriptletStats = null;
+      for (const type of startupEvents || []) queueStatsEvent({ layer: 'scriptlet', type });
       publishQuietConsoleConfig();
       if (IS_WHITELISTED) {
         if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
@@ -883,6 +896,7 @@
         removeLeftoverAdContainers();
       }
     } catch (err) {
+      pendingScriptletStats = null;
       if (DEBUG) console.warn('[Chroma Ad-Blocker] Init fetch failed, using defaults.', err);
       injectAllCSS();
       if (shouldRunObserver()) {

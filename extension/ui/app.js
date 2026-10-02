@@ -409,7 +409,7 @@ const ChromaApp = (() => {
     const allows = Number(rule?.networkAllows) || 0;
     const unknown = Number(rule?.unknownDnrMatches) || 0;
     if (blocks > 0) meta.push(`Blocks ${formatCompactCount(blocks)}`);
-    if (allows > 0) meta.push(`Allows ${formatCompactCount(allows)}`);
+    if (allows > 0) meta.push(`Allow-rule matches ${formatCompactCount(allows)}`);
     if (unknown > 0) meta.push(`Matches ${formatCompactCount(unknown)}`);
     return meta.join(' - ');
   }
@@ -477,9 +477,9 @@ const ChromaApp = (() => {
 
     clearElement(topCards);
     addStatsMiniCard(topCards, 'Total Protection Events', formatCompactCount(totals.protectionEvents));
-    addStatsMiniCard(topCards, 'Network Blocks', formatCompactCount(totals.networkBlocks));
+    addStatsMiniCard(topCards, 'Network Actions', formatCompactCount(totals.networkBlocks));
     addStatsMiniCard(topCards, 'Ad Cleanups', formatCompactCount(getCleanupTotal(totals)));
-    addStatsMiniCard(topCards, 'Scriptlet Hits', formatCompactCount(totals.scriptletHits));
+    addStatsMiniCard(topCards, 'Scriptlet Runs', formatCompactCount(totals.scriptletHits));
     addStatsMiniCard(topCards, 'Warnings Suppressed', formatCompactCount(totals.warningSuppressions));
     addStatsMiniCard(topCards, 'Local Zapper Hits', formatCompactCount(totals.zapperHits));
     addStatsMiniCard(topCards, 'Proxy Activity', formatCompactCount(getProxyActivityTotal(totals)));
@@ -487,7 +487,7 @@ const ChromaApp = (() => {
 
     if (rangeSummary) {
       clearElement(rangeSummary);
-      addStatsMiniCard(rangeSummary, 'Today', formatCompactCount(stats?.ranges?.today?.protectionEvents));
+      addStatsMiniCard(rangeSummary, 'Today (UTC)', formatCompactCount(stats?.ranges?.today?.protectionEvents));
       addStatsMiniCard(rangeSummary, '7 Days', formatCompactCount(stats?.ranges?.last7Days?.protectionEvents));
       addStatsMiniCard(rangeSummary, '30 Days', formatCompactCount(stats?.ranges?.last30Days?.protectionEvents));
       addStatsMiniCard(rangeSummary, 'All Time', formatCompactCount(stats?.ranges?.allTime?.protectionEvents));
@@ -501,7 +501,7 @@ const ChromaApp = (() => {
       if (sites.length === 0) renderEmptyStatsList(sitesList, emptyText || 'No site stats yet.');
       for (const site of sites) {
         const last = site.lastSeen ? new Date(site.lastSeen).toLocaleString() : 'Never';
-        const meta = `Network ${formatCompactCount(site.networkBlocks)} - Allows ${formatCompactCount(site.networkAllows)} - Cleanup ${formatCompactCount(getCleanupTotal(site))} - Last seen ${last}`;
+        const meta = `Network ${formatCompactCount(site.networkBlocks)} - Allow-rule matches ${formatCompactCount(site.networkAllows)} - Cleanup ${formatCompactCount(getCleanupTotal(site))} - Last seen ${last}`;
         addStatsRow(sitesList, site.domain || 'unknown', meta, formatCompactCount(getStatsBucketTotal(site)));
       }
     }

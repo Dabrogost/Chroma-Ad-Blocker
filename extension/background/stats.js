@@ -168,6 +168,11 @@ function dayKey(ts) {
   return date.toISOString().slice(0, 10);
 }
 
+function normalizeRuleId(value) {
+  if (value === null || value === undefined) return null;
+  return Number.isSafeInteger(Number(value)) ? Number(value) : null;
+}
+
 function normalizeCounters(input) {
   const out = emptyTotals();
   if (!input || typeof input !== 'object') return out;
@@ -242,7 +247,7 @@ function normalizeStats(raw) {
       if (!safeKey) continue;
       stats.byRule[safeKey] = normalizeCounterBucket(value, {
         key: safeKey,
-        ruleId: Number.isSafeInteger(Number(value?.ruleId)) ? Number(value.ruleId) : null,
+        ruleId: normalizeRuleId(value?.ruleId),
         rulesetId: sanitizeToken(value?.rulesetId, 80),
         ruleSource: sanitizeToken(value?.ruleSource, 80),
         scriptlet: sanitizeToken(value?.scriptlet, 120),
@@ -273,7 +278,7 @@ function sanitizeStoredRecentEvent(event, storeFullUrls = false) {
     type,
     domain: normalizeDomain(event.domain),
     resourceType: sanitizeToken(event.resourceType, 40),
-    ruleId: Number.isSafeInteger(Number(event.ruleId)) ? Number(event.ruleId) : null,
+    ruleId: normalizeRuleId(event.ruleId),
     rulesetId: sanitizeToken(event.rulesetId, 80),
     ruleSource: sanitizeToken(event.ruleSource, 80),
     scriptlet: sanitizeToken(event.scriptlet, 120),
@@ -329,6 +334,8 @@ const CONTENT_EVENT_FACTORIES = new Map([
   ['youtube_payload_modified', () => ({
     layer: 'youtube',
     type: 'payload',
+    // Legacy inspection/clean counters are aliases of reported modifications.
+    // Unchanged inspections and field/object counts do not cross this boundary.
     payloadsInspected: 1,
     payloadsModified: 1,
     cleans: 1
@@ -457,8 +464,7 @@ export async function flushStatsQueue(options = {}) {
   if (batch.length === 0) {
     // Another caller may already have removed its batch from memory and still
     // be writing it. Reads/settings operations must observe that queued write.
-    await flushChain;
-    await ensureStatsV2();
+    await queueStatsStorageOperation(ensureStatsV2);
     return;
   }
 
@@ -571,7 +577,7 @@ function applyStatsEvent(stats, rawEvent) {
     resourceType,
     layer: sanitizeToken(rawEvent.layer, 40),
     type: sanitizeToken(rawEvent.type, 40),
-    ruleId: Number.isSafeInteger(Number(rawEvent.ruleId)) ? Number(rawEvent.ruleId) : null,
+    ruleId: normalizeRuleId(rawEvent.ruleId),
     rulesetId: sanitizeToken(rawEvent.rulesetId, 80),
     ruleSource: sanitizeToken(rawEvent.ruleSource, 80),
     scriptlet: sanitizeToken(rawEvent.scriptlet, 120),
@@ -722,7 +728,7 @@ function estimateTimeSavedSeconds(totals = {}) {
 
 export async function getStatsSnapshot(options = {}) {
   await flushStatsQueue();
-  const stats = await ensureStatsV2();
+  const stats = await queueStatsStorageOperation(ensureStatsV2);
 
   if (options.summaryOnly === true) {
     return {
@@ -746,6 +752,27 @@ export async function getStatsSnapshot(options = {}) {
     byRule: BY_RULE_CAP,
     byResourceType: BY_RESOURCE_TYPE_CAP,
     byDayRetentionDays: stats.settings.retentionDays
+  };
+  // Current coverage only: old totals may span different collection rules.
+  // Snapshot metadata is neither persisted nor attached to hot-path events.
+  snapshot.collection = {
+    semanticsVersion: 1,
+    appliesTo: 'current collection; historical totals may use earlier semantics',
+    delivery: 'best effort; content reports are rate limited and page-forgeable',
+    dayTimezone: 'UTC',
+    totals: 'lifetime since reset; independent of detail retention and caps',
+    details: 'days expire; site/rule/resource/event tables are count-capped, not age-expired',
+    ranges: 'retained UTC daily buckets; basic-mode periods and reset history are absent',
+    youtubePayloadInspections: 'legacy alias of reported modifications; not all inspections',
+    youtubePayloadsModified: 'reported payload cleanup operations; not unique responses or ads',
+    youtubePayloadCleans: 'legacy alias of reported modifications',
+    youtubeFieldsPruned: 'historical only; no longer collected from content',
+    youtubeAdObjectsRemoved: 'historical only; no longer collected from content',
+    scriptletHits: 'reported synchronous initializations; not individual protection effects',
+    scriptletErrors: 'reported synchronous initialization errors; not async or registration errors',
+    networkBlocks: 'reported block, redirect or upgrade rule matches',
+    networkAllows: 'explicit allow-rule matches; not total permitted traffic',
+    protectionEvents: 'network actions + cosmetic reports + warning reports + YouTube cleanups + scriptlet runs + zapper reports; excludes allows, unknown matches, errors, proxy and fingerprint activity'
   };
 
   if (options.includeRecentEvents === false) {
@@ -773,39 +800,41 @@ export async function resetStats(scope = 'all') {
   }
 
   await flushStatsQueue();
-  const stats = await ensureStatsV2();
-
-  if (normalizedScope === 'sites' || normalizedScope === 'site') {
-    stats.bySite = {};
-  } else if (normalizedScope === 'rules' || normalizedScope === 'rule') {
-    stats.byRule = {};
-  } else if (normalizedScope === 'events' || normalizedScope === 'recent') {
-    stats.recentEvents = [];
-  } else if (normalizedScope === 'timeline' || normalizedScope === 'days') {
-    stats.byDay = {};
-  } else {
-    return { ok: false, error: 'Unknown stats reset scope' };
-  }
-
-  await writeStoredStats(stats);
-  return { ok: true };
+  return queueStatsStorageOperation(async () => {
+    const stats = await ensureStatsV2();
+    if (normalizedScope === 'sites' || normalizedScope === 'site') {
+      stats.bySite = {};
+    } else if (normalizedScope === 'rules' || normalizedScope === 'rule') {
+      stats.byRule = {};
+    } else if (normalizedScope === 'events' || normalizedScope === 'recent') {
+      stats.recentEvents = [];
+    } else if (normalizedScope === 'timeline' || normalizedScope === 'days') {
+      stats.byDay = {};
+    } else {
+      return { ok: false, error: 'Unknown stats reset scope' };
+    }
+    await writeStoredStats(stats);
+    return { ok: true };
+  });
 }
 
 export async function setStatsSettings(input = {}) {
   await flushStatsQueue();
-  const stats = await ensureStatsV2();
-  stats.settings = normalizeSettings({ ...stats.settings, ...input });
+  return queueStatsStorageOperation(async () => {
+    const stats = await ensureStatsV2();
+    stats.settings = normalizeSettings({ ...stats.settings, ...input });
 
-  if (!stats.settings.storeFullUrls) {
-    stats.recentEvents = stats.recentEvents.map(event => {
-      const { url, ...rest } = event;
-      return rest;
-    });
-  }
+    if (!stats.settings.storeFullUrls) {
+      stats.recentEvents = stats.recentEvents.map(event => {
+        const { url, ...rest } = event;
+        return rest;
+      });
+    }
 
-  pruneStats(stats);
-  await writeStoredStats(stats);
-  return { ok: true, settings: cloneJson(stats.settings) };
+    pruneStats(stats);
+    await writeStoredStats(stats);
+    return { ok: true, settings: cloneJson(stats.settings) };
+  });
 }
 
 export async function exportStats() {

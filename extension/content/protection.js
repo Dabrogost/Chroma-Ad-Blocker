@@ -143,85 +143,92 @@
    * Securely transfers the configuration to the MAIN world.
    * SECURITY: Private Communication Channel Generation
    */
-  const pendingReadyTokens = new Set();
-  const attemptedReadyTokens = new Set();
-  const candidatePorts = new Set();
-  const candidateTimeouts = new Map();
-  const MAX_PENDING_READY_TOKENS = 8;
-  const MAX_CANDIDATE_PORTS = 4;
-  const CANDIDATE_TIMEOUT_MS = 500;
+  let pendingReadyToken = null;
+  let candidate = null;
   let handshakeComplete = false;
 
-  function deliverHandshakeForToken(readyToken) {
-    if (!configReady || handshakeComplete || attemptedReadyTokens.has(readyToken)) return;
-    if (candidatePorts.size >= MAX_CANDIDATE_PORTS) return;
-    attemptedReadyTokens.add(readyToken);
-
-    const portNonce = '__CHROMA_PT_' + crypto.getRandomValues(new Uint32Array(2)).join('_') + '__';
-    document.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_DELIVERY__', {
-      detail: { portNonce, readyToken }
-    }));
-
-    const channel = new MessageChannel();
-    const candidatePort = channel.port1;
-    candidatePorts.add(candidatePort);
-    const timeout = setTimeout(() => {
-      candidateTimeouts.delete(candidatePort);
-      candidatePorts.delete(candidatePort);
-      attemptedReadyTokens.delete(readyToken);
-      if (typeof candidatePort.close === 'function') candidatePort.close();
-    }, CANDIDATE_TIMEOUT_MS);
-    candidateTimeouts.set(candidatePort, timeout);
-    candidatePort.onmessage = (event) => {
-      if (event.data?.type !== 'CHROMA_READY' || handshakeComplete) return;
-      handshakeComplete = true;
-      isolatedPort = candidatePort;
-      document.removeEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
-      for (const port of candidatePorts) {
-        const portTimeout = candidateTimeouts.get(port);
-        if (portTimeout) clearTimeout(portTimeout);
-        if (port !== candidatePort && typeof port.close === 'function') port.close();
-      }
-      candidateTimeouts.clear();
-      candidatePorts.clear();
-      attemptedReadyTokens.clear();
-    };
-    try {
-      window.dispatchEvent(new MessageEvent(portNonce, { ports: [channel.port2] }));
-    } catch (e) {
-      window.dispatchEvent(new CustomEvent(portNonce, { detail: { port: channel.port2 } }));
+  function releaseCandidate(current, keepPort = false) {
+    if (candidate !== current) return;
+    current.port.onmessage = null;
+    if (!keepPort) {
+      current.port.close();
+      current.peer.close();
     }
+    candidate = null;
+  }
 
-    candidatePort.postMessage({
-      type: 'INIT_CHROMA',
-      config: { ...CONFIG }
-    });
-    if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
+  function deliverHandshakeForToken(readyToken) {
+    if (!configReady || handshakeComplete || candidate) return;
+
+    let current = null;
+    try {
+      const portNonce = '__CHROMA_PT_' + crypto.getRandomValues(new Uint32Array(4)).join('_') + '__';
+      // MAIN consumes every delivery, but cancels only an authenticated one
+      // after arming its nonce listener and deadline. Forged READY tokens
+      // allocate no ports and cannot starve the genuine repeated challenge.
+      const rejected = window.dispatchEvent(new CustomEvent('__CHROMA_CONFIG_DELIVERY__', {
+        cancelable: true,
+        detail: { portNonce, readyToken }
+      }));
+      if (rejected) return;
+
+      const channel = new MessageChannel();
+      current = { port: channel.port1, peer: channel.port2, readyToken };
+      candidate = current;
+      current.port.onmessage = (event) => {
+        if (candidate !== current || event.data?.type !== 'CHROMA_READY' || handshakeComplete) return;
+        handshakeComplete = true;
+        isolatedPort = current.port;
+        pendingReadyToken = null;
+        window.removeEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
+        releaseCandidate(current, true);
+      };
+      try {
+        window.dispatchEvent(new MessageEvent(portNonce, { ports: [channel.port2] }));
+      } catch (e) {
+        window.dispatchEvent(new CustomEvent(portNonce, { detail: { port: channel.port2 } }));
+      }
+
+      current.port.postMessage({
+        type: 'INIT_CHROMA',
+        config: { ...CONFIG }
+      });
+      if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port sent to MAIN world.');
+    } catch (e) {
+      // A broken primitive or failed transfer cannot enable MAIN. Its own
+      // candidate expires, and a later READY can retry with a fresh challenge.
+      if (current) releaseCandidate(current);
+    }
   }
 
   function handleMainReady(e) {
     if (typeof e.stopImmediatePropagation === 'function') {
       e.stopImmediatePropagation();
     }
-    const token = e.detail && e.detail.readyToken;
+    const detail = e.detail;
+    // MAIN alone owns the deadline. A local timer could close a committed
+    // channel ahead of its queued CHROMA_READY. Only the hidden old challenge
+    // can authenticate expiration, so forged READY cannot replace a candidate.
+    if (candidate && detail?.expiredReadyToken === candidate.readyToken) {
+      releaseCandidate(candidate);
+    }
+    const token = detail && detail.readyToken;
     if (typeof token !== 'string' || token.length < 8 || token.length > 160) return;
     if (configReady) {
       deliverHandshakeForToken(token);
       return;
     }
-    if (!pendingReadyTokens.has(token) && pendingReadyTokens.size >= MAX_PENDING_READY_TOKENS) {
-      pendingReadyTokens.delete(pendingReadyTokens.values().next().value);
-    }
-    pendingReadyTokens.add(token);
+    pendingReadyToken = token;
   }
 
   function deliverPendingHandshakes() {
-    for (const token of pendingReadyTokens) deliverHandshakeForToken(token);
-    pendingReadyTokens.clear();
+    const token = pendingReadyToken;
+    pendingReadyToken = null;
+    if (token) deliverHandshakeForToken(token);
   }
 
   function relayEffectiveConfig() {
-    const relayPorts = isolatedPort ? [isolatedPort] : [...candidatePorts];
+    const relayPorts = isolatedPort ? [isolatedPort] : candidate ? [candidate.port] : [];
     for (const port of relayPorts) {
       port.postMessage({
         type: 'BACKGROUND_RESPONSE',
@@ -230,9 +237,9 @@
     }
   }
 
-  // Install before asynchronous storage I/O so page listeners never observe
-  // the MAIN challenge while configuration is loading.
-  document.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
+  // Install synchronously at document_start, before page scripts and storage
+  // I/O. Window has no ancestor capture listener ahead of this secret event.
+  window.addEventListener('__CHROMA_MAIN_READY__', handleMainReady, true);
 
   // Initial sync with storage
   chrome.storage.local.get(['config', 'whitelist']).then((data) => {

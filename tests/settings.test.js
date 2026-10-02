@@ -1960,7 +1960,7 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(appJs, /Proxy Activity/);
     assert.match(appJs, /Time Saved \(est\.\)/);
     assert.match(appJs, /Allow Rule/);
-    assert.match(appJs, /Allows \$\{formatCompactCount\(allows\)\}/);
+    assert.match(appJs, /Allow-rule matches \$\{formatCompactCount\(allows\)\}/);
     assert.doesNotMatch(appJs, /YouTube Payload Cleans/);
   });
 
@@ -2715,6 +2715,11 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /42/);
     assert.strictEqual(success.dom.window.document.querySelector('#statisticsTopCards .skeleton-card'), null);
     assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /Total Protection Events/);
+    assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /Scriptlet Runs/);
+    assert.match(success.dom.window.document.querySelector('#statisticsTopCards').textContent, /Network Actions/);
+    assert.match(success.dom.window.document.querySelector('#statsRangeSummary').textContent, /Today \(UTC\)/);
+    assert.match(success.dom.window.document.querySelector('#statsSitesList').textContent, /Allow-rule matches/);
+    assert.match(success.dom.window.document.querySelector('#statisticsPanel').textContent, /Daily history retention/);
     assert.strictEqual(success.dom.window.document.querySelector('#statsModeSelect').disabled, false);
 
     const failure = createSettingsHarness({ responses: { STATS_GET: null } });

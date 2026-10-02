@@ -88,6 +88,27 @@
   const rawArrayIsArray = Array.isArray;
   const rawNumberIsFinite = Number.isFinite;
   const rawNumberIsInteger = Number.isInteger;
+  const rawNumberToString = Number.prototype.toString;
+  const PristineCustomEvent = typeof CustomEvent === 'function' ? CustomEvent : null;
+  const PristineUint32Array = typeof Uint32Array === 'function' ? Uint32Array : null;
+  const pristineCrypto = typeof crypto === 'object' ? crypto : null;
+  const rawGetRandomValues = pristineCrypto && pristineCrypto.getRandomValues;
+  const rawWindowDispatchEvent = window.dispatchEvent;
+  const rawWindowAddEventListener = window.addEventListener;
+  const rawWindowRemoveEventListener = window.removeEventListener;
+  const rawSetTimeout = window.setTimeout;
+  const rawClearTimeout = window.clearTimeout;
+  const rawSetInterval = window.setInterval;
+  const rawClearInterval = window.clearInterval;
+  let rawStopImmediatePropagation;
+  let rawPreventDefault;
+  let rawEventCancelable;
+  let rawCustomEventDetail;
+  let rawMessageEventPorts;
+  let rawMessageEventData;
+  let rawPortOnMessage;
+  let rawPortPostMessage;
+  let rawPortClose;
 
   // Equivalent to Function.prototype.toString.call(fn), captured before page
   // code can replace either operation.
@@ -116,14 +137,44 @@
       rawArrayIsArray,
       rawNumberIsFinite,
       rawNumberIsInteger,
+      rawNumberToString,
       rawCreateElement,
-      rawDispatchEvent
+      rawDispatchEvent,
+      PristineCustomEvent,
+      PristineUint32Array,
+      rawGetRandomValues,
+      rawWindowDispatchEvent,
+      rawWindowAddEventListener,
+      rawWindowRemoveEventListener,
+      rawSetTimeout,
+      rawClearTimeout,
+      rawSetInterval,
+      rawClearInterval
     ];
     for (let index = 0; index < criticalPrimitives.length; index++) {
       if (!isNative(criticalPrimitives[index])) {
         isEnvironmentCompromised = true;
         if (DEBUG) console.error('[Chroma Security] Environment compromised. Severing secure port.');
         break;
+      }
+    }
+    if (!isEnvironmentCompromised) {
+      rawStopImmediatePropagation = Event.prototype.stopImmediatePropagation;
+      rawPreventDefault = Event.prototype.preventDefault;
+      rawEventCancelable = rawObjectGetOwnPropertyDescriptor(Event.prototype, 'cancelable')?.get;
+      rawCustomEventDetail = rawObjectGetOwnPropertyDescriptor(PristineCustomEvent.prototype, 'detail')?.get;
+      rawMessageEventPorts = rawObjectGetOwnPropertyDescriptor(MessageEvent.prototype, 'ports')?.get;
+      rawMessageEventData = rawObjectGetOwnPropertyDescriptor(MessageEvent.prototype, 'data')?.get;
+      rawPortOnMessage = rawObjectGetOwnPropertyDescriptor(MessagePort.prototype, 'onmessage')?.set;
+      rawPortPostMessage = MessagePort.prototype.postMessage;
+      rawPortClose = MessagePort.prototype.close;
+      const channelPrimitives = [
+        rawStopImmediatePropagation, rawPreventDefault, rawEventCancelable, rawCustomEventDetail,
+        rawMessageEventPorts, rawMessageEventData, rawPortOnMessage,
+        rawPortPostMessage, rawPortClose
+      ];
+      for (let index = 0; index < channelPrimitives.length; index++) {
+        if (!isNative(channelPrimitives[index])) isEnvironmentCompromised = true;
       }
     }
   } catch (e) {
@@ -149,6 +200,7 @@
   let pristineAddEventListener = inertNoop;
   let pristineRemoveEventListener = inertNoop;
   let pristineDispatchEvent = inertNoop;
+  let pristineWindowDispatchEvent = inertNoop;
   let pristineAddDocEventListener = inertNoop;
   let pristineRemoveDocEventListener = inertNoop;
   let PristineCSSStyleSheet = null;
@@ -158,10 +210,10 @@
   // compromised environment and retain the inert defaults above.
   if (!isEnvironmentCompromised) {
     try {
-      pristineSetInterval = bindCaptured(window.setInterval, window);
-      pristineClearInterval = bindCaptured(window.clearInterval, window);
-      pristineSetTimeout = bindCaptured(window.setTimeout, window);
-      pristineClearTimeout = bindCaptured(window.clearTimeout, window);
+      pristineSetInterval = bindCaptured(rawSetInterval, window);
+      pristineClearInterval = bindCaptured(rawClearInterval, window);
+      pristineSetTimeout = bindCaptured(rawSetTimeout, window);
+      pristineClearTimeout = bindCaptured(rawClearTimeout, window);
       pristineRequestAnimationFrame = typeof window.requestAnimationFrame === 'function'
         ? bindCaptured(window.requestAnimationFrame, window)
         : (fn) => pristineSetTimeout(fn, 16);
@@ -176,9 +228,10 @@
       pristineGetElementsByClassName = typeof document.getElementsByClassName === 'function'
         ? bindCaptured(document.getElementsByClassName, document)
         : inertList;
-      pristineAddEventListener = bindCaptured(window.addEventListener, window);
-      pristineRemoveEventListener = bindCaptured(window.removeEventListener, window);
+      pristineAddEventListener = bindCaptured(rawWindowAddEventListener, window);
+      pristineRemoveEventListener = bindCaptured(rawWindowRemoveEventListener, window);
       pristineDispatchEvent = bindCaptured(rawDispatchEvent, document);
+      pristineWindowDispatchEvent = bindCaptured(rawWindowDispatchEvent, window);
       pristineAddDocEventListener = bindCaptured(document.addEventListener, document);
       pristineRemoveDocEventListener = bindCaptured(document.removeEventListener, document);
       PristineCSSStyleSheet = typeof CSSStyleSheet === 'function' ? CSSStyleSheet : null;
@@ -197,18 +250,29 @@
       pristineAddEventListener = inertNoop;
       pristineRemoveEventListener = inertNoop;
       pristineDispatchEvent = inertNoop;
+      pristineWindowDispatchEvent = inertNoop;
       pristineAddDocEventListener = inertNoop;
       pristineRemoveDocEventListener = inertNoop;
       PristineCSSStyleSheet = null;
     }
   }
 
+  // Rotate after a failed candidate, so its delivery cannot rearm a stale nonce.
+  function createReadyToken() {
+    const randomWords = new PristineUint32Array(4);
+    rawReflectApply(rawGetRandomValues, pristineCrypto, [randomWords]);
+    let token = '';
+    for (let index = 0; index < 4; index++) {
+      token += (index ? '_' : '') + rawReflectApply(rawNumberToString, randomWords[index], [36]);
+    }
+    return token;
+  }
+
   // One-time challenge used to reject a page-forged port delivery.
   let readyToken = null;
   if (!isEnvironmentCompromised) {
     try {
-      const randomWords = crypto.getRandomValues(new Uint32Array(4));
-      readyToken = Array.from(randomWords, value => value.toString(36)).join('_');
+      readyToken = createReadyToken();
     } catch (e) {
       isEnvironmentCompromised = true;
     }
@@ -504,7 +568,9 @@
         // bridge. Leave handlers on their inert local defaults.
         return;
       }
-      pristineDispatchEvent(new CustomEvent('__CHROMA_BRIDGE_READY__'));
+      if (!isEnvironmentCompromised) {
+        pristineDispatchEvent(new PristineCustomEvent('__CHROMA_BRIDGE_READY__'));
+      }
     }
 
     if (DEBUG) console.log(`[Chroma Ad-Blocker] Bridge reserved. Bridge Domain: ${isBridgeDomain}`);
@@ -524,86 +590,154 @@
   provisionInternalBridge();
 
   // ─── SECURE SYNCHRONIZATION ─────
+  const CANDIDATE_TIMEOUT_MS = 500;
+  let candidate = null;
+  let handshakeCommitted = false;
+
+  function removeCandidateListeners(attempt) {
+    pristineRemoveEventListener(attempt.nonce, attempt.catchPort, true);
+    if (attempt.timeout !== null) pristineClearTimeout(attempt.timeout);
+    attempt.timeout = null;
+  }
+
+  function stopHandshake() {
+    if (pingInterval !== undefined && pingInterval !== null) pristineClearInterval(pingInterval);
+    pingInterval = null;
+    pristineRemoveEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
+    readyToken = null;
+  }
+
+  function emitMainReady(expiredReadyToken) {
+    // WebIDL reads inherited EventInit fields; a null-prototype dictionary
+    // prevents page Object.prototype getters from inspecting either challenge.
+    const detail = rawObjectCreate(null);
+    detail.readyToken = readyToken;
+    if (expiredReadyToken) detail.expiredReadyToken = expiredReadyToken;
+    const options = rawObjectCreate(null);
+    options.detail = detail;
+    pristineWindowDispatchEvent(new PristineCustomEvent('__CHROMA_MAIN_READY__', options));
+  }
+
+  function expireCandidate(attempt, retry = true) {
+    if (candidate !== attempt || handshakeCommitted) return;
+    const expiredReadyToken = readyToken;
+    candidate = null;
+    removeCandidateListeners(attempt);
+    if (attempt.port) {
+      try { rawReflectApply(rawPortOnMessage, attempt.port, [null]); } catch (_) {}
+      try { rawReflectApply(rawPortClose, attempt.port, []); } catch (_) {}
+    }
+    if (retry) {
+      try {
+        readyToken = createReadyToken();
+      } catch (_) {
+        isEnvironmentCompromised = true;
+      }
+    } else {
+      isEnvironmentCompromised = true;
+    }
+    if (isEnvironmentCompromised) stopHandshake();
+    // MAIN owns the deadline. Its protected signal releases the isolated
+    // candidate only after MAIN has rejected it, so a queued CHROMA_READY
+    // cannot race an independent isolated timeout and lose a committed port.
+    emitMainReady(expiredReadyToken);
+  }
+
+  function receivePortMessage(attempt, event) {
+    if ((!handshakeCommitted && candidate !== attempt) ||
+        (handshakeCommitted && chromaPort !== attempt.port)) return;
+    const message = rawReflectApply(rawMessageEventData, event, []);
+    if (!handshakeCommitted) {
+      if (message?.type !== 'INIT_CHROMA' || !message.config ||
+          typeof message.config !== 'object' || rawArrayIsArray(message.config)) return;
+      try {
+        initChromaInterceptor(message.config);
+        rawReflectApply(rawPortPostMessage, attempt.port, [{ type: 'CHROMA_READY' }]);
+      } catch (_) {
+        // A broken port has not committed the handshake. Restore the inert
+        // bridge and let a fresh challenge retry the authoritative config.
+        isInitialized = false;
+        configRevision = 0;
+        for (let index = 0; index < CONFIG_KEYS.length; index++) delete localConfig[CONFIG_KEYS[index]];
+        rawObjectAssign(localConfig, { enabled: false, stripping: false, acceleration: false });
+        syncYouTubeScrollProtection();
+        expireCandidate(attempt);
+        return;
+      }
+      handshakeCommitted = true;
+      chromaPort = attempt.port;
+      candidate = null;
+      removeCandidateListeners(attempt);
+      stopHandshake();
+      // Public notification follows commitment; values remain private.
+      pristineDispatchEvent(new PristineCustomEvent('__CHROMA_CONFIG_UPDATE__'));
+    } else if (message?.type === 'BACKGROUND_RESPONSE') {
+      const response = message.data;
+      if (response?.type === 'CONFIG_UPDATE') {
+        const changed = applyBridgeConfig(response.config);
+        if (changed) syncYouTubeScrollProtection();
+        pristineDispatchEvent(new PristineCustomEvent('__CHROMA_CONFIG_UPDATE__'));
+      }
+    }
+  }
+
   /** @param {Event} e */
   const handleConfigDelivery = (e) => {
-    if (typeof e.stopImmediatePropagation === 'function') {
-      e.stopImmediatePropagation();
-    }
-
-    // Accept delivery only when it echoes the one-time MAIN challenge. The
-    // isolated listener is installed before storage I/O and prevents the page
-    // from observing the challenge event.
-    const portNonce = e.detail && e.detail.portNonce;
-    const echoedReadyToken = e.detail && e.detail.readyToken;
+    rawReflectApply(rawStopImmediatePropagation, e, []);
+    if (candidate || handshakeCommitted) return;
+    let detail;
+    try {
+      if (!rawReflectApply(rawEventCancelable, e, [])) return;
+      detail = rawReflectApply(rawCustomEventDetail, e, []);
+    } catch (_) { return; }
+    const portNonce = detail && detail.portNonce;
+    const echoedReadyToken = detail && detail.readyToken;
     if (typeof portNonce !== 'string' || portNonce.length < 16 || portNonce.length > 160 ||
         typeof echoedReadyToken !== 'string' || echoedReadyToken !== readyToken) {
       return;
     }
-    
-    if (pingInterval) {
-      pristineClearInterval(pingInterval);
-      pingInterval = null;
+    const attempt = { nonce: portNonce, port: null, catchPort: null, timeout: null };
+    attempt.catchPort = (portEvent) => {
+      rawReflectApply(rawStopImmediatePropagation, portEvent, []);
+      if (candidate !== attempt || attempt.port || handshakeCommitted) return;
+      let port;
+      try { port = rawReflectApply(rawMessageEventPorts, portEvent, [])[0]; } catch (_) {
+        try { port = rawReflectApply(rawCustomEventDetail, portEvent, [])?.port; } catch (_) {}
+      }
+      if (!port) return;
+      try {
+        // The native setter also verifies this is a real MessagePort and starts
+        // its queue; prototype replacements cannot capture the private channel.
+        rawReflectApply(rawPortOnMessage, port, [(event) => receivePortMessage(attempt, event)]);
+      } catch (_) { return; }
+      attempt.port = port;
+      pristineRemoveEventListener(portNonce, attempt.catchPort, true);
+    };
+    candidate = attempt;
+    try {
+      pristineAddEventListener(portNonce, attempt.catchPort, true);
+      attempt.timeout = pristineSetTimeout(() => expireCandidate(attempt), CANDIDATE_TIMEOUT_MS);
+      // Only MAIN's matching challenge can acknowledge allocation. Wrong-token
+      // deliveries are stopped too, so later page listeners cannot forge this.
+      rawReflectApply(rawPreventDefault, e, []);
+    } catch (_) {
+      // Failed listener/timer primitives cannot support a retry. In particular,
+      // do not recursively dispatch another challenge from a broken setup.
+      expireCandidate(attempt, false);
     }
-    
-    pristineRemoveDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
-
-    // SECURITY: Read per-session nonce from delivery event.
-    // Port transfer event name is randomized per page load — page scripts
-    // cannot pre-register for an event name they don't know yet.
-    // SECURITY: Capture Phase Port Transfer (VULN-01 Hardening)
-    pristineAddEventListener(portNonce, function portCatcher(e) {
-      if (typeof e.stopImmediatePropagation === 'function') {
-        e.stopImmediatePropagation();
-      }
-      
-      chromaPort = e.ports ? e.ports[0] : null;
-      if (!chromaPort) {
-        // Fallback for CustomEvent delivery if MessageEvent wasn't used/available
-        if (e.detail && e.detail.port) {
-            chromaPort = e.detail.port;
-        }
-      }
-      
-      if (!chromaPort) return;
-
-      let portInitialized = false;
-      chromaPort.onmessage = (msgEvent) => {
-        if (msgEvent.data?.type === 'INIT_CHROMA') {
-          if (portInitialized) return;
-          portInitialized = true;
-          initChromaInterceptor(msgEvent.data.config || {});
-          // Notification only: authoritative values stay in the private port
-          // closure and are read through the immutable bridge snapshot.
-          pristineDispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__'));
-          if (typeof chromaPort.postMessage === 'function') {
-            chromaPort.postMessage({ type: 'CHROMA_READY' });
-          }
-          if (DEBUG) console.log('[Chroma Ad-Blocker] Secure port initialized via inner channel.');
-        } else if (portInitialized && msgEvent.data?.type === 'BACKGROUND_RESPONSE') {
-          const resp = msgEvent.data.data;
-          if (resp && resp.type === 'CONFIG_UPDATE') {
-            const changed = applyBridgeConfig(resp.config || {});
-            if (changed) syncYouTubeScrollProtection();
-            pristineDispatchEvent(new CustomEvent('__CHROMA_CONFIG_UPDATE__'));
-          }
-        }
-      };
-      
-      pristineRemoveEventListener(portNonce, portCatcher, true);
-    }, true); // MUST be true for Capture Phase!
   };
 
   // A compromised environment gets an immutable inert snapshot and no
   // delivery listener or ready signal. Page events cannot reactivate it.
   if (!isEnvironmentCompromised) {
-    pristineAddDocEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
+    // Window is the top EventTarget: no ancestor capture listener can observe
+    // delivery before this synchronous document_start listener consumes it.
+    pristineAddEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
     const pingRate = isBridgeDomain ? 5 : 50; // 5ms on bridge domains; 50ms relaxed for general web
     
     pingInterval = pristineSetInterval(() => {
       // SECURITY: Secure Handshake Initiation
-      pristineDispatchEvent(new CustomEvent('__CHROMA_MAIN_READY__', {
-        detail: { readyToken }
-      }));
+      emitMainReady();
     }, pingRate);
   } else {
     initChromaInterceptor({ enabled: false, stripping: false, acceleration: false });

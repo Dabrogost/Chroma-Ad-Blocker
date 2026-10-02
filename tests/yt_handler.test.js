@@ -360,6 +360,25 @@ test('Ad field stripping', async (t) => {
     assert.strictEqual(modifiedEvents[0], 'youtube_payload_modified');
   });
 
+  await t.test('initial payload cleanup emits once for multiple removals and stays quiet on a second pass', () => {
+    const sandbox = createStrippingSandbox({ stripping: true });
+    const events = [];
+    sandbox.document.addEventListener('__CHROMA_STATS_EVENT__', event => events.push(event.detail));
+    const payload = {
+      adPlacements: [],
+      playerAds: [{}],
+      contents: [{ adSlotRenderer: {} }, { videoRenderer: { videoId: 'clean' } }]
+    };
+    sandbox.window.ytInitialData = payload;
+    assert.strictEqual('adPlacements' in payload, false);
+    assert.strictEqual('playerAds' in payload, false);
+    assert.strictEqual(payload.contents.length, 1);
+    assert.deepStrictEqual(events, ['youtube_payload_modified']);
+    sandbox.window.ytInitialData = payload;
+    sandbox.window.ytInitialData = { videoDetails: {} };
+    assert.deepStrictEqual(events, ['youtube_payload_modified']);
+  });
+
   await t.test('JSON.parse payload prefilter recognizes ad signals cheaply', (st) => {
     const sandbox = createStrippingSandbox({ stripping: true });
 

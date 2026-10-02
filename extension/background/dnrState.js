@@ -28,6 +28,8 @@ const WHITELIST_RULE_ID_START = 9000000;
 const TRACKING_URL_CLEANUP_RULE_ID_START = 2000;
 const TRACKING_URL_CLEANUP_RULE_ID_END = 2099;
 const DEFAULT_DYNAMIC_REGEX_RULE_LIMIT = 1000;
+// Chrome 122+ is required by the manifest. Prefer the browser's advertised limit.
+const DEFAULT_DYNAMIC_RULE_LIMIT = 30000;
 const ACCELERATION_OFF_PRESERVED_ALLOW_RULE_IDS = new Set([1015]);
 const RECOVERED_DNR_DIAGNOSTIC_IDS = [
   'dnrWakeRecovery',
@@ -165,9 +167,11 @@ function buildDefaultRules(config, whitelist, storedRules) {
 
 /**
  * Two rules are required because requestDomains and initiatorDomains in one
- * condition would be an AND. The destination rule covers direct/external
- * top-level navigation; the initiator rule covers descendants of the allowed
- * document without allowing unrelated top-level destinations.
+ * condition would be an AND. The destination allowAllRequests rule exempts
+ * the entire top-level frame tree, including requests initiated by embedded
+ * third-party frames. A plain allow only exempts the navigation itself.
+ * The initiator allow also covers requests from already-open documents and
+ * workers on the allowed domain without allowing unrelated top-level destinations.
  */
 function buildWhitelistRules(whitelist) {
   const rules = [];
@@ -176,7 +180,7 @@ function buildWhitelistRules(whitelist) {
     rules.push({
       id: firstId,
       priority: 999999,
-      action: { type: 'allow' },
+      action: { type: 'allowAllRequests' },
       condition: {
         requestDomains: [domain],
         resourceTypes: ['main_frame']
@@ -395,6 +399,13 @@ function dynamicRegexRuleLimit() {
     : DEFAULT_DYNAMIC_REGEX_RULE_LIMIT;
 }
 
+function dynamicRuleLimit() {
+  const browserLimit = Number(chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES);
+  return Number.isInteger(browserLimit) && browserLimit >= 0
+    ? browserLimit
+    : DEFAULT_DYNAMIC_RULE_LIMIT;
+}
+
 async function performReconciliation(generation, reason) {
   const desired = await readDesiredState();
   if (generation !== requestedGeneration) return { ok: true, stale: true };
@@ -412,9 +423,19 @@ async function performReconciliation(generation, reason) {
       desired.whitelist,
       desired.dynamicRules
     ), ...spotifyRules];
+    whitelistRules = buildWhitelistRules(desired.whitelist);
+    const ruleLimit = dynamicRuleLimit();
     const regexLimit = dynamicRegexRuleLimit();
     const dnrApi = chrome.declarativeNetRequest;
     buildSubscriptionApplication = async currentDefaultRules => {
+      // Reserve the desired local rules, not the previously installed image.
+      // Every settings/whitelist change reallocates subscriptions atomically.
+      const reservedRuleCount = currentDefaultRules.length + whitelistRules.length;
+      if (reservedRuleCount > ruleLimit) {
+        throw new Error(
+          `Local dynamic rules exceed the browser quota (${reservedRuleCount}/${ruleLimit})`
+        );
+      }
       const defaultRegexRuleCount = currentDefaultRules.filter(rule =>
         typeof rule?.condition?.regexFilter === 'string'
       ).length;
@@ -430,13 +451,13 @@ async function performReconciliation(generation, reason) {
           isRegexSupported: typeof dnrApi.isRegexSupported === 'function'
             ? dnrApi.isRegexSupported.bind(dnrApi)
             : null,
-          regexRuleLimit: regexLimit - defaultRegexRuleCount
+          regexRuleLimit: regexLimit - defaultRegexRuleCount,
+          ruleLimit: ruleLimit - reservedRuleCount
         }
       );
     };
     subscriptionApplication = await buildSubscriptionApplication(defaultRules);
     const subscriptionRules = prepareSubscriptionRules(subscriptionApplication.networkRules);
-    whitelistRules = buildWhitelistRules(desired.whitelist);
     desiredRules = [...defaultRules, ...subscriptionRules, ...whitelistRules];
   }
 
