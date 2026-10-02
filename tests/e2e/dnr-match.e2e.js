@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
+const http = require('node:http');
 const {
+  closeTarget,
+  createPage,
   evaluate,
   expectedRulesets,
   openExtensionPage,
@@ -239,6 +242,83 @@ test('DNR match/outcome E2E', async (t) => {
     });
     console.log(`DNR YouTube allow match: ${ruleSummary(outcome)}`);
     assert.ok(outcome.matchedRules.some(rule => rule.ruleId === 1004), 'dynamic YouTube allow rule 1004 should match');
+  });
+
+  await t.test('whitelist bypasses subscription blocks throughout cross-origin frame trees', async (t) => {
+    // Finish install-time subscription initialization before replacing its cache.
+    await waitFor(() => evaluate(browser.cdp, browser.workerSession,
+      "chrome.alarms.get('chroma-subscription-check').then(Boolean)"), 'subscription initialization');
+    const original = await evaluate(browser.cdp, browser.workerSession,
+      "chrome.storage.local.get(['subscriptions', 'sub_network_rules', 'whitelist'])");
+    const pages = [];
+    const page = await openExtensionPage(browser.cdp, browser.extensionId, 'ui/popup.html');
+    const server = http.createServer((req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      if (req.url === '/probe.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript' });
+        res.end('window.probeLoaded = true;');
+        return;
+      }
+      const level = req.url === '/child' ? 'child' : req.url === '/nested' ? 'nested' : 'top';
+      const origin = `http://localhost:${server.address().port}`;
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<!doctype html><html><body>
+        <script>
+          window.results = {};
+          addEventListener('message', event => {
+            if (event.data && event.data.probe) results[event.data.probe] = event.data.loaded;
+          });
+          function report() {
+            const loaded = window.probeLoaded === true;
+            if (window === top) results.top = loaded;
+            else top.postMessage({ probe: '${level}', loaded }, '*');
+          }
+        </script>
+        <script src="${origin}/probe.js" onload="report()" onerror="report()"></script>
+        ${level === 'nested' ? '' : `<iframe src="${origin}/${level === 'top' ? 'child' : 'nested'}"></iframe>`}
+      </body></html>`);
+    });
+    t.after(async () => {
+      for (const page of pages) await closeTarget(browser.cdp, page);
+      await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+      await evaluate(browser.cdp, page.sessionId, `(async () => {
+        await chrome.storage.local.remove(['subscriptions', 'sub_network_rules', 'whitelist']);
+        await chrome.storage.local.set(${JSON.stringify(original)});
+        await (await import('../background/dnrState.js')).reconcileNetworkDnr('e2e-restore');
+      })()`);
+      await closeTarget(browser.cdp, page);
+    });
+    await new Promise(resolve => server.listen(0, resolve));
+    await evaluate(browser.cdp, page.sessionId, `(async () => {
+      const { parseList } = await import('../subscriptions/parser.js');
+      const parsed = parseList('/probe.js$script,important');
+      await chrome.storage.local.set({
+        whitelist: [],
+        subscriptions: [{ id: 'e2e-whitelist', enabled: true }],
+        sub_network_rules: { 'e2e-whitelist': parsed.networkRules }
+      });
+      await (await import('../background/dnrState.js')).reconcileNetworkDnr('e2e-whitelist');
+    })()`);
+
+    async function checkPage(host, expected) {
+      assert.strictEqual(await evaluate(browser.cdp, browser.workerSession,
+        "chrome.declarativeNetRequest.getDynamicRules().then(rules => rules.some(rule => rule.condition.urlFilter === '/probe.js' && rule.action.type === 'block' && rule.priority === 3))"),
+      true, 'the subscription block must stay installed while whitelisted');
+      const fixture = await createPage(browser.cdp, `http://${host}:${server.address().port}/top`);
+      pages.push(fixture);
+      const results = await waitFor(() => evaluate(browser.cdp, fixture.sessionId,
+        'Object.keys(window.results || {}).length === 3 ? window.results : null'), 'frame probe results');
+      assert.deepStrictEqual(results, { top: expected, child: expected, nested: expected }, host);
+    }
+
+    await checkPage('127.0.0.1', false);
+    assert.deepStrictEqual(await sendRuntimeMessage(browser.cdp, page.sessionId,
+      { type: 'WHITELIST_ADD', domain: '127.0.0.1' }), { ok: true });
+    await checkPage('127.0.0.1', true);
+    await checkPage('localhost', false);
+    assert.deepStrictEqual(await sendRuntimeMessage(browser.cdp, page.sessionId,
+      { type: 'WHITELIST_REMOVE', domain: '127.0.0.1' }), { ok: true });
+    await checkPage('127.0.0.1', false);
   });
 
   await t.test('whitelist adds high-priority allow diagnostic rule', async () => {

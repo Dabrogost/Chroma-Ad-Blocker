@@ -1075,7 +1075,7 @@ test('Network DNR reconciliation', async (t) => {
     assert.strictEqual(dnr.getDynamicRules()[0].condition.urlFilter, '||prior.example^');
   });
 
-  await t.test('whitelist uses destination main-frame and initiator subresource rules', async () => {
+  await t.test('whitelist allows the top-level frame tree and direct initiator subresources', async () => {
     const dnr = loadDnrState({
       storage: {
         config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false },
@@ -1087,6 +1087,9 @@ test('Network DNR reconciliation', async (t) => {
     const whitelistRules = dnr.getDynamicRules().filter(rule => rule.id >= 9000000);
 
     assert.strictEqual(whitelistRules.length, 2);
+    assert.strictEqual(whitelistRules[0].action.type, 'allowAllRequests',
+      'cross-origin descendants must inherit the top-level whitelist allowance');
+    assert.strictEqual(whitelistRules[1].action.type, 'allow');
     assert.deepStrictEqual(whitelistRules[0].condition, {
       requestDomains: ['example.com'],
       resourceTypes: ['main_frame']
@@ -1115,6 +1118,16 @@ test('Network DNR reconciliation', async (t) => {
       initiatorDomain: 'external.test',
       resourceType: 'sub_frame'
     }), false, 'external documents do not gain an allow just by embedding the whitelisted destination');
+    assert.strictEqual(conditionMatchesRequest(whitelistRules[0].condition, {
+      requestDomain: 'external.test',
+      initiatorDomain: 'example.com',
+      resourceType: 'main_frame'
+    }), false, 'navigating away must not whitelist an unrelated destination');
+    assert.strictEqual(conditionMatchesRequest(whitelistRules[0].condition, {
+      requestDomain: 'example.com',
+      initiatorDomain: 'external.test',
+      resourceType: 'sub_frame'
+    }), false, 'embedding a whitelisted site must not exempt the external frame tree');
   });
 
   await t.test('whitelist edits while inactive cannot create allow rules', async () => {

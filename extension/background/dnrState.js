@@ -167,9 +167,11 @@ function buildDefaultRules(config, whitelist, storedRules) {
 
 /**
  * Two rules are required because requestDomains and initiatorDomains in one
- * condition would be an AND. The destination rule covers direct/external
- * top-level navigation; the initiator rule covers descendants of the allowed
- * document without allowing unrelated top-level destinations.
+ * condition would be an AND. The destination allowAllRequests rule exempts
+ * the entire top-level frame tree, including requests initiated by embedded
+ * third-party frames. A plain allow only exempts the navigation itself.
+ * The initiator allow also covers requests from already-open documents and
+ * workers on the allowed domain without allowing unrelated top-level destinations.
  */
 function buildWhitelistRules(whitelist) {
   const rules = [];
@@ -178,7 +180,7 @@ function buildWhitelistRules(whitelist) {
     rules.push({
       id: firstId,
       priority: 999999,
-      action: { type: 'allow' },
+      action: { type: 'allowAllRequests' },
       condition: {
         requestDomains: [domain],
         resourceTypes: ['main_frame']
