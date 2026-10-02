@@ -36,6 +36,31 @@ const backgroundJsCode = backgroundJsCodeRaw
 const plain = value => JSON.parse(JSON.stringify(value));
 const cloneStorageValue = value => value === undefined ? undefined : structuredClone(value);
 
+test('secure handshake listeners are injected in both worlds before page scripts', () => {
+  const isolatedIndex = manifest.content_scripts.findIndex(script =>
+    script.js.includes('content/protection.js'));
+  const mainIndex = manifest.content_scripts.findIndex(script =>
+    script.js.includes('content/interceptor.js'));
+  assert.ok(isolatedIndex >= 0 && mainIndex >= 0);
+  const isolated = manifest.content_scripts[isolatedIndex];
+  const main = manifest.content_scripts[mainIndex];
+
+  // Window capture protects the secret events only when these listeners are
+  // installed before ordinary page scripts can register competing listeners.
+  assert.strictEqual(isolated.run_at, 'document_start');
+  assert.strictEqual(main.run_at, 'document_start');
+  assert.strictEqual(isolated.world || 'ISOLATED', 'ISOLATED');
+  assert.strictEqual(main.world, 'MAIN');
+  assert.ok(isolatedIndex < mainIndex, 'the challenge consumer must be declared before MAIN');
+  assert.ok(isolated.js.indexOf('core/messaging.js') < isolated.js.indexOf('content/protection.js'));
+  assert.ok(isolated.js.includes('core/messaging.js'), 'isolated messaging dependencies must load first');
+
+  for (const key of ['matches', 'exclude_matches', 'include_globs', 'exclude_globs',
+    'all_frames', 'match_about_blank', 'match_origin_as_fallback']) {
+    assert.deepStrictEqual(isolated[key], main[key], `${key} must cover the same execution contexts`);
+  }
+});
+
 const SETTINGS_IMPORT_STORAGE_KEYS = [
   'config',
   'whitelist',

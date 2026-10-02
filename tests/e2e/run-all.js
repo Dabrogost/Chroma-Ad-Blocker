@@ -9,6 +9,7 @@ const FILES = {
   zapper: ['zapper.e2e.js'],
   full: [
     'load-extension.e2e.js',
+    'handshake.e2e.js',
     'dnr-match.e2e.js',
     'zapper.e2e.js',
     'service-worker-restart.e2e.js'
