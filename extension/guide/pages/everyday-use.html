@@ -1,0 +1,84 @@
+<!doctype html>
+<!-- Generated from canonical /docs content by scripts/build-guide.js. Edit the Markdown source, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>Everyday Use &amp; Troubleshooting · Chroma Guide</title>
+<meta name="description" content="Pause protection on one site, fix sign-in or playback problems, disable FPR for a site, and hide or restore page elements.">
+<link rel="stylesheet" href="../guide.css">
+</head>
+<body class="guide-page" data-guide-root=".." data-guide-current-slug="everyday-use">
+<a class="guide-skip-link" href="#guideMain">Skip to guide content</a>
+<header class="guide-header">
+<button class="guide-nav-toggle" type="button" aria-controls="guideSidebar" aria-expanded="false" data-guide-nav-toggle>
+<span aria-hidden="true">☰</span><span class="guide-visually-hidden">Open guide navigation</span>
+</button>
+<a class="guide-brand" href="../index.html" data-guide-home><span aria-hidden="true">◈</span><span>Chroma Guide</span></a>
+<form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
+</header>
+<div class="guide-shell guide-layout">
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link is-active" href="everyday-use.html" data-guide-slug="everyday-use" aria-current="page">Everyday Use &amp; Troubleshooting</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="spotify.html" data-guide-slug="spotify">Spotify Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section></aside>
+<main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Start Using Chroma</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Start Using Chroma</p><h1 id="everyday-use-troubleshooting" tabindex="-1">Everyday Use &amp; Troubleshooting</h1><p class="guide-article-summary">Pause protection on one site, fix sign-in or playback problems, disable FPR for a site, and hide or restore page elements.</p><a class="guide-settings-cta" href="../../ui/settings.html#protectionSection" data-settings-path="ui/settings.html#protectionSection"><span>Open protection settings</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Use this page for common tasks after <a href="install.html">installing Chroma</a>. The <a href="features.html">Feature Guide</a> explains how the protection layers work, and the <a href="install.html#configuration">configuration reference</a> maps each control to its location and default.</p>
+<h2 id="open-the-popup-settings-and-guide" tabindex="-1">Open The Popup, Settings, And Guide</h2>
+<ol>
+<li>Visit the website you want to manage.</li>
+<li>Click Chroma's icon in the browser toolbar. If it is hidden, open the browser's extensions menu and select Chroma; pin it there for easier access.</li>
+<li>To open Settings, click the gear marked <strong>Open Settings</strong> beside <strong>Protection Events</strong> in the popup. Clicking the Protection Events card also opens Settings.</li>
+<li>Use the Settings navigation links to jump to a section. <strong>Guide</strong> opens the bundled offline manual; section-specific Guide links open the relevant topic.</li>
+</ol>
+<p>The header switch controls protection across the browser. <strong>This Site</strong> controls apply to the website open in the active tab. Chrome-internal pages and other browser-restricted pages cannot run Chroma's page tools; open a normal website to use those controls.</p>
+<h2 id="pause-or-restore-protection-for-one-site" tabindex="-1">Pause Or Restore Protection For One Site</h2>
+<p>Use a site exception when a particular website needs to run without Chroma's filtering.</p>
+<ol>
+<li>Open that website and then the Chroma popup.</li>
+<li>Under <strong>This Site</strong>, turn <strong>Whitelist this site</strong> on. An enabled whitelist switch means filtering is paused for the site.</li>
+<li>Chroma saves the exception and automatically reloads the active tab. Save unfinished form input first.</li>
+<li>To restore filtering, return to the site, reopen the popup, and turn <strong>Whitelist this site</strong> off. Chroma reloads the tab again.</li>
+</ol>
+<p>The popup groups ordinary subdomains under the site's base domain. For example, an exception created on <code>news.example.com</code> applies to <code>example.com</code> and its subdomains, not just that page. Chroma recognizes a compact set of public suffixes, including <code>co.uk</code> and shared hosting suffixes such as <code>github.io</code>; this grouping is not a complete public-suffix database. Reload other already-open tabs for the same site after changing an exception so their page scripts reflect it too.</p>
+<p>A site exception pauses Chroma's network filtering for the site and its initiated requests, page cleanup, platform handling, and registered scriptlets, including fingerprint randomization. It does not disable configured proxy routes or browser-wide privacy settings. For those controls, use <strong>Settings -&gt; Proxy</strong> or <strong>Settings -&gt; Protection -&gt; Privacy</strong>. You can also <a href="#pause-all-protection">pause all protection</a>.</p>
+<h2 id="disable-fingerprint-randomization-for-one-site" tabindex="-1">Disable Fingerprint Randomization For One Site</h2>
+<p>Fingerprint randomization can affect sign-in, bot checks, or captchas. An FPR-only exception preserves the site's other requested protections.</p>
+<ol>
+<li>Visit the affected site and open Chroma's popup.</li>
+<li>Turn <strong>Disable FPR on this site</strong> on. This control appears only when master protection and <strong>Settings -&gt; Protection -&gt; Privacy -&gt; Fingerprint randomization</strong> are enabled.</li>
+<li>Chroma reloads the active tab. Retry the sign-in or check.</li>
+<li>Turn the same control off to restore fingerprint randomization; the tab reloads again.</li>
+</ol>
+<p>This exception uses the same base-domain grouping as <strong>Whitelist this site</strong>. It is stored separately, so removing a full site exception does not remove an FPR-only exception. Existing pages need a reload to replace fingerprint hooks that already ran.</p>
+<h2 id="hide-an-element-with-the-zapper" tabindex="-1">Hide An Element With The Zapper</h2>
+<p>The Zapper hides page elements such as a sticky banner, empty ad box, or newsletter panel. It does not stop the element's underlying network requests.</p>
+<ol>
+<li>On a normal <code>http://</code> or <code>https://</code> page, open the popup and click <strong>Zap Element</strong>.</li>
+<li>Move the pointer to highlight the unwanted element, then click it. Press <code>Esc</code> at any point to cancel.</li>
+<li>Choose <strong>Hide once</strong> to hide only that element in the current page, or <strong>Save for this site</strong> to create a reusable rule.</li>
+<li>For a saved rule, review the generated CSS selector and any multiple-match warning, then click <strong>Save</strong>. Choose <strong>Cancel</strong> if the match looks too broad.</li>
+</ol>
+<p><strong>Hide once</strong> is temporary: reload the page to restore the element. A saved rule is associated with the current hostname and also matches its subdomains. It is reapplied on visits while master protection and <strong>Cosmetic filtering</strong> are on and the site is not whitelisted. A website redesign can make a saved selector stop matching or hide different content.</p>
+<p>To undo a saved rule, open <strong>Settings -&gt; Zapper</strong>, expand <strong>Saved selectors</strong>, find the domain and selector, and turn its switch off or click <strong>Delete Rule</strong>. Reload the affected page afterward to remove any one-time inline hiding applied during selection. Deleted rules can be recreated with the Zapper; paused rules can be turned back on.</p>
+<p>If the Zapper cannot start, check the extension's site access in the browser's extension details and try a normal website. Browser-restricted pages cannot be edited this way. Chroma rejects unsafe or invalid selectors and selectors matching too many elements; select a smaller container instead.</p>
+<h2 id="pause-all-protection" tabindex="-1">Pause All Protection</h2>
+<p>Turn the header switch off in the popup or Settings to pause Chroma across the browser. This removes active DNR and whitelist rules, unregisters Chroma-managed scriptlets for future documents, stops reversible page protection, and releases Chroma's proxy and browser privacy controls. Saved settings, lists, routes, exceptions, and custom resources remain available for restoration. Lists can still refresh while protection is paused.</p>
+<p>Reload affected tabs after pausing or resuming. Arbitrary scriptlets, fingerprint hooks, and other code that already ran in a page cannot always be undone in place. Turning master protection back on restores the requested features; another extension or browser policy may still control browser-wide settings. Use <a href="statistics.html#health-panel">Health</a> to inspect the result.</p>
+<p>Pausing protection is different from removing Chroma. See <a href="install.html#uninstalling-and-local-data">Uninstalling and local data</a> before deleting an installation.</p>
+<h2 id="if-a-site-stops-working" tabindex="-1">If A Site Stops Working</h2>
+<p>Work through the relevant steps and retry the page after each change. Restore settings that did not cause the problem so unrelated protection stays enabled.</p>
+<ol>
+<li><strong>Check the basics.</strong> Reload the page after an extension update, and avoid running multiple ad blockers together. Check <strong>Settings -&gt; Health</strong> for unavailable or degraded features. Scriptlet access and update failures are covered in <a href="install.html#troubleshooting-quick-reference">installation troubleshooting</a>.</li>
+<li><strong>If content disappeared after zapping it</strong>, pause or delete that selector under <strong>Settings -&gt; Zapper -&gt; Saved selectors</strong>, then reload.</li>
+<li><strong>If sign-in or a captcha fails with fingerprint randomization enabled</strong>, try <a href="#disable-fingerprint-randomization-for-one-site">Disable FPR on this site</a>.</li>
+<li><strong>If the problem began after adding a list or custom resource</strong>, disable that filter list or remove the relevant saved user-scriptlet rule, then reload. Use the <a href="filter-lists.html#manage-filter-lists">filter-list controls</a> or <a href="advanced-user-scriptlets.html">User Scriptlets guide</a>.</li>
+<li><strong>Try a full site exception</strong> using <a href="#pause-or-restore-protection-for-one-site">Whitelist this site</a>. If the page now works, leave the exception only where needed while you investigate the responsible feature or list. Turn it off if it does not help.</li>
+<li><strong>For connection or browser-permission problems</strong>, inspect proxy routes and optional privacy settings separately. Whitelisting does not bypass a proxy or release browser-wide privacy controls. See <a href="media-proxy-router.html">proxy troubleshooting</a>, or temporarily pause master protection and reload to compare behavior.</li>
+</ol>
+<p>For ads or playback trouble on supported services, follow the <a href="youtube.html">YouTube</a> or <a href="spotify.html">Spotify</a> guide. A zero event count alone does not prove that blocking failed: network statistics depend on browser feedback, and page-layer counts are approximate. <a href="statistics.html">Statistics &amp; Health</a> explains the distinction.</p>
+<p>If you report a reproducible problem, include the browser and Chroma versions, the affected site, steps to reproduce, relevant settings, and Health status. Remove private URLs, account details, and proxy credentials from anything you share; statistics and request-log data can contain browsing information. See the <a href="privacy-policy.html">Privacy Policy</a> for what is stored.</p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="install.html"><span>Previous</span><strong>Installation &amp; Configuration</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="features.html"><span>Next</span><strong>Feature Guide</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#open-the-popup-settings-and-guide">Open The Popup, Settings, And Guide</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#pause-or-restore-protection-for-one-site">Pause Or Restore Protection For One Site</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#disable-fingerprint-randomization-for-one-site">Disable Fingerprint Randomization For One Site</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#hide-an-element-with-the-zapper">Hide An Element With The Zapper</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#pause-all-protection">Pause All Protection</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#if-a-site-stops-working">If A Site Stops Working</a></li></ol></aside></div></main>
+</div>
+<button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
+<footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>
+<script src="../guide.js" defer></script>
+</body>
+</html>

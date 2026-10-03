@@ -19,57 +19,57 @@
 <form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
 </header>
 <div class="guide-shell guide-layout">
-<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="spotify.html" data-guide-slug="spotify">Spotify Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link is-active" href="performance.html" data-guide-slug="performance" aria-current="page">Performance Guide</a></li></ul></section></aside>
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="everyday-use.html" data-guide-slug="everyday-use">Everyday Use &amp; Troubleshooting</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="spotify.html" data-guide-slug="spotify">Spotify Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link is-active" href="performance.html" data-guide-slug="performance" aria-current="page">Performance Guide</a></li></ul></section></aside>
 <main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Tune Performance</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Tune Performance</p><h1 id="performance-guide" tabindex="-1">Performance Guide</h1><p class="guide-article-summary">Understand where Chroma spends resources and choose lower-overhead settings for your browser.</p><a class="guide-settings-cta" href="../../ui/settings.html#protectionSection" data-settings-path="ui/settings.html#protectionSection"><span>Review protection settings</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Chroma's performance goal is practical low overhead, not zero overhead. The extension keeps request decisions in browser-managed APIs where possible, moves expensive list work to refresh time, and scopes page-side work to the features that are enabled.</p>
 <h2 id="where-the-cost-lives" tabindex="-1">Where The Cost Lives</h2>
 <div class="guide-table-wrap"><table>
 <thead>
 <tr>
 <th>Surface</th>
-<th>Low-overhead path</th>
+<th>How work is handled</th>
 <th>What can make it heavier</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>DNR request matching</td>
-<td>Chromium makes the block, redirect, or allow decision in the browser engine; Chroma JavaScript is not part of the enforcement decision.</td>
-<td>In unpacked profiles where Chrome exposes <code>onRuleMatchedDebug</code>, a matched rule can wake the worker for Chroma's separate request log. Very large rule sets also have install/update validation cost and MV3 rule-budget limits.</td>
+<td><a href="#dnr-matching-vs-javascript-request-overhead">DNR request matching</a></td>
+<td>Chromium enforces block, redirect, and allow decisions.</td>
+<td>Rule validation, budgets, and optional matched-rule diagnostic events.</td>
 </tr>
 <tr>
-<td>Service worker</td>
-<td>Sleeps when idle and wakes for extension events, alarms, UI messages, DNR sync, subscription work, and proxy changes.</td>
-<td>Cold starts, subscription refreshes, dynamic rule rebuilds, and scriptlet registration can take visible time in settings or diagnostics.</td>
+<td><a href="#service-worker-lifecycle-and-startup-work">Service worker</a></td>
+<td>Wakes for extension events and sleeps when idle.</td>
+<td>Cold starts, refreshes, and rule synchronization.</td>
 </tr>
 <tr>
-<td>Content script</td>
-<td>Runs in the isolated world and primarily injects CSS, watches DOM additions, and removes known leftovers.</td>
-<td>High-churn pages can produce many DOM mutations, especially video feeds, infinite scroll pages, and live chat layouts.</td>
+<td><a href="#content-script-cost">Content script</a></td>
+<td>Injects CSS and watches page changes in the isolated world.</td>
+<td>Frequent DOM mutations on feeds and live chat pages.</td>
 </tr>
 <tr>
-<td>Constructable stylesheets</td>
-<td>Reuses <code>CSSStyleSheet</code> objects and updates <code>document.adoptedStyleSheets</code> instead of repeatedly appending style nodes.</td>
-<td>Large selector sets still cost browser style recalculation when enabled or changed.</td>
+<td><a href="#constructable-stylesheet-behavior">Constructable stylesheets</a></td>
+<td>Reuses browser stylesheet objects.</td>
+<td>Large or broad selector sets and style recalculation.</td>
 </tr>
 <tr>
-<td>MAIN-world interception</td>
-<td>Runs only where platform handlers, scriptlets, media handlers, or optional fingerprint randomization require page-context hooks.</td>
-<td>Hooking <code>fetch</code>, <code>XMLHttpRequest</code>, <code>JSON.parse</code>, media APIs, or fingerprint surfaces adds per-call checks on matched pages.</td>
+<td><a href="#main-world-interception-cost">MAIN-world interception</a></td>
+<td>Adds page-context hooks for enabled features, including optional Quiet Console.</td>
+<td>API checks on each call; some optional features apply across ordinary websites.</td>
 </tr>
 <tr>
-<td><code>userScripts</code> registration</td>
-<td>Browser stores registered script definitions and injects them on matching pages.</td>
-<td>Many subscription or user scriptlet rules increase registration time and match pattern count.</td>
+<td><a href="#userscripts-registration-cost"><code>userScripts</code> registration</a></td>
+<td>The browser stores and injects matching script definitions.</td>
+<td>Many rules and broad domain matches.</td>
 </tr>
 <tr>
-<td>Proxy PAC routing</td>
-<td>PAC chooses direct vs proxy transport by host, keeping DNR policy separate from routing.</td>
-<td>Large domain lists and Global Fallback add routing checks and may add proxy latency.</td>
+<td><a href="#proxy-pac-routing-cost">Proxy PAC routing</a></td>
+<td>Selects direct or proxy transport by host.</td>
+<td>Many routes and proxy latency.</td>
 </tr>
 <tr>
-<td>Stats and request logs</td>
-<td>Content/background events and DNR matches are batched before storage writes.</td>
-<td>The DNR request log retains up to 500 recent full matched URLs independently of the statistics privacy mode. Debug mode additionally permits full URLs in <code>statsV2</code> recent events.</td>
+<td><a href="#stats-batching">Stats and request logs</a></td>
+<td>Batches events before storage writes.</td>
+<td>High event volume and Debug statistics detail.</td>
 </tr>
 </tbody>
 </table></div>
@@ -96,17 +96,16 @@
 <li>Stats events are queued and sent in batches.</li>
 <li>Whitelisted sites skip the relevant local cleanup behavior.</li>
 </ul>
-<p>The cost rises on pages that constantly add or replace DOM nodes. Large video pages, infinite feeds, and live chat surfaces are the main cases to watch.</p>
-<h2 id="mutationobserver-behavior" tabindex="-1">MutationObserver Behavior</h2>
-<p>Chroma watches for new page elements so it can remove ad containers and warning overlays added after loading. Infinite feeds and live chat can require more cleanup work than static pages.</p>
+<h3 id="mutationobserver-behavior" tabindex="-1">MutationObserver Behavior</h3>
+<p>Chroma watches for new page elements so it can remove ad containers and warning overlays added after loading. Large video pages, infinite feeds, and live chat can require more cleanup work than static pages because they continually change the DOM.</p>
 <p>Lower-overhead habits:</p>
 <ul>
 <li>Keep cosmetic filtering enabled if you want CSS-based cleanup; CSS is usually cheaper than repeated manual cleanup.</li>
 <li>Disable specific optional cosmetic preferences you do not use, such as Shorts hiding, if you are chasing a page-specific slowdown.</li>
 <li>Use narrow Element Zapper selectors rather than broad selectors that match large parts of a page.</li>
 </ul>
-<h2 id="constructable-stylesheet-behavior" tabindex="-1">Constructable Stylesheet Behavior</h2>
-<p>Chroma reuses stylesheets for cosmetic filtering. The browser still has to apply the selectors, so very broad custom rules can slow down large pages. Prefer rules scoped to the site and element you want to hide.</p>
+<h3 id="constructable-stylesheet-behavior" tabindex="-1">Constructable Stylesheet Behavior</h3>
+<p>Chroma reuses <code>CSSStyleSheet</code> objects through <code>document.adoptedStyleSheets</code> for cosmetic filtering. The browser still has to apply the selectors, so very broad custom rules can slow down large pages. Prefer rules scoped to the site and element you want to hide.</p>
 <h2 id="main-world-interception-cost" tabindex="-1">MAIN-World Interception Cost</h2>
 <p>MAIN-world code is reserved for cases where isolated content scripts are not enough:</p>
 <ul>
@@ -115,8 +114,11 @@
 <li>Supported subscription scriptlets.</li>
 <li>User-provided scriptlet resources.</li>
 <li>Optional fingerprint randomization.</li>
+<li>Optional Quiet Console request suppression.</li>
 </ul>
-<p>These hooks add checks around page APIs such as <code>fetch</code>, <code>XMLHttpRequest</code>, <code>JSON.parse</code>, DOM/style APIs, media state, or fingerprint surfaces. On ordinary pages where those handlers are not registered, the cost is avoided. On supported media platforms, the cost is the tradeoff for intercepting data before the page consumes it.</p>
+<p>These hooks add checks around page APIs such as <code>fetch</code>, <code>XMLHttpRequest</code>, <code>JSON.parse</code>, DOM/style APIs, media state, or fingerprint surfaces. Platform handlers are limited to their supported sites; user scriptlets follow their saved domain rules.</p>
+<p>Quiet Console is off by default. When enabled with master protection, it registers across browser-accessible pages and frames, excluding whitelisted domains; its code also skips defined safety-excluded hosts. It wraps <code>fetch</code>, <code>XMLHttpRequest</code>, <code>navigator.sendBeacon</code>, and function stringification so known ad/tracker requests can be suppressed before they produce blocked-request noise. Its per-call checks can therefore affect ordinary websites as well as media sites. Fingerprint randomization is another optional layer with broad page coverage.</p>
+<p>For a page-specific comparison, change one optional hook-based feature at a time and reload the page. See <a href="features.html#master-protection-lifecycle">Master Protection Lifecycle</a> for the distinction between pausing future activity and undoing changes already made to a document.</p>
 <h2 id="userscripts-registration-cost" tabindex="-1"><code>userScripts</code> Registration Cost</h2>
 <p>Chroma registers supported subscription scriptlets and user-added scriptlets with Chrome. Large rule sets can take longer to apply. Only resources referenced by valid user rules are activated.</p>
 <p>Performance implications:</p>
@@ -168,14 +170,14 @@
 <td>Uses DNR redirects instead of page-side URL rewriting.</td>
 </tr>
 <tr>
-<td>YouTube Stripping</td>
+<td>YouTube ad blocking</td>
 <td>On if you use YouTube</td>
 <td>Avoids visible ad handling when payload cleanup works.</td>
 </tr>
 <tr>
-<td>Dynamic Ad Acceleration</td>
+<td>YouTube ad acceleration</td>
 <td>Off unless needed</td>
-<td>Keeps media polling and playback intervention out of the normal path.</td>
+<td>Avoids acceleration-specific polling and playback intervention.</td>
 </tr>
 <tr>
 <td>Cosmetic Filtering</td>
@@ -183,7 +185,7 @@
 <td>CSS hiding is usually the cheapest page cleanup layer.</td>
 </tr>
 <tr>
-<td>Hide Shorts</td>
+<td>Hide YouTube Shorts</td>
 <td>Personal preference</td>
 <td>Disable if you do not care about Shorts cleanup.</td>
 </tr>
@@ -193,7 +195,12 @@
 <td>MAIN-world API farbling can affect compatibility and adds per-surface hooks.</td>
 </tr>
 <tr>
-<td>Browser Privacy Hardening</td>
+<td>Quiet console</td>
+<td>Off unless needed</td>
+<td>Avoids extra page API checks across ordinary websites.</td>
+</tr>
+<tr>
+<td>Chrome privacy hardening</td>
 <td>Personal preference</td>
 <td>Browser setting changes are not request-path heavy, but may affect compatibility.</td>
 </tr>
@@ -219,18 +226,10 @@
 </tr>
 </tbody>
 </table></div>
-<h2 id="known-heavier-surfaces" tabindex="-1">Known Heavier Surfaces</h2>
-<p>Some surfaces are naturally heavier because the page or feature changes constantly:</p>
-<ul>
-<li><strong>YouTube</strong>: Large feed DOMs, Shorts, payload interception, player state, and frequent platform changes.</li>
-<li><strong>Twitch</strong>: Live chat and streaming pages can produce heavy DOM churn; server-side ad insertion limits what client-side handling can do.</li>
-<li><strong>Large subscription sets</strong>: More parsing work, storage use, DNR allocation, cosmetic selector volume, and scriptlet registration.</li>
-<li><strong>Global proxy routing</strong>: Adds proxy path latency to broad browser traffic and can make slow proxy providers look like extension overhead.</li>
-</ul>
-<p>When troubleshooting performance, change one layer at a time and check the Health panel after each change. Start with optional heavier layers such as Debug statistics mode, Global Fallback proxy routing, Fingerprint Randomization, Dynamic Ad Acceleration, and broad custom subscriptions.</p>
-<hr>
-<p>Next: <a href="terms.html">Terms of Service</a></p>
-</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="privacy-policy.html"><span>Previous</span><strong>Privacy Policy for Chroma Ad-Blocker</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="terms.html"><span>Next</span><strong>Terms of Service for Chroma Ad-Blocker</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#where-the-cost-lives">Where The Cost Lives</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#dnr-matching-vs-javascript-request-overhead">DNR Matching Vs JavaScript Request Overhead</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#service-worker-lifecycle-and-startup-work">Service-Worker Lifecycle And Startup Work</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#content-script-cost">Content Script Cost</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#mutationobserver-behavior">MutationObserver Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#constructable-stylesheet-behavior">Constructable Stylesheet Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#main-world-interception-cost">MAIN-World Interception Cost</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#userscripts-registration-cost">userScripts Registration Cost</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#proxy-pac-routing-cost">Proxy PAC Routing Cost</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#stats-batching">Stats Batching</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#recommended-low-overhead-settings">Recommended Low-Overhead Settings</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#known-heavier-surfaces">Known Heavier Surfaces</a></li></ol></aside></div></main>
+<h2 id="troubleshooting-performance" tabindex="-1">Troubleshooting Performance</h2>
+<p>Change one layer at a time, reload the affected page, and check <strong>Health</strong> after each change. Start with optional work such as Debug statistics mode, Global Fallback proxy routing, Fingerprint Randomization, Quiet Console, YouTube ad acceleration, and broad custom subscriptions.</p>
+<p>Compare the same page and action before and after each change. A slow proxy can look like extension overhead; a large subscription set can add refresh, parsing, storage, and registration work even when request enforcement itself remains browser-managed. For site exceptions and a broader isolation workflow, see <a href="everyday-use.html">Everyday Use &amp; Troubleshooting</a>.</p>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="privacy-policy.html"><span>Previous</span><strong>Privacy Policy for Chroma Ad-Blocker</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="terms.html"><span>Next</span><strong>Terms of Service for Chroma Ad-Blocker</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#where-the-cost-lives">Where The Cost Lives</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#dnr-matching-vs-javascript-request-overhead">DNR Matching Vs JavaScript Request Overhead</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#service-worker-lifecycle-and-startup-work">Service-Worker Lifecycle And Startup Work</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#content-script-cost">Content Script Cost</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#mutationobserver-behavior">MutationObserver Behavior</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#constructable-stylesheet-behavior">Constructable Stylesheet Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#main-world-interception-cost">MAIN-World Interception Cost</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#userscripts-registration-cost">userScripts Registration Cost</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#proxy-pac-routing-cost">Proxy PAC Routing Cost</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#stats-batching">Stats Batching</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#recommended-low-overhead-settings">Recommended Low-Overhead Settings</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#troubleshooting-performance">Troubleshooting Performance</a></li></ol></aside></div></main>
 </div>
 <button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
 <footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>

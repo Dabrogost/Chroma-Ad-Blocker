@@ -1,5 +1,15 @@
 # Distribution
 
+## Distribution Model
+
+Chroma is distributed as unpacked extension packages through [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases). The shipped JavaScript, rules, and documentation can be inspected alongside the public source. Users install an extracted folder and update it through Chroma's guided updater or the manual copy-and-reload procedure in [Installation & Configuration](INSTALL.md).
+
+This release path does not include Chrome Web Store review or store-managed updates. Chroma still operates under Chromium's extension permissions, Manifest V3 APIs, and rule quotas; sideloading does not grant extra browser capabilities.
+
+Guided updates verify a signed manifest and the package hash before installation. Manual installation, including the first install, does not perform that Chroma signature verification and depends on the user obtaining an authentic release. See the [guided update trust boundary](SECURITY.md#guided-update-trust-boundary) for verification limits and signing-key custody.
+
+## Building a Package
+
 Use the package script to build a local distributable extension zip from the repo root:
 
 ```powershell

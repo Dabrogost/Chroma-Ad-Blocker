@@ -358,7 +358,7 @@ const ChromaComponents = (() => {
         ${renderToggleRow({
           inputId: 'toggleQuietConsole',
           name: 'Quiet console',
-          desc: 'Reduces ad-blocking messages in developer tools. Works independently of the protection switch.'
+          desc: 'Reduces ad-blocking messages in developer tools while protection is on. Reload open tabs after turning it off.'
         })}
       </div>
       <div class="protection-list protection-group">

@@ -8,29 +8,18 @@ It is designed for media-site routing: sending supported services through proxy 
   <img src="assets/docs-settings-proxy-router.png" alt="Chroma media proxy router settings" width="760">
 </div>
 
-## How This Differs From FoxyProxy
+## Add A Proxy
 
-Chroma's proxy router is not intended to replace a full general-purpose proxy manager such as FoxyProxy. FoxyProxy is designed around proxy profiles, URL patterns, tab-level routing, quick switching, import/export workflows, and broad user-defined proxy management.
+Have the protocol, host, port, and any supported credentials supplied by your proxy provider ready. A VPN subscription alone does not supply these connection details.
 
-Chroma's router is narrower by design. It exists as one layer of Chroma's larger local protection stack: DNR network blocking, scriptlets, cosmetic filtering, media handling, local event tracking, and optional browser-level routing all work together. The proxy layer is focused on split-tunneling selected media domains through user-provided proxies while keeping unrelated browser traffic direct, or optionally sending unmatched browser traffic through a Global Fallback proxy.
+1. Open **Settings -> Proxy** and click **Add proxy**.
+2. Select the proxy protocol and enter the host and port supplied by your provider. Enter the host without a protocol prefix.
+3. For an HTTP/HTTPS proxy, enter a username and password if required.
+4. Click **Save proxy**.
+5. Enter a domain under **Routed domain** and click **Add Domain**, or select **Global fallback** to route unmatched browser traffic through this proxy.
+6. Review the automatic connection check, or click **Test** to check again. Review **Health** if routing is unavailable.
 
-The main difference is that Chroma is media-aware. When a supported streaming or media service is routed, Chroma expands it through a fixed map of known CDN and delivery domains so the service UI and media stream are less likely to use different routes. For example, adding `youtube.com` also routes known YouTube delivery domains such as `googlevideo.com`, `ytimg.com`, and `youtube-nocookie.com`. This selects the same configured proxy route, but it cannot guarantee that a proxy provider will assign every request the same external IP.
-
-Chroma's design principle is:
-
-> DNR is the policy gate. PAC is the transport selector.
-
-Network filtering decides what should be blocked or allowed by the browser's DNR engine. Proxy routing decides whether browser traffic that proceeds through Chrome's network stack should go direct or through a selected proxy.
-
-| Feature | Chroma Proxy Router | General Proxy Manager |
-|---|---|---|
-| Primary purpose | Media-aware split tunneling for ad-reducing or country-specific media routes inside Chroma's protection stack | Full proxy profile and rule management |
-| Routing model | Domain-specific rules, fixed Smart-Link domain-map expansion, optional Global Fallback | Proxy profiles, URL patterns, tab rules, PAC URLs, quick switching |
-| Scope | Browser-level routing for selected traffic | General-purpose proxy control |
-| Ad-block integration | Works alongside Chroma's DNR, scriptlet, cosmetic, and media layers | Usually separate from ad blocking |
-| Best use case | Route a service like YouTube, Netflix, Prime Video, or Twitch through a chosen media region without routing everything | Manage many proxies and complex user-defined routing rules |
-
-Use FoxyProxy when you want a dedicated proxy manager. Use Chroma's proxy router when you want routing to work as part of Chroma's ad-blocking, media, and privacy stack.
+Master protection and the proxy's own switch must be on for routing to take effect. Adding a supported service can also route its related media-delivery domains; see [Smart-Link Auto-Expansion](#smart-link-auto-expansion).
 
 ## Supported Protocols
 
@@ -40,14 +29,11 @@ SOCKS4/SOCKS5 proxies are supported only when they do not require username/passw
 
 For authenticated SOCKS providers, use provider-side IP allowlisting if available, or choose an HTTP/HTTPS proxy endpoint instead.
 
-## Add A Proxy
+## How This Differs From FoxyProxy
 
-1. Open **Settings -> Proxy** and click **Add proxy**.
-2. Select the proxy protocol and enter the host and port supplied by your provider.
-3. For an HTTP/HTTPS proxy, enter a username and password if required.
-4. Click **Save proxy**.
-5. Enter a domain under **Routed domain** and click **Add Domain**, or select **Global fallback** to route unmatched browser traffic through this proxy.
-6. Use **Test** to check the connection and review **Health** if routing is unavailable.
+Chroma focuses on domain routes, fixed [Smart-Link domain expansion](#smart-link-auto-expansion), and an optional global fallback alongside its other protection layers. If you need a dedicated general-purpose proxy manager, consider a tool such as FoxyProxy; Chroma's controls are designed around routing selected media services.
+
+Network filtering and routing have separate jobs. Chromium's Declarative Net Request (DNR) engine decides whether to block or allow a request. The Proxy Auto-Configuration (PAC) script chooses the direct or proxy transport for traffic that proceeds through the browser's network stack.
 
 ## Security
 
@@ -57,7 +43,13 @@ This can reduce casual readability in extension storage, but it is not strong en
 
 ## Connection Verification
 
-The Chroma popup includes a **Connection Verification** system. When you request a test, Chroma first makes the selected test route its desired Chrome route and verifies that Chroma actually controls the matching PAC state. If another extension or browser policy owns proxy settings, the test is reported as unavailable/degraded rather than healthy. A successful test displays the detected proxied IP address when available and is cached briefly for that exact proxy connection definition.
+Proxy cards automatically request a connection check when saved, enabled proxies are displayed in the popup or settings. You can also click **Test**. These are checks triggered by the UI, not continuous background monitoring.
+
+For a fresh test, Chroma temporarily routes its IP-check service domains through the selected proxy and verifies that Chrome has accepted the matching PAC state. If another extension or browser policy owns proxy settings, the test fails rather than reporting a healthy connection. The temporary test route is removed afterward, restoring the saved routing configuration.
+
+Chroma tries a public IP-check service selected from Cloudflare Trace, AWS CheckIP, ipify, and icanhazip, and may try one more if the first fails. Those services receive normal request metadata through the test route. See [Data Sharing](PRIVACY_POLICY.md#3-data-sharing) for the external-service boundary.
+
+A successful test displays the detected IP address. Results may be reused for up to 60 seconds when the connection definition is unchanged and the proxy remains effectively routed by Chroma. A successful check confirms that test connection; it does not guarantee a streaming service will accept the proxy or use the same external IP for every request.
 
 ## Global Proxy Fallback
 
@@ -71,9 +63,22 @@ The main switch on each proxy card is a per-proxy enabled/disabled control:
 - **Switch OFF**: Routing pauses. Saved domains and the global fallback selection are preserved until the switch is turned back on.
 - **Global fallback**: Selects or clears the global fallback independently from the switch. The selected button is highlighted, and the card's domain controls are hidden while it is the global fallback.
 
-### Master Protection Lifecycle
+## Route Order And Overlapping Domains
 
-The global Chroma master switch is authoritative over every proxy route. Master off releases `chrome.proxy.settings` and pauses domain-specific, global-fallback, and test routing while preserving proxy records, enabled flags, domains, and the selected global ID. Master on rebuilds the requested PAC route from that stored intent.
+Domain routes match the listed hostname and its subdomains. Chroma evaluates routes in this order:
+
+1. The enabled [Google/Chrome bypass list](#google-and-chrome-domain-bypass) connects directly.
+2. A connection test temporarily routes its IP-check service domains through the proxy being tested.
+3. Enabled domain routes, including Smart-Link expansions, are checked in saved proxy order. The first matching proxy wins.
+4. Unmatched traffic uses the enabled global fallback, or connects directly if none is active.
+
+The first matching domain route wins even if a later proxy has a narrower domain. For example, if the first saved proxy routes `youtube.com`, a later proxy's `music.youtube.com` route does not override it. Smart-Link can also create overlaps: routing `youtube.com` includes `googlevideo.com`, so a later separate route for `googlevideo.com` will not win.
+
+To change the winning route, remove or disable the overlapping domain assignment on the earlier proxy, or disable that proxy. A global fallback is for unmatched traffic; it is not a backup server used when a matching domain proxy fails. Chroma's PAC returns one proxy for a matching route without appending a direct-connection fallback.
+
+## Master Protection Lifecycle
+
+Master protection governs domain, global-fallback, and test routing. Its pause and restoration behavior is documented in [Master Protection Lifecycle](FEATURES.md#master-protection-lifecycle).
 
 Chrome allows only one extension or policy controller to own proxy settings at a time. If another controller wins, Chroma separates **requested** from **effective** routing, withholds credentials, reports the conflict in Health, and removes dormant Chroma PAC state so an obsolete route cannot reactivate later. When Chrome reports that control is available again, Chroma automatically reconciles the latest stored intent.
 
@@ -102,7 +107,7 @@ Modes:
 - **Strict**: Disables non-proxied UDP. This offers the strongest protection but may affect browser calls or video chat quality.
 - **Off**: Releases Chroma's WebRTC routing control.
 
-Auto, Balanced, and Strict describe stored intent only while master protection is enabled. Master off releases Chroma's WebRTC setting without erasing the selected mode; master on restores it. If another extension or policy controls the setting, Health reports the request as degraded and Chroma retries automatically when control is released.
+These modes follow the [master protection lifecycle](FEATURES.md#master-protection-lifecycle). If another extension or policy controls the setting, Health reports the request as degraded and Chroma retries automatically when control is released.
 
 ## Dynamic Routing Status
 
@@ -115,11 +120,11 @@ Proxy cards summarize saved route intent and the latest connection-test result:
 
 These card labels are not proof that Chrome accepted Chroma's PAC settings. The **Health** panel is authoritative for requested, master-paused, effective, externally controlled, and incomplete-release state. In particular, a saved GLOBAL selection is not effective while master protection is off or another controller owns Chrome's proxy setting.
 
-## Choosing A Compatible Proxy
+## Troubleshooting A Route
 
-Use the protocol, host, port, and authentication method supplied by your proxy provider. Chroma supports HTTP/HTTPS authentication and SOCKS proxies that do not require username/password authentication. A VPN subscription alone does not provide the proxy details needed here.
+If streaming buffers through a proxy, test another route or temporarily disable the proxy to compare playback on your direct connection. If a domain uses an unexpected route, check [route order](#route-order-and-overlapping-domains), Smart-Link expansion, and the Google/Chrome bypass before changing credentials. If **Test** passes but a site refuses playback, the service may reject that proxy or region.
 
-If streaming buffers through a proxy, test another route or temporarily disable the proxy to compare playback on your direct connection.
+For browser-wide problems, check **Health** for another proxy controller, and use the layer-by-layer steps in [Everyday Use & Troubleshooting](EVERYDAY_USE.md).
 
 ## Smart-Link Auto-Expansion
 

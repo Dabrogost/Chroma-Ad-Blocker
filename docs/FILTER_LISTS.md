@@ -28,6 +28,16 @@ Network rules are compiled to Chrome Declarative Net Request rules on a best-eff
 
 Settings shows rules that could not be applied because of unsupported syntax, browser incompatibility, or rule limits. A list can still provide protection when some of its rules are skipped.
 
+### Manage Filter Lists
+
+1. Open **Settings -> Filter lists** and click **Add filter list**.
+2. Paste the raw HTTPS text URL into **Filter list URL**. Add an optional name, then click **Add**. A repository file-view page is not a raw list URL.
+3. Wait for the first refresh and review the list's rule counts or error message. Network counts show applied rules out of parsed rules; not every parsed rule fits the browser's syntax and budget.
+4. Use the list's switch to pause or resume it, or **Refresh** to fetch it immediately. Reload affected pages when checking cosmetic or scriptlet changes.
+5. To delete a custom list, click **Remove**. Bundled/default lists have an enable switch but no Remove button. If removal is pending, click **Retry** after reviewing the error and Health status.
+
+New custom lists use a 24-hour refresh interval. Settings provides manual **Refresh**; it has no interval selector. Disabling a list preserves it for later use. Removing a custom list deletes its saved subscription after cleanup succeeds. A pending disable or removal can leave the previous network rules active until Chromium accepts the update; the row reports that state.
+
 ### Parser Trust Boundary
 
 Network options are accepted only when Chroma can preserve their meaning in DNR. Supported constraints include recognized resource types, `$important`, first/third-party forms and their supported negations, and validated `$domain=` inclusions and exclusions.
@@ -42,9 +52,7 @@ Chroma checks rules against the browser's supported syntax and limits. If the br
 
 ## Advanced User Scriptlet Resources
 
-Chroma also has a separate advanced settings area for user-provided scriptlet resources. This is not a filter-list subscription feature: resources are executable code selected by the user, and they run only after the user adds both a trusted resource URL and matching `domain##+js(resource-name)` rules.
-
-For setup steps, safe examples, linked-resource badges, troubleshooting, and the trust boundary, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md).
+Executable resources added through **Settings -> Scriptlets** are a separate feature from filter lists. For their setup, examples, and trust boundary, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md). Normal subscriptions can only call Chroma's shipped implementations, as explained under [Remote List Trust Boundary](#remote-list-trust-boundary).
 
 ## Why Custom Lists Still Work In MV3
 
@@ -75,8 +83,6 @@ Network rules are allocated by Chroma's internal priority score before being app
 
 This lets custom lists express urgency while still respecting Manifest V3 dynamic-rule budgets.
 
-New custom lists default to a 24-hour refresh interval unless you choose another interval in Settings.
-
 ## Protection Lifecycle And Cached Restoration
 
 - Turning master protection off pauses subscription protection and keeps saved lists and rules.
@@ -99,15 +105,18 @@ DNS resolution and redirect transport are performed by Chromium. Chroma cannot i
 ! Higher-priority network block. `$important` receives a stronger Chroma allocation score.
 ||example-ad-server.com^$script,third-party,important
 
-! Cosmetic rule: hide sponsored cards on one site.
-example.com##.sponsored-card
+! Hide sponsored cards, preserving cards with the keep-visible class.
+example.com##.sponsored-card:not(.keep-visible)
 
-! Cosmetic exception: preserve a subset if the broad cosmetic rule is too aggressive.
-example.com#@#.sponsored-card.keep-visible
+! Hide newsletter overlays generally, but cancel this exact selector on example.com.
+##.newsletter-overlay
+example.com#@#.newsletter-overlay
 
 ! Scriptlet rule: run a supported Chroma/uBO-style scriptlet on a site.
 example.com##+js(set-constant, adsEnabled, false)
 ```
+
+Cosmetic exceptions cancel a hiding rule with the **same selector text** on matching domains. They do not unhide a subset of an element matched by a different selector. Use a selector such as `:not(.keep-visible)` to exclude a subset from a hide rule.
 
 ## Remote List Trust Boundary
 

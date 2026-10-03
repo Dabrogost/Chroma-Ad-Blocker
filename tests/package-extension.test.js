@@ -47,7 +47,7 @@ const repoOnlyGuidePages = [
 
 test('package verification accepts only the selected user-documentation set', () => {
   assert.ok(Array.isArray(REQUIRED_RELEASE_FILES));
-  assert.strictEqual(RELEASE_DOC_FILES.length, 12);
+  assert.strictEqual(RELEASE_DOC_FILES.length, 13);
   assert.ok(RELEASE_DOC_FILES.includes('docs/ADVANCED_USER_SCRIPTLETS.md'));
   assert.ok(!RELEASE_DOC_FILES.includes('docs/testing.md'));
   assert.ok(!RELEASE_DOC_FILES.includes('docs/dist.md'));
@@ -235,7 +235,8 @@ test('docs document broad host permission and remote list trust boundary', () =>
   const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 
   assert.ok(manifest.host_permissions.includes('<all_urls>'));
-  assert.match(permissions, /\|\s*Host permission:\s*`<all_urls>`\s*\|[^|]*sensitive settings[^|]*local/i);
+  assert.match(permissions, /\|\s*Host permission:\s*`<all_urls>`\s*\|[^|]*origin access[^|]*across websites/i);
+  assert.match(permissions, /keeping sensitive state local/i);
   assert.match(filterLists, /does not use a hidden remote hotfix list/i);
   assert.match(filterLists, /visible Chroma updates/i);
   assert.match(filterLists, /custom subscription/i);
@@ -263,8 +264,8 @@ test('privacy and security docs document remote list behavior', () => {
   assert.match(privacy, /does not ship a maintainer-controlled hotfix subscription/i);
   assert.match(privacy, /scriptlets are limited to Chroma's shipped scriptlet implementations/i);
   assert.match(security, /Remote List Trust Boundary/i);
-  assert.match(security, /not through a default maintainer-controlled hotfix subscription/i);
-  assert.match(security, /Scriptlet rules can only call implementations already shipped/i);
+  assert.match(security, /no default maintainer-controlled hotfix subscription/i);
+  assert.match(security, /Subscription scriptlet rules can call only implementations shipped/i);
   assert.match(security, /Guided Update Trust Boundary/i);
   assert.match(security, /signed `updates\.json`/i);
   assert.match(threatModel, /Compromised GitHub release asset/i);
@@ -288,6 +289,7 @@ test('docs disclose remote DNS limits and authenticated MAIN config boundaries',
 
 test('docs describe reconciled master lifecycle, import rollback, and bounded diagnostics', () => {
   const features = fs.readFileSync(path.join(__dirname, '..', 'docs', 'FEATURES.md'), 'utf8');
+  const everyday = fs.readFileSync(path.join(__dirname, '..', 'docs', 'EVERYDAY_USE.md'), 'utf8');
   const proxy = fs.readFileSync(path.join(__dirname, '..', 'docs', 'MEDIA_PROXY_ROUTER.md'), 'utf8');
   const install = fs.readFileSync(path.join(__dirname, '..', 'docs', 'INSTALL.md'), 'utf8');
   const stats = fs.readFileSync(path.join(__dirname, '..', 'docs', 'STATISTICS.md'), 'utf8');
@@ -295,7 +297,9 @@ test('docs describe reconciled master lifecycle, import rollback, and bounded di
 
   assert.match(features, /master switch pauses Chroma's blocking, page cleanup, scriptlets, proxy routing, and optional browser privacy controls/i);
   assert.match(features, /settings, lists, proxy configurations, and custom resources remain saved/i);
-  assert.match(proxy, /Master off releases `chrome\.proxy\.settings`/i);
+  assert.match(proxy, /\[Master Protection Lifecycle\]\(FEATURES\.md#master-protection-lifecycle\)/);
+  assert.match(features, /EVERYDAY_USE\.md#pause-all-protection/);
+  assert.match(everyday, /releases Chroma's proxy and browser privacy controls/i);
   assert.match(install, /validates the backup before applying it/i);
   assert.match(install, /Invalid or unsupported backups leave your settings unchanged/i);
   assert.match(install, /restore your previous settings and reports any incomplete restoration/i);

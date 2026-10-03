@@ -1,13 +1,13 @@
 # Permissions
 
-Chroma requests the following permissions for its protection, settings, and proxy features.
+This is the permission inventory declared in Chroma's extension manifest. The [Privacy Policy](PRIVACY_POLICY.md) explains the data these features store and the external services they can contact.
 
 | Permission | Reason |
 |---|---|
 | `declarativeNetRequest` | Enables and manages the static and dynamic DNR rulesets that perform network-level ad and tracker blocking at the browser engine level. |
 | `declarativeNetRequestFeedback` | Allows the service worker to read which DNR rules fired when Chrome exposes DNR feedback events to the unpacked extension. Chroma uses this for the local request log and network event classification; DNR matches are not blindly treated as blocked ads. |
 | `storage` | Base API required to persist user configuration and subscription metadata across sessions. |
-| `unlimitedStorage` | Chrome's default `chrome.storage.local` cap is 10 MB, which is insufficient for Chroma's runtime needs. Storage holds cached subscription rule sets, user configuration, statistics, health diagnostics, and a separate DNR request log. When Chrome exposes matched-rule feedback, that log can retain the newest 500 full matched URLs—including allow matches—in every statistics mode until browser-profile startup or a manual reset. Chroma does not transmit this local storage to a Chroma telemetry service. |
+| `unlimitedStorage` | Allows cached subscription rules, executable user resources, and other local data to exceed the default `chrome.storage.local` quota. See [local data storage](PRIVACY_POLICY.md#local-data-storage) for contents and retention. |
 | `tabs` | Gives Chroma access to tab information for current-site controls and communicating settings changes to open tabs. |
 | `alarms` | Schedules subscription refresh checks that can wake the extension's service worker. |
 | `userScripts` | The primary API for the scriptlet engine. Allows bundled subscription scriptlets and explicit user-added scriptlet resources to execute in the page's MAIN world context with native lifecycle management. User-added resources are executable code and can read, modify, or transmit page-accessible data; add only code you trust. Chrome 138+ also requires users to enable **Allow User Scripts** on Chroma's extension details page. |
@@ -17,25 +17,19 @@ Chroma requests the following permissions for its protection, settings, and prox
 | `contentSettings` | Allows Chroma to apply optional Geolocation Protection while master protection is active and clear Chroma's location rule when inactive. |
 | `webRequest` | Observes genuine proxy authentication challenges so Chroma can compare them with the currently effective route. |
 | `webRequestAuthProvider` | Provides credentials only to an exact active HTTP/HTTPS proxy route through the `onAuthRequired` listener. |
-| Host permission: `<all_urls>` | Allows the always-on isolated content script, cosmetic filtering, DNR rules, subscription scriptlets, optional proxy/site controls, and configured remote list/resource fetches to operate across required origins. This broad scope is why Chroma keeps sensitive settings, stats, proxy credentials, and health diagnostics local and validates privileged messages at the extension boundary. |
+| Host permission: `<all_urls>` | Provides origin access for filtering, content scripts, site controls, and configured remote list/resource fetches across websites. Individual content-script declarations further limit which scripts run on particular sites. |
 
 Chroma does not request Chrome's `downloads` permission for guided updates. The updater uses the standard File System Access folder picker from the settings page after the user clicks **Choose Chroma Folder**, and it fetches verified release assets into memory rather than sending files through Chrome's Downloads shelf.
 
 ## Local Storage Access Boundary
 
-Local storage is not the same as service-worker-only storage. Under Chrome's default `chrome.storage.local` access level, Chroma's extension pages, service worker, and isolated-world Chroma content scripts can access the storage area; Chroma does not currently narrow that access with `chrome.storage.local.setAccessLevel()`.
-
-Ordinary host-page JavaScript and ordinary unrelated extensions cannot call Chroma's extension-specific storage API merely because an isolated content script is present. However, a vulnerability or unintended code path in a privileged Chroma content script could expose more stored state than that script normally needs, including request-log URLs or proxy records. A compromised browser profile, browser binary, operating system, or exceptional debugger-enabled environment capable of inspecting Chroma is outside this local-storage protection boundary.
+Chroma's isolated content scripts can access its local storage alongside the service worker and extension pages. Ordinary page scripts do not receive that access. See the [Privacy Policy's storage boundary](PRIVACY_POLICY.md#who-can-access-local-data) for the implications of a compromised content script or browser profile.
 
 ## Why Broad Host Access Exists
 
 Ad blocking, cosmetic filtering, subscription scriptlets, site whitelisting, and proxy routing all need to evaluate pages the user visits. Chroma uses broad host access so the protection stack can work across websites without needing per-site permission prompts for every domain.
 
 The tradeoff is trust. Chroma addresses that by keeping sensitive state local, documenting permissions, validating privileged messages, and keeping release packages source-auditable.
-
-Related docs:
-
-- [Privacy Policy](PRIVACY_POLICY.md)
 
 ---
 

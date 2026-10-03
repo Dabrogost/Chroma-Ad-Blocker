@@ -2,7 +2,7 @@
 
 Find setup instructions, feature guides, and project reference material for Chroma Ad-Blocker here. For an overview, see the [README](../README.md).
 
-The **User Documentation** is also available in the [online Chroma Guide](https://dabrogost.github.io/Chroma-Ad-Blocker/) before installation and in Chroma's offline guide afterward. Both are generated from the same Markdown files listed below. Engineering, testing, and release documentation is intended for contributors.
+The **User Documentation** is also available in the [online Chroma Guide](https://dabrogost.github.io/Chroma-Ad-Blocker/) before installation and in Chroma's offline guide afterward. Both are generated from the same Markdown files listed below. The engineering, security, testing, and release references are also public; they explain how Chroma works and how to contribute, but are not bundled in the offline guide.
 
 <div align="center">
   <img src="assets/docs-settings-overview.png" alt="Chroma settings dashboard" width="760">
@@ -11,6 +11,7 @@ The **User Documentation** is also available in the [online Chroma Guide](https:
 ## User Documentation
 
 - [Installation & Configuration](INSTALL.md) - install Chroma, use guided or manual updates, enable User Scripts, troubleshoot common setup issues, review settings, and understand the Health panel.
+- [Everyday Use & Troubleshooting](EVERYDAY_USE.md) - open settings, pause one site, fix sign-in and playback problems, manage FPR exceptions, and hide or restore page elements.
 - [Feature Guide](FEATURES.md) - protection layers, local controls, privacy hardening, companion extensions, and alternatives.
 - [YouTube Protection](YOUTUBE.md) - YouTube payload stripping, Sponsored Shorts cleanup, feed/search cleanup, and acceleration fallback behavior.
 - [Spotify Protection](SPOTIFY.md) - independent web-player ad-media redirects, podcast exceptions, and playback troubleshooting.
@@ -23,13 +24,13 @@ The **User Documentation** is also available in the [online Chroma Guide](https:
 - [Performance Guide](PERFORMANCE.md) - resource cost, service-worker lifecycle, page-side overhead, proxy routing, stats batching, and lower-overhead settings.
 - [Terms of Service](ToS.md) - use terms and legal disclaimers.
 
-## Engineering And Security Review (Repository Only)
+## Engineering And Security Reference
 
 - [Architecture Deep Dive](ARCHITECTURE.md) - diagrams, MV3 execution model, service-worker flow, system layers, and request-path boundaries.
 - [Security Policy](SECURITY.md) - disclosure process, remote list trust boundary, isolated-to-MAIN handshake, and security hardening notes.
 - [Threat Model](THREAT_MODEL.md) - adversaries, trust assumptions, defended cases, and explicit non-goals.
 
-## Development And Releases (Repository Only)
+## Development And Releases
 
 - [Testing](TEST_GUIDE.md) - Node and policy tiers, CI smoke coverage, full Chrome for Testing / Chromium E2E, and browser-selection guidance.
 - [Distribution](DISTRIBUTION.md) - local and required-signing package workflows, guided updater asset requirements, and release checks.

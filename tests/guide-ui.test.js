@@ -130,6 +130,25 @@ async function createGuideHarness(relativePath, {
   };
 }
 
+test('guide search finds example syntax and everyday controls', async t => {
+  const harness = await createGuideHarness('index.html');
+  t.after(() => harness.dom.window.close());
+  const { window, document } = harness;
+  const input = document.querySelector('[data-guide-search]');
+  for (const [query, slug] of [
+    ['runAt=end', 'advanced-user-scriptlets'],
+    ['unlock-scroll', 'advanced-user-scriptlets'],
+    ['Disable FPR on this site', 'everyday-use'],
+    ['Pause protection on one site', 'everyday-use']
+  ]) {
+    input.value = query;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    const first = document.querySelector('[data-guide-search-result]');
+    assert.ok(first, `${query} should return a result`);
+    assert.strictEqual(new URL(first.href).pathname, `/guide/pages/${slug}.html`, query);
+  }
+});
+
 test('offline guide search ranks useful local results and supports keyboard control', async t => {
   const payload = structuredClone(searchIndex);
   payload.pages.unshift({

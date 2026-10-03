@@ -289,6 +289,16 @@ function renderCanonicalPage(page, md) {
   const markdown = normalizeCanonicalMarkdown(fs.readFileSync(sourcePath, 'utf8'), page.source);
   const env = { page };
   const tokens = md.parse(markdown, env);
+  // Markdown readers need a next-page link; generated pages already have
+  // pagination. Only remove the standalone navigation paragraph at the end.
+  const footer = tokens.slice(-3);
+  if (footer[0]?.type === 'paragraph_open'
+    && footer[1]?.type === 'inline'
+    && footer[2]?.type === 'paragraph_close'
+    && /^(?:Next: |Back to )\[[^\]]+\]\([^)]+\)$/.test(footer[1].content)) {
+    tokens.splice(-3);
+    if (tokens.at(-1)?.type === 'hr') tokens.pop();
+  }
   transformCallouts(tokens, md, env);
   const headings = assignHeadingIds(tokens);
   const firstHeadingIndex = tokens.findIndex(token => token.type === 'heading_open');
@@ -307,7 +317,10 @@ function renderCanonicalPage(page, md) {
   const contentHtml = md.renderer.render(bodyTokens, md.options, env);
   const searchText = normalizeWhitespace(tokens.flatMap(token => {
     if (token.type === 'inline') return [inlineTokenText(token)];
-    if (token.type === 'fence' || token.type === 'code_block') return [];
+    if (token.type === 'code_block') return [token.content];
+    if (token.type === 'fence' && normalizeWhitespace(token.info).split(/\s+/)[0].toLowerCase() !== 'mermaid') {
+      return [token.content];
+    }
     return [];
   }).join(' '));
 
@@ -473,6 +486,11 @@ function renderIndex(target) {
       : '<p>This guide is packaged with Chroma. Reading and searching it does not send your questions or browsing activity anywhere.</p>',
     '</aside>',
     categories,
+    '<aside class="guide-callout" aria-label="Public project reference">',
+    '<h2>Project reference</h2>',
+    '<p>For architecture, security boundaries, testing, and release workflows, ',
+    '<a href="https://github.com/Dabrogost/Chroma-Ad-Blocker/blob/master/docs/README.md" target="_blank" rel="noopener noreferrer">browse the public project documentation on GitHub</a>. These reference pages require an internet connection.</p>',
+    '</aside>',
     '</main>'
   ].join('');
 

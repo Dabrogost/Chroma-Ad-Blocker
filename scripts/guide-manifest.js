@@ -3,9 +3,9 @@
 /**
  * Canonical user-documentation inventory for the in-extension guide.
  *
- * Keep this list explicit. The docs directory also contains engineering,
- * maintainer, security-review, and machine-specific notes that must never be
- * pulled into the guide or release package by a glob.
+ * Keep this list explicit. Public engineering and contributor references live
+ * alongside the manual, while ignored personal notes are never publication
+ * inputs. Do not pull the docs directory into release packages with a glob.
  */
 
 // Repository-only index used when a user document links back to the guide home.
@@ -49,13 +49,25 @@ const GUIDE_PAGES = [
     }
   },
   {
+    source: 'docs/EVERYDAY_USE.md',
+    slug: 'everyday-use',
+    title: 'Everyday Use & Troubleshooting',
+    category: 'start',
+    summary: 'Pause protection on one site, fix sign-in or playback problems, disable FPR for a site, and hide or restore page elements.',
+    tasks: ['Fix a broken site', 'Pause protection on one site', 'Disable FPR on this site', 'Undo a zap'],
+    featured: true,
+    settings: {
+      path: 'ui/settings.html#protectionSection',
+      label: 'Open protection settings'
+    }
+  },
+  {
     source: 'docs/FEATURES.md',
     slug: 'features',
     title: 'Feature Guide',
     category: 'start',
     summary: "See how Chroma's blocking, cleanup, privacy, proxy, and page-level protection layers work together.",
     tasks: ['Choose protection layers', 'Learn feature defaults', 'Find site controls'],
-    featured: true,
     settings: {
       path: 'ui/settings.html#protectionSection',
       label: 'Configure protection layers'
