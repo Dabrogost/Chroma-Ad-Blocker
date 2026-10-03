@@ -57,44 +57,6 @@ When an update is available, open **Settings -> Updates** and follow the guided 
 
 For installation, updates, and the configuration reference, see [Installation & Configuration](docs/INSTALL.md). For site controls and fixing broken pages, start with [Everyday Use & Troubleshooting](docs/EVERYDAY_USE.md).
 
-## Architecture At A Glance
-
-Chroma is built around a layered MV3 model. Browser-engine DNR rules handle request blocking without waking extension JavaScript for every request. Content scripts handle cosmetic cleanup in the isolated world. MAIN-world handlers are used only where needed for platform-specific interception, scriptlets, optional fingerprint randomization, and media handling.
-
-Spotify protection uses 14 dynamic DNR rules and a packaged silent media resource. It does not inject a dedicated page handler or change the 300,000-rule static corpus.
-
-```mermaid
-graph TD
-    classDef ext fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
-    classDef main fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
-    classDef page fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
-    classDef actor fill:#eceff1,color:#263238,stroke:#263238,stroke-width:2px
-
-    LOAD["Page load"]:::actor
-    PAGE["Page DOM / Media Player"]:::page
-    USER["User"]:::actor
-
-    LOAD --> CONTENT["content.js<br/>all URLs, isolated world"]:::ext
-    CONTENT -->|"cosmetic CSS + DOM cleanup"| PAGE
-
-    LOAD --> MEDIA{"YouTube?"}:::actor
-    MEDIA -->|"yes"| PROTECTION["protection.js<br/>isolated-world config relay"]:::ext
-    PROTECTION --> BRIDGE["interceptor.js<br/>MAIN-world config bridge"]:::main
-    BRIDGE --> HANDLERS["yt_handler.js<br/>strip YouTube JSON or accelerate ads"]:::main
-    HANDLERS --> PAGE
-
-    LOAD --> SCRIPTLETS["Registered scriptlets / optional FPR<br/>MAIN world, matched by rule"]:::main
-    SCRIPTLETS --> PAGE
-
-    ZAP["Element zapper<br/>injected only from popup"]:::ext -->|"saved local cosmetic rule"| CONTENT
-
-    PAGE --> USER
-```
-
-Ad acceleration supports YouTube. It is not available for Amazon Prime Video or Twitch.
-
-For user-facing behavior and lower-overhead configuration choices, see the [Feature Guide](docs/FEATURES.md) and [Performance Guide](docs/PERFORMANCE.md).
-
 ## Privacy & Transparency
 
 Chroma processes core extension state locally. It does not operate telemetry, analytics, or tracking servers. Settings, whitelists, cached subscription rules, proxy settings, local statistics, request logs, and diagnostics remain in `chrome.storage.local`.
