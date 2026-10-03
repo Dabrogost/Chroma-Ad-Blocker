@@ -19,7 +19,7 @@
 <form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
 </header>
 <div class="guide-shell guide-layout">
-<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="spotify.html" data-guide-slug="spotify">Spotify Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link is-active" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets" aria-current="page">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section></aside>
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="everyday-use.html" data-guide-slug="everyday-use">Everyday Use &amp; Troubleshooting</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="spotify.html" data-guide-slug="spotify">Spotify Protection</a></li><li><a class="guide-nav-link" href="media-proxy-router.html" data-guide-slug="media-proxy-router">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link is-active" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets" aria-current="page">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section></aside>
 <main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Protect &amp; Customize</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Protect &amp; Customize</p><h1 id="advanced-user-scriptlets" tabindex="-1">Advanced User Scriptlets</h1><p class="guide-article-summary">Add trusted uBO-style scriptlet resources, connect rules to resources, and diagnose registration issues.</p><a class="guide-settings-cta" href="../../ui/settings.html#userScriptletsSection" data-settings-path="ui/settings.html#userScriptletsSection"><span>Open Advanced User Scriptlets</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Advanced User Scriptlets let you run small, trusted, site-specific JavaScript patches through Chrome's <code>userScripts</code> API. This is for personal fixes and experiments that Chroma should not bundle for every user.</p>
 <p>Use this feature when a normal filter list, cosmetic rule, or Element Zapper rule is not enough.</p>
 <h2 id="when-to-use-this" tabindex="-1">When To Use This</h2>
@@ -34,7 +34,7 @@
 <ul>
 <li>Random code copied from comments, forums, or untrusted gists.</li>
 <li>Banking, medical, identity, work-admin, password-manager, or other high-risk pages.</li>
-<li>Broad rules such as <code>*##+js(...)</code> unless you fully understand the code.</li>
+<li>Rules that cover every site except a few exclusions.</li>
 <li>Problems that can be solved with Element Zapper or a cosmetic rule.</li>
 </ul>
 <h2 id="trust-model" tabindex="-1">Trust Model</h2>
@@ -53,9 +53,7 @@
 </li>
 </ol>
 <p>User-provided resources are arbitrary page-context code. On matching pages and frames, they can read or modify data available to page scripts and can make network requests. Chroma's own no-telemetry promises do not apply to third-party or personal code you choose to add.</p>
-<p>Turning master protection off unregisters advanced user scriptlets while keeping
-their cached resources and rules available for restoration when protection is
-enabled again.</p>
+<p>Master protection and the site whitelist control whether rules can run. See <a href="features.html#master-protection-lifecycle">Master Protection Lifecycle</a> for pause, restoration, and when to reload existing tabs.</p>
 <p>Resource URLs must use <code>https://</code> on the default port and cannot contain a username or password. Chroma rejects literal localhost and private/special-use IP addresses, but Chromium performs DNS resolution and Chroma cannot guarantee that a public-looking hostname will not resolve or rebind to a private address. Add only sources you trust.</p>
 <h2 id="setup-flow" tabindex="-1">Setup Flow</h2>
 <ol>
@@ -77,7 +75,7 @@ enabled again.</p>
 </div><p>The <code>.js</code> suffix is normalized. If the resource is named <code>resource-name.js</code>, you call it as <code>resource-name</code> in a rule:</p>
 <div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(resource-name)
 </code></pre>
-</div><p>Multiple resources can live in the same file:</p>
+</div><p>Multiple resources can live in the same file. This example provides two independent patches: restoring text selection and clearing inline scroll locks. Each needs a matching rule before it runs.</p>
 <div class="guide-code-block" data-language="text"><pre><code class="language-text">restore-selection.js text/javascript (() =&gt; {
   const stop = event =&gt; event.stopImmediatePropagation();
   document.addEventListener('copy', stop, true);
@@ -92,9 +90,9 @@ unlock-scroll.js text/javascript (() =&gt; {
   const unlock = () =&gt; {
     for (const node of [document.documentElement, document.body]) {
       if (!node) continue;
-      node.style.overflow = '';
-      node.style.position = '';
-      node.style.touchAction = '';
+      for (const property of ['overflow', 'position', 'touchAction']) {
+        if (node.style[property]) node.style[property] = '';
+      }
     }
   };
   unlock();
@@ -105,11 +103,63 @@ unlock-scroll.js text/javascript (() =&gt; {
   });
 })();
 </code></pre>
-</div><p>Then activate them only where needed:</p>
-<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(restore-selection)
-news.example##+js(unlock-scroll)
+</div><p>Then activate them only where needed. These DOM-editing examples use <code>runAt=end</code> so the document is available:</p>
+<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(restore-selection, runAt=end)
+news.example##+js(unlock-scroll, runAt=end)
 </code></pre>
-</div><h2 id="resource-count-and-operational-bounds" tabindex="-1">Resource Count And Operational Bounds</h2>
+</div><p>The scroll example handles inline styles. A lock imposed by a stylesheet, or a site that requires the modal to remain open, needs a site-specific patch. Reload the tab after removing a rule to undo code already running in that document.</p>
+<h2 id="rule-syntax-reference" tabindex="-1">Rule Syntax Reference</h2>
+<p>Write one rule per line. Lines beginning with <code>!</code> are comments. Resource names are case-insensitive, and a trailing <code>.js</code> is optional.</p>
+<div class="guide-table-wrap"><table>
+<thead>
+<tr>
+<th>Purpose</th>
+<th>Example</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One site</td>
+<td><code>example.com##+js(resource-name)</code></td>
+<td>Runs on <code>example.com</code> and its subdomains.</td>
+</tr>
+<tr>
+<td>Multiple sites</td>
+<td><code>example.com,example.net##+js(resource-name)</code></td>
+<td>Runs on either domain and their subdomains.</td>
+</tr>
+<tr>
+<td>Exclude a subdomain</td>
+<td><code>example.com,~account.example.com##+js(resource-name)</code></td>
+<td>Runs on the included domain except the excluded domain and its subdomains.</td>
+</tr>
+<tr>
+<td>Pass arguments</td>
+<td><code>example.com##+js(resource-name, first, &quot;second, with comma&quot;)</code></td>
+<td>Passes two string arguments to the resource. Quotes keep a comma inside one argument.</td>
+</tr>
+<tr>
+<td>Choose timing</td>
+<td><code>example.com##+js(resource-name, runAt=end)</code></td>
+<td>Runs at <code>document_end</code>; put the timing flag last.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Use hostnames without a protocol, path, port, or wildcard. A domain-only rule includes subdomains automatically. Rules containing only excluded domains apply broadly to matching browser URLs outside those exclusions; prefer explicit included domains. User resources can also run in frames whose own URLs match the rule. Whitelisted domains are excluded from registration.</p>
+<p>Timing options are <code>runAt=start</code> (the default, <code>document_start</code>), <code>runAt=end</code> (<code>document_end</code>), and <code>runAt=idle</code> (<code>document_idle</code>). The equivalent <code>run-at=document_start</code>, <code>run-at=document_end</code>, and <code>run-at=document_idle</code> forms are also accepted. Early hooks may be needed to intercept page code; DOM edits may need later timing. Registration timing is best effort, so a resource may still need to wait for a particular page element.</p>
+<h3 id="read-arguments-in-a-resource" tabindex="-1">Read Arguments In A Resource</h3>
+<p>Resources receive a <code>scriptletArgs</code> array of strings; <code>chromaScriptletArgs</code> is an alias. For example:</p>
+<div class="guide-code-block" data-language="text"><pre><code class="language-text">set-label.js text/javascript (() =&gt; {
+  const [selector, label] = scriptletArgs;
+  const node = document.querySelector(selector);
+  if (node) node.textContent = label;
+})();
+</code></pre>
+</div><div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(set-label, #status, &quot;Ready, locally&quot;, runAt=end)
+</code></pre>
+</div><p>For compatible resource templates, <code>{{args}}</code> is replaced with the JSON argument array, and <code>{{1}}</code>, <code>{{2}}</code>, and so on are replaced with escaped string contents. Place numbered substitutions inside quoted JavaScript strings, such as <code>const label = '{{1}}';</code>; they are not raw JavaScript expressions. Prefer the argument array when writing your own resources.</p>
+<h2 id="resource-count-and-operational-bounds" tabindex="-1">Resource Count And Operational Bounds</h2>
 <p>Resource files and saved rules have these limits:</p>
 <ul>
 <li>2 MiB maximum response per resource URL.</li>
@@ -130,45 +180,16 @@ news.example##+js(unlock-scroll)
 <p>For example:</p>
 <div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(restore-selection)
 </code></pre>
-</div><p>If <code>restore-selection.js</code> is available, the chip shows <strong>Linked</strong>. If the resource URL was removed, failed to parse, or renamed the resource, Chroma shows <strong>Missing</strong>.</p>
-<h2 id="real-examples" tabindex="-1">Real Examples</h2>
-<h3 id="restore-selection-on-one-site" tabindex="-1">Restore Selection On One Site</h3>
-<p>Resource:</p>
-<div class="guide-code-block" data-language="text"><pre><code class="language-text">restore-selection.js text/javascript (() =&gt; {
-  const stop = event =&gt; event.stopImmediatePropagation();
-  document.addEventListener('copy', stop, true);
-  document.addEventListener('contextmenu', stop, true);
-  const style = document.createElement('style');
-  style.textContent = '* { user-select: text !important; -webkit-user-select: text !important; }';
-  document.documentElement.appendChild(style);
-})();
-</code></pre>
-</div><p>Rule:</p>
-<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(restore-selection)
-</code></pre>
-</div><h3 id="remove-a-persistent-scroll-lock" tabindex="-1">Remove A Persistent Scroll Lock</h3>
-<p>Resource:</p>
-<div class="guide-code-block" data-language="text"><pre><code class="language-text">unlock-scroll.js text/javascript (() =&gt; {
-  const unlock = () =&gt; {
-    document.documentElement.style.overflow = '';
-    if (document.body) document.body.style.overflow = '';
-  };
-  unlock();
-  new MutationObserver(unlock).observe(document.documentElement, {
-    attributes: true,
-    subtree: true,
-    attributeFilter: ['style']
-  });
-})();
-</code></pre>
-</div><p>Rule:</p>
-<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(unlock-scroll)
-</code></pre>
-</div><p>If a patch needs the page body to exist first, use an explicit later timing flag:</p>
-<div class="guide-code-block" data-language="adblock"><pre><code class="language-adblock">example.com##+js(unlock-scroll, runAt=end)
-</code></pre>
-</div><h2 id="experimental-alternatives" tabindex="-1">Experimental Alternatives</h2>
-<p>These optional Spotify and Twitch scriptlets can be added through <strong>Settings -&gt; Scriptlets</strong>. They are experimental, and website changes may affect playback or ad blocking. Keep Chroma's master protection and User Scripts access enabled, as described in <a href="#setup-flow">Setup Flow</a>.</p>
+</div><p>If <code>restore-selection.js</code> is available, the chip shows <strong>Linked</strong>. A name typo, an imported rule whose code has not been refreshed, or a successful refresh that removes or renames that resource can produce <strong>Missing</strong>. <strong>Linked</strong> confirms a name match, not successful execution on a page; check <strong>Health</strong> and reload the matching tab when testing.</p>
+<h2 id="refresh-and-removal" tabindex="-1">Refresh And Removal</h2>
+<ul>
+<li><strong>Refresh</strong> downloads the source again and replaces its cached resources after a successful parse. A failed refresh records an error and keeps the last successfully cached resources, so existing rules can continue to run that older code.</li>
+<li><strong>Remove a rule</strong> and click <strong>Save Rules</strong> to stop future injection while retaining the source and its cached resources.</li>
+<li><strong>Remove a resource URL</strong> deletes its cached resources and automatically removes saved rules that reference those resources. Copy any rules you want to reuse before deleting the source.</li>
+</ul>
+<p>Reload affected tabs after refreshing or removing code. Unregistering a scriptlet cannot reverse arbitrary code that already ran in an existing document.</p>
+<h2 id="experimental-alternatives" tabindex="-1">Experimental Alternatives</h2>
+<p>These optional Spotify and Twitch scriptlets can be added through <strong>Settings -&gt; Scriptlets</strong>. They are experimental, and website changes may affect playback or ad blocking. Keep Chroma's master protection and User Scripts access enabled, as described in <a href="#trust-model">Trust Model</a>.</p>
 <h3 id="spotify-ad-skip" tabindex="-1">Spotify Ad Skip</h3>
 <p><a href="https://github.com/Dabrogost/Spotify-Scripts" target="_blank" rel="noopener noreferrer">Spotify Ad Skip</a> is an alternative to Chroma's built-in Spotify ad-media redirects. It attempts to skip ad states and continue music playback in the Spotify web player.</p>
 <ol>
@@ -219,6 +240,11 @@ news.example##+js(unlock-scroll)
 <td>Check the resource name, refresh the URL, or remove the stale rule.</td>
 </tr>
 <tr>
+<td>Refresh fails but the scriptlet still runs</td>
+<td>The last successful resource remains cached.</td>
+<td>Fix the source or remove its rule, save, and reload the tab to stop using the cached code.</td>
+</tr>
+<tr>
 <td>Resource URL will not add</td>
 <td>The URL fails Chroma's literal URL checks.</td>
 <td>Use a raw <code>https://</code> URL with no credentials, no custom port, and no literal localhost/private/special-use address. DNS-resolved addresses remain part of the trusted-source boundary.</td>
@@ -258,9 +284,7 @@ news.example##+js(unlock-scroll)
 <li>Prefer code you can inspect and understand.</li>
 <li>Reload tabs after adding, refreshing, or removing user scriptlets.</li>
 </ul>
-<hr>
-<p>Next: <a href="statistics.html">Statistics &amp; Health</a></p>
-</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="filter-lists.html"><span>Previous</span><strong>Filter List Subscriptions</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="statistics.html"><span>Next</span><strong>Statistics &amp; Health</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#when-to-use-this">When To Use This</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#trust-model">Trust Model</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#setup-flow">Setup Flow</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-file-format">Resource File Format</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-count-and-operational-bounds">Resource Count And Operational Bounds</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#reading-the-status-badges">Reading The Status Badges</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#real-examples">Real Examples</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#restore-selection-on-one-site">Restore Selection On One Site</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#remove-a-persistent-scroll-lock">Remove A Persistent Scroll Lock</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#experimental-alternatives">Experimental Alternatives</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#spotify-ad-skip">Spotify Ad Skip</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#twitch-vaft">Twitch VAFT</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#troubleshooting">Troubleshooting</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#backup-behavior">Backup Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#safer-rule-habits">Safer Rule Habits</a></li></ol></aside></div></main>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="filter-lists.html"><span>Previous</span><strong>Filter List Subscriptions</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="statistics.html"><span>Next</span><strong>Statistics &amp; Health</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#when-to-use-this">When To Use This</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#trust-model">Trust Model</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#setup-flow">Setup Flow</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-file-format">Resource File Format</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#rule-syntax-reference">Rule Syntax Reference</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#read-arguments-in-a-resource">Read Arguments In A Resource</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#resource-count-and-operational-bounds">Resource Count And Operational Bounds</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#reading-the-status-badges">Reading The Status Badges</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#refresh-and-removal">Refresh And Removal</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#experimental-alternatives">Experimental Alternatives</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#spotify-ad-skip">Spotify Ad Skip</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#twitch-vaft">Twitch VAFT</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#troubleshooting">Troubleshooting</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#backup-behavior">Backup Behavior</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#safer-rule-habits">Safer Rule Habits</a></li></ol></aside></div></main>
 </div>
 <button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
 <footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>

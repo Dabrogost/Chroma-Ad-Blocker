@@ -18,7 +18,7 @@ Allow-rule matches, unknown network matches, scriptlet errors, fingerprint regis
 
 ## Event Tracker
 
-The **Events** section in settings shows recent local activity from the protection stack. It can include:
+Open **Settings -> Statistics -> Activity detail -> Events** to inspect recent local activity from the protection stack. It can include:
 
 - Network block, allow, and unknown-match classifications.
 - Cosmetic cleanup and warning-suppression events.
@@ -52,6 +52,8 @@ The three payload counters can legitimately be identical. Since the July 13, 202
 
 Protection Intelligence statistics are stored only in `chrome.storage.local`. These modes govern the `statsV2` statistics dataset:
 
+Choose **Collection mode** under **Settings -> Statistics -> Privacy and exports**:
+
 - **Basic**: Records totals only going forward. Existing aggregated history is preserved locally unless the user explicitly resets stats.
 - **Aggregated**: Records totals plus domains, rule sources, resource types, timelines, and recent event summaries.
 - **Debug**: May include recent full request URLs in `statsV2` where they are available.
@@ -66,9 +68,20 @@ The Request Log is a separate dataset and is not controlled by the Basic, Aggreg
 
 Chroma clears this request log when the browser profile starts and Chrome fires `runtime.onStartup`. You can also reset it independently in settings. Changing statistics mode, resetting site statistics, or resetting all `statsV2` statistics does not clear it. When Chrome does not expose matched-rule feedback, the Request Log remains unavailable even though browser-enforced blocking can continue normally.
 
+To inspect it, open **Settings -> Request log** and expand **Matched requests**. Rows show a resource-type abbreviation, shortened URL, and age; hover over a URL to view its full value. **Freeze** pauses updates to the displayed rows so you can inspect them. Click **Frozen** to resume. Freezing the display does not pause protection or stop background collection, and the stored log can continue rotating through its 500-entry limit.
+
 ## Retention, Reset, And Export
 
 Open **Privacy and exports** in Statistics to export your data or use the reset controls. Each reset asks for confirmation. Configuration backups are in **Settings -> Backup -> Backup and restore**.
+
+| Control | Effect |
+|---|---|
+| Collection mode | Changes future statistics collection; see [Privacy Modes](#privacy-modes). |
+| Daily history retention | Keeps 30, 90, 180, or 365 days of daily history. |
+| Reset all statistics | Clears recorded `statsV2` activity, including lifetime totals; preserves collection mode and retention settings. |
+| Reset statistics for all sites | Clears site statistics for every recorded site; it is not a current-site-only reset. |
+| Clear request log | Clears the separate DNR request log without resetting statistics. New matches can be collected afterward. |
+| Export statistics | Saves a local JSON snapshot. There is no statistics-import control. |
 
 The stats dashboard enforces hard caps on recent events, sites, rule entries, resource types, and daily history. Settings controls let you reset all `statsV2` statistics, reset site statistics only, reset the separate DNR request log, or export a local JSON statistics snapshot.
 
@@ -82,7 +95,7 @@ The **Time Saved (est.)** card estimates savings from protection events. It does
 
 ## Health Panel
 
-The settings page includes a **Health** panel for diagnostics. It shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including:
+Open **Settings -> Health**, then expand **Diagnostic details** when you need the layer breakdown. Use **Refresh Health** to request a fresh check. Health shows whether each protection layer is active, disabled, degraded, unavailable, or in an error state, including:
 
 <div align="center">
   <img src="assets/docs-settings-health-panel.png" alt="Chroma health diagnostics panel" width="760">
@@ -105,7 +118,11 @@ The settings page includes a **Health** panel for diagnostics. It shows whether 
 
 The panel is diagnostic-only. It reports counts and coarse status information, but does not expose proxy credentials, stored auth data, request URLs, raw filter rules, or request-log contents.
 
-For proxy, WebRTC, browser privacy, and geolocation, Health separates stored/requested intent, whether Chroma controls the relevant Chrome setting, and the observed effective state. Master-off requests appear paused rather than mismatched; another controller appears degraded or **Controlled elsewhere**.
+An **Active** result means the reported layer is enabled or registered; it does not guarantee that a particular ad will be blocked. **Disabled** or **Paused** normally reflects your settings. **Unavailable**, **Not active**, or a degraded/error result needs the accompanying detail: a browser API may be missing, a requested change may have failed, or another controller may own the setting. Check the explanation, correct the relevant setting or conflict, and click **Refresh Health** to reassess.
+
+For proxy, WebRTC, and browser privacy, Health separates stored/requested intent, whether Chroma controls the relevant Chrome setting, and the observed effective state. Master-off requests appear paused rather than mismatched; another controller appears degraded or **Controlled elsewhere**. Chroma retries these controls when the browser reports that external control has been released.
+
+Geolocation is more limited: Chrome's location-setting API does not expose ownership. Chroma samples the effective setting for `https://example.com/`, so Health cannot establish who controls it or verify the result for every site. Refresh Health or change the setting to retry; geolocation does not have the same external-control change listener as the other privacy controls.
 
 Request Log availability depends on Chrome exposing matched-rule feedback to the unpacked extension. When that feedback is unavailable, blocking can still work normally.
 

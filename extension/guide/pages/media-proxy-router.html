@@ -19,74 +19,36 @@
 <form class="guide-search" role="search" data-guide-search-form><label class="guide-visually-hidden" for="guideSearch">Search the guide</label><input id="guideSearch" class="guide-search-input" type="search" autocomplete="off" placeholder="Search the guide" aria-controls="guideSearchResults" aria-autocomplete="list" data-guide-search><div id="guideSearchResults" class="guide-search-results" data-guide-search-results hidden></div><p class="guide-visually-hidden" role="status" aria-live="polite" data-guide-search-status></p></form>
 </header>
 <div class="guide-shell guide-layout">
-<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="spotify.html" data-guide-slug="spotify">Spotify Protection</a></li><li><a class="guide-nav-link is-active" href="media-proxy-router.html" data-guide-slug="media-proxy-router" aria-current="page">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section></aside>
+<aside id="guideSidebar" class="guide-sidebar" aria-label="Guide navigation" data-guide-sidebar><a class="guide-nav-home" href="../index.html" data-guide-home>Guide home</a><section class="guide-nav-group"><h2>Start Using Chroma</h2><ul><li><a class="guide-nav-link" href="install.html" data-guide-slug="install">Installation &amp; Configuration</a></li><li><a class="guide-nav-link" href="everyday-use.html" data-guide-slug="everyday-use">Everyday Use &amp; Troubleshooting</a></li><li><a class="guide-nav-link" href="features.html" data-guide-slug="features">Feature Guide</a></li></ul></section><section class="guide-nav-group"><h2>Protect &amp; Customize</h2><ul><li><a class="guide-nav-link" href="youtube.html" data-guide-slug="youtube">YouTube Protection</a></li><li><a class="guide-nav-link" href="spotify.html" data-guide-slug="spotify">Spotify Protection</a></li><li><a class="guide-nav-link is-active" href="media-proxy-router.html" data-guide-slug="media-proxy-router" aria-current="page">Media Proxy Router</a></li><li><a class="guide-nav-link" href="filter-lists.html" data-guide-slug="filter-lists">Filter List Subscriptions</a></li><li><a class="guide-nav-link" href="advanced-user-scriptlets.html" data-guide-slug="advanced-user-scriptlets">Advanced User Scriptlets</a></li><li><a class="guide-nav-link" href="statistics.html" data-guide-slug="statistics">Statistics &amp; Health</a></li></ul></section><section class="guide-nav-group"><h2>Privacy &amp; Trust</h2><ul><li><a class="guide-nav-link" href="permissions.html" data-guide-slug="permissions">Permissions</a></li><li><a class="guide-nav-link" href="privacy-policy.html" data-guide-slug="privacy-policy">Privacy Policy for Chroma Ad-Blocker</a></li><li><a class="guide-nav-link" href="terms.html" data-guide-slug="terms">Terms of Service for Chroma Ad-Blocker</a></li></ul></section><section class="guide-nav-group"><h2>Tune Performance</h2><ul><li><a class="guide-nav-link" href="performance.html" data-guide-slug="performance">Performance Guide</a></li></ul></section></aside>
 <main id="guideMain" class="guide-main" tabindex="-1"><div class="guide-article-layout"><article class="guide-article"><nav class="guide-breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Guide home</a><span aria-hidden="true">/</span><span>Protect &amp; Customize</span></nav><header class="guide-article-header"><p class="guide-eyebrow">Protect &amp; Customize</p><h1 id="media-proxy-router" tabindex="-1">Media Proxy Router</h1><p class="guide-article-summary">Route selected media domains through a proxy without sending unrelated browser traffic through it.</p><a class="guide-settings-cta" href="../../ui/settings.html#proxySection" data-settings-path="ui/settings.html#proxySection"><span>Open media proxy settings</span><span aria-hidden="true">↗</span></a></header><div class="guide-content"><p>Chroma includes a built-in split-tunnel proxy router that allows you to route traffic for specific media domains through a proxy server while keeping the rest of your browser traffic on your direct, local connection.</p>
 <p>It is designed for media-site routing: sending supported services through proxy regions that reduce ad serving, or through country-specific routes for region-specific media delivery. This operates entirely within the browser via dynamic Proxy Auto-Configuration scripts, so it does not require a system-level VPN installation.</p>
 <p><img src="../../docs/assets/docs-settings-proxy-router.png" alt="Chroma media proxy router settings" loading="lazy" decoding="async"></p>
-<h2 id="how-this-differs-from-foxyproxy" tabindex="-1">How This Differs From FoxyProxy</h2>
-<p>Chroma's proxy router is not intended to replace a full general-purpose proxy manager such as FoxyProxy. FoxyProxy is designed around proxy profiles, URL patterns, tab-level routing, quick switching, import/export workflows, and broad user-defined proxy management.</p>
-<p>Chroma's router is narrower by design. It exists as one layer of Chroma's larger local protection stack: DNR network blocking, scriptlets, cosmetic filtering, media handling, local event tracking, and optional browser-level routing all work together. The proxy layer is focused on split-tunneling selected media domains through user-provided proxies while keeping unrelated browser traffic direct, or optionally sending unmatched browser traffic through a Global Fallback proxy.</p>
-<p>The main difference is that Chroma is media-aware. When a supported streaming or media service is routed, Chroma expands it through a fixed map of known CDN and delivery domains so the service UI and media stream are less likely to use different routes. For example, adding <code>youtube.com</code> also routes known YouTube delivery domains such as <code>googlevideo.com</code>, <code>ytimg.com</code>, and <code>youtube-nocookie.com</code>. This selects the same configured proxy route, but it cannot guarantee that a proxy provider will assign every request the same external IP.</p>
-<p>Chroma's design principle is:</p>
-<blockquote>
-<p>DNR is the policy gate. PAC is the transport selector.</p>
-</blockquote>
-<p>Network filtering decides what should be blocked or allowed by the browser's DNR engine. Proxy routing decides whether browser traffic that proceeds through Chrome's network stack should go direct or through a selected proxy.</p>
-<div class="guide-table-wrap"><table>
-<thead>
-<tr>
-<th>Feature</th>
-<th>Chroma Proxy Router</th>
-<th>General Proxy Manager</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Primary purpose</td>
-<td>Media-aware split tunneling for ad-reducing or country-specific media routes inside Chroma's protection stack</td>
-<td>Full proxy profile and rule management</td>
-</tr>
-<tr>
-<td>Routing model</td>
-<td>Domain-specific rules, fixed Smart-Link domain-map expansion, optional Global Fallback</td>
-<td>Proxy profiles, URL patterns, tab rules, PAC URLs, quick switching</td>
-</tr>
-<tr>
-<td>Scope</td>
-<td>Browser-level routing for selected traffic</td>
-<td>General-purpose proxy control</td>
-</tr>
-<tr>
-<td>Ad-block integration</td>
-<td>Works alongside Chroma's DNR, scriptlet, cosmetic, and media layers</td>
-<td>Usually separate from ad blocking</td>
-</tr>
-<tr>
-<td>Best use case</td>
-<td>Route a service like YouTube, Netflix, Prime Video, or Twitch through a chosen media region without routing everything</td>
-<td>Manage many proxies and complex user-defined routing rules</td>
-</tr>
-</tbody>
-</table></div>
-<p>Use FoxyProxy when you want a dedicated proxy manager. Use Chroma's proxy router when you want routing to work as part of Chroma's ad-blocking, media, and privacy stack.</p>
+<h2 id="add-a-proxy" tabindex="-1">Add A Proxy</h2>
+<p>Have the protocol, host, port, and any supported credentials supplied by your proxy provider ready. A VPN subscription alone does not supply these connection details.</p>
+<ol>
+<li>Open <strong>Settings -&gt; Proxy</strong> and click <strong>Add proxy</strong>.</li>
+<li>Select the proxy protocol and enter the host and port supplied by your provider. Enter the host without a protocol prefix.</li>
+<li>For an HTTP/HTTPS proxy, enter a username and password if required.</li>
+<li>Click <strong>Save proxy</strong>.</li>
+<li>Enter a domain under <strong>Routed domain</strong> and click <strong>Add Domain</strong>, or select <strong>Global fallback</strong> to route unmatched browser traffic through this proxy.</li>
+<li>Review the automatic connection check, or click <strong>Test</strong> to check again. Review <strong>Health</strong> if routing is unavailable.</li>
+</ol>
+<p>Master protection and the proxy's own switch must be on for routing to take effect. Adding a supported service can also route its related media-delivery domains; see <a href="#smart-link-auto-expansion">Smart-Link Auto-Expansion</a>.</p>
 <h2 id="supported-protocols" tabindex="-1">Supported Protocols</h2>
 <p>Chroma supports <code>HTTP</code>, <code>HTTPS</code>, <code>SOCKS4</code>, and <code>SOCKS5</code> proxies. Choose the protocol from the proxy setup dropdown, then enter the proxy host without a protocol prefix.</p>
 <p>SOCKS4/SOCKS5 proxies are supported only when they do not require username/password authentication. Chrome extensions can provide credentials for HTTP/HTTPS proxy authentication challenges, but Chrome does not expose SOCKS username/password authentication to extensions through the proxy/PAC flow.</p>
 <p>For authenticated SOCKS providers, use provider-side IP allowlisting if available, or choose an HTTP/HTTPS proxy endpoint instead.</p>
-<h2 id="add-a-proxy" tabindex="-1">Add A Proxy</h2>
-<ol>
-<li>Open <strong>Settings -&gt; Proxy</strong> and click <strong>Add proxy</strong>.</li>
-<li>Select the proxy protocol and enter the host and port supplied by your provider.</li>
-<li>For an HTTP/HTTPS proxy, enter a username and password if required.</li>
-<li>Click <strong>Save proxy</strong>.</li>
-<li>Enter a domain under <strong>Routed domain</strong> and click <strong>Add Domain</strong>, or select <strong>Global fallback</strong> to route unmatched browser traffic through this proxy.</li>
-<li>Use <strong>Test</strong> to check the connection and review <strong>Health</strong> if routing is unavailable.</li>
-</ol>
+<h2 id="how-this-differs-from-foxyproxy" tabindex="-1">How This Differs From FoxyProxy</h2>
+<p>Chroma focuses on domain routes, fixed <a href="#smart-link-auto-expansion">Smart-Link domain expansion</a>, and an optional global fallback alongside its other protection layers. If you need a dedicated general-purpose proxy manager, consider a tool such as FoxyProxy; Chroma's controls are designed around routing selected media services.</p>
+<p>Network filtering and routing have separate jobs. Chromium's Declarative Net Request (DNR) engine decides whether to block or allow a request. The Proxy Auto-Configuration (PAC) script chooses the direct or proxy transport for traffic that proceeds through the browser's network stack.</p>
 <h2 id="security" tabindex="-1">Security</h2>
 <p>Your proxy credentials, username and password, are stored locally in an obfuscated form using a bundled extension key. They are decoded in memory only for a genuine proxy-authentication challenge. Chroma requires the exact normalized host, port, and HTTP/HTTPS proxy type to match the route currently effective in Chrome. Disabled, deleted, stale, unrouted, master-paused, test-inactive, or externally controlled proxy records receive no credentials. Authentication attempts are bounded per request to prevent challenge loops.</p>
 <p>This can reduce casual readability in extension storage, but it is not strong encryption and is not a substitute for operating-system or browser-profile security.</p>
 <h2 id="connection-verification" tabindex="-1">Connection Verification</h2>
-<p>The Chroma popup includes a <strong>Connection Verification</strong> system. When you request a test, Chroma first makes the selected test route its desired Chrome route and verifies that Chroma actually controls the matching PAC state. If another extension or browser policy owns proxy settings, the test is reported as unavailable/degraded rather than healthy. A successful test displays the detected proxied IP address when available and is cached briefly for that exact proxy connection definition.</p>
+<p>Proxy cards automatically request a connection check when saved, enabled proxies are displayed in the popup or settings. You can also click <strong>Test</strong>. These are checks triggered by the UI, not continuous background monitoring.</p>
+<p>For a fresh test, Chroma temporarily routes its IP-check service domains through the selected proxy and verifies that Chrome has accepted the matching PAC state. If another extension or browser policy owns proxy settings, the test fails rather than reporting a healthy connection. The temporary test route is removed afterward, restoring the saved routing configuration.</p>
+<p>Chroma tries a public IP-check service selected from Cloudflare Trace, AWS CheckIP, ipify, and icanhazip, and may try one more if the first fails. Those services receive normal request metadata through the test route. See <a href="privacy-policy.html#3-data-sharing">Data Sharing</a> for the external-service boundary.</p>
+<p>A successful test displays the detected IP address. Results may be reused for up to 60 seconds when the connection definition is unchanged and the proxy remains effectively routed by Chroma. A successful check confirms that test connection; it does not guarantee a streaming service will accept the proxy or use the same external IP for every request.</p>
 <h2 id="global-proxy-fallback" tabindex="-1">Global Proxy Fallback</h2>
 <p>In addition to domain-specific routing, Chroma supports a <strong>Global Fallback</strong> mode. Click <strong>Global fallback</strong> on a settings proxy card, or <strong>GLOBAL</strong> in the popup, to select that proxy for browser traffic that does not match a domain-specific rule.</p>
 <p>This is browser-level proxy routing, not a system VPN, while still allowing you to send specific traffic, such as YouTube, to a different proxy server simultaneously.</p>
@@ -96,8 +58,18 @@
 <li><strong>Switch OFF</strong>: Routing pauses. Saved domains and the global fallback selection are preserved until the switch is turned back on.</li>
 <li><strong>Global fallback</strong>: Selects or clears the global fallback independently from the switch. The selected button is highlighted, and the card's domain controls are hidden while it is the global fallback.</li>
 </ul>
-<h3 id="master-protection-lifecycle" tabindex="-1">Master Protection Lifecycle</h3>
-<p>The global Chroma master switch is authoritative over every proxy route. Master off releases <code>chrome.proxy.settings</code> and pauses domain-specific, global-fallback, and test routing while preserving proxy records, enabled flags, domains, and the selected global ID. Master on rebuilds the requested PAC route from that stored intent.</p>
+<h2 id="route-order-and-overlapping-domains" tabindex="-1">Route Order And Overlapping Domains</h2>
+<p>Domain routes match the listed hostname and its subdomains. Chroma evaluates routes in this order:</p>
+<ol>
+<li>The enabled <a href="#google-and-chrome-domain-bypass">Google/Chrome bypass list</a> connects directly.</li>
+<li>A connection test temporarily routes its IP-check service domains through the proxy being tested.</li>
+<li>Enabled domain routes, including Smart-Link expansions, are checked in saved proxy order. The first matching proxy wins.</li>
+<li>Unmatched traffic uses the enabled global fallback, or connects directly if none is active.</li>
+</ol>
+<p>The first matching domain route wins even if a later proxy has a narrower domain. For example, if the first saved proxy routes <code>youtube.com</code>, a later proxy's <code>music.youtube.com</code> route does not override it. Smart-Link can also create overlaps: routing <code>youtube.com</code> includes <code>googlevideo.com</code>, so a later separate route for <code>googlevideo.com</code> will not win.</p>
+<p>To change the winning route, remove or disable the overlapping domain assignment on the earlier proxy, or disable that proxy. A global fallback is for unmatched traffic; it is not a backup server used when a matching domain proxy fails. Chroma's PAC returns one proxy for a matching route without appending a direct-connection fallback.</p>
+<h2 id="master-protection-lifecycle" tabindex="-1">Master Protection Lifecycle</h2>
+<p>Master protection governs domain, global-fallback, and test routing. Its pause and restoration behavior is documented in <a href="features.html#master-protection-lifecycle">Master Protection Lifecycle</a>.</p>
 <p>Chrome allows only one extension or policy controller to own proxy settings at a time. If another controller wins, Chroma separates <strong>requested</strong> from <strong>effective</strong> routing, withholds credentials, reports the conflict in Health, and removes dormant Chroma PAC state so an obsolete route cannot reactivate later. When Chrome reports that control is available again, Chroma automatically reconciles the latest stored intent.</p>
 <h2 id="google-and-chrome-domain-bypass" tabindex="-1">Google And Chrome Domain Bypass</h2>
 <p>The setting labeled <strong>Bypass Chrome Browser Services</strong> inserts a fixed direct-connect list whenever Chroma installs a PAC route. It is enabled by default. Despite the label, it is not limited to internal browser requests or to Global Proxy Fallback: it also applies during domain-only routing, affects normal page navigations and resources on matching hosts, and is evaluated before connection-test, domain-specific, and global routes. An explicit route for a listed hostname therefore still resolves directly while the bypass is enabled.</p>
@@ -118,7 +90,7 @@
 <li><strong>Strict</strong>: Disables non-proxied UDP. This offers the strongest protection but may affect browser calls or video chat quality.</li>
 <li><strong>Off</strong>: Releases Chroma's WebRTC routing control.</li>
 </ul>
-<p>Auto, Balanced, and Strict describe stored intent only while master protection is enabled. Master off releases Chroma's WebRTC setting without erasing the selected mode; master on restores it. If another extension or policy controls the setting, Health reports the request as degraded and Chroma retries automatically when control is released.</p>
+<p>These modes follow the <a href="features.html#master-protection-lifecycle">master protection lifecycle</a>. If another extension or policy controls the setting, Health reports the request as degraded and Chroma retries automatically when control is released.</p>
 <h2 id="dynamic-routing-status" tabindex="-1">Dynamic Routing Status</h2>
 <p>Proxy cards summarize saved route intent and the latest connection-test result:</p>
 <ul>
@@ -128,9 +100,9 @@
 <li><strong>DISABLED</strong>: The proxy is saved but paused. Its domain rows and global selection, if any, are preserved.</li>
 </ul>
 <p>These card labels are not proof that Chrome accepted Chroma's PAC settings. The <strong>Health</strong> panel is authoritative for requested, master-paused, effective, externally controlled, and incomplete-release state. In particular, a saved GLOBAL selection is not effective while master protection is off or another controller owns Chrome's proxy setting.</p>
-<h2 id="choosing-a-compatible-proxy" tabindex="-1">Choosing A Compatible Proxy</h2>
-<p>Use the protocol, host, port, and authentication method supplied by your proxy provider. Chroma supports HTTP/HTTPS authentication and SOCKS proxies that do not require username/password authentication. A VPN subscription alone does not provide the proxy details needed here.</p>
-<p>If streaming buffers through a proxy, test another route or temporarily disable the proxy to compare playback on your direct connection.</p>
+<h2 id="troubleshooting-a-route" tabindex="-1">Troubleshooting A Route</h2>
+<p>If streaming buffers through a proxy, test another route or temporarily disable the proxy to compare playback on your direct connection. If a domain uses an unexpected route, check <a href="#route-order-and-overlapping-domains">route order</a>, Smart-Link expansion, and the Google/Chrome bypass before changing credentials. If <strong>Test</strong> passes but a site refuses playback, the service may reject that proxy or region.</p>
+<p>For browser-wide problems, check <strong>Health</strong> for another proxy controller, and use the layer-by-layer steps in <a href="everyday-use.html">Everyday Use &amp; Troubleshooting</a>.</p>
 <h2 id="smart-link-auto-expansion" tabindex="-1">Smart-Link Auto-Expansion</h2>
 <p>To reduce infinite spin and geo-blocking issues caused by route mismatches between a site's UI and its video delivery network, Chroma includes a <strong>Smart-Link</strong> system. When you add a supported streaming-service domain, Chroma expands it using the fixed known-domain map below. It does not discover new CDN relationships dynamically.</p>
 <p>For example, adding <code>youtube.com</code> also routes <code>googlevideo.com</code>, <code>ytimg.com</code>, and <code>youtube-nocookie.com</code> through the same configured proxy. This improves route consistency but does not guarantee the same external IP for every request; the proxy provider controls egress assignment.</p>
@@ -145,9 +117,7 @@
 <li><strong>Max (HBO)</strong>: <code>hbomax.com</code>, <code>hbo.com</code>, <code>hbonow.com</code>, <code>hbogo.com</code></li>
 <li><strong>Spotify</strong>: <code>scdn.co</code>, <code>spotify.net</code>, <code>audio-ak-spotify-com.akamaized.net</code></li>
 </ul>
-<hr>
-<p>Next: <a href="filter-lists.html">Filter List Subscriptions</a></p>
-</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="spotify.html"><span>Previous</span><strong>Spotify Protection</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="filter-lists.html"><span>Next</span><strong>Filter List Subscriptions</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#how-this-differs-from-foxyproxy">How This Differs From FoxyProxy</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#supported-protocols">Supported Protocols</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#add-a-proxy">Add A Proxy</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#security">Security</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#connection-verification">Connection Verification</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#global-proxy-fallback">Global Proxy Fallback</a></li><li class="guide-toc-level-3"><a class="guide-toc-link" href="#master-protection-lifecycle">Master Protection Lifecycle</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#google-and-chrome-domain-bypass">Google And Chrome Domain Bypass</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#webrtc-leak-protection">WebRTC Leak Protection</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#dynamic-routing-status">Dynamic Routing Status</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#choosing-a-compatible-proxy">Choosing A Compatible Proxy</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#smart-link-auto-expansion">Smart-Link Auto-Expansion</a></li></ol></aside></div></main>
+</div><nav class="guide-pagination" aria-label="Guide pages"><a class="guide-pagination-link guide-pagination-link--previous" href="spotify.html"><span>Previous</span><strong>Spotify Protection</strong></a><a class="guide-pagination-link guide-pagination-link--next" href="filter-lists.html"><span>Next</span><strong>Filter List Subscriptions</strong></a></nav></article><aside class="guide-toc" aria-labelledby="guideTocTitle"><h2 id="guideTocTitle">On this page</h2><ol><li class="guide-toc-level-2"><a class="guide-toc-link" href="#add-a-proxy">Add A Proxy</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#supported-protocols">Supported Protocols</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#how-this-differs-from-foxyproxy">How This Differs From FoxyProxy</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#security">Security</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#connection-verification">Connection Verification</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#global-proxy-fallback">Global Proxy Fallback</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#route-order-and-overlapping-domains">Route Order And Overlapping Domains</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#master-protection-lifecycle">Master Protection Lifecycle</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#google-and-chrome-domain-bypass">Google And Chrome Domain Bypass</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#webrtc-leak-protection">WebRTC Leak Protection</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#dynamic-routing-status">Dynamic Routing Status</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#troubleshooting-a-route">Troubleshooting A Route</a></li><li class="guide-toc-level-2"><a class="guide-toc-link" href="#smart-link-auto-expansion">Smart-Link Auto-Expansion</a></li></ol></aside></div></main>
 </div>
 <button class="guide-sidebar-backdrop" type="button" aria-label="Close guide navigation" data-guide-sidebar-backdrop hidden></button>
 <footer class="guide-footer"><p>Available offline with Chroma Ad-Blocker.</p></footer>

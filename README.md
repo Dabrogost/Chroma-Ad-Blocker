@@ -13,6 +13,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 [Explore the Chroma Guide online](https://dabrogost.github.io/Chroma-Ad-Blocker/) before installing. The website and Chroma's bundled offline guide are generated from the same documentation below.
 
 - [Installation & Configuration](docs/INSTALL.md)
+- [Everyday Use & Troubleshooting](docs/EVERYDAY_USE.md)
 - [Feature Guide](docs/FEATURES.md)
 - [YouTube Protection](docs/YOUTUBE.md)
 - [Spotify Protection](docs/SPOTIFY.md)
@@ -25,14 +26,16 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 - [Performance Guide](docs/PERFORMANCE.md)
 - [Terms of Service](docs/ToS.md)
 
+For public architecture, security, testing, and release references, use the [complete documentation index on GitHub](https://github.com/Dabrogost/Chroma-Ad-Blocker/blob/master/docs/README.md).
+
 ## Key Features
 
-- **[YouTube Ad Stripping](docs/YOUTUBE.md)**: Removes ad-related metadata from YouTube JSON payloads before the player reads them, including sponsored Shorts overlay payloads.
-- **[Spotify Ad Blocking](docs/SPOTIFY.md)**: Redirects known web-player ad media to a brief packaged silent clip using browser-native rules adapted from uBlock Origin. Includes a separate toggle and podcast exceptions; leaves playback data untouched.
-- **[Split-Tunnel Proxy Router](docs/MEDIA_PROXY_ROUTER.md)**: Routes selected media domains through HTTP, HTTPS, SOCKS4, or SOCKS5 proxies while keeping unrelated browser traffic direct. Includes Global Fallback, Smart-Link media/CDN expansion, connection verification, WebRTC leak protection, and local-only proxy credential handling.
-- **[Source-Generated DNR Network Blocking](docs/FEATURES.md#source-generated-dnr-network-blocking)**: Uses OISD Small and Big first, then fills otherwise-unused static capacity with a stable selection of adult and shock-site domains from OISD NSFW. Protected custom and recipe rules bring the packaged corpus to exactly 300,000 static rules.
-- **[Live Filter List Subscriptions](docs/FILTER_LISTS.md)**: Supports Hagezi Pro Mini, EasyList, Fanboy Annoyance, the bundled Chroma Scriptlet Library, and user-added custom lists with local parsing and rule-budget allocation.
-- **[Scriptlet Injection Engine](docs/FEATURES.md#scriptlet-injection-engine)**: Translates supported uBlock Origin and AdGuard-style scriptlets into native JavaScript, and lets advanced users add [trusted uBO-style scriptlet resources](docs/ADVANCED_USER_SCRIPTLETS.md) through Chrome's `userScripts` API.
+- **[YouTube Ad Stripping](docs/YOUTUBE.md)**: Cleans ad data before playback, including sponsored Shorts, with optional ad acceleration as a fallback.
+- **[Spotify Ad Blocking](docs/SPOTIFY.md)**: Redirects known web-player ad media to a packaged silent clip, with a separate toggle and podcast exceptions.
+- **[Split-Tunnel Proxy Router](docs/MEDIA_PROXY_ROUTER.md)**: Routes selected media domains through user-configured proxies, with optional global fallback, connection checks, and WebRTC controls.
+- **[Source-Generated DNR Network Blocking](docs/FEATURES.md#source-generated-dnr-network-blocking)**: Applies a large bundled rule corpus through Chromium's network engine.
+- **[Live Filter List Subscriptions](docs/FILTER_LISTS.md)**: Combines default sources and user-added lists with local parsing and rule-budget allocation.
+- **[Scriptlet Injection Engine](docs/FEATURES.md#scriptlet-injection-engine)**: Runs supported filter-list scriptlets and [trusted user resources](docs/ADVANCED_USER_SCRIPTLETS.md) through Chrome's `userScripts` API.
 - **[Quiet Console](docs/FEATURES.md#quiet-console)**: Optional DevTools noise reduction for handled scriptlet/fingerprint warnings and known ad/tracker request paths.
 - **[Cosmetic Filtering & Element Zapper](docs/FEATURES.md#element-zapper)**: Removes ad slots, placeholders, unwanted UI, warnings, and user-selected page elements through CSS injection, DOM monitoring, and local cosmetic rules.
 - **[Privacy Hardening & Fingerprint Randomization](docs/FEATURES.md#privacy-hardening-fingerprint-randomization)**: Optional controls for third-party cookies, Privacy Sandbox ad APIs, geolocation access, WebRTC routing behavior, and per-document fingerprint farbling.
@@ -41,7 +44,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 
 ## Quick Start
 
-1. Get the latest release from [GitHub Releases](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest), and extract the ZIP file.
+1. Download `chroma-ad-blocker-vX.Y.Z.zip` from the latest [GitHub Release](https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/latest), and extract it. Choose the Chroma package rather than GitHub's source-code archive.
 2. Open `chrome://extensions` in Chrome or `edge://extensions` in Microsoft Edge.
 3. Toggle on **Developer Mode** in the top-right corner.
 4. Click **Load unpacked** and select the extracted folder that contains `manifest.json`.
@@ -52,7 +55,7 @@ For best results, disable other ad-blocking extensions while using Chroma. Layer
 
 When an update is available, open **Settings -> Updates** and follow the guided updater. Chroma verifies the release package before installation. Select your existing Chroma folder, review the install plan, install the update, and click **Reload Chroma**.
 
-For the expanded install and update flow, troubleshooting table, configuration reference, and Health panel notes, see [Installation & Configuration](docs/INSTALL.md).
+For installation, updates, and the configuration reference, see [Installation & Configuration](docs/INSTALL.md). For site controls and fixing broken pages, start with [Everyday Use & Troubleshooting](docs/EVERYDAY_USE.md).
 
 ## Architecture At A Glance
 

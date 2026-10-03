@@ -4,16 +4,16 @@ Chroma's performance goal is practical low overhead, not zero overhead. The exte
 
 ## Where The Cost Lives
 
-| Surface | Low-overhead path | What can make it heavier |
+| Surface | How work is handled | What can make it heavier |
 |---|---|---|
-| DNR request matching | Chromium makes the block, redirect, or allow decision in the browser engine; Chroma JavaScript is not part of the enforcement decision. | In unpacked profiles where Chrome exposes `onRuleMatchedDebug`, a matched rule can wake the worker for Chroma's separate request log. Very large rule sets also have install/update validation cost and MV3 rule-budget limits. |
-| Service worker | Sleeps when idle and wakes for extension events, alarms, UI messages, DNR sync, subscription work, and proxy changes. | Cold starts, subscription refreshes, dynamic rule rebuilds, and scriptlet registration can take visible time in settings or diagnostics. |
-| Content script | Runs in the isolated world and primarily injects CSS, watches DOM additions, and removes known leftovers. | High-churn pages can produce many DOM mutations, especially video feeds, infinite scroll pages, and live chat layouts. |
-| Constructable stylesheets | Reuses `CSSStyleSheet` objects and updates `document.adoptedStyleSheets` instead of repeatedly appending style nodes. | Large selector sets still cost browser style recalculation when enabled or changed. |
-| MAIN-world interception | Runs only where platform handlers, scriptlets, media handlers, or optional fingerprint randomization require page-context hooks. | Hooking `fetch`, `XMLHttpRequest`, `JSON.parse`, media APIs, or fingerprint surfaces adds per-call checks on matched pages. |
-| `userScripts` registration | Browser stores registered script definitions and injects them on matching pages. | Many subscription or user scriptlet rules increase registration time and match pattern count. |
-| Proxy PAC routing | PAC chooses direct vs proxy transport by host, keeping DNR policy separate from routing. | Large domain lists and Global Fallback add routing checks and may add proxy latency. |
-| Stats and request logs | Content/background events and DNR matches are batched before storage writes. | The DNR request log retains up to 500 recent full matched URLs independently of the statistics privacy mode. Debug mode additionally permits full URLs in `statsV2` recent events. |
+| [DNR request matching](#dnr-matching-vs-javascript-request-overhead) | Chromium enforces block, redirect, and allow decisions. | Rule validation, budgets, and optional matched-rule diagnostic events. |
+| [Service worker](#service-worker-lifecycle-and-startup-work) | Wakes for extension events and sleeps when idle. | Cold starts, refreshes, and rule synchronization. |
+| [Content script](#content-script-cost) | Injects CSS and watches page changes in the isolated world. | Frequent DOM mutations on feeds and live chat pages. |
+| [Constructable stylesheets](#constructable-stylesheet-behavior) | Reuses browser stylesheet objects. | Large or broad selector sets and style recalculation. |
+| [MAIN-world interception](#main-world-interception-cost) | Adds page-context hooks for enabled features, including optional Quiet Console. | API checks on each call; some optional features apply across ordinary websites. |
+| [`userScripts` registration](#userscripts-registration-cost) | The browser stores and injects matching script definitions. | Many rules and broad domain matches. |
+| [Proxy PAC routing](#proxy-pac-routing-cost) | Selects direct or proxy transport by host. | Many routes and proxy latency. |
+| [Stats and request logs](#stats-batching) | Batches events before storage writes. | High event volume and Debug statistics detail. |
 
 ## DNR Matching Vs JavaScript Request Overhead
 
@@ -46,11 +46,9 @@ The expected cost is small on ordinary pages:
 - Stats events are queued and sent in batches.
 - Whitelisted sites skip the relevant local cleanup behavior.
 
-The cost rises on pages that constantly add or replace DOM nodes. Large video pages, infinite feeds, and live chat surfaces are the main cases to watch.
+### MutationObserver Behavior
 
-## MutationObserver Behavior
-
-Chroma watches for new page elements so it can remove ad containers and warning overlays added after loading. Infinite feeds and live chat can require more cleanup work than static pages.
+Chroma watches for new page elements so it can remove ad containers and warning overlays added after loading. Large video pages, infinite feeds, and live chat can require more cleanup work than static pages because they continually change the DOM.
 
 Lower-overhead habits:
 
@@ -58,9 +56,9 @@ Lower-overhead habits:
 - Disable specific optional cosmetic preferences you do not use, such as Shorts hiding, if you are chasing a page-specific slowdown.
 - Use narrow Element Zapper selectors rather than broad selectors that match large parts of a page.
 
-## Constructable Stylesheet Behavior
+### Constructable Stylesheet Behavior
 
-Chroma reuses stylesheets for cosmetic filtering. The browser still has to apply the selectors, so very broad custom rules can slow down large pages. Prefer rules scoped to the site and element you want to hide.
+Chroma reuses `CSSStyleSheet` objects through `document.adoptedStyleSheets` for cosmetic filtering. The browser still has to apply the selectors, so very broad custom rules can slow down large pages. Prefer rules scoped to the site and element you want to hide.
 
 ## MAIN-World Interception Cost
 
@@ -71,8 +69,13 @@ MAIN-world code is reserved for cases where isolated content scripts are not eno
 - Supported subscription scriptlets.
 - User-provided scriptlet resources.
 - Optional fingerprint randomization.
+- Optional Quiet Console request suppression.
 
-These hooks add checks around page APIs such as `fetch`, `XMLHttpRequest`, `JSON.parse`, DOM/style APIs, media state, or fingerprint surfaces. On ordinary pages where those handlers are not registered, the cost is avoided. On supported media platforms, the cost is the tradeoff for intercepting data before the page consumes it.
+These hooks add checks around page APIs such as `fetch`, `XMLHttpRequest`, `JSON.parse`, DOM/style APIs, media state, or fingerprint surfaces. Platform handlers are limited to their supported sites; user scriptlets follow their saved domain rules.
+
+Quiet Console is off by default. When enabled with master protection, it registers across browser-accessible pages and frames, excluding whitelisted domains; its code also skips defined safety-excluded hosts. It wraps `fetch`, `XMLHttpRequest`, `navigator.sendBeacon`, and function stringification so known ad/tracker requests can be suppressed before they produce blocked-request noise. Its per-call checks can therefore affect ordinary websites as well as media sites. Fingerprint randomization is another optional layer with broad page coverage.
+
+For a page-specific comparison, change one optional hook-based feature at a time and reload the page. See [Master Protection Lifecycle](FEATURES.md#master-protection-lifecycle) for the distinction between pausing future activity and undoing changes already made to a document.
 
 ## `userScripts` Registration Cost
 
@@ -119,27 +122,23 @@ For a conservative everyday setup:
 |---|---|---|
 | Network Blocking | On | Lets DNR handle request blocking in the browser engine. |
 | Tracking URL Cleanup | On | Uses DNR redirects instead of page-side URL rewriting. |
-| YouTube Stripping | On if you use YouTube | Avoids visible ad handling when payload cleanup works. |
-| Dynamic Ad Acceleration | Off unless needed | Keeps media polling and playback intervention out of the normal path. |
+| YouTube ad blocking | On if you use YouTube | Avoids visible ad handling when payload cleanup works. |
+| YouTube ad acceleration | Off unless needed | Avoids acceleration-specific polling and playback intervention. |
 | Cosmetic Filtering | On | CSS hiding is usually the cheapest page cleanup layer. |
-| Hide Shorts | Personal preference | Disable if you do not care about Shorts cleanup. |
+| Hide YouTube Shorts | Personal preference | Disable if you do not care about Shorts cleanup. |
 | Fingerprint Randomization | Off unless needed | MAIN-world API farbling can affect compatibility and adds per-surface hooks. |
-| Browser Privacy Hardening | Personal preference | Browser setting changes are not request-path heavy, but may affect compatibility. |
+| Quiet console | Off unless needed | Avoids extra page API checks across ordinary websites. |
+| Chrome privacy hardening | Personal preference | Browser setting changes are not request-path heavy, but may affect compatibility. |
 | Proxy Global Fallback | Off unless needed | Avoids proxy latency for unrelated browser traffic. |
 | Stats Privacy Mode | Basic or Aggregated | Avoid Debug mode unless troubleshooting. |
 | Custom subscriptions | Keep focused | Fewer remote lists mean less refresh, parsing, storage, and registration work. |
 | User scriptlet resources | Narrow domains only | Keeps executable page-code registration and runtime hooks scoped. |
 
-## Known Heavier Surfaces
+## Troubleshooting Performance
 
-Some surfaces are naturally heavier because the page or feature changes constantly:
+Change one layer at a time, reload the affected page, and check **Health** after each change. Start with optional work such as Debug statistics mode, Global Fallback proxy routing, Fingerprint Randomization, Quiet Console, YouTube ad acceleration, and broad custom subscriptions.
 
-- **YouTube**: Large feed DOMs, Shorts, payload interception, player state, and frequent platform changes.
-- **Twitch**: Live chat and streaming pages can produce heavy DOM churn; server-side ad insertion limits what client-side handling can do.
-- **Large subscription sets**: More parsing work, storage use, DNR allocation, cosmetic selector volume, and scriptlet registration.
-- **Global proxy routing**: Adds proxy path latency to broad browser traffic and can make slow proxy providers look like extension overhead.
-
-When troubleshooting performance, change one layer at a time and check the Health panel after each change. Start with optional heavier layers such as Debug statistics mode, Global Fallback proxy routing, Fingerprint Randomization, Dynamic Ad Acceleration, and broad custom subscriptions.
+Compare the same page and action before and after each change. A slow proxy can look like extension overhead; a large subscription set can add refresh, parsing, storage, and registration work even when request enforcement itself remains browser-managed. For site exceptions and a broader isolation workflow, see [Everyday Use & Troubleshooting](EVERYDAY_USE.md).
 
 ---
 

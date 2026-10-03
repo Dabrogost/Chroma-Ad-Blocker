@@ -1,12 +1,12 @@
 # Feature Guide
 
-This guide expands the feature summary from the root README and explains how Chroma's user-facing protection layers behave.
+This guide explains Chroma's protection layers and their limits. For common tasks and recovery steps, start with [Everyday Use & Troubleshooting](EVERYDAY_USE.md); for control names and defaults, see the [configuration reference](INSTALL.md#configuration).
 
 ## Master Protection Lifecycle
 
 The master switch pauses Chroma's blocking, page cleanup, scriptlets, proxy routing, and optional browser privacy controls. Your settings, lists, proxy configurations, and custom resources remain saved.
 
-Turn protection back on to restore your selected features. Lists may still refresh while protection is paused. Reload a tab to remove effects from scriptlets or fingerprint randomization that already ran on that page.
+Turn protection back on to restore your selected features. Lists may still refresh while protection is paused. See [Pause all protection](EVERYDAY_USE.md#pause-all-protection) for page reload requirements and how the master switch differs from a site exception.
 
 ## YouTube Ad Stripping
 
@@ -50,7 +50,7 @@ DNR blocking is central to Chroma's MV3 design because request decisions can be 
 
 ## Tracking URL & AMP Cleanup
 
-Tracking URL Cleanup removes known tracking query parameters from top-level navigation URLs with DNR redirect rules. Examples include `utm_*`, `fbclid`, `gclid`, and similar campaign IDs.
+Tracking URL Cleanup removes a fixed set of known tracking query parameters from top-level navigation URLs with DNR redirect rules. Examples include `utm_source`, `utm_campaign`, `fbclid`, and `gclid`; it does not remove every parameter beginning with `utm_`. Selected sign-in, payment, and banking domains are excluded for compatibility, and site whitelists also apply.
 
 De-AMP Links is optional and disabled by default. When enabled, Chroma redirects supported Google AMP viewer and AMP cache URLs to publisher URLs while respecting current-site and target-domain whitelists.
 
@@ -95,14 +95,7 @@ Controls include:
 
 The Element Zapper is a manual cleanup tool for one-off annoyances that filter lists do not catch: sticky banners, leftover ad containers, newsletter blocks, floating widgets, and site-specific clutter.
 
-To use it:
-
-1. Open the Chroma popup on an `http://` or `https://` page.
-2. Click **Zap Element**.
-3. Click the unwanted page element. Press `Esc` to cancel.
-4. Review the selector prompt and save it.
-
-Zapper rules are local to your browser and stored as cosmetic rules with a `zapper` source. Chroma rejects invalid selectors and warns when a selector matches too many elements, helping avoid accidental broad hiding. Saved rules can be toggled or deleted from settings at any time.
+Choose **Hide once** for the current page or **Save for this site** for a persistent local cosmetic rule. Chroma rejects invalid selectors and warns when a selector matches many elements. Saved rules carry a `zapper` source and depend on master protection, cosmetic filtering, and site exceptions. Follow [Hide an element with the Zapper](EVERYDAY_USE.md#hide-an-element-with-the-zapper) for the complete selection, confirmation, and undo flow.
 
 ## Main-World Interceptor Safety Exclusions
 
@@ -133,7 +126,7 @@ Chroma includes optional browser privacy controls:
 - Block third-party cookies.
 - Keep Do Not Track disabled.
 - Disable supported Privacy Sandbox ad APIs.
-- Block website geolocation access through Chrome's native site setting.
+- Request blocked website geolocation access through Chrome's native site setting.
 - Apply WebRTC leak protection modes.
 - Randomize or farble supported fingerprint surfaces per document.
 
@@ -141,9 +134,11 @@ Do Not Track remains disabled deliberately: the [W3C retired the DNT specificati
 
 Fingerprint Randomization covers surfaces such as canvas, audio, WebGL, navigator hardware fields, and normalized language APIs. It uses fresh non-persisted salts and full-hostname domain separation.
 
-Browser Privacy Hardening, Geolocation Protection, WebRTC modes, and Fingerprint Randomization require master protection in addition to their own feature settings. Master off releases or unregisters Chroma-owned runtime controls without erasing requested values; master on restores them. Health distinguishes requested, controlled, and effective Chrome state and automatically retries when an external controller releases a setting.
+Browser Privacy Hardening, Geolocation Protection, WebRTC modes, and Fingerprint Randomization require master protection in addition to their own feature settings. Master off releases or unregisters Chroma-owned runtime controls without erasing requested values; master on restores them. For browser privacy and WebRTC, Health distinguishes requested, controlled, and effective state, and Chroma retries when an external controller releases a setting.
 
-These features are optional because browser privacy hardening and fingerprint changes can affect site compatibility.
+Geolocation uses a different browser API that does not expose ownership. Health checks the effective location setting for a sample URL; it cannot prove that Chroma owns the setting or that every site's result is identical. Refresh Health or change the setting to retry. This feature does not provide fake coordinates or conceal an IP-derived location. See [Health Panel](STATISTICS.md#health-panel).
+
+These features are optional because browser privacy hardening and fingerprint changes can affect site compatibility. For sign-in or captcha problems, the popup's [FPR-only site exception](EVERYDAY_USE.md#disable-fingerprint-randomization-for-one-site) lets you keep ad blocking enabled.
 
 ## Local Event Tracker
 

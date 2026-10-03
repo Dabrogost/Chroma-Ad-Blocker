@@ -2,6 +2,8 @@
 
 We take the security of Chroma Ad-Blocker seriously. If you believe you have found a security vulnerability, please follow the disclosure process below.
 
+This page documents implementation boundaries and private disclosure. The [Threat Model](THREAT_MODEL.md) summarizes adversaries and remaining risks; the [Privacy Policy](PRIVACY_POLICY.md) owns the data-storage and external-request disclosures.
+
 **Supported Versions**
 Currently, only the latest released version of Chroma Ad-Blocker and the `master` branch are actively supported with security updates.
 
@@ -23,11 +25,9 @@ This policy cannot bind third parties or authorize conduct on their systems. Ema
 
 ## Remote List Trust Boundary
 
-Chroma uses remote filter list subscriptions as part of normal operation. Default remote subscriptions are third-party filter lists such as Hagezi Pro Mini, EasyList, and Fanboy Annoyance. Chroma project fixes are delivered through GitHub release packages, not through a default maintainer-controlled hotfix subscription.
+The subscription parser accepts supported rule syntax under response-size and rule-budget limits, deduplicates network rules where applicable, and drops unsupported syntax. Subscription scriptlet rules can call only implementations shipped in Chroma's bundled library. They cannot supply arbitrary executable resources through the subscription parser.
 
-Remote list content is not treated as arbitrary code. Lists are fetched over HTTPS, parsed locally, bounded by response-size and rule-budget limits, deduplicated against bundled static rules where applicable, and unsupported syntax is dropped. Scriptlet rules can only call implementations already shipped in Chroma's bundled scriptlet library.
-
-Because enabled remote lists can still change blocking, allow rules, cosmetic behavior, or supported scriptlet behavior after installation, users who need a stricter trust model should review and disable subscriptions they do not want to trust from Chroma settings. Additional custom subscriptions are always user-selected.
+Enabled lists can still alter network blocking, allow rules, cosmetic hiding, and bundled scriptlet behavior after installation. The [Filter List reference](FILTER_LISTS.md) owns the source inventory, supported syntax, allocation policy, and list-management instructions. Chroma project fixes arrive through release packages; there is no default maintainer-controlled hotfix subscription.
 
 ## Remote URL Network Boundary
 
@@ -57,25 +57,15 @@ Backups intentionally omit proxy credentials, cached subscription bodies/rules, 
 
 ## Advanced User Scriptlet Resources
 
-Chroma supports an advanced, user-initiated scriptlet resource lane for people who want to add uBO-style scriptlet resources themselves. This lane is separate from normal filter list subscriptions:
-
-- Chroma does not bundle these resources.
-- Chroma does not activate them through remote filter-list subscriptions.
-- Resource URLs must be added explicitly by the user in settings.
-- Matching `domain##+js(resource-name)` rules must also be saved by the user.
-- Cached resource code is not included in settings backups; backups store only resource URLs and user rules.
+Advanced resources use a separate registration path from subscriptions. A user must supply both a resource URL and matching `domain##+js(resource-name)` rules, directly or through an explicitly imported settings backup. Subscription rules cannot activate those resources. Backups preserve URLs and rules but omit executable caches.
 
 User scriptlet resources are executable code. They are fetched from permitted HTTPS URLs selected by the user, parsed with size and MIME limits, stored locally, and registered through Chrome's documented `userScripts` API in the page MAIN world. This API is the only path Chroma uses for user-provided scriptlet code; Chroma does not use `eval`, `Function`, or extension-controlled remote script execution for this feature. The DNS limitation described in [Remote URL Network Boundary](#remote-url-network-boundary) applies to these sources.
 
-MAIN-world user code can read or alter page-visible DOM, JavaScript state, cookies, storage, and account/session information available to ordinary page JavaScript. It can also initiate network activity or transmit accessible data subject to normal browser and page controls. Chroma does not audit or sandbox the intent of these resources, so users should add only code and source operators they trust and should match it to the narrowest practical domains. Health diagnostics report counts and coarse status for this feature without exposing raw resource code.
-
-For practical setup, examples, and troubleshooting, see [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md).
+This registration boundary does not make the code trustworthy: resources retain ordinary MAIN-world access and can transmit page-accessible data. Chroma does not audit or sandbox their intent. Health diagnostics expose counts and coarse status, not raw resource code. See [Advanced User Scriptlets](ADVANCED_USER_SCRIPTLETS.md) for setup and [the Privacy Policy](PRIVACY_POLICY.md#advanced-user-scriptlet-trust-boundary) for the data-access implications.
 
 ## Local Storage Access Boundary
 
-Chroma stores settings, proxy records, cached remote content, statistics, health diagnostics, and request-log URLs in `chrome.storage.local`. Chrome exposes that storage area to the extension service worker, extension pages, and Chroma's isolated-world content scripts by default. Chroma does not currently call `chrome.storage.local.setAccessLevel()` to restrict the area to trusted extension contexts.
-
-Page scripts and ordinary unrelated extensions do not gain direct storage access merely because an isolated content script runs beside them. The remaining blast radius is still broader than the service worker: a vulnerability or unintended data path in a Chroma content script could read storage keys unrelated to that script's normal task. A compromised browser profile, browser binary, operating system, or exceptional debugger-enabled environment capable of inspecting Chroma can also defeat this boundary.
+Chroma leaves `chrome.storage.local` at Chrome's default access level; it does not call `setAccessLevel()` to restrict the area to trusted extension contexts. Chroma's isolated content scripts therefore share storage access with the service worker and extension pages, including keys beyond each script's normal task. Message validation does not narrow this direct storage access. The [Privacy Policy](PRIVACY_POLICY.md#who-can-access-local-data) explains the exposure and lists the stored data.
 
 ## Security Hardening
 

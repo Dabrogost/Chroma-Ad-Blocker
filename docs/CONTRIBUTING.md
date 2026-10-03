@@ -31,10 +31,10 @@ On non-Windows systems, use the equivalent `npm ci` command.
 ## Before Opening a PR
 
 1. Test the extension locally via `chrome://extensions/` -> **Load unpacked**, selecting the repository's `extension/` directory.
-2. Run `npm.cmd test` on Windows (`npm test` elsewhere). For faster local iteration, use `npm.cmd run test:quick`.
-3. Run `npm.cmd run test:ci` for the Node, policy, ruleset, guide-freshness, and package-verification stage. This does not include loaded-extension browser E2E.
-4. Configure Chrome for Testing or Chromium and run `npm.cmd run test:e2e:smoke`; release work should also run the full `npm.cmd run test:e2e` tier. See [Testing](TEST_GUIDE.md).
-5. If you changed canonical user documentation, run `npm.cmd run docs:build`, review the generated guide changes, and then run `npm.cmd run docs:check`.
+2. If you changed canonical user documentation, guide metadata, or screenshots, run `npm.cmd run docs:build`, review the generated guide changes, and then run `npm.cmd run docs:check`. Do this before the tests below, which reject stale guide output.
+3. Run `npm.cmd test` on Windows (`npm test` elsewhere). For faster local iteration, use `npm.cmd run test:quick`.
+4. Run `npm.cmd run test:ci` for the Node, policy, ruleset, guide-freshness, and package-verification stage. This does not include loaded-extension browser E2E.
+5. Configure Chrome for Testing or Chromium and run `npm.cmd run test:e2e:smoke`; release work should also run the full `npm.cmd run test:e2e` tier. See [Testing](TEST_GUIDE.md).
 6. Verify your change doesn't break the popup, proxy routing, subscriptions, ad acceleration, YouTube stripping, cosmetic filtering, or network blocking.
 7. When testing scriptlets in Chrome 138+, open the extension's **Details** page and enable **Allow User Scripts**. On Chrome 122-137, Developer Mode enables the `userScripts` API.
 8. If you're changing `extension/background/`, `extension/content/interceptor.js`, `extension/content/protection.js`, `extension/core/`, or `extension/scriptlets/`, pay extra attention to the security notes in those files.
@@ -47,7 +47,7 @@ Edit user documentation in `docs/*.md`; do not maintain a separate website copy.
 - `npm.cmd run docs:build:web` generates the public site in `dist/guide-site/`, which is ignored by Git. Serve that directory with a local HTTP server to preview navigation and search.
 - `npm.cmd test -- guide` checks both outputs, including web links under the GitHub Pages project path and search without extension APIs.
 
-The web version replaces settings buttons with a download link and describes web hosting accurately; the article content still comes from the same Markdown. Only the declared guide pages and their assets are published, not the extension or contributor documentation.
+The web version replaces settings buttons with a download link; the article content still comes from the same Markdown. Only the declared guide pages and their assets are included in the guide site and release manual. Technical and contributor documents remain public in the repository and are linked from the [documentation index](README.md). Git-ignored personal notes are outside the public documentation set.
 
 The **Publish guide** workflow validates pull requests and deploys guide changes on `master` to [GitHub Pages](https://dabrogost.github.io/Chroma-Ad-Blocker/). It can also be run manually from `master`. In repository **Settings → Pages → Build and deployment**, the source must be **GitHub Actions**. The `github-pages` environment must allow deployments from `master`. No `gh-pages` branch or committed website output is needed. See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 

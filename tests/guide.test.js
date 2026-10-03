@@ -88,13 +88,14 @@ async function runGuide(relativePath, { mobile = false } = {}) {
 
 test('guide manifest is explicit, complete, and free of local-only docs', () => {
   assert.deepStrictEqual(validateGuideManifest(), []);
-  assert.strictEqual(GUIDE_PAGES.length, 12);
+  assert.strictEqual(GUIDE_PAGES.length, 13);
   assert.strictEqual(GUIDE_CATEGORIES.length, 4);
   assert.strictEqual(new Set(USER_DOC_FILES).size, USER_DOC_FILES.length);
-  assert.strictEqual(USER_DOC_FILES.length, 12);
+  assert.strictEqual(USER_DOC_FILES.length, 13);
   assert.deepStrictEqual(USER_DOC_FILES, GUIDE_PAGES.map(page => page.source));
   assert.ok(!USER_DOC_FILES.includes(GUIDE_HUB_SOURCE));
   assert.ok(USER_DOC_FILES.includes('docs/ADVANCED_USER_SCRIPTLETS.md'));
+  assert.ok(USER_DOC_FILES.includes('docs/EVERYDAY_USE.md'));
   assert.ok(!USER_DOC_FILES.includes('docs/testing.md'));
   assert.ok(!USER_DOC_FILES.includes('docs/dist.md'));
 
@@ -273,6 +274,16 @@ test('search index covers every article with plain searchable metadata', () => {
     assert.deepStrictEqual(item.tasks, page.tasks);
     assert.ok(item.headings.every(heading => heading.text && heading.id));
   }
+});
+
+test('generated articles use one pagination treatment while Markdown retains next links', () => {
+  for (const page of GUIDE_PAGES) {
+    const document = artifactDocument(`extension/guide/pages/${page.slug}.html`);
+    assert.strictEqual(document.querySelectorAll('.guide-pagination').length, 1, page.slug);
+    const paragraphs = [...document.querySelectorAll('.guide-content > p')];
+    assert.ok(!paragraphs.some(paragraph => /^(?:Next: |Back to )/.test(paragraph.textContent)), page.slug);
+  }
+  assert.match(fs.readFileSync(path.join(repoRoot, 'docs', 'FEATURES.md'), 'utf8'), /Next: \[YouTube Protection\]/);
 });
 
 test('guide controller searches the offline index without runtime HTML injection', async () => {
