@@ -15,8 +15,12 @@ async function fixture(browser, hostname, embedded = false) {
   const removeListener = cdp.on('Fetch.requestPaused', event => {
     const host = new URL(event.request.url).hostname;
     const mlive = host === 'www.mlive.com';
+    const pinterest = host === 'www.pinterest.com';
     const html = `<!doctype html><html><head><script>
       window.__state = { canary: window.__NATIVEADS_CANARY__ === true };
+      ${pinterest ? `
+        window.__pins = JSON.parse('{"resource_response":{"data":[{"id":"ad","pin_promotion_id":"campaign"},{"id":"organic"}]}}');
+      ` : ''}
       window.addEventListener('message', event => {
         if (event.origin === 'https://geo.dailymotion.com') window.__child = event.data;
       });
@@ -30,6 +34,13 @@ async function fixture(browser, hostname, embedded = false) {
     </script></head><body>
       <div class="ad-test" style="height:10px">bait</div>
       <div class="WatchingDiscovery__adSection___fixture">display ad</div>
+      ${pinterest ? `<main id="feed">
+        <div id="organic" data-grid-item="true"><a href="/pin/123/">Sponsored post design ideas</a></div>
+        <div id="promoted" data-grid-item="true"><a href="https://example.com/?item=1&amp;epik=campaign">Promoted</a></div>
+        <div id="one-tap" data-grid-item="true"><div data-test-pin-id="ad"><div data-test-id="one-tap-desktop-ad"><a href="https://example.com/" rel="nofollow">Ad</a></div></div></div>
+        <div id="new-ad" data-grid-item="true"><span data-test-id="x3f8q1">Sponsored</span></div>
+        <div id="organic-marker" data-grid-item="true"><span data-test-id="x3f8q1"></span><a href="/pin/456/">Organic pin</a></div>
+      </main>` : ''}
       ${embedded && host === hostname ? '<iframe src="https://geo.dailymotion.com/player/chroma-fixture"></iframe>' : ''}
       ${mlive ? `<script>
         // admiral recovery payload
@@ -60,7 +71,7 @@ async function fixture(browser, hostname, embedded = false) {
   }
 }
 
-test('bundled anti-detection in Chrome', async (t) => {
+test('bundled site rules in Chrome', async (t) => {
   const browser = await startExtensionBrowser();
   let original;
   let popup;
@@ -123,6 +134,30 @@ test('bundled anti-detection in Chrome', async (t) => {
       assert.deepEqual(await evaluate(browser.cdp, page.sessionId,
         '({ detector: __state.detectorBlocked, consent: __state.consent, loader: __state.loaderStub, recovery: !!window.__recoveryRan, ordinary: __ordinaryScriptRan })'),
       { detector: true, consent: 'preserved', loader: true, recovery: false, ordinary: true });
+    } finally { await page.close(); }
+  });
+
+  await t.test('Pinterest prunes feed data and hides sponsored cards across scrolling and recycling', async () => {
+    const page = await fixture(browser, 'www.pinterest.com');
+    try {
+      assert.deepEqual(await evaluate(browser.cdp, page.sessionId, '__pins.resource_response.data'), [{ id: 'organic' }]);
+      await waitFor(() => evaluate(browser.cdp, page.sessionId,
+        `['promoted', 'one-tap', 'new-ad'].every(id => getComputedStyle(document.getElementById(id)).display === 'none')`),
+      'Pinterest cosmetic fallback');
+      assert.equal(await evaluate(browser.cdp, page.sessionId,
+        `['feed', 'organic', 'organic-marker'].every(id => getComputedStyle(document.getElementById(id)).display !== 'none')`), true);
+      await evaluate(browser.cdp, page.sessionId, `
+        const next = document.getElementById('new-ad').cloneNode(true);
+        next.id = 'scroll-ad';
+        document.getElementById('feed').appendChild(next);
+        document.querySelector('#promoted a').href = '/pin/789/';
+        window.__laterPins = JSON.parse('{"resource_response":{"data":{"results":[{"id":"organic"},{"id":"ad","pin_promotion_id":"next-campaign"}],"bookmark":"next"}}}');
+      `);
+      await waitFor(() => evaluate(browser.cdp, page.sessionId,
+        `getComputedStyle(document.getElementById('scroll-ad')).display === 'none' &&
+         getComputedStyle(document.getElementById('promoted')).display !== 'none'`), 'new and recycled Pinterest cards');
+      assert.deepEqual(await evaluate(browser.cdp, page.sessionId, '__laterPins.resource_response.data'),
+        { results: [{ id: 'organic' }], bookmark: 'next' });
     } finally { await page.close(); }
   });
 

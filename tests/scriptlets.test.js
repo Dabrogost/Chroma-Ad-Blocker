@@ -186,6 +186,90 @@ test('bundled anti-detection rules', async (t) => {
       assert.strictEqual(Object.getOwnPropertyDescriptor(sandbox, '_sp_'), undefined);
     }
   });
+
+  await t.test('Pinterest rules prune home/search feeds and startup maps without changing organic pins', () => {
+    const organic = { id: 'organic', title: 'Sponsored post design ideas', images: { orig: 'pin.jpg' } };
+    const ad = { id: 'promoted', pin_promotion_id: 'campaign-1', images: { orig: 'ad.jpg' } };
+    const payloads = [
+      [{ resource_response: { data: [ad, ad, organic, ad], bookmark: 'next' } },
+        { resource_response: { data: [organic], bookmark: 'next' } }],
+      [{ resource_response: { data: { results: [ad, organic], bookmark: 'search-next' } } },
+        { resource_response: { data: { results: [organic], bookmark: 'search-next' } } }],
+      [{ initialReduxState: { pins: { a: ad, b: organic }, resources: {
+        UserHomefeedResource: { first: { data: [ad, organic] }, second: { data: [organic, ad] } }
+      }, user: { id: 'user' } } },
+        { initialReduxState: { pins: { b: organic }, resources: {
+          UserHomefeedResource: { first: { data: [organic] }, second: { data: [organic] } }
+        }, user: { id: 'user' } } }],
+      [{ unrelated: { data: [ad, organic] } }, { unrelated: { data: [ad, organic] } }]
+    ];
+    for (const host of ['pinterest.com', 'www.pinterest.com', 'notpinterest.com', 'pinterest.com.example']) {
+      const { sandbox } = page(host);
+      for (const [before, after] of payloads) {
+        sandbox.input = JSON.stringify(before);
+        const result = vm.runInContext('JSON.parse(input)', sandbox);
+        assert.deepStrictEqual(plain(result), host === 'pinterest.com' || host === 'www.pinterest.com' ? after : before);
+      }
+    }
+  });
+});
+
+test('json-prune path operators', async (t) => {
+  function parse(paths, value) {
+    const sandbox = runScriptlet('jsonPrune', [paths]);
+    sandbox.input = JSON.stringify(value);
+    return plain(vm.runInContext('JSON.parse(input)', sandbox));
+  }
+
+  await t.test('keeps exact-path deletion and adds array/object traversal', () => {
+    assert.deepStrictEqual(parse('adSlots nested.ad nested.items.[].ad objects.*.ad', {
+      adSlots: [], nested: { ad: 1, keep: true, items: [{ ad: 1, id: 1 }, null, { id: 2 }] },
+      objects: { first: { ad: 1, keep: 1 }, second: { keep: 2 } }
+    }), { nested: { keep: true, items: [{ id: 1 }, null, { id: 2 }] },
+      objects: { first: { keep: 1 }, second: { keep: 2 } } });
+  });
+
+  await t.test('removes whole matching entries and compacts arrays, using property presence', () => {
+    assert.deepStrictEqual(parse('items.[-].ad entries.{-}.ad', {
+      items: [{ ad: 'a' }, { ad: null }, { id: 1 }, null, 42, { ad: false }, { ad: 'b' }],
+      entries: { a: { ad: 1 }, b: { id: 2 }, c: null }
+    }), { items: [{ id: 1 }, null, 42], entries: { b: { id: 2 }, c: null } });
+  });
+
+  await t.test('checks nested predicates without editing surviving entries', () => {
+    const keep = { children: [{ metadata: {} }, null] };
+    assert.deepStrictEqual(parse('items.[-].children.[].metadata.ad', {
+      items: [{ children: [{ metadata: { ad: 1 } }] }, keep]
+    }), { items: [keep] });
+  });
+
+  await t.test('leaves missing paths, wrong container types and primitive JSON unchanged', () => {
+    for (const value of [null, 7, 'text', [], { items: { ad: 1 }, entries: [{ ad: 1 }] }]) {
+      assert.deepStrictEqual(parse('missing.ad items.[-].ad entries.{-}.ad', value), value);
+    }
+  });
+
+  await t.test('honors revivers and preserves native parse errors', () => {
+    const sandbox = runScriptlet('jsonPrune', ['items.[-].ad']);
+    const result = vm.runInContext(`JSON.parse('{"items":[{"id":1,"ad":true},{"id":2}]}',
+      (key, value) => key === 'id' ? value * 10 : value)`, sandbox);
+    assert.deepStrictEqual(plain(result), { items: [{ id: 20 }] });
+    assert.throws(() => vm.runInContext('JSON.parse("invalid")', sandbox), { name: 'SyntaxError' });
+    assert.throws(() => vm.runInContext('JSON.parse("{}", () => { throw new Error("reviver"); })', sandbox), /reviver/);
+    assert.doesNotThrow(() => vm.runInContext(`JSON.parse('{"items":[{"ad":true}]}',
+      (key, value) => value && typeof value === 'object' ? Object.freeze(value) : value)`, sandbox));
+  });
+
+  await t.test('does not traverse inherited properties or match inherited ad markers', () => {
+    const sandbox = runScriptlet('jsonPrune', ['constructor.prototype.keep items.[-].ad']);
+    const result = vm.runInContext(`
+      Object.prototype.keep = true;
+      Object.prototype.ad = true;
+      JSON.parse('{"items":[{"id":1},{"ad":true}]}');
+    `, sandbox);
+    assert.deepStrictEqual(plain(result), { items: [{ id: 1 }] });
+    assert.strictEqual(vm.runInContext('Object.prototype.keep', sandbox), true);
+  });
 });
 
 test('abort-on-property-read', async (t) => {
