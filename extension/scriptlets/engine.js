@@ -300,6 +300,7 @@ function buildManagedUserScripts({
 }) {
   const excludeMatches = whitelistToExcludeMatches(whitelist);
   const userScripts = [];
+  const seenScripts = new Set();
   let scriptCounter = 0;
   let userScriptCounter = 0;
   let droppedDomains = 0;
@@ -324,7 +325,6 @@ function buildManagedUserScripts({
     }
 
     const script = {
-      id: `${SUBSCRIPTION_SCRIPTLET_ID_PREFIX}${++scriptCounter}`,
       matches: matchResult.matches,
       js: [{ code: buildSubscriptionScriptletCode(fn, rule.args, quietConsole) }],
       runAt: normalizeRunAt(rule.runAt),
@@ -335,6 +335,12 @@ function buildManagedUserScripts({
     };
     const combinedExclusions = mergeMatchPatterns(excludeMatches, matchResult.excludeMatches);
     if (combinedExclusions.length > 0) script.excludeMatches = combinedExclusions;
+    // Compare the effective registration, including code, scope, and timing.
+    // This also handles aliases and duplicates in caches from older versions.
+    const key = JSON.stringify(comparableUserScript(script));
+    if (seenScripts.has(key)) continue;
+    seenScripts.add(key);
+    script.id = `${SUBSCRIPTION_SCRIPTLET_ID_PREFIX}${++scriptCounter}`;
     userScripts.push(script);
   }
 
@@ -353,7 +359,6 @@ function buildManagedUserScripts({
     }
 
     const script = {
-      id: `${USER_SCRIPTLET_ID_PREFIX}${++userScriptCounter}`,
       matches: matchResult.matches,
       js: [{ code: buildUserResourceCode(resource, rule.args, quietConsole) }],
       runAt: normalizeRunAt(rule.runAt),
@@ -362,6 +367,10 @@ function buildManagedUserScripts({
     };
     const combinedExclusions = mergeMatchPatterns(excludeMatches, matchResult.excludeMatches);
     if (combinedExclusions.length > 0) script.excludeMatches = combinedExclusions;
+    const key = JSON.stringify(comparableUserScript(script));
+    if (seenScripts.has(key)) continue;
+    seenScripts.add(key);
+    script.id = `${USER_SCRIPTLET_ID_PREFIX}${++userScriptCounter}`;
     userScripts.push(script);
   }
 
@@ -370,7 +379,7 @@ function buildManagedUserScripts({
 
 function comparableUserScript(script) {
   const sortedStrings = value => Array.isArray(value)
-    ? value.map(String).sort()
+    ? [...new Set(value.map(String))].sort()
     : [];
   return {
     id: String(script?.id || ''),

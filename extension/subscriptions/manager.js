@@ -55,6 +55,18 @@ function sortedArray(value) {
   return Array.isArray(value) ? value.slice().sort() : [];
 }
 
+// Fragments do not affect the fetched list. URL parsing also normalizes host
+// casing, default ports, and dot segments without changing paths or queries.
+function subscriptionUrlKey(value) {
+  try {
+    const parsed = new URL(value);
+    parsed.hash = '';
+    return parsed.href;
+  } catch {
+    return value;
+  }
+}
+
 function networkRuleDedupeKey(rule) {
   const condition = rule?.condition || {};
   return JSON.stringify({
@@ -573,7 +585,7 @@ export function stageCustomSubscriptions(
     if (candidatesById.has(candidate.id)) {
       return subscriptionStageError(`Duplicate imported subscription ID: ${candidate.id}`);
     }
-    const validatedUrl = validateRemoteHttpsUrl(candidate.url, { label: 'Subscription' });
+    const validatedUrl = validateRemoteHttpsUrl(candidate.url, { label: 'Subscription', stripHash: true });
     if (!validatedUrl.ok) {
       return subscriptionStageError(`Invalid imported subscription URL: ${validatedUrl.error}`);
     }
@@ -585,7 +597,7 @@ export function stageCustomSubscriptions(
   }
 
   const keptSubscriptions = baseSubscriptions.filter(sub => sub?.isCustom !== true);
-  const usedUrls = new Set(keptSubscriptions.map(sub => sub?.url).filter(Boolean));
+  const usedUrls = new Set(keptSubscriptions.map(sub => subscriptionUrlKey(sub?.url)).filter(Boolean));
   const acceptedImports = [];
 
   for (const candidate of candidatesById.values()) {
@@ -970,15 +982,19 @@ export async function setSubscriptionEnabled(id, enabled) {
  */
 export function addSubscription(sub) {
   return serializeSubscriptionState(async () => {
+    const validatedUrl = validateRemoteHttpsUrl(sub.url, { label: 'Subscription', stripHash: true });
+    if (!validatedUrl.ok) return { ok: false, error: validatedUrl.error };
     const { subscriptions = [] } = await chrome.storage.local.get('subscriptions');
     if (subscriptions.find(s => s.id === sub.id)) return { ok: false, error: 'ID already exists' };
 
-    if (subscriptions.find(s => s.url === sub.url)) return { ok: false, error: 'URL already added' };
+    if (subscriptions.some(s => subscriptionUrlKey(s.url) === validatedUrl.url)) {
+      return { ok: false, error: 'URL already added' };
+    }
 
     const nextSubscriptions = subscriptions.concat({
       id: sub.id,
       name: sub.name,
-      url: sub.url,
+      url: validatedUrl.url,
       enabled: true,
       isCustom: true,
       intervalHours: sub.intervalHours || 24,

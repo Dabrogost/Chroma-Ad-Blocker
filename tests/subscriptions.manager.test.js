@@ -1225,6 +1225,38 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(plain(storage.subscriptions.map(sub => sub.id)), ['custom-a', 'custom-b']);
   });
 
+  await t.test('duplicate Unbreak URLs are rejected even for concurrent adds with different IDs', async () => {
+    const url = 'https://raw.githubusercontent.com/uBlockOrigin/uAssets/refs/heads/master/filters/unbreak.txt';
+    const storage = { subscriptions: [] };
+    const manager = loadManager({ storage, cloneStorageReads: true });
+    const results = await Promise.all([
+      manager.addSubscription({ id: 'custom-a', name: 'Unbreak', url }),
+      manager.addSubscription({ id: 'custom-b', name: 'Unbreak again', url })
+    ]);
+
+    assert.deepStrictEqual(plain(results), [{ ok: true }, { ok: false, error: 'URL already added' }]);
+    assert.strictEqual(storage.subscriptions.length, 1);
+  });
+
+  await t.test('list URL identity normalizes stored URLs and fragments without conflating paths or queries', async () => {
+    const storage = {
+      subscriptions: [{ id: 'existing', enabled: false, url: 'https://LISTS.example:443/filters/../List.txt#old' }]
+    };
+    const manager = loadManager({ storage });
+    for (const url of ['https://lists.example/List.txt', 'https://lists.example/List.txt#new']) {
+      assert.deepStrictEqual(plain(await manager.addSubscription({ id: 'duplicate', name: 'Duplicate', url })),
+        { ok: false, error: 'URL already added' });
+    }
+    for (const [index, url] of ['https://lists.example/list.txt', 'https://lists.example/List.txt?variant=2'].entries()) {
+      assert.deepStrictEqual(plain(await manager.addSubscription({ id: `distinct-${index}`, name: 'Distinct', url })),
+        { ok: true });
+    }
+    assert.deepStrictEqual(plain(await manager.addSubscription({
+      id: 'normalized', name: 'Normalized', url: 'https://LISTS.example:443/Other.txt#fragment'
+    })), { ok: true });
+    assert.strictEqual(storage.subscriptions.at(-1).url, 'https://lists.example/Other.txt');
+  });
+
   await t.test('removeSubscription deletes per-subscription stores and rebuilds remaining rules', async () => {
     const storage = {
       subscriptions: [
@@ -1416,6 +1448,11 @@ test('Subscription lifecycle manager', async (t) => {
         { id: 'custom-b', url: 'https://custom.example/same.txt' }
       ],
       [{ id: 'custom-a', url: 'https://defaults.example/a.txt' }],
+      [{ id: 'custom-a', url: 'https://DEFAULTS.example:443/a.txt#duplicate' }],
+      [
+        { id: 'custom-a', url: 'https://custom.example/same.txt#first' },
+        { id: 'custom-b', url: 'https://CUSTOM.example:443/same.txt#second' }
+      ],
       [{ id: 'custom-a', url: 'http://custom.example/a.txt' }],
       [{ id: 'custom-a', url: 'https://127.0.0.1/a.txt' }]
     ];

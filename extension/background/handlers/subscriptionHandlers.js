@@ -30,7 +30,7 @@ export function validateCustomSubscriptionInput(sub) {
     return { ok: false, error: 'Invalid subscription ID' };
   }
 
-  const validatedUrl = validateRemoteHttpsUrl(sub.url, { label: 'Subscription' });
+  const validatedUrl = validateRemoteHttpsUrl(sub.url, { label: 'Subscription', stripHash: true });
   if (!validatedUrl.ok) return validatedUrl;
   const parsed = new URL(validatedUrl.url);
 

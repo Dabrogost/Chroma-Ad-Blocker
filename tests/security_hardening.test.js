@@ -1791,7 +1791,7 @@ test('Security Hardening - background handlers', async (t) => {
     const validExample = sandbox.validateCustomSubscriptionInput({
       id: 'custom_6',
       name: 'Example',
-      url: 'https://example.com/list.txt'
+      url: 'https://EXAMPLE.com:443/list.txt#fragment'
     });
     assert.strictEqual(validExample.ok, true);
     assert.strictEqual(validExample.subscription.url, 'https://example.com/list.txt');

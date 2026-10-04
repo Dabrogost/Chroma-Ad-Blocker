@@ -821,6 +821,54 @@ function loadScriptletEngine(storageState, options = {}) {
 }
 
 test('scriptlet engine whitelist hardening', async (t) => {
+  await t.test('duplicate scriptlets register once across lists, preserving arguments, scope, and timing', async () => {
+    const shared = {
+      scriptlet: 'set-constant', args: ['flag', 'true'],
+      domains: ['example.org', 'example.com'], excludedDomains: ['skip.example.org'], sourceId: 'first'
+    };
+    const duplicate = {
+      ...shared, domains: ['EXAMPLE.COM', 'example.org', 'example.com'],
+      excludedDomains: ['skip.example.org', 'skip.example.org'], runAt: 'document_start', sourceId: 'second'
+    };
+    const storage = {
+      subscriptionScriptletRules: [shared, shared, duplicate,
+        { ...shared, args: ['flag', 'false'] },
+        { ...shared, args: ['true', 'flag'] },
+        { ...shared, domains: ['example.net'] },
+        { ...shared, excludedDomains: ['other.example.org'] },
+        { ...shared, runAt: 'document_end' }
+      ],
+      config: {}
+    };
+    const { sandbox, registered } = loadScriptletEngine(storage);
+    await sandbox.initScriptletEngine();
+    assert.strictEqual(registered.length, 6);
+    assert.deepStrictEqual(registered.map(script => script.id), Array.from({ length: 6 }, (_, i) => `scriptlet_${i + 1}`));
+    assert.strictEqual(await sandbox.recoverUserScriptsIfNeeded(), false);
+
+    storage.subscriptionScriptletRules = [duplicate];
+    await sandbox.syncUserScripts();
+    assert.strictEqual(registered.length, 1, 'the surviving list must still supply its scriptlet');
+    assert.match(registered[0].js[0].code, /\["flag","true"\]/);
+  });
+
+  await t.test('bundled aliases and repeated user-resource rules share their effective registration', async () => {
+    const shared = { scriptlet: 'set-constant', args: ['flag', 'true'], domains: ['example.com'] };
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [shared, { ...shared, scriptlet: 'set' }],
+      userScriptletRules: [
+        { ...shared, scriptlet: 'custom' },
+        { ...shared, scriptlet: 'custom.js' },
+        { ...shared, scriptlet: 'custom', args: ['flag', 'false'] }
+      ],
+      userScriptletResources: { custom: { code: 'window.flag = scriptletArgs[1];' } },
+      config: {}
+    });
+    sandbox.SCRIPTLET_MAP.set('set', sandbox.SCRIPTLET_MAP.get('set-constant'));
+    await sandbox.initScriptletEngine();
+    assert.deepStrictEqual(registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1', 'user_scriptlet_2']);
+  });
+
   await t.test('adds main whitelist excludeMatches to subscription userScripts', async () => {
     const { sandbox, registered } = loadScriptletEngine({
       subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'], domains: ['example.org'] }],
