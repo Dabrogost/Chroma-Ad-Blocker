@@ -685,6 +685,18 @@ export function reconcileSubscriptionRuntimeState() {
 export async function initSubscriptions() {
   const { subscriptions } = await chrome.storage.local.get('subscriptions');
   const merged = mergeDefaultSubscriptions(subscriptions);
+  // onInstalled also runs on extension updates/reloads. Bundled rules ship
+  // with that package; their long remote-refresh interval must not retain an
+  // older package's scriptlets. Keep enablement and cached rules until the
+  // normal refresh succeeds, including for currently disabled lists.
+  for (const sub of merged) {
+    const bundled = DEFAULT_SUBSCRIPTIONS.find(item => item.id === sub.id);
+    if (sub.isCustom === true || !bundled?.url?.startsWith(chrome.runtime.getURL(''))) continue;
+    sub.lastUpdated = 0;
+    sub.networkCompilerAttemptAt = 0;
+    delete sub.etag;
+    delete sub.lastModified;
+  }
   if (JSON.stringify(merged) !== JSON.stringify(subscriptions)) {
     await chrome.storage.local.set({ subscriptions: merged });
   }

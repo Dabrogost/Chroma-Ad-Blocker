@@ -12,7 +12,8 @@ const FILES = {
     'handshake.e2e.js',
     'dnr-match.e2e.js',
     'zapper.e2e.js',
-    'service-worker-restart.e2e.js'
+    'service-worker-restart.e2e.js',
+    'anti-detection.e2e.js'
   ]
 };
 

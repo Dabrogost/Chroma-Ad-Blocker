@@ -1572,6 +1572,40 @@ test('Subscription lifecycle manager', async (t) => {
     assert.strictEqual(manager.storage.subscriptions[1].isCustom, true);
     assert.strictEqual(manager.storage.subscriptions[2].id, 'default-b');
   });
+
+  await t.test('package updates refresh bundled rules immediately and preserve disabled lists', async () => {
+    for (const enabled of [true, false]) {
+      const url = 'chrome-extension://chroma/subscriptions/chroma-lib.txt';
+      const requests = [];
+      const storage = {
+        subscriptions: [{ id: 'chroma-lib', url, enabled, intervalHours: 9999,
+          lastUpdated: Date.now(), networkCompilerVersion: 1, etag: 'old', lastModified: 'old' }],
+        sub_scriptlet_rules: { 'chroma-lib': [{ scriptlet: 'set-constant', args: ['old', 'true'] }] }
+      };
+      const updatedRules = [{ domains: ['dailymotion.com'], scriptlet: 'set-constant', args: ['__NATIVEADS_CANARY__', 'true'] }];
+      const manager = loadManager({
+        storage,
+        defaultSubscriptions: [{ id: 'chroma-lib', url, enabled: true, intervalHours: 9999 }],
+        fetch: async (requestUrl, init) => {
+          requests.push({ url: requestUrl, headers: init.headers });
+          return { ok: true, text: async () => 'updated bundle' };
+        },
+        parseList: () => ({ networkRules: [], cosmeticRules: [], scriptletRules: updatedRules, skipped: {} })
+      });
+      await manager.initSubscriptions();
+      assert.strictEqual(storage.subscriptions[0].enabled, enabled);
+      assert.strictEqual(storage.subscriptions[0].lastUpdated, 0);
+      assert.strictEqual(storage.sub_scriptlet_rules['chroma-lib'][0].args[0], 'old');
+      await manager.refreshAllStale();
+      assert.strictEqual(requests.length, enabled ? 1 : 0);
+      if (enabled) {
+        assert.deepStrictEqual(plain(requests[0].headers), {});
+        assert.deepStrictEqual(plain(storage.subscriptionScriptletRules), updatedRules.map(rule => ({ ...rule, sourceId: 'chroma-lib' })));
+        await manager.refreshAllStale();
+        assert.strictEqual(requests.length, 1, 'fresh bundled rules are not repeatedly fetched');
+      }
+    }
+  });
 });
 
 function storageSnapshot(value) {

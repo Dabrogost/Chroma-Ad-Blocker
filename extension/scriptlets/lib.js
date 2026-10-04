@@ -20,29 +20,52 @@ export function abortOnPropertyRead(args) {
 
   const abort = () => { throw new ReferenceError(prop + ' is not defined'); };
   const parts = prop.split('.');
-
-  let obj = window;
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (typeof obj[parts[i]] === 'undefined') {
-      try {
-        Object.defineProperty(obj, parts[i], {
-          get() { return Object.create(null); },
+  if (parts.some(part => !part)) return;
+  const installed = new WeakMap();
+  const trap = (obj, index) => {
+    if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
+    const seen = installed.get(obj) || new Set();
+    if (seen.has(index)) return;
+    seen.add(index);
+    installed.set(obj, seen);
+    const key = parts[index];
+    try {
+      const desc = Object.getOwnPropertyDescriptor(obj, key);
+      if (index === parts.length - 1) {
+        Object.defineProperty(obj, key, {
+          get: abort,
+          set() {},
+          enumerable: desc ? desc.enumerable : true,
           configurable: true
         });
-      } catch (e) { return; }
-    }
-    obj = obj[parts[i]];
-    if (!obj || typeof obj !== 'object') return;
-  }
-
-  const last = parts[parts.length - 1];
-  try {
-    Object.defineProperty(obj, last, {
-      get: abort,
-      set() {},
-      configurable: true
-    });
-  } catch (e) {}
+        return;
+      }
+      // Keep absent parents absent. A fabricated object can itself change the
+      // page's initialization branch. Follow assignments and lazy getters so
+      // the leaf remains protected when a publisher replaces its namespace.
+      let value = obj[key];
+      trap(value, index + 1);
+      if (desc && !desc.configurable) return;
+      const accessor = desc && !('value' in desc);
+      Object.defineProperty(obj, key, {
+        configurable: true,
+        enumerable: desc ? desc.enumerable : true,
+        get() {
+          const current = accessor ? desc.get?.call(this) : value;
+          trap(current, index + 1);
+          return current;
+        },
+        set: accessor ? (desc.set && function(next) {
+          desc.set.call(this, next);
+          trap(desc.get?.call(this), index + 1);
+        }) : (desc?.writable === false ? undefined : function(next) {
+          value = next;
+          trap(next, index + 1);
+        })
+      });
+    } catch (_) {}
+  };
+  trap(window, 0);
 }
 
 /**

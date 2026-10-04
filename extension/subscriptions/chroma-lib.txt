@@ -1,6 +1,21 @@
 ! Chroma Scriptlet Library
 ! Users receive updates to this list when the extension updates.
 
+! Dailymotion's native-ad canary and older player detection timer.
+! https://github.com/uBlockOrigin/uAssets/issues/30050
+! https://github.com/uBlockOrigin/uAssets/issues/23691
+dailymotion.com##+js(set-constant, __NATIVEADS_CANARY__, true)
+dailymotion.com##+js(no-setTimeout-if, adBlockerDetection)
+dailymotion.com##[class*="WatchingDiscovery__adSection"]
+
+! MLive: Sourcepoint detection and Admiral loader/recovery paths.
+! https://github.com/uBlockOrigin/uAssets/blob/master/filters/filters.txt
+! https://github.com/AdguardTeam/AdguardFilters/blob/master/AnnoyancesFilter/Popups/sections/antiadblock.txt
+mlive.com##+js(abort-on-property-read, _sp_._networkListenerData)
+mlive.com##+js(set-constant, admiral, noopFunc)
+mlive.com##+js(set-constant, admrlLoaded, true)
+mlive.com##+js(abort-current-inline-script, document.createElement, /admiral|succeedscene\.com/)
+
 dailymail.com,dailymail.co.uk##+js(hide-upward, .dmg-ads-container, li)
 reddit.com##+js(reddit-promoted-ads)
 youtube.com##+js(release-scroll-lock)

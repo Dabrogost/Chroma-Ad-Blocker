@@ -328,7 +328,10 @@ function buildManagedUserScripts({
       matches: matchResult.matches,
       js: [{ code: buildSubscriptionScriptletCode(fn, rule.args, quietConsole) }],
       runAt: normalizeRunAt(rule.runAt),
-      world: 'MAIN'
+      world: 'MAIN',
+      // Rules still match each frame's own URL and exclusions. Player and
+      // publisher detectors also run inside matching embedded documents.
+      allFrames: true
     };
     const combinedExclusions = mergeMatchPatterns(excludeMatches, matchResult.excludeMatches);
     if (combinedExclusions.length > 0) script.excludeMatches = combinedExclusions;

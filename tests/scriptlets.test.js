@@ -124,7 +124,112 @@ function runFingerprintRandomization({
 }
 
 // ─── ABORT-ON-PROPERTY-READ ─────
+test('bundled anti-detection rules', async (t) => {
+  const parser = {};
+  vm.createContext(parser);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/subscriptions/parser.js'), 'utf8')
+    .replace(/^export\s+/gm, ''), parser);
+  const { scriptletRules } = parser.parseList(fs.readFileSync(
+    path.join(__dirname, '../extension/subscriptions/chroma-lib.txt'), 'utf8'));
+  function page(hostname) {
+    const pendingTimers = [];
+    const sandbox = { ...makeWindow(), console,
+      setTimeout: (callback) => { pendingTimers.push(callback); return pendingTimers.length; } };
+    sandbox.window = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/scriptlets/lib.js'), 'utf8')
+      .replace(/^export\s+/gm, ''), sandbox);
+    for (const rule of scriptletRules) {
+      if (!rule.domains?.some(domain => hostname === domain || hostname.endsWith('.' + domain))) continue;
+      vm.runInContext(`SCRIPTLET_MAP.get(${JSON.stringify(rule.scriptlet)})(${JSON.stringify(rule.args)})`, sandbox);
+    }
+    return { sandbox, pendingTimers };
+  }
+
+  await t.test('Dailymotion canary stays true and only its detector timer is suppressed', () => {
+    for (const host of ['www.dailymotion.com', 'geo.dailymotion.com']) {
+      const { sandbox, pendingTimers } = page(host);
+      assert.strictEqual(vm.runInContext('__NATIVEADS_CANARY__', sandbox), true);
+      vm.runInContext(`
+        __NATIVEADS_CANARY__ = false;
+        setTimeout(function adBlockerDetection() { window.blocked = true; }, 100);
+        setTimeout(function playerProgress() { window.progress = true; }, 100);
+      `, sandbox);
+      assert.strictEqual(vm.runInContext('__NATIVEADS_CANARY__', sandbox), true);
+      assert.strictEqual(pendingTimers.length, 1);
+      pendingTimers[0]();
+      assert.strictEqual(sandbox.blocked, undefined);
+      assert.strictEqual(sandbox.progress, true);
+    }
+  });
+
+  await t.test('MLive stops detector access and recovery scripts but permits normal DOM work', () => {
+    const { sandbox } = page('www.mlive.com');
+    vm.runInContext(`
+      _sp_ = { consent: 'unchanged' };
+      admiral('engage');
+    `, sandbox);
+    assert.throws(() => vm.runInContext('_sp_._networkListenerData', sandbox), /ReferenceError/);
+    assert.strictEqual(vm.runInContext('_sp_.consent', sandbox), 'unchanged');
+    assert.strictEqual(sandbox.admrlLoaded, true);
+    sandbox.document.currentScript = { textContent: 'load admiral recovery' };
+    assert.throws(() => vm.runInContext('document.createElement', sandbox), /ReferenceError/);
+    sandbox.document.currentScript = { textContent: 'render article' };
+    assert.doesNotThrow(() => vm.runInContext('document.createElement', sandbox));
+  });
+
+  await t.test('lookalike and unrelated hosts receive no site hooks', () => {
+    for (const host of ['notdailymotion.com', 'dailymotion.com.example', 'notmlive.com', 'example.com']) {
+      const { sandbox } = page(host);
+      assert.strictEqual(sandbox.__NATIVEADS_CANARY__, undefined);
+      assert.strictEqual(sandbox.admiral, undefined);
+      assert.strictEqual(Object.getOwnPropertyDescriptor(sandbox, '_sp_'), undefined);
+    }
+  });
+});
+
 test('abort-on-property-read', async (t) => {
+  await t.test('follows late and replaced publisher namespaces without fabricating them', () => {
+    const sandbox = runScriptlet('abortOnPropertyRead', ['_sp_._networkListenerData']);
+    assert.strictEqual(vm.runInContext('window._sp_', sandbox), undefined);
+    for (const value of ['{}', 'null', '42', 'function publisher() {}', '{ consent: true }']) {
+      vm.runInContext(`window._sp_ = ${value}`, sandbox);
+      if (value === 'null' || value === '42') continue;
+      assert.throws(() => vm.runInContext('window._sp_._networkListenerData', sandbox), /ReferenceError/);
+    }
+    assert.strictEqual(vm.runInContext('window._sp_.consent', sandbox), true);
+  });
+
+  await t.test('preserves existing accessors and protects deeper replacements', () => {
+    let publisher = { nested: { unrelated: 7 } };
+    const win = makeWindow();
+    Object.defineProperty(win, '_sp_', {
+      configurable: true,
+      get: () => publisher,
+      set: value => { publisher = value; }
+    });
+    // runScriptlet spreads its overrides; install accessors inside the realm.
+    const sandbox = runScriptlet('abortOnPropertyRead', ['unused']);
+    sandbox.publisher = win;
+    vm.runInContext(`
+      Object.defineProperty(window, '_sp_', Object.getOwnPropertyDescriptor(publisher, '_sp_'));
+      abortOnPropertyRead(['_sp_.nested.detect']);
+    `, sandbox);
+    assert.strictEqual(vm.runInContext('_sp_.nested.unrelated', sandbox), 7);
+    assert.throws(() => vm.runInContext('_sp_.nested.detect', sandbox), /ReferenceError/);
+    vm.runInContext('_sp_ = { nested: { unrelated: 9 } }', sandbox);
+    assert.strictEqual(publisher.nested.unrelated, 9);
+    vm.runInContext('_sp_.nested = {}', sandbox);
+    assert.throws(() => vm.runInContext('_sp_.nested.detect', sandbox), /ReferenceError/);
+  });
+
+  await t.test('leaves non-configurable properties usable', () => {
+    const root = {};
+    Object.defineProperty(root, 'locked', { value: 7, configurable: false });
+    const sandbox = runScriptlet('abortOnPropertyRead', ['root.locked'], { root });
+    assert.strictEqual(vm.runInContext('root.locked', sandbox), 7);
+  });
+
   await t.test('throws when target property is accessed', () => {
     const sandbox = runScriptlet('abortOnPropertyRead', ['adsbygoogle']);
     assert.throws(() => {
@@ -1208,7 +1313,7 @@ test('scriptlet engine master lifecycle', async (t) => {
     ]);
     assert.strictEqual(subscription.runAt, 'document_start');
     assert.strictEqual(subscription.world, 'MAIN');
-    assert.strictEqual(subscription.allFrames, undefined);
+    assert.strictEqual(subscription.allFrames, true);
     assert.match(subscription.js[0].code, /subscriptionFlag/);
 
     assert.deepStrictEqual(plain(advanced.matches), [
