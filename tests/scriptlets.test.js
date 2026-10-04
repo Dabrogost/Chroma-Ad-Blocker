@@ -124,7 +124,196 @@ function runFingerprintRandomization({
 }
 
 // ─── ABORT-ON-PROPERTY-READ ─────
+test('bundled anti-detection rules', async (t) => {
+  const parser = {};
+  vm.createContext(parser);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/subscriptions/parser.js'), 'utf8')
+    .replace(/^export\s+/gm, ''), parser);
+  const { scriptletRules } = parser.parseList(fs.readFileSync(
+    path.join(__dirname, '../extension/subscriptions/chroma-lib.txt'), 'utf8'));
+  function page(hostname) {
+    const pendingTimers = [];
+    const sandbox = { ...makeWindow(), console,
+      setTimeout: (callback) => { pendingTimers.push(callback); return pendingTimers.length; } };
+    sandbox.window = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/scriptlets/lib.js'), 'utf8')
+      .replace(/^export\s+/gm, ''), sandbox);
+    for (const rule of scriptletRules) {
+      if (!rule.domains?.some(domain => hostname === domain || hostname.endsWith('.' + domain))) continue;
+      vm.runInContext(`SCRIPTLET_MAP.get(${JSON.stringify(rule.scriptlet)})(${JSON.stringify(rule.args)})`, sandbox);
+    }
+    return { sandbox, pendingTimers };
+  }
+
+  await t.test('Dailymotion canary stays true and only its detector timer is suppressed', () => {
+    for (const host of ['www.dailymotion.com', 'geo.dailymotion.com']) {
+      const { sandbox, pendingTimers } = page(host);
+      assert.strictEqual(vm.runInContext('__NATIVEADS_CANARY__', sandbox), true);
+      vm.runInContext(`
+        __NATIVEADS_CANARY__ = false;
+        setTimeout(function adBlockerDetection() { window.blocked = true; }, 100);
+        setTimeout(function playerProgress() { window.progress = true; }, 100);
+      `, sandbox);
+      assert.strictEqual(vm.runInContext('__NATIVEADS_CANARY__', sandbox), true);
+      assert.strictEqual(pendingTimers.length, 1);
+      pendingTimers[0]();
+      assert.strictEqual(sandbox.blocked, undefined);
+      assert.strictEqual(sandbox.progress, true);
+    }
+  });
+
+  await t.test('MLive stops detector access and recovery scripts but permits normal DOM work', () => {
+    const { sandbox } = page('www.mlive.com');
+    vm.runInContext(`
+      _sp_ = { consent: 'unchanged' };
+      admiral('engage');
+    `, sandbox);
+    assert.throws(() => vm.runInContext('_sp_._networkListenerData', sandbox), /ReferenceError/);
+    assert.strictEqual(vm.runInContext('_sp_.consent', sandbox), 'unchanged');
+    assert.strictEqual(sandbox.admrlLoaded, true);
+    sandbox.document.currentScript = { textContent: 'load admiral recovery' };
+    assert.throws(() => vm.runInContext('document.createElement', sandbox), /ReferenceError/);
+    sandbox.document.currentScript = { textContent: 'render article' };
+    assert.doesNotThrow(() => vm.runInContext('document.createElement', sandbox));
+  });
+
+  await t.test('lookalike and unrelated hosts receive no site hooks', () => {
+    for (const host of ['notdailymotion.com', 'dailymotion.com.example', 'notmlive.com', 'example.com']) {
+      const { sandbox } = page(host);
+      assert.strictEqual(sandbox.__NATIVEADS_CANARY__, undefined);
+      assert.strictEqual(sandbox.admiral, undefined);
+      assert.strictEqual(Object.getOwnPropertyDescriptor(sandbox, '_sp_'), undefined);
+    }
+  });
+
+  await t.test('Pinterest rules prune home/search feeds and startup maps without changing organic pins', () => {
+    const organic = { id: 'organic', title: 'Sponsored post design ideas', images: { orig: 'pin.jpg' } };
+    const ad = { id: 'promoted', pin_promotion_id: 'campaign-1', images: { orig: 'ad.jpg' } };
+    const payloads = [
+      [{ resource_response: { data: [ad, ad, organic, ad], bookmark: 'next' } },
+        { resource_response: { data: [organic], bookmark: 'next' } }],
+      [{ resource_response: { data: { results: [ad, organic], bookmark: 'search-next' } } },
+        { resource_response: { data: { results: [organic], bookmark: 'search-next' } } }],
+      [{ initialReduxState: { pins: { a: ad, b: organic }, resources: {
+        UserHomefeedResource: { first: { data: [ad, organic] }, second: { data: [organic, ad] } }
+      }, user: { id: 'user' } } },
+        { initialReduxState: { pins: { b: organic }, resources: {
+          UserHomefeedResource: { first: { data: [organic] }, second: { data: [organic] } }
+        }, user: { id: 'user' } } }],
+      [{ unrelated: { data: [ad, organic] } }, { unrelated: { data: [ad, organic] } }]
+    ];
+    for (const host of ['pinterest.com', 'www.pinterest.com', 'notpinterest.com', 'pinterest.com.example']) {
+      const { sandbox } = page(host);
+      for (const [before, after] of payloads) {
+        sandbox.input = JSON.stringify(before);
+        const result = vm.runInContext('JSON.parse(input)', sandbox);
+        assert.deepStrictEqual(plain(result), host === 'pinterest.com' || host === 'www.pinterest.com' ? after : before);
+      }
+    }
+  });
+});
+
+test('json-prune path operators', async (t) => {
+  function parse(paths, value) {
+    const sandbox = runScriptlet('jsonPrune', [paths]);
+    sandbox.input = JSON.stringify(value);
+    return plain(vm.runInContext('JSON.parse(input)', sandbox));
+  }
+
+  await t.test('keeps exact-path deletion and adds array/object traversal', () => {
+    assert.deepStrictEqual(parse('adSlots nested.ad nested.items.[].ad objects.*.ad', {
+      adSlots: [], nested: { ad: 1, keep: true, items: [{ ad: 1, id: 1 }, null, { id: 2 }] },
+      objects: { first: { ad: 1, keep: 1 }, second: { keep: 2 } }
+    }), { nested: { keep: true, items: [{ id: 1 }, null, { id: 2 }] },
+      objects: { first: { keep: 1 }, second: { keep: 2 } } });
+  });
+
+  await t.test('removes whole matching entries and compacts arrays, using property presence', () => {
+    assert.deepStrictEqual(parse('items.[-].ad entries.{-}.ad', {
+      items: [{ ad: 'a' }, { ad: null }, { id: 1 }, null, 42, { ad: false }, { ad: 'b' }],
+      entries: { a: { ad: 1 }, b: { id: 2 }, c: null }
+    }), { items: [{ id: 1 }, null, 42], entries: { b: { id: 2 }, c: null } });
+  });
+
+  await t.test('checks nested predicates without editing surviving entries', () => {
+    const keep = { children: [{ metadata: {} }, null] };
+    assert.deepStrictEqual(parse('items.[-].children.[].metadata.ad', {
+      items: [{ children: [{ metadata: { ad: 1 } }] }, keep]
+    }), { items: [keep] });
+  });
+
+  await t.test('leaves missing paths, wrong container types and primitive JSON unchanged', () => {
+    for (const value of [null, 7, 'text', [], { items: { ad: 1 }, entries: [{ ad: 1 }] }]) {
+      assert.deepStrictEqual(parse('missing.ad items.[-].ad entries.{-}.ad', value), value);
+    }
+  });
+
+  await t.test('honors revivers and preserves native parse errors', () => {
+    const sandbox = runScriptlet('jsonPrune', ['items.[-].ad']);
+    const result = vm.runInContext(`JSON.parse('{"items":[{"id":1,"ad":true},{"id":2}]}',
+      (key, value) => key === 'id' ? value * 10 : value)`, sandbox);
+    assert.deepStrictEqual(plain(result), { items: [{ id: 20 }] });
+    assert.throws(() => vm.runInContext('JSON.parse("invalid")', sandbox), { name: 'SyntaxError' });
+    assert.throws(() => vm.runInContext('JSON.parse("{}", () => { throw new Error("reviver"); })', sandbox), /reviver/);
+    assert.doesNotThrow(() => vm.runInContext(`JSON.parse('{"items":[{"ad":true}]}',
+      (key, value) => value && typeof value === 'object' ? Object.freeze(value) : value)`, sandbox));
+  });
+
+  await t.test('does not traverse inherited properties or match inherited ad markers', () => {
+    const sandbox = runScriptlet('jsonPrune', ['constructor.prototype.keep items.[-].ad']);
+    const result = vm.runInContext(`
+      Object.prototype.keep = true;
+      Object.prototype.ad = true;
+      JSON.parse('{"items":[{"id":1},{"ad":true}]}');
+    `, sandbox);
+    assert.deepStrictEqual(plain(result), { items: [{ id: 1 }] });
+    assert.strictEqual(vm.runInContext('Object.prototype.keep', sandbox), true);
+  });
+});
+
 test('abort-on-property-read', async (t) => {
+  await t.test('follows late and replaced publisher namespaces without fabricating them', () => {
+    const sandbox = runScriptlet('abortOnPropertyRead', ['_sp_._networkListenerData']);
+    assert.strictEqual(vm.runInContext('window._sp_', sandbox), undefined);
+    for (const value of ['{}', 'null', '42', 'function publisher() {}', '{ consent: true }']) {
+      vm.runInContext(`window._sp_ = ${value}`, sandbox);
+      if (value === 'null' || value === '42') continue;
+      assert.throws(() => vm.runInContext('window._sp_._networkListenerData', sandbox), /ReferenceError/);
+    }
+    assert.strictEqual(vm.runInContext('window._sp_.consent', sandbox), true);
+  });
+
+  await t.test('preserves existing accessors and protects deeper replacements', () => {
+    let publisher = { nested: { unrelated: 7 } };
+    const win = makeWindow();
+    Object.defineProperty(win, '_sp_', {
+      configurable: true,
+      get: () => publisher,
+      set: value => { publisher = value; }
+    });
+    // runScriptlet spreads its overrides; install accessors inside the realm.
+    const sandbox = runScriptlet('abortOnPropertyRead', ['unused']);
+    sandbox.publisher = win;
+    vm.runInContext(`
+      Object.defineProperty(window, '_sp_', Object.getOwnPropertyDescriptor(publisher, '_sp_'));
+      abortOnPropertyRead(['_sp_.nested.detect']);
+    `, sandbox);
+    assert.strictEqual(vm.runInContext('_sp_.nested.unrelated', sandbox), 7);
+    assert.throws(() => vm.runInContext('_sp_.nested.detect', sandbox), /ReferenceError/);
+    vm.runInContext('_sp_ = { nested: { unrelated: 9 } }', sandbox);
+    assert.strictEqual(publisher.nested.unrelated, 9);
+    vm.runInContext('_sp_.nested = {}', sandbox);
+    assert.throws(() => vm.runInContext('_sp_.nested.detect', sandbox), /ReferenceError/);
+  });
+
+  await t.test('leaves non-configurable properties usable', () => {
+    const root = {};
+    Object.defineProperty(root, 'locked', { value: 7, configurable: false });
+    const sandbox = runScriptlet('abortOnPropertyRead', ['root.locked'], { root });
+    assert.strictEqual(vm.runInContext('root.locked', sandbox), 7);
+  });
+
   await t.test('throws when target property is accessed', () => {
     const sandbox = runScriptlet('abortOnPropertyRead', ['adsbygoogle']);
     assert.throws(() => {
@@ -632,6 +821,54 @@ function loadScriptletEngine(storageState, options = {}) {
 }
 
 test('scriptlet engine whitelist hardening', async (t) => {
+  await t.test('duplicate scriptlets register once across lists, preserving arguments, scope, and timing', async () => {
+    const shared = {
+      scriptlet: 'set-constant', args: ['flag', 'true'],
+      domains: ['example.org', 'example.com'], excludedDomains: ['skip.example.org'], sourceId: 'first'
+    };
+    const duplicate = {
+      ...shared, domains: ['EXAMPLE.COM', 'example.org', 'example.com'],
+      excludedDomains: ['skip.example.org', 'skip.example.org'], runAt: 'document_start', sourceId: 'second'
+    };
+    const storage = {
+      subscriptionScriptletRules: [shared, shared, duplicate,
+        { ...shared, args: ['flag', 'false'] },
+        { ...shared, args: ['true', 'flag'] },
+        { ...shared, domains: ['example.net'] },
+        { ...shared, excludedDomains: ['other.example.org'] },
+        { ...shared, runAt: 'document_end' }
+      ],
+      config: {}
+    };
+    const { sandbox, registered } = loadScriptletEngine(storage);
+    await sandbox.initScriptletEngine();
+    assert.strictEqual(registered.length, 6);
+    assert.deepStrictEqual(registered.map(script => script.id), Array.from({ length: 6 }, (_, i) => `scriptlet_${i + 1}`));
+    assert.strictEqual(await sandbox.recoverUserScriptsIfNeeded(), false);
+
+    storage.subscriptionScriptletRules = [duplicate];
+    await sandbox.syncUserScripts();
+    assert.strictEqual(registered.length, 1, 'the surviving list must still supply its scriptlet');
+    assert.match(registered[0].js[0].code, /\["flag","true"\]/);
+  });
+
+  await t.test('bundled aliases and repeated user-resource rules share their effective registration', async () => {
+    const shared = { scriptlet: 'set-constant', args: ['flag', 'true'], domains: ['example.com'] };
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [shared, { ...shared, scriptlet: 'set' }],
+      userScriptletRules: [
+        { ...shared, scriptlet: 'custom' },
+        { ...shared, scriptlet: 'custom.js' },
+        { ...shared, scriptlet: 'custom', args: ['flag', 'false'] }
+      ],
+      userScriptletResources: { custom: { code: 'window.flag = scriptletArgs[1];' } },
+      config: {}
+    });
+    sandbox.SCRIPTLET_MAP.set('set', sandbox.SCRIPTLET_MAP.get('set-constant'));
+    await sandbox.initScriptletEngine();
+    assert.deepStrictEqual(registered.map(script => script.id), ['scriptlet_1', 'user_scriptlet_1', 'user_scriptlet_2']);
+  });
+
   await t.test('adds main whitelist excludeMatches to subscription userScripts', async () => {
     const { sandbox, registered } = loadScriptletEngine({
       subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'], domains: ['example.org'] }],
@@ -1208,7 +1445,7 @@ test('scriptlet engine master lifecycle', async (t) => {
     ]);
     assert.strictEqual(subscription.runAt, 'document_start');
     assert.strictEqual(subscription.world, 'MAIN');
-    assert.strictEqual(subscription.allFrames, undefined);
+    assert.strictEqual(subscription.allFrames, true);
     assert.match(subscription.js[0].code, /subscriptionFlag/);
 
     assert.deepStrictEqual(plain(advanced.matches), [

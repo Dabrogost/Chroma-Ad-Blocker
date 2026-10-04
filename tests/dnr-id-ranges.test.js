@@ -372,7 +372,8 @@ test('Network DNR reconciliation', async (t) => {
         ],
         'list-b': [
           subscriptionRule(11),
-          regexSubscriptionRule('^shared$')
+          regexSubscriptionRule('^shared$'),
+          subscriptionRule(12)
         ]
       },
       { isRegexSupported: checker, ruleLimit: 4 }
@@ -389,6 +390,65 @@ test('Network DNR reconciliation', async (t) => {
       'list-a': 2,
       'list-b': 2
     });
+    assert.strictEqual(application.subscriptionStats['list-b'].duplicateNetworkRuleCount, 1);
+    assert.strictEqual(application.networkRules.filter(rule => rule.condition.regexFilter === '^shared$').length, 1);
+  });
+
+  await t.test('network duplicates share one budget slot while distinct conditions survive', async () => {
+    const shared = {
+      priority: 1,
+      action: { type: 'block' },
+      condition: { urlFilter: '||shared.example^', resourceTypes: ['script', 'image'] },
+      _listPosition: 0
+    };
+    const duplicate = {
+      ...shared,
+      condition: { resourceTypes: ['image', 'script', 'image'], urlFilter: '||shared.example^' },
+      _listPosition: 42
+    };
+    const distinct = [
+      { ...shared, action: { type: 'allow' } },
+      { ...shared, priority: 3 },
+      ...[
+        { isUrlFilterCaseSensitive: true },
+        { initiatorDomains: ['publisher.example'] },
+        { excludedInitiatorDomains: ['publisher.example'] },
+        { excludedResourceTypes: ['font'] },
+        { domainType: 'thirdParty' }
+      ].map(condition => ({ ...shared, condition: { ...shared.condition, ...condition } }))
+    ];
+    const subscriptions = [{ id: 'a', enabled: true }, { id: 'b', enabled: true }];
+    const caches = { a: [shared, duplicate], b: [duplicate, ...distinct] };
+    const { subscriptionDnr } = loadDnrState();
+    const application = await subscriptionDnr.buildSubscriptionRuleApplication(subscriptions, caches, { ruleLimit: 8 });
+
+    assert.strictEqual(application.networkRules.length, 8);
+    assert.strictEqual(application.budgetTrimCount, 0);
+    assert.deepStrictEqual(plain(application.appliedNetworkRulesPerSub), { a: 1, b: 7 });
+    assert.strictEqual(application.subscriptionStats.a.duplicateNetworkRuleCount, 1);
+    assert.strictEqual(application.subscriptionStats.b.duplicateNetworkRuleCount, 1);
+    for (const rule of distinct) {
+      assert.ok(application.networkRules.some(candidate => JSON.stringify(candidate) === JSON.stringify(
+        Object.fromEntries(Object.entries(rule).filter(([key]) => key !== '_listPosition'))
+      )));
+    }
+
+    subscriptions[0].enabled = false;
+    const remaining = await subscriptionDnr.buildSubscriptionRuleApplication(subscriptions, caches);
+    assert.strictEqual(remaining.networkRules.length, 8, 'disabling the first source must retain the shared rule');
+    assert.deepStrictEqual(plain(remaining.appliedNetworkRulesPerSub), { b: 8 });
+  });
+
+  await t.test('duplicate regex rules cannot consume the quota needed by a distinct regex', async () => {
+    const { subscriptionDnr } = loadDnrState();
+    const application = await subscriptionDnr.buildSubscriptionRuleApplication(
+      [{ id: 'a', enabled: true }, { id: 'b', enabled: true }],
+      { a: [regexSubscriptionRule('^shared$')], b: [regexSubscriptionRule('^shared$'), regexSubscriptionRule('^other$')] },
+      { regexRuleLimit: 2, ruleLimit: 2 }
+    );
+    assert.deepStrictEqual(plain(application.networkRules.map(rule => rule.condition.regexFilter)), ['^shared$', '^other$']);
+    assert.strictEqual(application.regexQuotaTrimCount, 0);
+    assert.strictEqual(application.budgetTrimCount, 0);
   });
 
   await t.test('regex preflight work stays bounded for a large cache and compatible URL rules still apply', async () => {

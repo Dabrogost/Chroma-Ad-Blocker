@@ -76,6 +76,10 @@
   const currentHostname = String(window.location.hostname || '').toLowerCase();
   const isYouTube = isHostOrSubdomain(currentHostname, 'youtube.com');
   const isTwitch  = isHostOrSubdomain(currentHostname, 'twitch.tv');
+  // Dailymotion measures generic ad bait. Keep site-specific and user-picked
+  // cosmetics, but do not hide/remove those probes with generic heuristics.
+  // https://github.com/uBlockOrigin/uAssets/issues/4399
+  const skipGenericCosmetics = isHostOrSubdomain(currentHostname, 'dailymotion.com');
   const QUIET_CONSOLE_CONFIG_EVENT = '__CHROMA_QUIET_CONSOLE_CONFIG__';
 
   // ─── STATE ─────
@@ -254,6 +258,7 @@
       rules
         .filter(rule =>
           rule?.isException === false &&
+          (!isHostOrSubdomain(hostname, 'dailymotion.com') || rule.domains?.length > 0) &&
           !exceptionSelectors.has(rule?.selector) &&
           subscriptionDomainRuleApplies(rule, hostname)
         )
@@ -263,7 +268,7 @@
 
   function rebuildHideSelectors() {
     HIDE_SELECTORS = getValidSelectors([
-      ...BUILTIN_HIDE_SELECTORS,
+      ...(skipGenericCosmetics ? [] : BUILTIN_HIDE_SELECTORS),
       ...SUBSCRIPTION_HIDE_SELECTORS
     ]);
   }
@@ -386,7 +391,7 @@
   }
 
   function shouldRunDomCleanup() {
-    return CONFIG.enabled && CONFIG.cosmetic;
+    return CONFIG.enabled && CONFIG.cosmetic && !skipGenericCosmetics;
   }
 
   function shouldRunObserver() {

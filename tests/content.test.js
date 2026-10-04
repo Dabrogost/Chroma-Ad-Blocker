@@ -571,6 +571,46 @@ test('Content script generic functionality', async (t) => {
     assert.strictEqual(batch, undefined);
   });
 
+  await t.test('Dailymotion retains ad bait while scoped cosmetics and Zapper still work', async () => {
+    for (const hostname of ['www.dailymotion.com', 'geo.dailymotion.com', 'notdailymotion.com']) {
+      const sandbox = createSandbox(null, {
+        location: { hostname, href: `https://${hostname}/` },
+        storage: {
+          HIDE_SELECTORS: ['.ad-test'],
+          subscriptionCosmeticRules: [
+            { domains: null, selector: '.generic-bait', isException: false },
+            { domains: null, excludedDomains: ['other.test'], selector: '.negative-only-bait', isException: false },
+            { domains: ['dailymotion.com'], selector: '.dm-display-ad', isException: false }
+          ],
+          localCosmeticRules: [{ domain: hostname, selector: '#user-picked-ad', source: 'zapper', enabled: true }]
+        }
+      });
+      await new Promise(resolve => setImmediate(resolve));
+      const css = sandbox.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+      const bait = createMockElement();
+      bait.nodeType = 1;
+      bait.id = 'ad-slot-bait';
+      sandbox.removeLeftoverAdContainers(bait);
+      if (hostname === 'notdailymotion.com') {
+        assert.match(css, /\.ad-test/);
+        assert.match(css, /\.generic-bait/);
+        assert.strictEqual(bait.removed, true);
+      } else {
+        assert.doesNotMatch(css, /\.ad-test|\.generic-bait|\.negative-only-bait/);
+        assert.match(css, /\.dm-display-ad/);
+        assert.strictEqual(bait.removed, undefined);
+        sandbox.__emitStorageChange({ subscriptionCosmeticRules: { newValue: [
+          { domains: null, selector: '.new-generic-bait', isException: false },
+          { domains: ['dailymotion.com'], selector: '.new-dm-ad', isException: false }
+        ] } });
+        const refreshed = sandbox.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+        assert.doesNotMatch(refreshed, /\.new-generic-bait/);
+        assert.match(refreshed, /\.new-dm-ad/);
+      }
+      assert.match(css, /#user-picked-ad/);
+    }
+  });
+
   await t.test('disabled cosmetic mode does not hide or count optional cosmetic sections', async (st) => {
     const shortsShelf = createMockElement();
     const sandbox = createSandbox((doc) => {

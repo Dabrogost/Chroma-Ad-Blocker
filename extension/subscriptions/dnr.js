@@ -190,6 +190,16 @@ function countObject(entries) {
   return Object.fromEntries(entries);
 }
 
+function subscriptionRuleKey(rule) {
+  // DNR condition arrays are sets. Keep every condition field in the key so
+  // exceptions, case-sensitive filters, and scoped rules remain distinct.
+  const condition = Object.fromEntries(Object.keys(rule.condition).sort().map(key => {
+    const value = rule.condition[key];
+    return [key, Array.isArray(value) ? [...new Set(value)].sort() : value];
+  }));
+  return JSON.stringify([rule.priority, rule.action.type, condition]);
+}
+
 function incrementCount(counts, key, amount = 1) {
   counts.set(key, (counts.get(key) || 0) + amount);
 }
@@ -402,6 +412,7 @@ export async function buildSubscriptionRuleApplication(
   } = {}
 ) {
   const allRules = [];
+  const seenRules = new Set();
   const statsBySub = new Map();
   let candidateId = 0;
   for (const sub of subscriptions) {
@@ -418,6 +429,7 @@ export async function buildSubscriptionRuleApplication(
       networkCompilerVersion: sub.networkCompilerVersion ?? null,
       cachedNetworkRuleCount: cachedRules.length,
       candidateNetworkRuleCount: 0,
+      duplicateNetworkRuleCount: 0,
       compatibleNetworkRuleCount: 0,
       eligibleNetworkRuleCount: 0,
       appliedNetworkRuleCount: 0,
@@ -430,13 +442,19 @@ export async function buildSubscriptionRuleApplication(
     for (let sourceIndex = 0; sourceIndex < cachedRules.length; sourceIndex++) {
       const rule = cachedRules[sourceIndex];
       if (isSafeCachedRule(rule)) {
+        stats.candidateNetworkRuleCount++;
+        const key = subscriptionRuleKey(rule);
+        if (seenRules.has(key)) {
+          stats.duplicateNetworkRuleCount++;
+          continue;
+        }
+        seenRules.add(key);
         allRules.push({
           ...rule,
           _subId: sub.id,
           _sourceIndex: sourceIndex,
           _candidateId: candidateId++
         });
-        stats.candidateNetworkRuleCount++;
       } else {
         stats.structurallySkippedNetworkRuleCount++;
       }

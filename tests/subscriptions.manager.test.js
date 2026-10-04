@@ -1225,6 +1225,38 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(plain(storage.subscriptions.map(sub => sub.id)), ['custom-a', 'custom-b']);
   });
 
+  await t.test('duplicate Unbreak URLs are rejected even for concurrent adds with different IDs', async () => {
+    const url = 'https://raw.githubusercontent.com/uBlockOrigin/uAssets/refs/heads/master/filters/unbreak.txt';
+    const storage = { subscriptions: [] };
+    const manager = loadManager({ storage, cloneStorageReads: true });
+    const results = await Promise.all([
+      manager.addSubscription({ id: 'custom-a', name: 'Unbreak', url }),
+      manager.addSubscription({ id: 'custom-b', name: 'Unbreak again', url })
+    ]);
+
+    assert.deepStrictEqual(plain(results), [{ ok: true }, { ok: false, error: 'URL already added' }]);
+    assert.strictEqual(storage.subscriptions.length, 1);
+  });
+
+  await t.test('list URL identity normalizes stored URLs and fragments without conflating paths or queries', async () => {
+    const storage = {
+      subscriptions: [{ id: 'existing', enabled: false, url: 'https://LISTS.example:443/filters/../List.txt#old' }]
+    };
+    const manager = loadManager({ storage });
+    for (const url of ['https://lists.example/List.txt', 'https://lists.example/List.txt#new']) {
+      assert.deepStrictEqual(plain(await manager.addSubscription({ id: 'duplicate', name: 'Duplicate', url })),
+        { ok: false, error: 'URL already added' });
+    }
+    for (const [index, url] of ['https://lists.example/list.txt', 'https://lists.example/List.txt?variant=2'].entries()) {
+      assert.deepStrictEqual(plain(await manager.addSubscription({ id: `distinct-${index}`, name: 'Distinct', url })),
+        { ok: true });
+    }
+    assert.deepStrictEqual(plain(await manager.addSubscription({
+      id: 'normalized', name: 'Normalized', url: 'https://LISTS.example:443/Other.txt#fragment'
+    })), { ok: true });
+    assert.strictEqual(storage.subscriptions.at(-1).url, 'https://lists.example/Other.txt');
+  });
+
   await t.test('removeSubscription deletes per-subscription stores and rebuilds remaining rules', async () => {
     const storage = {
       subscriptions: [
@@ -1416,6 +1448,11 @@ test('Subscription lifecycle manager', async (t) => {
         { id: 'custom-b', url: 'https://custom.example/same.txt' }
       ],
       [{ id: 'custom-a', url: 'https://defaults.example/a.txt' }],
+      [{ id: 'custom-a', url: 'https://DEFAULTS.example:443/a.txt#duplicate' }],
+      [
+        { id: 'custom-a', url: 'https://custom.example/same.txt#first' },
+        { id: 'custom-b', url: 'https://CUSTOM.example:443/same.txt#second' }
+      ],
       [{ id: 'custom-a', url: 'http://custom.example/a.txt' }],
       [{ id: 'custom-a', url: 'https://127.0.0.1/a.txt' }]
     ];
@@ -1571,6 +1608,40 @@ test('Subscription lifecycle manager', async (t) => {
     });
     assert.strictEqual(manager.storage.subscriptions[1].isCustom, true);
     assert.strictEqual(manager.storage.subscriptions[2].id, 'default-b');
+  });
+
+  await t.test('package updates refresh bundled rules immediately and preserve disabled lists', async () => {
+    for (const enabled of [true, false]) {
+      const url = 'chrome-extension://chroma/subscriptions/chroma-lib.txt';
+      const requests = [];
+      const storage = {
+        subscriptions: [{ id: 'chroma-lib', url, enabled, intervalHours: 9999,
+          lastUpdated: Date.now(), networkCompilerVersion: 1, etag: 'old', lastModified: 'old' }],
+        sub_scriptlet_rules: { 'chroma-lib': [{ scriptlet: 'set-constant', args: ['old', 'true'] }] }
+      };
+      const updatedRules = [{ domains: ['dailymotion.com'], scriptlet: 'set-constant', args: ['__NATIVEADS_CANARY__', 'true'] }];
+      const manager = loadManager({
+        storage,
+        defaultSubscriptions: [{ id: 'chroma-lib', url, enabled: true, intervalHours: 9999 }],
+        fetch: async (requestUrl, init) => {
+          requests.push({ url: requestUrl, headers: init.headers });
+          return { ok: true, text: async () => 'updated bundle' };
+        },
+        parseList: () => ({ networkRules: [], cosmeticRules: [], scriptletRules: updatedRules, skipped: {} })
+      });
+      await manager.initSubscriptions();
+      assert.strictEqual(storage.subscriptions[0].enabled, enabled);
+      assert.strictEqual(storage.subscriptions[0].lastUpdated, 0);
+      assert.strictEqual(storage.sub_scriptlet_rules['chroma-lib'][0].args[0], 'old');
+      await manager.refreshAllStale();
+      assert.strictEqual(requests.length, enabled ? 1 : 0);
+      if (enabled) {
+        assert.deepStrictEqual(plain(requests[0].headers), {});
+        assert.deepStrictEqual(plain(storage.subscriptionScriptletRules), updatedRules.map(rule => ({ ...rule, sourceId: 'chroma-lib' })));
+        await manager.refreshAllStale();
+        assert.strictEqual(requests.length, 1, 'fresh bundled rules are not repeatedly fetched');
+      }
+    }
   });
 });
 

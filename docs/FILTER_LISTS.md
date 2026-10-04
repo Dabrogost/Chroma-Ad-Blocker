@@ -13,6 +13,10 @@ Chroma includes bundled filters and remote filter subscriptions. Enabled remote 
 
 Chroma does not use a hidden remote hotfix list. Project fixes arrive through visible Chroma updates, and every additional remote list is one you explicitly choose to add.
 
+The Chroma Scriptlet Library includes targeted anti-adblock rules for Dailymotion and MLive. Dailymotion's ad-loaded flag and detection timer are handled in matching pages and embedded players; MLive rules target Sourcepoint detector reads and Admiral loader/recovery paths. These rules require **Allow User Scripts**, master protection, and the enabled Chroma Scriptlet Library. Reload affected tabs after updating. Bundled rules refresh from the installed package on extension updates or reloads, while disabled lists remain disabled.
+
+Dailymotion also skips generic cosmetic selectors and heuristic ad-container removal because those can hide the site's detection probes. Domain-specific cosmetic rules and saved Zapper selectors still apply. These mitigations cover known detector patterns; changes to a site's player or detector can require another compatibility update.
+
 > [!NOTE]
 > To maximize performance and respect Manifest V3 rule limits, **EasyList** and **Fanboy Annoyance** are not allocated to network-level DNR blocking. Their cosmetic rules, and any supported scriptlets parsed from enabled lists, feed the cosmetic and scriptlet layers instead. Network-level blocking is handled by the high-efficiency static ruleset and Hagezi Pro Mini.
 

@@ -20,29 +20,52 @@ export function abortOnPropertyRead(args) {
 
   const abort = () => { throw new ReferenceError(prop + ' is not defined'); };
   const parts = prop.split('.');
-
-  let obj = window;
-  for (let i = 0; i < parts.length - 1; i++) {
-    if (typeof obj[parts[i]] === 'undefined') {
-      try {
-        Object.defineProperty(obj, parts[i], {
-          get() { return Object.create(null); },
+  if (parts.some(part => !part)) return;
+  const installed = new WeakMap();
+  const trap = (obj, index) => {
+    if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
+    const seen = installed.get(obj) || new Set();
+    if (seen.has(index)) return;
+    seen.add(index);
+    installed.set(obj, seen);
+    const key = parts[index];
+    try {
+      const desc = Object.getOwnPropertyDescriptor(obj, key);
+      if (index === parts.length - 1) {
+        Object.defineProperty(obj, key, {
+          get: abort,
+          set() {},
+          enumerable: desc ? desc.enumerable : true,
           configurable: true
         });
-      } catch (e) { return; }
-    }
-    obj = obj[parts[i]];
-    if (!obj || typeof obj !== 'object') return;
-  }
-
-  const last = parts[parts.length - 1];
-  try {
-    Object.defineProperty(obj, last, {
-      get: abort,
-      set() {},
-      configurable: true
-    });
-  } catch (e) {}
+        return;
+      }
+      // Keep absent parents absent. A fabricated object can itself change the
+      // page's initialization branch. Follow assignments and lazy getters so
+      // the leaf remains protected when a publisher replaces its namespace.
+      let value = obj[key];
+      trap(value, index + 1);
+      if (desc && !desc.configurable) return;
+      const accessor = desc && !('value' in desc);
+      Object.defineProperty(obj, key, {
+        configurable: true,
+        enumerable: desc ? desc.enumerable : true,
+        get() {
+          const current = accessor ? desc.get?.call(this) : value;
+          trap(current, index + 1);
+          return current;
+        },
+        set: accessor ? (desc.set && function(next) {
+          desc.set.call(this, next);
+          trap(desc.get?.call(this), index + 1);
+        }) : (desc?.writable === false ? undefined : function(next) {
+          value = next;
+          trap(next, index + 1);
+        })
+      });
+    } catch (_) {}
+  };
+  trap(window, 0);
 }
 
 /**
@@ -1350,35 +1373,71 @@ export function noEvalIf(args) {
 
 /**
  * Intercepts JSON.parse and prunes specified dot-notation paths from the object.
- * Strictly enforces exact paths without recursive wildcards to maintain performance.
+ * Walks only the supplied paths, never recursively searching unrelated branches.
+ * '*' visits object values; '[]' visits array items; '[-]' / '{-}' remove array
+ * items / object entries when the remaining path exists (uBO filter syntax).
  * args[0]: space-separated list of paths (e.g. 'adPlacements playerResponse.adSlots')
  */
 export function jsonPrune(args) {
   const pathsStr = args[0];
   if (!pathsStr) return;
-  const paths = pathsStr.split(' ').filter(Boolean);
+  const paths = pathsStr.split(/\s+/).filter(Boolean).map(path => path.split('.'))
+    .filter(parts => parts.every(Boolean) && parts.length <= 64);
   if (paths.length === 0) return;
+
+  const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+  // The same walker checks removal predicates without changing the candidate.
+  const walk = (obj, parts, index, remove) => {
+    if (!obj || typeof obj !== 'object') return false;
+    const key = parts[index];
+    const last = index === parts.length - 1;
+    if (key === '[-]' || key === '{-}') {
+      if (last || (key === '[-]' && !Array.isArray(obj)) ||
+          (key === '{-}' && Array.isArray(obj))) return false;
+      let matched = false;
+      // Reverse array order so splicing adjacent matches never skips an item.
+      const keys = Object.keys(obj);
+      if (key === '[-]') keys.reverse();
+      for (const child of keys) {
+        if (key === '[-]' && !/^(0|[1-9]\d*)$/.test(child)) continue;
+        if (!walk(obj[child], parts, index + 1, false)) continue;
+        if (!remove) return true;
+        if (key === '[-]') Array.prototype.splice.call(obj, Number(child), 1);
+        else delete obj[child];
+        matched = true;
+      }
+      return matched;
+    }
+    if (key === '*' || key === '[]') {
+      if (key === '[]' && !Array.isArray(obj)) return false;
+      let matched = false;
+      for (const child of Object.keys(obj)) {
+        if (last) {
+          if (!remove) return true;
+          delete obj[child];
+          matched = true;
+        } else if (walk(obj[child], parts, index + 1, remove)) {
+          if (!remove) return true;
+          matched = true;
+        }
+      }
+      return matched;
+    }
+    // JSON paths must not follow inherited properties into shared prototypes.
+    if (!hasOwn(obj, key)) return false;
+    if (!last) return walk(obj[key], parts, index + 1, remove);
+    if (remove) delete obj[key];
+    return true;
+  };
 
   const origParse = JSON.parse;
   JSON.parse = function(text, reviver) {
     const result = origParse.call(this, text, reviver);
     if (!result || typeof result !== 'object') return result;
 
-    for (let i = 0; i < paths.length; i++) {
-      const parts = paths[i].split('.');
-      let obj = result;
-      let valid = true;
-      for (let j = 0; j < parts.length - 1; j++) {
-        if (!obj || typeof obj !== 'object' || !(parts[j] in obj)) {
-          valid = false;
-          break;
-        }
-        obj = obj[parts[j]];
-      }
-      if (valid && obj && typeof obj === 'object') {
-        const last = parts[parts.length - 1];
-        if (last in obj) delete obj[last];
-      }
+    for (const parts of paths) {
+      // A reviver may return frozen objects. Pruning must not break valid JSON.
+      try { walk(result, parts, 0, true); } catch (_) {}
     }
     return result;
   };

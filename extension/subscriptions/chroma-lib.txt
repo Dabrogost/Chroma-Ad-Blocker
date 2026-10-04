@@ -1,8 +1,33 @@
 ! Chroma Scriptlet Library
 ! Users receive updates to this list when the extension updates.
 
+! Dailymotion's native-ad canary and older player detection timer.
+! https://github.com/uBlockOrigin/uAssets/issues/30050
+! https://github.com/uBlockOrigin/uAssets/issues/23691
+dailymotion.com##+js(set-constant, __NATIVEADS_CANARY__, true)
+dailymotion.com##+js(no-setTimeout-if, adBlockerDetection)
+dailymotion.com##[class*="WatchingDiscovery__adSection"]
+
+! MLive: Sourcepoint detection and Admiral loader/recovery paths.
+! https://github.com/uBlockOrigin/uAssets/blob/master/filters/filters.txt
+! https://github.com/AdguardTeam/AdguardFilters/blob/master/AnnoyancesFilter/Popups/sections/antiadblock.txt
+mlive.com##+js(abort-on-property-read, _sp_._networkListenerData)
+mlive.com##+js(set-constant, admiral, noopFunc)
+mlive.com##+js(set-constant, admrlLoaded, true)
+mlive.com##+js(abort-current-inline-script, document.createElement, /admiral|succeedscene\.com/)
+
 dailymail.com,dailymail.co.uk##+js(hide-upward, .dmg-ads-container, li)
 reddit.com##+js(reddit-promoted-ads)
+
+! Pinterest: remove promoted entries before the feed renders, including startup data.
+! https://github.com/uBlockOrigin/uAssets/blob/master/filters/filters-2021.txt
+pinterest.com##+js(json-prune, resource_response.data.[-].pin_promotion_id resource_response.data.results.[-].pin_promotion_id initialReduxState.pins.{-}.pin_promotion_id initialReduxState.resources.UserHomefeedResource.*.data.[-].pin_promotion_id)
+! CSS fallback for rendered cards, including cards added or reused while scrolling.
+! https://github.com/easylist/easylist/blob/master/easylist/easylist_specific_hide.txt
+pinterest.com##[data-grid-item]:has(a[href*="&epik="])
+pinterest.com##div[data-grid-item]:has([data-test-pin-id] [data-test-id^="one-tap-desktop"] > a[href^="http"][rel="nofollow"]):not(body > div)
+pinterest.com##div[data-grid-item="true"]:has([data-test-id="x3f8q1"]):not(:has(a[href^="/pin/"]))
+
 youtube.com##+js(release-scroll-lock)
 wowhead.com##+js(hide-element, #zaf-adhesion-container)
 1ball.pk,1ball.st,90minutes.pro,bagosports.ru,buffsports.io,buffstreams.com.co,crackstreams.mx,damitv.st,denverdirect.info,fan24.st,footybite.ac,footystream.pk,freestreams-live1e.pk,futbol-libres.su,futbollibretv.cl,futemax.coach,istreameast.cx,kora-plus.app,librepelota.su,methstreams.gs,mut.st,mutstreams.pk,new.touchcric.com,olympicweb.me,pirlotvhd.vu,qatarstreams.me,rojadirectastream.at,roxiestreams.info,roxiestreams.su,soclive.site,sportyhunter.site,sportyhunter.xyz,streamcorner.cloud,streamcorner.foo,streamcorner.fun,streamcorner.st,streameast-soccer.net,streameast.cf,streameast.ch,streameast.fi,streameast.fm,streameast.ga,streameast.ms,streameast.ph,streameast.ps,streameast.sg,streameast24.net,streameastas.cx,streameaste.cc,streameasti.is,streamed.pk,streamed.st,streamfree.top,streamseast.me,thestreameast.fun,thestreameast.ru,thestreameast.su,todaystreams.cc,totalsport-ek.net,viprow.im,viprow.sx,watchfooty.st,xyzstreams.st##+js(set-constant, aclib, emptyObj)
