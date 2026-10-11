@@ -630,53 +630,67 @@ export function removeAttr(args) {
 
 
 /**
- * Removes nodes whose tag matches and whose textContent matches a pattern.
- * Useful for stripping inline <script> tags that contain ad-loader code.
+ * Clears matching node text, including parser-inserted inline ad scripts.
+ * Like uBO's rmnt, mutation handling must run before the parser executes the
+ * script; deferring to an animation frame or removing the node is too late.
  * args[0]: tag name (e.g. 'script') or '*' for any
  * args[1]: string or /regex/ pattern to match against textContent
+ * args[2..]: optional key/value pairs; 'stay', '1' keeps watching after parsing
  */
 export function removeNodeText(args) {
   const tag = (args[0] || '*').toLowerCase();
-  const pattern = args[1];
-  if (!pattern) return;
-
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
-  const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
-
-  const sweep = () => {
-    try {
-      const nodes = tag === '*'
-        ? document.querySelectorAll('*')
-        : document.getElementsByTagName(tag);
-      for (let i = nodes.length - 1; i >= 0; i--) {
-        const n = nodes[i];
-        if (n && n.textContent && matches(n.textContent)) {
-          if (n.parentNode) n.parentNode.removeChild(n);
-        }
-      }
-    } catch (e) {}
+  const pattern = args[1] || '';
+  const regexParts = /^\/(.*)\/([a-z]*)$/.exec(pattern);
+  let re;
+  try { re = regexParts ? new RegExp(regexParts[1], regexParts[2]) : null; }
+  catch { return; }
+  const matches = text => {
+    if (!re) return text.includes(pattern);
+    re.lastIndex = 0;
+    return re.test(text);
   };
-
-  sweep();
-
-  let pending = false;
-  const scheduleSweep = () => {
-    if (pending) return;
-    pending = true;
-    const run = () => {
-      pending = false;
-      sweep();
-    };
-    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(run);
-    else setTimeout(run, 50);
+  const cleared = new WeakSet();
+  const clear = node => {
+    if (!node || node === document.currentScript || node.nodeType !== 1) return;
+    if (tag !== '*' && node.nodeName.toLowerCase() !== tag) return;
+    if (node.textContent && (cleared.has(node) || matches(node.textContent))) {
+      cleared.add(node);
+      node.textContent = '';
+    }
   };
+  const visit = root => {
+    clear(root);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      clear(node);
+      if (node.nodeName === 'TEMPLATE') visit(node.content);
+    }
+    if (root.nodeName === 'TEMPLATE') visit(root.content);
+  };
+  const handle = records => {
+    for (const record of records) {
+      // A streamed response can add an empty <script> first, then deliver its
+      // text in later chunks. Recheck that script as its text is added/extended.
+      clear(record.type === 'characterData' ? record.target.parentNode : record.target);
+      for (const node of record.addedNodes) visit(node);
+    }
+  };
+  // Observe the document even when documentElement does not exist yet.
+  const observer = new MutationObserver(handle);
+  observer.observe(document, { childList: true, characterData: true, subtree: true });
+  visit(document);
 
-  // Budget persistent observer churn to one DOM sweep per frame/timer tick.
-  new MutationObserver(scheduleSweep).observe(document.documentElement, {
-    childList: true,
-    subtree: true
-  });
+  for (let i = 2; i < args.length; i += 2) {
+    if (args[i] === 'stay' && args[i + 1] === '1') return;
+  }
+  const stop = () => {
+    if (document.readyState === 'loading') return;
+    handle(observer.takeRecords());
+    observer.disconnect();
+    document.removeEventListener('readystatechange', stop, true);
+  };
+  if (document.readyState === 'loading') document.addEventListener('readystatechange', stop, true);
+  else stop();
 }
 
 

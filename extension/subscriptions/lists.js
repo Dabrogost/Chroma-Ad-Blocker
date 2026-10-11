@@ -53,7 +53,7 @@ export const DEFAULT_SUBSCRIPTIONS = [
   {
     id: 'fanboy-annoyance',
     name: 'Fanboy Annoyance',
-    url: 'https://secure.fanboy.co.nz/fanboy-annoyance.txt',
+    url: 'https://raw.githubusercontent.com/Dabrogost/fanboy-annoyance-mirror/main/fanboy-annoyance.txt',
     enabled: true,
     cosmeticOnly: true,
     intervalHours: 24,

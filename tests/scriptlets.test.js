@@ -214,6 +214,73 @@ test('bundled anti-detection rules', async (t) => {
   });
 });
 
+test('remove-node-text clears matching text promptly without deleting nodes', async () => {
+  const { JSDOM } = require('jsdom');
+  const dom = new JSDOM('', { runScripts: 'outside-only' });
+  const { window } = dom;
+  try {
+    // Injection can precede the document element.
+    window.document.documentElement.remove();
+    window.eval(libCode + ';window.removeNodeText = removeNodeText;');
+    window.removeNodeText(['script', '/adserverDomain/gi', 'stay', '1']);
+    const html = window.document.createElement('html');
+    html.innerHTML = `<head>
+      <script id="one">ADSERVERDOMAIN</script><script id="two">adserverDomain</script>
+      <script id="player">playVideo()</script></head><body>
+      <p id="text">adserverDomain</p>
+      <template><script>adserverDomain</script></template></body>`;
+    window.document.append(html);
+    await new Promise(resolve => setImmediate(resolve));
+    for (const id of ['one', 'two']) assert.strictEqual(window.document.getElementById(id).textContent, '');
+    assert.strictEqual(window.document.getElementById('player').textContent, 'playVideo()');
+    assert.strictEqual(window.document.getElementById('text').textContent, 'adserverDomain');
+    assert.strictEqual(window.document.querySelector('template').content.querySelector('script').textContent, '');
+    const later = window.document.createElement('script');
+    later.textContent = 'adserverDomain';
+    window.document.body.append(later);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(later.textContent, '');
+    assert.strictEqual(later.isConnected, true);
+    // Live HTTP responses can deliver the tag and its text in separate chunks.
+    const streamed = window.document.createElement('script');
+    window.document.head.append(streamed);
+    await new Promise(resolve => setImmediate(resolve));
+    const chunk = window.document.createTextNode('adserver');
+    streamed.append(chunk);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(streamed.textContent, 'adserver');
+    chunk.appendData('Domain');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(streamed.textContent, '');
+    // Discard the remaining chunks too, even without another signature.
+    streamed.append(window.document.createTextNode('window.open("late-ad")'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(streamed.textContent, '');
+    const secondChunk = window.document.createTextNode('adserverDomain');
+    streamed.append(secondChunk);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(streamed.textContent, '');
+  } finally { window.close(); }
+});
+
+test('remove-node-text stops after parsing unless stay is requested', async () => {
+  const { JSDOM } = require('jsdom');
+  const dom = new JSDOM('', { runScripts: 'outside-only' });
+  const { window } = dom;
+  try {
+    window.eval(libCode + ';window.removeNodeText = removeNodeText;');
+    window.removeNodeText(['script', 'adserverDomain']);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(window.document.readyState, 'complete');
+    const later = window.document.createElement('script');
+    later.textContent = 'adserverDomain';
+    window.document.body.append(later);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(later.textContent, 'adserverDomain');
+    assert.doesNotThrow(() => window.removeNodeText(['script', '/[/']));
+  } finally { window.close(); }
+});
+
 test('json-prune path operators', async (t) => {
   function parse(paths, value) {
     const sandbox = runScriptlet('jsonPrune', [paths]);
