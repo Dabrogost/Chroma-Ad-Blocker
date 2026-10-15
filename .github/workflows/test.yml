@@ -7,15 +7,21 @@ on:
     branches: [dev, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev'))
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["self-hosted","github-chroma"]') }}
 
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
+        if: github.event_name == 'pull_request'
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -25,6 +31,7 @@ jobs:
         run: npm ci
 
       - name: Setup Chrome for Testing
+        if: github.event_name == 'pull_request'
         id: setup-chrome
         uses: browser-actions/setup-chrome@v2
         with:
@@ -39,6 +46,7 @@ jobs:
         run: |
           set -euo pipefail
           browser="${{ steps.setup-chrome.outputs.chrome-path }}"
+          browser="${browser:-$CHROME_FOR_TESTING_PATH}"
           test -x "$browser"
           echo "Using browser: $browser"
           "$browser" --version

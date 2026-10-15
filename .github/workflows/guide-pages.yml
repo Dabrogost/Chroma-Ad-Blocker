@@ -28,11 +28,13 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev'))
+    runs-on: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["self-hosted","github-chroma"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Setup Node
+        if: github.event_name == 'pull_request'
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -51,7 +53,7 @@ jobs:
   deploy:
     if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, github-chroma]
     permissions:
       contents: read
       pages: write
