@@ -31,8 +31,16 @@ async function fixture(browser, hostname, embedded = false) {
         window.__state.consent = window._sp_.consent;
         window.__state.loaderStub = typeof window.admiral === 'function' && window.admrlLoaded === true;
       ` : ''}
-    </script></head><body>
+    </script>
+      ${host.startsWith('streame.center') || host.includes('clearstreamdv.com') || host === 'embed.sportspatrika.com' ? `<script>
+        // The live bootstrap tries several unrelated ad domains in succession.
+        const options = [["popundersPerIP", "0"]];
+        window.__popunderBootstrap = true;
+      </script>` : ''}
+    </head><body>
       <div class="ad-test" style="height:10px">bait</div>
+      <a id="fake-play" href="https://knowacaliforniafarmer.com/4/campaign">Full HD Play Now</a>
+      <a id="stream-provider" href="https://hitcast.st/totview.php?src=https://streame.center/embed/ch48.php">Watch</a>
       <div class="WatchingDiscovery__adSection___fixture">display ad</div>
       ${pinterest ? `<main id="feed">
         <div id="organic" data-grid-item="true"><a href="/pin/123/">Sponsored post design ideas</a></div>
@@ -68,6 +76,70 @@ async function fixture(browser, hostname, embedded = false) {
     removeListener();
     await closeTarget(cdp, targetId);
     throw error;
+  }
+}
+
+// Reduced loader behaviours: parser scripts, delayed config-inserted scripts,
+// and popup listeners. Every response is local; no ad destinations are opened.
+async function streamingFixture(browser, hostname) {
+  const cdp = browser.cdp;
+  const page = await createPage(cdp, 'about:blank');
+  const dynamicAd = `/* adserverDomain */
+    document.addEventListener('pointerdown', () => { window.__stream.adClicks++; });
+    window.__stream.dynamicAd = true;
+    setTimeout(() => { window.__stream.delayedAd = true; }, 0);`;
+  const removeListener = cdp.on('Fetch.requestPaused', event => {
+    const url = new URL(event.request.url);
+    const child = url.pathname === '/chroma-stream-frame';
+    const html = `<!doctype html><html><head><script>
+      window.__stream = { parserAd: false, redirectLoader: false, dynamicAd: false,
+        delayedAd: false, adClicks: 0, played: 0, opens: 0 };
+      window.open = () => { window.__stream.opens++; return null; };
+      window.addEventListener('message', event => { window.__frameStream = event.data; });
+    </script><script>
+      /* adserverDomain */ window.__stream.parserAd = true;
+    </script><script>
+      /* unloaded_at */ window.__stream.redirectLoader = true;
+    </script></head><body>
+      <button id="play">Play</button><a id="watch" href="#watch-stream">Watch stream</a>
+      ${child ? '' : '<iframe src="/chroma-stream-frame"></iframe>'}
+      <script>
+        document.getElementById('play').addEventListener('click', () => { window.__stream.played++; });
+        document.addEventListener('keydown', () => window.open('about:blank'));
+        // As in the captured player, the payload comes from fetch().json(),
+        // so the bootstrap script itself does not contain the ad signature.
+        window.addEventListener('load', async () => {
+          const data = await fetch('/chroma-ad-config').then(r => r.json());
+          const script = document.createElement('script');
+          script.textContent = data.html;
+          document.body.append(script);
+          setTimeout(() => {
+            document.getElementById('play').click();
+            document.getElementById('watch').click();
+            document.dispatchEvent(new Event('pointerdown'));
+            document.dispatchEvent(new Event('keydown'));
+            window.__stream.watch = location.hash === '#watch-stream';
+            window.__stream.ready = true;
+            if (parent !== window) parent.postMessage(window.__stream, '*');
+          }, 30);
+        });
+      </script></body></html>`;
+    const documentRequest = event.resourceType === 'Document';
+    cdp.send('Fetch.fulfillRequest', {
+      requestId: event.requestId, responseCode: 200,
+      responseHeaders: [{ name: 'content-type', value: documentRequest ? 'text/html' : 'application/json' }],
+      body: Buffer.from(documentRequest ? html : JSON.stringify({ html: dynamicAd })).toString('base64')
+    }, page.sessionId).catch(() => {});
+  }, page.sessionId);
+  try {
+    await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*' }] }, page.sessionId);
+    await cdp.send('Page.navigate', { url: `https://${hostname}/chroma-stream-test` }, page.sessionId);
+    await waitFor(() => evaluate(cdp, page.sessionId, 'window.__stream?.ready && window.__frameStream?.ready'),
+      'streaming fixtures finish in parent and frame');
+    return await evaluate(cdp, page.sessionId, '({ top: __stream, frame: __frameStream })');
+  } finally {
+    removeListener();
+    await closeTarget(cdp, page.targetId);
   }
 }
 
@@ -161,6 +233,114 @@ test('bundled site rules in Chrome', async (t) => {
     } finally { await page.close(); }
   });
 
+  await t.test('streaming loaders stop while player buttons and native stream links work', async () => {
+    for (const host of ['www.nflbite.is', 'links.nflbite.st', 'links.nflbite.run', 'live5.totalsportek.vg',
+      'crackstreams.mx', 'crackstreams.courses', 'emb.apl601.online', 'methstreams.gs', 'streameast.fi',
+      'fsportshdz.xyz', 'taifood-blog.asia', 'trendy48.online']) {
+      const result = await streamingFixture(browser, host);
+      for (const state of [result.top, result.frame]) {
+        assert.deepEqual(state, { parserAd: false, redirectLoader: false, dynamicAd: false,
+          delayedAd: false, adClicks: 0, played: 1, opens: host.endsWith('totalsportek.vg') ? 0 : 1,
+          watch: true, ready: true }, host);
+      }
+    }
+    const control = await streamingFixture(browser, 'nflbite.is.example');
+    assert.equal(control.top.parserAd, true);
+    assert.equal(control.top.redirectLoader, true);
+    assert.equal(control.top.dynamicAd, true);
+    assert.equal(control.top.delayedAd, true);
+    assert.equal(control.top.adClicks, 1);
+  });
+
+  await t.test('streamed inline scripts stay blocked across separate network chunks', async () => {
+    const http = require('node:http');
+    const server = http.createServer(async (_req, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
+      // Separate writes reproduce the live loader's initially empty script,
+      // text-node insertion, characterData updates, and remaining payload.
+      for (const chunk of ['<!doctype html><html><head><script>',
+        '/* adserver', 'Domain */', 'window.__streamedAdRan = true;', '</script></head><body>',
+        '<script>window.__streamedReady = true;</script></body></html>']) {
+        response.write(chunk);
+        await new Promise(resolve => setTimeout(resolve, 60));
+      }
+      response.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${server.address().port}/`;
+    const id = 'e2e_streamed_inline_script';
+    try {
+      for (const enabled of [false, true]) {
+        if (enabled) {
+          const source = (await scripts()).find(script => script.matches.some(pattern => pattern.includes('nflbite.run')) &&
+            script.js.some(js => js.code?.includes('function removeNodeText')));
+          assert.ok(source, 'use the production bundled remover');
+          await evaluate(browser.cdp, browser.workerSession, `chrome.userScripts.register([${JSON.stringify({
+            ...source, id, matches: ['http://127.0.0.1/*']
+          })}])`);
+        }
+        const page = await createPage(browser.cdp, url);
+        try {
+          await waitFor(() => evaluate(browser.cdp, page.sessionId, 'window.__streamedReady'), 'chunked response parsed');
+          assert.equal(await evaluate(browser.cdp, page.sessionId, '!!window.__streamedAdRan'), !enabled);
+        } finally { await closeTarget(browser.cdp, page.targetId); }
+      }
+    } finally {
+      await evaluate(browser.cdp, browser.workerSession, `chrome.userScripts.unregister({ ids: ['${id}'] })`);
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
+  await t.test('captured external ad and detection scripts are blocked without blocking the player CDN', async () => {
+    const requests = [
+      ['https://fsportshdz.xyz/tgeFF869ex.js', 'https://fsportshdz.xyz'],
+      ['https://trendy48.online/adcash-auto.js', 'https://trendy48.online'],
+      ['https://crack-streams.st/ER2V869ex.js', 'https://crack-streams.st'],
+      ['https://footy4u.st/V8695ex.js', 'https://footy4u.st'],
+      ['https://hitcast.st/WEDasd869ex.js', 'https://hitcast.st'],
+      ['https://cdn.jsdelivr.net/gh/vli-platform/adb-analytics@29f6e17/v1.0.min.js', 'https://hitcast.st'],
+      ['https://musikazblai.org/22/996927b366b66157a89e1a943b00f855', 'https://hitcast.st']
+    ];
+    for (const [url, initiator] of requests) {
+      const result = await evaluate(browser.cdp, browser.workerSession, `chrome.declarativeNetRequest.testMatchOutcome({
+        url: ${JSON.stringify(url)}, type: 'script',
+        initiator: ${JSON.stringify(initiator)}, tabId: -1
+      })`);
+      assert.ok(result.matchedRules.length > 0, url);
+    }
+    for (const [url, initiator] of [
+      ['https://cdn.jsdelivr.net/npm/@clappr/player@0.14.5/dist/clappr.min.js', 'https://streame.center'],
+      ['https://cdn.jsdelivr.net/npm/@clappr/level-selector@1.1.0/dist/level-selector.min.js', 'https://streame.center'],
+      ['https://footy4u.st/player.js', 'https://footy4u.st'],
+      ['https://cdn.jsdelivr.net/gh/vli-platform/adb-analytics@29f6e17/v1.0.min.js', 'https://example.com']
+    ]) {
+      const result = await evaluate(browser.cdp, browser.workerSession, `chrome.declarativeNetRequest.testMatchOutcome({
+        url: ${JSON.stringify(url)}, type: 'script', initiator: ${JSON.stringify(initiator)}, tabId: -1
+      })`);
+      assert.equal(result.matchedRules.length, 0, `outside the scoped block: ${url} from ${initiator}`);
+    }
+  });
+
+  await t.test('player fallback bootstraps stop across subdomains and fake ads hide without hiding provider links', async () => {
+    for (const host of ['streame.center', 'streame.center.example', 'clearstreamdv.com',
+      'a.clearstreamdv.com', 'm.clearstreamdv.com', 'z.clearstreamdv.com', 'clearstreamdv.com.example', 'embed.sportspatrika.com']) {
+      const page = await fixture(browser, host);
+      try {
+        assert.equal(await evaluate(browser.cdp, page.sessionId, '!!window.__popunderBootstrap'), host.endsWith('.example'), host);
+        assert.equal(await evaluate(browser.cdp, page.sessionId, 'window.__ordinaryScriptRan'), true);
+      } finally { await page.close(); }
+    }
+    for (const host of ['crack-streams.st', 'footy4u.st']) {
+      const page = await fixture(browser, host);
+      try {
+        await waitFor(() => evaluate(browser.cdp, page.sessionId,
+          `getComputedStyle(document.getElementById('fake-play')).display === 'none'`), 'fake stream button hidden');
+        assert.notEqual(await evaluate(browser.cdp, page.sessionId,
+          `getComputedStyle(document.getElementById('stream-provider')).display`), 'none');
+      } finally { await page.close(); }
+    }
+  });
+
   await t.test('frame whitelist excludes the player without disabling its parent', async () => {
     await evaluate(browser.cdp, browser.workerSession, `chrome.storage.local.set({ whitelist: ['geo.dailymotion.com'] })`);
     await waitFor(async () => {
@@ -178,6 +358,10 @@ test('bundled site rules in Chrome', async (t) => {
     const result = await sendRuntimeMessage(browser.cdp, popup.sessionId, { type: 'CONFIG_SET', config: { enabled: false } });
     assert.equal(result.ok, true);
     await waitFor(async () => (await scripts()).length === 0, 'master off unregisters scriptlets');
+    const streaming = await streamingFixture(browser, 'live5.totalsportek.vg');
+    assert.equal(streaming.top.parserAd, true);
+    assert.equal(streaming.top.dynamicAd, true);
+    assert.equal(streaming.top.opens, 1);
     const page = await fixture(browser, 'www.dailymotion.com', true);
     try {
       assert.deepEqual(await evaluate(browser.cdp, page.sessionId, '({ top: __state.canary, frame: __child.canary })'),
