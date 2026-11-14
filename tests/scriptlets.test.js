@@ -50,7 +50,7 @@ function makeWindow() {
 
 function runScriptlet(name, args, windowOverrides = {}) {
   const win = { ...makeWindow(), ...windowOverrides, console };
-  win.window = win;
+  win.window = new Proxy(win, {});
   const sandbox = win;
   vm.createContext(sandbox);
   vm.runInContext(libCode, sandbox);
