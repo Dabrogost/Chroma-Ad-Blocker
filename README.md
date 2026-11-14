@@ -95,7 +95,7 @@ Chroma is a solo project dedicated to restoring the web to its fast, private, an
 
 ## Credits, License, And Disclaimers
 
-Chroma uses logic and patterns derived from Brave Browser's YouTube ad-stripping scriptlets and data from third-party filter lists including Hagezi Pro Mini, OISD Small/Big/NSFW, EasyList, and Fanboy Annoyance. See [Filter List Subscriptions](docs/FILTER_LISTS.md#third-party-credits) for details.
+Chroma uses logic and patterns derived from Brave Browser's YouTube ad-stripping scriptlets and data from third-party filter lists including Hagezi Pro Mini, Hagezi Pro+, OISD Small/Big, EasyList, and Fanboy Annoyance. See [Filter List Subscriptions](docs/FILTER_LISTS.md#third-party-credits) for details.
 
 Spotify media redirects are adapted from [uBlock Origin's uAssets filters](https://github.com/uBlockOrigin/uAssets/blob/master/filters/filters-2020.txt), with the [uBlock Origin silent MP4 resource](https://github.com/gorhill/uBlock/blob/master/src/web_accessible_resources/noop-1s.mp4). See [Spotify implementation and limits](docs/SPOTIFY.md#implementation-and-limits) for the Chrome MV3 differences.
 

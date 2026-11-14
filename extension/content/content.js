@@ -485,7 +485,8 @@
           ytd-statement-banner-renderer,
           yt-notification-action-renderer,
           tp-yt-paper-toast,
-          ytd-popup-container tp-yt-paper-toast {
+          ytd-popup-container tp-yt-paper-toast,
+          snackbar-view-model {
             display: none !important;
           }
         `,
@@ -499,7 +500,8 @@
             'ytd-statement-banner-renderer',
             'yt-notification-action-renderer',
             'tp-yt-paper-toast',
-            'ytd-popup-container tp-yt-paper-toast'
+            'ytd-popup-container tp-yt-paper-toast',
+            'snackbar-view-model'
           ],
           event: { layer: 'warning', type: 'suppression' }
         }

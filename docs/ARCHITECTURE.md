@@ -117,7 +117,7 @@ The worker does not perform the same initialization on every event:
 
 ### Layer 1: Network-Level Blocking (extension/rules/, extension/background/dnrState.js, extension/subscriptions/)
 
-The primary engine of Chroma is powered by the Declarative Net Request API. Chroma partitions its blocking logic into source-owned static rulesets: OISD Small and Big are selected first, a stable cross-list selection of adult and shock-site domains from OISD NSFW fills any remaining capacity, and protected custom and recipe layers complete the 300,000-rule static corpus.
+The primary engine of Chroma is powered by the Declarative Net Request API. Chroma partitions its blocking logic into source-owned static rulesets: OISD Small and Big are selected first, a stable cross-list selection of domains from Hagezi Pro+ fills any remaining capacity, and protected custom and recipe layers complete the 300,000-rule static corpus.
 
 #### How Chroma Keeps Large Static Rulesets Practical
 

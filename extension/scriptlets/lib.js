@@ -792,13 +792,46 @@ export function preventWindowOpen(args) {
     set() { return true; }
   });
 
-  const orig = window.open;
-  window.open = function(url) {
-    if (matches(url || '')) return noopWin;
-    return orig.apply(this, arguments);
+  const patched = new WeakSet();
+  const patchWindow = (win) => {
+    if (!win || (typeof win !== 'object' && typeof win !== 'function') || patched.has(win)) return;
+    try {
+      const orig = win.open;
+      if (typeof orig !== 'function') return;
+      patched.add(win);
+      const wrapped = function(url) {
+        if (matches(url || '')) return noopWin;
+        return orig.apply(this, arguments);
+      };
+      try { Object.defineProperty(wrapped, 'name', { value: orig.name || 'open', configurable: true }); } catch (e) {}
+      wrapped.toString = () => orig.toString();
+      win.open = wrapped;
+    } catch (e) {}
   };
-  try { Object.defineProperty(window.open, 'name', { value: orig.name || 'open', configurable: true }); } catch (e) {}
-  window.open.toString = () => orig.toString();
+
+  patchWindow(window);
+
+  for (const ctorName of ['HTMLIFrameElement', 'HTMLFrameElement']) {
+    const ctor = window[ctorName];
+    if (!ctor || !ctor.prototype) continue;
+    const desc = Object.getOwnPropertyDescriptor(ctor.prototype, 'contentWindow');
+    if (!desc || typeof desc.get !== 'function' || !desc.configurable) continue;
+    const origGet = desc.get;
+    const wrappedGet = function() {
+      const cw = origGet.call(this);
+      if (cw) patchWindow(cw);
+      return cw;
+    };
+    try { Object.defineProperty(wrappedGet, 'name', { value: origGet.name || 'get contentWindow', configurable: true }); } catch (e) {}
+    wrappedGet.toString = () => origGet.toString();
+    try {
+      Object.defineProperty(ctor.prototype, 'contentWindow', {
+        get: wrappedGet,
+        enumerable: desc.enumerable,
+        configurable: true
+      });
+    } catch (e) {}
+  }
 }
 
 

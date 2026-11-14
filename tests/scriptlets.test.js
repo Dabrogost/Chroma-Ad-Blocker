@@ -50,7 +50,7 @@ function makeWindow() {
 
 function runScriptlet(name, args, windowOverrides = {}) {
   const win = { ...makeWindow(), ...windowOverrides, console };
-  win.window = win;
+  win.window = new Proxy(win, {});
   const sandbox = win;
   vm.createContext(sandbox);
   vm.runInContext(libCode, sandbox);
@@ -131,10 +131,13 @@ test('bundled anti-detection rules', async (t) => {
     .replace(/^export\s+/gm, ''), parser);
   const { scriptletRules } = parser.parseList(fs.readFileSync(
     path.join(__dirname, '../extension/subscriptions/chroma-lib.txt'), 'utf8'));
-  function page(hostname) {
+  function page(hostname, overrides = {}) {
     const pendingTimers = [];
-    const sandbox = { ...makeWindow(), console,
-      setTimeout: (callback) => { pendingTimers.push(callback); return pendingTimers.length; } };
+    const base = makeWindow();
+    const sandbox = { ...base, console,
+      setTimeout: (callback) => { pendingTimers.push(callback); return pendingTimers.length; },
+      ...overrides,
+      document: { ...base.document, ...(overrides.document || {}) } };
     sandbox.window = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../extension/scriptlets/lib.js'), 'utf8')
@@ -209,6 +212,87 @@ test('bundled anti-detection rules', async (t) => {
         sandbox.input = JSON.stringify(before);
         const result = vm.runInContext('JSON.parse(input)', sandbox);
         assert.deepStrictEqual(plain(result), host === 'pinterest.com' || host === 'www.pinterest.com' ? after : before);
+      }
+    }
+  });
+
+  await t.test('streaming mirrors and embedded players block popunders, aclib, and iframe window.open', () => {
+    for (const host of [
+      'totalsportekl.is',
+      'live4.totalsportek.today',
+      'embedcenter.st',
+      's3.vertex.st',
+      'nizar.nexa.st',
+      'lineagest.click',
+      'example.com'
+    ]) {
+      let realOpens = 0;
+      let realChildOpens = 0;
+      function EventTarget() {}
+      EventTarget.prototype.addEventListener = function addEventListener() {};
+      const winTarget = new EventTarget();
+      const childWin = {
+        open: function open() { realChildOpens++; return { closed: false }; }
+      };
+      function HTMLIFrameElement() {}
+      Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+        get: function contentWindow() { return childWin; },
+        configurable: true
+      });
+      const iframe = new HTMLIFrameElement();
+
+      const { sandbox } = page(host, {
+        EventTarget,
+        HTMLIFrameElement,
+        iframe,
+        winTarget,
+        MutationObserver: class { observe() {} takeRecords() { return []; } disconnect() {} },
+        NodeFilter: { SHOW_ELEMENT: 1 },
+        open: function open() { realOpens++; return { closed: false }; },
+        document: {
+          nodeType: 9,
+          readyState: 'complete',
+          currentScript: null,
+          createElement: tag => ({ tag }),
+          createTreeWalker: () => ({ nextNode: () => null }),
+          addEventListener: () => {},
+          removeEventListener: () => {}
+        }
+      });
+
+      const protectedHost = host !== 'example.com';
+      if (protectedHost) {
+        assert.deepStrictEqual(plain(vm.runInContext('window.aclib', sandbox)), {}, host);
+
+        sandbox.document.currentScript = { textContent: 'const cfg = [["popundersPerIP", "0"]]; document.createElement("script");' };
+        assert.throws(() => vm.runInContext('document.createElement("script")', sandbox), /ReferenceError/, host);
+
+        sandbox.document.currentScript = { textContent: 'https://llvpn.com/tag.min.js' };
+        assert.throws(() => vm.runInContext('document.createElement("script")', sandbox), /ReferenceError/, host);
+
+        sandbox.document.currentScript = { textContent: '/* adserverDomain */' };
+        assert.throws(() => vm.runInContext('winTarget.addEventListener("click", () => {})', sandbox), /ReferenceError/, host);
+
+        sandbox.document.currentScript = { textContent: 'localStorage.setItem("unloaded_at", "1");' };
+        assert.throws(() => vm.runInContext('winTarget.addEventListener("unload", () => {})', sandbox), /ReferenceError/, host);
+
+        sandbox.document.currentScript = { textContent: 'console.log("normal player");' };
+        assert.doesNotThrow(() => vm.runInContext('document.createElement("video")', sandbox), host);
+
+        const topPop = vm.runInContext('window.open("https://ads.example/pop", "_blank", "width=800,height=600")', sandbox);
+        const childPop = vm.runInContext('iframe.contentWindow.open("about:blank", "pop", "width=800,height=600")', sandbox);
+        assert.strictEqual(topPop.closed, true, host);
+        assert.strictEqual(childPop.closed, true, host);
+        assert.strictEqual(realOpens, 0, host);
+        assert.strictEqual(realChildOpens, 0, host);
+      } else {
+        assert.strictEqual(sandbox.aclib, undefined);
+        const topPop = vm.runInContext('window.open("https://ads.example/pop", "_blank")', sandbox);
+        const childPop = vm.runInContext('iframe.contentWindow.open("about:blank", "pop")', sandbox);
+        assert.strictEqual(topPop.closed, false);
+        assert.strictEqual(childPop.closed, false);
+        assert.strictEqual(realOpens, 1);
+        assert.strictEqual(realChildOpens, 1);
       }
     }
   });
@@ -644,6 +728,105 @@ test('scriptlet native wrapper camouflage', async (t) => {
   await t.test('preserves JSON.parse wrapper name', () => {
     const sandbox = runScriptlet('jsonPrune', ['adSlots']);
     assert.strictEqual(vm.runInContext('JSON.parse.name', sandbox), 'parse');
+  });
+});
+
+test('prevent-window-open blocks window.open and iframe contentWindow.open', async (t) => {
+  function setupOpenEnv(patternArgs) {
+    const calls = [];
+    const childWin = {
+      open: function open(url, target, features) {
+        calls.push(['child', url, target, features]);
+        return { closed: false };
+      }
+    };
+    const frameWin = {
+      open: function open(url, target, features) {
+        calls.push(['frame', url, target, features]);
+        return { closed: false };
+      }
+    };
+    function HTMLIFrameElement() {}
+    function contentWindowGetter() { return childWin; }
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+      get: contentWindowGetter,
+      configurable: true,
+      enumerable: true
+    });
+    function HTMLFrameElement() {}
+    Object.defineProperty(HTMLFrameElement.prototype, 'contentWindow', {
+      get() { return frameWin; },
+      configurable: true,
+      enumerable: true
+    });
+    const iframe = new HTMLIFrameElement();
+    const frame = new HTMLFrameElement();
+    const sandbox = runScriptlet('preventWindowOpen', patternArgs, {
+      HTMLIFrameElement,
+      HTMLFrameElement,
+      iframe,
+      frame,
+      open: function open(url, target, features) {
+        calls.push(['top', url, target, features]);
+        return { closed: false };
+      }
+    });
+    return { sandbox, calls, origGetterStr: contentWindowGetter.toString() };
+  }
+
+  await t.test('blocks top and iframe contentWindow.open including dimension popups', () => {
+    const { sandbox, calls, origGetterStr } = setupOpenEnv([]);
+    const result = vm.runInContext(`
+      const topWin = window.open('https://ads.example/pop', '_blank', 'width=800,height=600,toolbar=1');
+      const childWin = iframe.contentWindow.open('about:blank', 'pop', 'top=0,left=0,width=800,height=600');
+      const frameWin = frame.contentWindow.open('https://ads.example/popunder', '_blank', 'width=800,height=600');
+      childWin.focus();
+      childWin.document.open();
+      childWin.document.write('hi');
+      childWin.location.replace('https://ads.example/');
+      const desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+      ({
+        topClosed: topWin.closed,
+        childClosed: childWin.closed,
+        frameClosed: frameWin.closed,
+        childOpenName: iframe.contentWindow.open.name,
+        getterName: desc.get.name,
+        getterStr: desc.get.toString()
+      });
+    `, sandbox);
+    assert.strictEqual(result.topClosed, true);
+    assert.strictEqual(result.childClosed, true);
+    assert.strictEqual(result.frameClosed, true);
+    assert.strictEqual(result.childOpenName, 'open');
+    assert.strictEqual(result.getterName, 'contentWindowGetter');
+    assert.strictEqual(result.getterStr, origGetterStr);
+    assert.deepStrictEqual(calls, []);
+  });
+
+  await t.test('honors URL pattern filter for both window.open and iframe.contentWindow.open', () => {
+    const { sandbox, calls } = setupOpenEnv(['ads.example']);
+    const result = vm.runInContext(`
+      const blockedTop = window.open('https://ads.example/pop', '_blank');
+      const blockedChild = iframe.contentWindow.open('https://ads.example/sub', '_blank');
+      const allowedTop = window.open('https://player.example/embed', '_blank');
+      const allowedChild = iframe.contentWindow.open('https://player.example/inner', '_blank');
+      ({
+        blockedTopClosed: blockedTop.closed,
+        blockedChildClosed: blockedChild.closed,
+        allowedTopClosed: allowedTop.closed,
+        allowedChildClosed: allowedChild.closed
+      });
+    `, sandbox);
+    assert.deepStrictEqual(plain(result), {
+      blockedTopClosed: true,
+      blockedChildClosed: true,
+      allowedTopClosed: false,
+      allowedChildClosed: false
+    });
+    assert.deepStrictEqual(calls, [
+      ['top', 'https://player.example/embed', '_blank', undefined],
+      ['child', 'https://player.example/inner', '_blank', undefined]
+    ]);
   });
 });
 
