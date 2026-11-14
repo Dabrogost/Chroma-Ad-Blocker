@@ -32,7 +32,7 @@ async function fixture(browser, hostname, embedded = false) {
         window.__state.loaderStub = typeof window.admiral === 'function' && window.admrlLoaded === true;
       ` : ''}
     </script>
-      ${host.startsWith('streame.center') || host.includes('clearstreamdv.com') || host === 'embed.sportspatrika.com' ? `<script>
+      ${host.startsWith('streame.center') || host.includes('clearstreamdv.com') || host === 'embed.sportspatrika.com' || host === 'embedcenter.st' || host === 'lineagest.click' ? `<script>
         // The live bootstrap tries several unrelated ad domains in succession.
         const options = [["popundersPerIP", "0"]];
         window.__popunderBootstrap = true;
@@ -235,12 +235,13 @@ test('bundled site rules in Chrome', async (t) => {
 
   await t.test('streaming loaders stop while player buttons and native stream links work', async () => {
     for (const host of ['www.nflbite.is', 'links.nflbite.st', 'links.nflbite.run', 'live5.totalsportek.vg',
+      'totalsportekl.is', 'live4.totalsportek.today',
       'crackstreams.mx', 'crackstreams.courses', 'emb.apl601.online', 'methstreams.gs', 'streameast.fi',
       'fsportshdz.xyz', 'taifood-blog.asia', 'trendy48.online']) {
       const result = await streamingFixture(browser, host);
       for (const state of [result.top, result.frame]) {
         assert.deepEqual(state, { parserAd: false, redirectLoader: false, dynamicAd: false,
-          delayedAd: false, adClicks: 0, played: 1, opens: host.endsWith('totalsportek.vg') ? 0 : 1,
+          delayedAd: false, adClicks: 0, played: 1, opens: host.includes('totalsportek') ? 0 : 1,
           watch: true, ready: true }, host);
       }
     }
@@ -298,6 +299,8 @@ test('bundled site rules in Chrome', async (t) => {
       ['https://crack-streams.st/ER2V869ex.js', 'https://crack-streams.st'],
       ['https://footy4u.st/V8695ex.js', 'https://footy4u.st'],
       ['https://hitcast.st/WEDasd869ex.js', 'https://hitcast.st'],
+      ['https://embedcenter.st/lib.js', 'https://embedcenter.st'],
+      ['https://forprivateuse.sbs/text.js', 'https://forprivateuse.sbs'],
       ['https://cdn.jsdelivr.net/gh/vli-platform/adb-analytics@29f6e17/v1.0.min.js', 'https://hitcast.st'],
       ['https://musikazblai.org/22/996927b366b66157a89e1a943b00f855', 'https://hitcast.st']
     ];
@@ -323,11 +326,25 @@ test('bundled site rules in Chrome', async (t) => {
 
   await t.test('player fallback bootstraps stop across subdomains and fake ads hide without hiding provider links', async () => {
     for (const host of ['streame.center', 'streame.center.example', 'clearstreamdv.com',
-      'a.clearstreamdv.com', 'm.clearstreamdv.com', 'z.clearstreamdv.com', 'clearstreamdv.com.example', 'embed.sportspatrika.com']) {
+      'a.clearstreamdv.com', 'm.clearstreamdv.com', 'z.clearstreamdv.com', 'clearstreamdv.com.example',
+      'embed.sportspatrika.com', 'embedcenter.st', 'lineagest.click']) {
       const page = await fixture(browser, host);
       try {
         assert.equal(await evaluate(browser.cdp, page.sessionId, '!!window.__popunderBootstrap'), host.endsWith('.example'), host);
         assert.equal(await evaluate(browser.cdp, page.sessionId, 'window.__ordinaryScriptRan'), true);
+      } finally { await page.close(); }
+    }
+    for (const host of ['totalsportekl.is', 's3.vertex.st']) {
+      const page = await fixture(browser, host);
+      try {
+        const openState = await evaluate(browser.cdp, page.sessionId, `(() => {
+          const frame = document.createElement('iframe');
+          document.body.appendChild(frame);
+          const topRes = window.open('about:blank', '_blank', 'width=800,height=600');
+          const childRes = frame.contentWindow.open('about:blank', 'pop', 'width=800,height=600');
+          return { topClosed: !!topRes?.closed, childClosed: !!childRes?.closed };
+        })()`);
+        assert.deepEqual(openState, { topClosed: true, childClosed: true }, host);
       } finally { await page.close(); }
     }
     for (const host of ['crack-streams.st', 'footy4u.st']) {

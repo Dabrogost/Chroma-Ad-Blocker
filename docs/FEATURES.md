@@ -44,7 +44,7 @@ For the full proxy manual, see [Media Proxy Router](MEDIA_PROXY_ROUTER.md).
 
 ## Source-Generated DNR Network Blocking
 
-Chroma selects OISD Small and Big first, then fills otherwise-unused static capacity with a stable cross-list selection of adult and shock-site domains from OISD NSFW. Protected custom and recipe layers bring the packaged corpus to exactly 300,000 static rules, while runtime dynamic rules add user-configurable blocking at the browser engine level.
+Chroma selects OISD Small and Big first, then fills otherwise-unused static capacity with a stable cross-list selection of domains from Hagezi Pro+. Protected custom and recipe layers bring the packaged corpus to exactly 300,000 static rules, while runtime dynamic rules add user-configurable blocking at the browser engine level.
 
 DNR blocking is central to Chroma's MV3 design because request decisions can be enforced by Chromium without waking the extension service worker for every network request.
 

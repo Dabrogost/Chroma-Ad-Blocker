@@ -49,7 +49,7 @@ test('OISD overflow ordering is deterministic and distributed by a stable hash',
   }
 });
 
-test('OISD selection preserves source precedence and uses NSFW only for remaining slots', () => {
+test('OISD selection preserves source precedence and uses Hagezi Pro+ only for remaining slots', () => {
   const sources = [
     {
       label: 'small',
@@ -62,7 +62,7 @@ test('OISD selection preserves source precedence and uses NSFW only for remainin
       skipped: 1
     },
     {
-      label: 'nsfw-fill',
+      label: 'hagezi-pro-plus-fill',
       domains: ['adult-one.example', 'adult-two.example'],
       skipped: 0
     }
@@ -82,8 +82,8 @@ test('OISD selection preserves source precedence and uses NSFW only for remainin
   assert.strictEqual(selection.skipped, 1);
   assert.strictEqual(selection.generatedBySource.get('small'), 2);
   assert.strictEqual(selection.generatedBySource.get('big'), 1);
-  assert.strictEqual(selection.generatedBySource.get('nsfw-fill'), 2);
-  assert.strictEqual(selection.selectedBySource.get('nsfw-fill'), 1);
+  assert.strictEqual(selection.generatedBySource.get('hagezi-pro-plus-fill'), 2);
+  assert.strictEqual(selection.selectedBySource.get('hagezi-pro-plus-fill'), 1);
   assert.strictEqual(countEligibleDomains(sources, protectedFilters), 5);
 });
 

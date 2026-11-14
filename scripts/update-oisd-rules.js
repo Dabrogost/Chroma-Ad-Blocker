@@ -13,7 +13,7 @@ const manifestPath = path.join(extensionRoot, 'manifest.json');
 const SOURCE_NAME = 'OISD';
 const SMALL_SOURCE_URL = 'https://small.oisd.nl/';
 const BIG_SOURCE_URL = 'https://big.oisd.nl/';
-const NSFW_SOURCE_URL = 'https://nsfw.oisd.nl/';
+const HAGEZI_PRO_PLUS_SOURCE_URL = 'https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/adblock/pro.plus.txt';
 const OUTPUT_PREFIX = 'rules_oisd';
 const RULESET_ID_PREFIX = 'oisd_rules';
 const RULES_PER_FILE = 30000;
@@ -443,18 +443,18 @@ async function main() {
     const primaryEligible = countEligibleDomains(sourceResults, protectedFilters);
     if (primaryEligible < availableSlots) {
       console.log(`Primary OISD sources leave ${availableSlots - primaryEligible} static slots open.`);
-      console.log('Fetching OISD NSFW capacity filler...');
-      console.log(NSFW_SOURCE_URL);
-      const text = await fetchText(NSFW_SOURCE_URL);
+      console.log('Fetching Hagezi Pro+ capacity filler...');
+      console.log(HAGEZI_PRO_PLUS_SOURCE_URL);
+      const text = await fetchText(HAGEZI_PRO_PLUS_SOURCE_URL);
       const parsed = parseOisd(text);
 
-      // OISD publishes domains in lexical order. Rank the overflow tier by a
-      // stable domain hash so a capped subset covers the whole NSFW corpus
+      // Hagezi publishes domains in lexical order. Rank the overflow tier by a
+      // stable domain hash so a capped subset covers the whole Hagezi Pro+ corpus
       // instead of only the alphabetically earliest domains.
       parsed.domains.sort(compareStableDomains);
       sourceResults.push({
-        label: 'nsfw-fill',
-        url: NSFW_SOURCE_URL,
+        label: 'hagezi-pro-plus-fill',
+        url: HAGEZI_PRO_PLUS_SOURCE_URL,
         ...parsed
       });
     }
