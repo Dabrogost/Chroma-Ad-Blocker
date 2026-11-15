@@ -220,6 +220,9 @@ test('bundled anti-detection rules', async (t) => {
     for (const host of [
       'totalsportekl.is',
       'live4.totalsportek.today',
+      'live.totalsportek.gives',
+      'maindesign.pw',
+      'ehgembxe.cfd',
       'embedcenter.st',
       's3.vertex.st',
       'nizar.nexa.st',
@@ -294,6 +297,45 @@ test('bundled anti-detection rules', async (t) => {
         assert.strictEqual(realOpens, 1);
         assert.strictEqual(realChildOpens, 1);
       }
+    }
+  });
+
+  await t.test('nflbite and totalsportek mirrors defuse mousedown shown_at hijack and set shown_at timestamp', () => {
+    for (const host of ['links.nflbite.run', 'nflbite.is', 'live.totalsportek.gives', 'live5.totalsportek.vg']) {
+      const storage = {};
+      const listeners = [];
+      function EventTarget() {}
+      EventTarget.prototype.addEventListener = function addEventListener(type, fn) {
+        listeners.push({ type, fn });
+      };
+      const { sandbox } = page(host, {
+        EventTarget,
+        MutationObserver: class { observe() {} takeRecords() { return []; } disconnect() {} },
+        NodeFilter: { SHOW_ELEMENT: 1 },
+        document: {
+          nodeType: 9,
+          readyState: 'complete',
+          currentScript: null,
+          createElement: tag => ({ tag }),
+          createTreeWalker: () => ({ nextNode: () => null }),
+          addEventListener: () => {},
+          removeEventListener: () => {}
+        },
+        localStorage: {
+          getItem: (k) => storage[k] ?? null,
+          setItem: (k, v) => { storage[k] = String(v); }
+        }
+      });
+      assert.strictEqual(storage.shown_at, '9999999999999', host);
+
+      const target = new EventTarget();
+      const adMousedownListener = function r() {
+        if (!localStorage.getItem('shown_at') || Date.now() - Number(localStorage.getItem('shown_at')) > 36e5) {
+          window.open('https://ad.example');
+        }
+      };
+      target.addEventListener('mousedown', adMousedownListener);
+      assert.strictEqual(listeners.some(l => l.fn === adMousedownListener), false, host);
     }
   });
 });
