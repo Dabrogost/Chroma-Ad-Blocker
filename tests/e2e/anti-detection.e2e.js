@@ -235,7 +235,7 @@ test('bundled site rules in Chrome', async (t) => {
 
   await t.test('streaming loaders stop while player buttons and native stream links work', async () => {
     for (const host of ['www.nflbite.is', 'links.nflbite.st', 'links.nflbite.run', 'live5.totalsportek.vg',
-      'totalsportekl.is', 'live4.totalsportek.today',
+      'totalsportekl.is', 'live4.totalsportek.today', 'live.totalsportek.gives',
       'crackstreams.mx', 'crackstreams.courses', 'emb.apl601.online', 'methstreams.gs', 'streameast.fi',
       'fsportshdz.xyz', 'taifood-blog.asia', 'trendy48.online']) {
       const result = await streamingFixture(browser, host);
@@ -301,6 +301,9 @@ test('bundled site rules in Chrome', async (t) => {
       ['https://hitcast.st/WEDasd869ex.js', 'https://hitcast.st'],
       ['https://embedcenter.st/lib.js', 'https://embedcenter.st'],
       ['https://forprivateuse.sbs/text.js', 'https://forprivateuse.sbs'],
+      ['https://ehgembxe.cfd/disable-devtool.js', 'https://ehgembxe.cfd'],
+      ['https://ehgembxe.cfd/plum.js', 'https://ehgembxe.cfd'],
+      ['https://s10.histats.com/js15_as.js', 'https://maindesign.pw'],
       ['https://cdn.jsdelivr.net/gh/vli-platform/adb-analytics@29f6e17/v1.0.min.js', 'https://hitcast.st'],
       ['https://musikazblai.org/22/996927b366b66157a89e1a943b00f855', 'https://hitcast.st']
     ];
