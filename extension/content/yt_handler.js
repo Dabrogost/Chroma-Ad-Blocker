@@ -268,16 +268,32 @@
     return stripped;
   }
 
+  // Initial payload cleanup cache (handles late config activation after document_start).
+  // Retroactively strips initial payloads when CONFIG arrives after inline script execution.
+  const _cleanedInitialPayloads = typeof WeakSet === 'function' ? new WeakSet() : null;
+
+  function cleanInitialPayload(value) {
+    if (!CONFIG.enabled || !CONFIG.stripping || !value || typeof value !== 'object') return;
+    if (_cleanedInitialPayloads) {
+      if (_cleanedInitialPayloads.has(value)) return;
+      _cleanedInitialPayloads.add(value);
+    }
+    cleanYoutubePayload(value);
+  }
+
   // Hook ytInitialPlayerResponse — strips ad fields from the initial player payload
   // before YouTube's own scripts read the value.
-  let _ytInitialPlayerResponse;
+  let _ytInitialPlayerResponse = window.ytInitialPlayerResponse;
   try {
     Object.defineProperty(window, 'ytInitialPlayerResponse', {
       configurable: true,
-      get() { return _ytInitialPlayerResponse; },
+      get() {
+        cleanInitialPayload(_ytInitialPlayerResponse);
+        return _ytInitialPlayerResponse;
+      },
       set(value) {
-        if (CONFIG.enabled && CONFIG.stripping && value && typeof value === 'object') {
-          cleanYoutubePayload(value);
+        if (value && typeof value === 'object') {
+          cleanInitialPayload(value);
         }
         _ytInitialPlayerResponse = value;
       }
@@ -285,19 +301,28 @@
   } catch (_) {}
 
   // Hook ytInitialData — strips ad fields and promoted feed items from page-level data.
-  let _ytInitialData;
+  let _ytInitialData = window.ytInitialData;
   try {
     Object.defineProperty(window, 'ytInitialData', {
       configurable: true,
-      get() { return _ytInitialData; },
+      get() {
+        cleanInitialPayload(_ytInitialData);
+        return _ytInitialData;
+      },
       set(value) {
-        if (CONFIG.enabled && CONFIG.stripping && value && typeof value === 'object') {
-          cleanYoutubePayload(value);
+        if (value && typeof value === 'object') {
+          cleanInitialPayload(value);
         }
         _ytInitialData = value;
       }
     });
   } catch (_) {}
+
+  // Re-check any already-captured initial payloads once the bridge activates stripping.
+  function reconcileInitialPayloads() {
+    cleanInitialPayload(_ytInitialPlayerResponse);
+    cleanInitialPayload(_ytInitialData);
+  }
 
   // Capture native fetch/XHR/JSON.parse before anything else in this file modifies them.
   const _nativeToString = Function.prototype.toString;
@@ -658,16 +683,23 @@
   // The beacon suppression IIFE (below) captures this as its _origOpen, giving the
   // correct chain: beacon suppression → this wrapper → native open.
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    if (this._chromaResponseOverridden) {
+      delete this.responseText;
+      delete this.response;
+      this._chromaResponseOverridden = false;
+    }
     this._chromaYTUrl = String(url);
     return _nativeXHROpen.apply(this, arguments);
   };
 
   XMLHttpRequest.prototype.send = function(...args) {
     const url = this._chromaYTUrl || '';
+    const sendSeq = (this._chromaSendSeq || 0) + 1;
+    this._chromaSendSeq = sendSeq;
     if (args.length) args[0] = prepareSabrPlayerBody(url, args[0]);
     if (CONFIG.enabled && CONFIG.stripping && YT_API_PATHS.some(p => url.includes(p))) {
       this.addEventListener('readystatechange', function() {
-        if (this.readyState !== 4) return;
+        if (this.readyState !== 4 || this._chromaSendSeq !== sendSeq) return;
         try {
           const rt = this.responseType;
           if (rt && rt !== '' && rt !== 'text' && rt !== 'json') return;
@@ -676,10 +708,12 @@
           const modified = cleanYoutubePayload(json);
           if (modified) {
             const stripped = JSON.stringify(json);
-            Object.defineProperty(this, 'responseText', { value: stripped, writable: false });
+            this._chromaResponseOverridden = true;
+            Object.defineProperty(this, 'responseText', { value: stripped, writable: false, configurable: true });
             Object.defineProperty(this, 'response', {
               value: rt === 'json' ? json : stripped,
-              writable: false
+              writable: false,
+              configurable: true
             });
           }
         } catch (_) {}
@@ -863,7 +897,10 @@
     const _origOpen = XMLHttpRequest.prototype.open;
 
     XMLHttpRequest.prototype.open = function(method, url) {
-      if (typeof url === 'string' &&
+      this._chromaSuppressed = false;
+      if (CONFIG.enabled &&
+          (CONFIG.stripping || CONFIG.acceleration) &&
+          typeof url === 'string' &&
           !chromaAdSessionActive &&
           (url.includes('/pcs/activeview') || url.includes('/ptracking'))) {
         this._chromaSuppressed = true;
@@ -894,17 +931,17 @@
 
     const _spoof = function toString() {
       if (_targets.has(this)) return _targets.get(this);
-      return _nativeToString.call(this);
+      return typeof _nativeToString === 'function' ? _nativeToString.call(this) : '';
     };
 
-    // Recursive protection: make the spoof's own toString return a native string.
-    Object.defineProperty(_spoof, 'toString', {
-      value: function() { return _nativeToString.call(_nativeToString); },
-      writable: false,
-      configurable: false,
-    });
+    const _nativeLabel = typeof _nativeToString === 'function'
+      ? _nativeToString.call(_nativeToString)
+      : 'function toString() { [native code] }';
+    _targets.set(_spoof, _nativeLabel);
 
-    Function.prototype.toString = _spoof;
+    try {
+      Function.prototype.toString = _spoof;
+    } catch (_) {}
   })();
 
   // ─── AD ACCELERATION ─────
@@ -1339,6 +1376,7 @@
     if (!bridgeConfig) return;
     applyConfig(bridgeConfig);
     lastBridgeRevision = revision;
+    reconcileInitialPayloads();
 
     if (DEBUG) console.log('[Chroma] YouTube handler updated config:', CONFIG);
 
@@ -1413,6 +1451,7 @@
       // SECURITY: Handshake Configuration Validation
       applyConfig(getBridgeConfig());
       rememberBridgeRevision();
+      reconcileInitialPayloads();
     }
 
     // If config is already available, start immediately. Otherwise, poll for handshake.
@@ -1431,6 +1470,7 @@
           safeClearInterval(_pollId);
           applyConfig(config);
           rememberBridgeRevision();
+          reconcileInitialPayloads();
           if (CONFIG.enabled && shouldAccelerate()) {
             injectChromaCSS();
             startPolling();

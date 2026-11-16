@@ -147,8 +147,13 @@ export function noSetTimeoutIf(args) {
   const delay   = args[1];
   if (!pattern) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
 
   const orig = window.setTimeout;
@@ -171,8 +176,13 @@ export function noSetIntervalIf(args) {
   const delay   = args[1];
   if (!pattern) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
 
   const orig = window.setInterval;
@@ -193,8 +203,13 @@ export function noSetIntervalIf(args) {
 export function preventFetch(args) {
   const pattern = args[0] || '*';
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (url) => {
     if (pattern === '*') return true;
     if (re) return re.test(url);
@@ -221,8 +236,13 @@ export function preventFetch(args) {
 export function preventXhr(args) {
   const pattern = args[0] || '*';
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (url) => {
     if (pattern === '*') return true;
     if (re) return re.test(url);
@@ -703,18 +723,25 @@ export function preventAddEventListener(args) {
   const typePat = args[0];
   const handlerPat = args[1];
 
+  let invalidRegex = false;
   const compile = (p) => {
     if (!p || p === '*') return null;
-    const isRegex = p.startsWith('/') && p.lastIndexOf('/') > 0;
-    if (isRegex) {
-      const re = new RegExp(p.slice(1, p.lastIndexOf('/')));
-      return (s) => re.test(String(s));
+    if (p.startsWith('/') && p.lastIndexOf('/') > 0) {
+      const lastSlash = p.lastIndexOf('/');
+      try {
+        const re = new RegExp(p.slice(1, lastSlash), p.slice(lastSlash + 1).replace(/[gy]/g, ''));
+        return (s) => re.test(String(s));
+      } catch (e) {
+        invalidRegex = true;
+        return null;
+      }
     }
     return (s) => String(s).includes(p);
   };
 
   const matchType = compile(typePat);
   const matchHandler = compile(handlerPat);
+  if (invalidRegex) return;
 
   const orig = EventTarget.prototype.addEventListener;
   EventTarget.prototype.addEventListener = function(type, listener) {
@@ -774,8 +801,13 @@ export function setCookie(args) {
 export function preventWindowOpen(args) {
   const pattern = args[0] || '*';
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (url) => {
     if (pattern === '*') return true;
     if (re) return re.test(url);
@@ -935,8 +967,13 @@ export function replaceNodeText(args) {
 export function preventRequestAnimationFrame(args) {
   const pattern = args[0] || '*';
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (str) => {
     if (pattern === '*') return true;
     if (re) return re.test(str);
@@ -968,24 +1005,37 @@ export function abortCurrentScript(args) {
   const needle = args[1];
   if (!prop) return;
 
-  const isRegex = needle && needle.startsWith('/') && needle.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(needle.slice(1, needle.lastIndexOf('/'))) : null;
+  let re = null;
+  if (needle && needle.startsWith('/') && needle.lastIndexOf('/') > 0) {
+    const lastSlash = needle.lastIndexOf('/');
+    try {
+      re = new RegExp(needle.slice(1, lastSlash), needle.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const needleMatches = (str) => {
     if (!needle || needle === '*') return true;
     if (re) return re.test(str);
     return String(str).includes(needle);
   };
 
+  let checking = false;
   const shouldAbort = () => {
+    if (checking) return false;
+    checking = true;
     try {
       const cs = document.currentScript;
       if (!cs) return false;
       const haystack = (cs.src || cs.textContent || '');
       return needleMatches(haystack);
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    } finally {
+      checking = false;
+    }
   };
 
   const parts = prop.split('.');
+  if (parts.some(part => !part)) return;
   const last = parts[parts.length - 1];
 
   // Walk to the parent object, creating intermediate stubs only if missing.
@@ -1001,19 +1051,68 @@ export function abortCurrentScript(args) {
     if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
   }
 
-  let stored;
+  let ownDesc;
+  let protoDesc;
   try {
-    const desc = Object.getOwnPropertyDescriptor(obj, last);
-    stored = desc && 'value' in desc ? desc.value : obj[last];
-  } catch (e) { stored = undefined; }
+    ownDesc = Object.getOwnPropertyDescriptor(obj, last);
+    if (ownDesc && !ownDesc.configurable) return;
+    if (!ownDesc) {
+      let proto = Object.getPrototypeOf(obj);
+      while (proto) {
+        const candidate = Object.getOwnPropertyDescriptor(proto, last);
+        if (candidate) {
+          protoDesc = candidate;
+          break;
+        }
+        proto = Object.getPrototypeOf(proto);
+      }
+    }
+  } catch (e) { return; }
+
+  const activeDesc = ownDesc || protoDesc;
+  const isAccessor = Boolean(activeDesc && !('value' in activeDesc));
+  let stored = ownDesc && 'value' in ownDesc ? ownDesc.value : undefined;
+  let hasOwnValue = Boolean(ownDesc && 'value' in ownDesc);
+
+  const readUnderlying = (receiver) => {
+    if (isAccessor) {
+      return activeDesc.get ? activeDesc.get.call(receiver) : undefined;
+    }
+    if (hasOwnValue) return stored;
+    if (!protoDesc) return stored;
+    let proto = Object.getPrototypeOf(obj);
+    while (proto) {
+      const candidate = Object.getOwnPropertyDescriptor(proto, last);
+      if (candidate) {
+        return 'value' in candidate
+          ? candidate.value
+          : (candidate.get ? candidate.get.call(receiver) : undefined);
+      }
+      proto = Object.getPrototypeOf(proto);
+    }
+    return undefined;
+  };
+
+  let setter;
+  if (isAccessor) {
+    setter = activeDesc.set ? function(v) { activeDesc.set.call(this, v); } : undefined;
+  } else if (activeDesc && activeDesc.writable === false) {
+    setter = undefined;
+  } else {
+    setter = function(v) {
+      stored = v;
+      hasOwnValue = true;
+    };
+  }
 
   try {
     Object.defineProperty(obj, last, {
       get() {
         if (shouldAbort()) throw new ReferenceError(prop + ' aborted');
-        return stored;
+        return readUnderlying(this);
       },
-      set(v) { stored = v; },
+      set: setter,
+      enumerable: ownDesc ? ownDesc.enumerable : !protoDesc,
       configurable: true
     });
   } catch (e) {}
@@ -1073,8 +1172,13 @@ export function preventElementSrcLoading(args) {
   const ctorName = tagToProto[tag];
   if (!ctorName || !window[ctorName]) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (url) => {
     if (pattern === '*') return true;
     if (re) return re.test(url);
@@ -1405,8 +1509,13 @@ export function noEvalIf(args) {
   const pattern = args[0];
   if (!pattern) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
-  const re = isRegex ? new RegExp(pattern.slice(1, pattern.lastIndexOf('/'))) : null;
+  let re = null;
+  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
+    const lastSlash = pattern.lastIndexOf('/');
+    try {
+      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+    } catch (e) { return; }
+  }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
 
   const orig = window.eval;

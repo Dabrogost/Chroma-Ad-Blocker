@@ -126,6 +126,8 @@
       }
     });
     try {
+      wrappedSet.add(toStringProxy);
+      targetMap.set(toStringProxy, _fnToString);
       _defineProperty(Function.prototype, 'toString', {
         value: toStringProxy,
         writable: true,

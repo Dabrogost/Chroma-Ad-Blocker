@@ -80,7 +80,7 @@ function recordMatchedRule(info) {
   const ts = Date.now();
   const url = typeof info?.request?.url === 'string' ? info.request.url : '';
   const resourceType = typeof info?.request?.type === 'string' ? info.request.type : 'other';
-  _logBuffer.push({
+  _logBuffer.unshift({
     ts,
     url,
     rt: resourceType,
@@ -90,7 +90,7 @@ function recordMatchedRule(info) {
     rulesetId: classification.rulesetId
   });
   if (_logBuffer.length > LOG_MAX_ENTRIES) {
-    _logBuffer = _logBuffer.slice(-LOG_MAX_ENTRIES);
+    _logBuffer.length = LOG_MAX_ENTRIES;
   }
 
   recordStatsEvent({

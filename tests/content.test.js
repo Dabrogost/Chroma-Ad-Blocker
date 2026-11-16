@@ -51,6 +51,9 @@ test('Content script generic functionality', async (t) => {
     const dispatchedEvents = [];
     const storageChangeListeners = [];
     let runtimeMessageListener = null;
+    let activeObservers = 0;
+    let observeCalls = 0;
+    let disconnectCalls = 0;
     const location = options.location || { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' };
     const sandbox = {
       chrome: {
@@ -107,8 +110,14 @@ test('Content script generic functionality', async (t) => {
       clearInterval: () => {},
       setTimeout: (fn) => fn(),
       MutationObserver: class {
-        observe() {}
-        disconnect() {}
+        observe() {
+          observeCalls++;
+          activeObservers++;
+        }
+        disconnect() {
+          disconnectCalls++;
+          activeObservers = Math.max(0, activeObservers - 1);
+        }
       },
       requestAnimationFrame: (cb) => cb(),
       console: console,
@@ -156,6 +165,7 @@ test('Content script generic functionality', async (t) => {
       storageChangeListeners.forEach(listener => listener(changes, 'local'));
     };
     sandbox.__sendRuntimeMessage = message => runtimeMessageListener?.(message);
+    sandbox.__getObserverState = () => ({ activeObservers, observeCalls, disconnectCalls });
     sandbox.globalThis = sandbox;
 
     if (setupDoc) setupDoc(sandbox.document);
@@ -744,5 +754,167 @@ test('Content script generic functionality', async (t) => {
     await new Promise(resolve => setImmediate(resolve));
 
     assert.deepStrictEqual(redirects, []);
+  });
+
+  await t.test('whitelisted tab remains inert across CONFIG_UPDATE and YouTube SPA navigation', async () => {
+    const warning = createMockElement();
+    warning.matches = () => true;
+    const adNode = createMockElement();
+    adNode.nodeType = 1;
+    adNode.id = 'ad-slot-test';
+
+    const sandbox = createSandbox(
+      (doc) => {
+        doc.querySelectorAll = (sel) => {
+          if (sel === 'ytd-enforcement-message-view-model') return [warning];
+          if (sel.includes('ad-slot')) return [adNode];
+          return [];
+        };
+      },
+      {
+        location: { hostname: 'WWW.YOUTUBE.COM.', href: 'https://www.youtube.com/watch?v=1' },
+        storage: {
+          config: { enabled: true, cosmetic: true, suppressWarnings: true, hideShorts: true },
+          whitelist: ['youtube.com.'],
+          HIDE_SELECTORS: ['.ad-showing'],
+          WARNING_SELECTORS: ['ytd-enforcement-message-view-model'],
+          localCosmeticRules: [{ domain: 'youtube.com', selector: '.zapper-ad', source: 'zapper', enabled: true }],
+          subscriptionCosmeticRules: [{ domains: ['youtube.com'], selector: '.sub-ad', isException: false }]
+        }
+      }
+    );
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+    assert.strictEqual(sandbox.__getObserverState().observeCalls, 0);
+
+    sandbox.__sendRuntimeMessage({
+      type: 'CONFIG_UPDATE',
+      config: { enabled: true, cosmetic: true, suppressWarnings: true, hideShorts: true, hideMerch: true, hideOffers: true }
+    });
+    sandbox.document.dispatchEvent({ type: 'yt-navigate-finish' });
+    sandbox.suppressAdblockWarnings();
+    sandbox.removeLeftoverAdContainers(adNode);
+
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+    assert.strictEqual(sandbox.__getObserverState().observeCalls, 0);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 0);
+    assert.notStrictEqual(warning.removed, true);
+    assert.notStrictEqual(adNode.removed, true);
+  });
+
+  await t.test('early CONFIG_UPDATE before init resolves is torn down when domain is whitelisted', async () => {
+    let resolveStorage;
+    const pendingStorage = new Promise(resolve => { resolveStorage = resolve; });
+    const sandbox = createSandbox(null, {
+      location: { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' },
+      storageGet: () => pendingStorage
+    });
+
+    sandbox.__sendRuntimeMessage({
+      type: 'CONFIG_UPDATE',
+      config: { enabled: true, cosmetic: true, suppressWarnings: true }
+    });
+    assert.ok(sandbox.document.adoptedStyleSheets.length > 0);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 1);
+
+    resolveStorage({
+      config: { enabled: true, cosmetic: true, suppressWarnings: true, quietConsole: true },
+      whitelist: ['youtube.com'],
+      HIDE_SELECTORS: ['.ad-showing'],
+      WARNING_SELECTORS: ['ytd-enforcement-message-view-model'],
+      subscriptionCosmeticRules: [],
+      localCosmeticRules: []
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 0);
+    assert.ok(sandbox.__getObserverState().disconnectCalls >= 1);
+    const lastQuietEvent = sandbox.__dispatchedEvents
+      .filter(event => event?.type === '__CHROMA_QUIET_CONSOLE_CONFIG__')
+      .at(-1);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(lastQuietEvent.detail)), {
+      enabled: false,
+      quietConsole: true
+    });
+  });
+
+  await t.test('live chrome.storage.onChanged whitelist updates tear down and restore cosmetics', async () => {
+    const warning = createMockElement();
+    warning.matches = () => true;
+    const adNode = createMockElement();
+    adNode.nodeType = 1;
+    adNode.id = 'ad-slot-test';
+
+    const sandbox = createSandbox(
+      (doc) => {
+        doc.querySelectorAll = (sel) => {
+          if (sel === 'ytd-enforcement-message-view-model') return [warning];
+          if (sel.includes('ad-slot')) return [adNode];
+          return [];
+        };
+      },
+      {
+        location: { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' },
+        storage: {
+          config: { enabled: true, cosmetic: true, suppressWarnings: true, quietConsole: true },
+          whitelist: [],
+          HIDE_SELECTORS: ['.builtin-ad'],
+          WARNING_SELECTORS: ['ytd-enforcement-message-view-model'],
+          subscriptionCosmeticRules: [{ domains: ['youtube.com'], selector: '.sub-ad', isException: false }],
+          localCosmeticRules: [{ domain: 'youtube.com', selector: '.zapper-ad', source: 'zapper', enabled: true }]
+        }
+      }
+    );
+    await new Promise(resolve => setImmediate(resolve));
+
+    const initialCss = sandbox.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    assert.match(initialCss, /\.builtin-ad/);
+    assert.match(initialCss, /\.sub-ad/);
+    assert.match(initialCss, /\.zapper-ad/);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 1);
+
+    warning.removed = false;
+    adNode.removed = false;
+
+    // Add domain to whitelist live
+    sandbox.__emitStorageChange({
+      whitelist: { oldValue: [], newValue: ['youtube.com'] }
+    });
+
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 0);
+    assert.notStrictEqual(warning.removed, true);
+    assert.notStrictEqual(adNode.removed, true);
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.__dispatchedEvents.filter(e => e?.type === '__CHROMA_QUIET_CONSOLE_CONFIG__').at(-1).detail)),
+      { enabled: false, quietConsole: true }
+    );
+
+    // CONFIG_UPDATE while whitelisted must remain inactive
+    sandbox.__sendRuntimeMessage({
+      type: 'CONFIG_UPDATE',
+      config: { enabled: true, cosmetic: true, suppressWarnings: true }
+    });
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 0);
+
+    // Remove domain from whitelist live -> restores cosmetics, observer, quietConsole, and cleanup
+    sandbox.__emitStorageChange({
+      whitelist: { oldValue: ['youtube.com'], newValue: [] }
+    });
+
+    const restoredCss = sandbox.document.adoptedStyleSheets.map(sheet => sheet.content).join('\n');
+    assert.match(restoredCss, /\.builtin-ad/);
+    assert.match(restoredCss, /\.sub-ad/);
+    assert.match(restoredCss, /\.zapper-ad/);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 1);
+    assert.strictEqual(warning.removed, true);
+    assert.strictEqual(adNode.removed, true);
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.__dispatchedEvents.filter(e => e?.type === '__CHROMA_QUIET_CONSOLE_CONFIG__').at(-1).detail)),
+      { enabled: true, quietConsole: true }
+    );
   });
 });

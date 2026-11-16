@@ -92,7 +92,7 @@ const CONFIG_KEYS = [
   'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled',
   'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass',
   'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening',
-  'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks', 'quietConsole'
+  'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks', 'quietConsole', 'showBlockedBadge'
 ];
 
 function defaultStageCustomSubscriptions(subscriptions, current = {}) {
@@ -337,6 +337,7 @@ function loadHandlers(options = {}) {
     setStatsSettings: options.setStatsSettings || (async () => ({})),
     syncWebRtcLeakProtection: options.syncWebRtcLeakProtection || (async () => ({})),
     syncBrowserPrivacyHardening: options.syncBrowserPrivacyHardening || (async () => ({})),
+    syncActionBadge: options.syncActionBadge || (async () => ({ ok: true })),
     syncGeolocationProtection: options.syncGeolocationProtection || (async () => ({})),
     inspectLatestUpdatePackage: options.inspectLatestUpdatePackage || (async () => ({ ok: true, updateAvailable: false })),
     chrome: {

@@ -315,6 +315,64 @@ test('getDefaultDynamicRules', async (t) => {
     assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ quietConsole: null }))), {});
   });
 
+  await t.test('config validation accepts showBlockedBadge booleans only', () => {
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ showBlockedBadge: true }))),
+      { showBlockedBadge: true }
+    );
+    assert.deepStrictEqual(
+      JSON.parse(JSON.stringify(sandbox.validateConfig({ showBlockedBadge: false }))),
+      { showBlockedBadge: false }
+    );
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ showBlockedBadge: 'true' }))), {});
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.validateConfig({ showBlockedBadge: null }))), {});
+  });
+
+  await t.test('syncActionBadge configures native DNR badge counter and clears badge when disabled', async () => {
+    const calls = [];
+    const origSetOptions = sandbox.chrome.declarativeNetRequest.setExtensionActionOptions;
+    const origAction = sandbox.chrome.action;
+    sandbox.chrome.declarativeNetRequest.setExtensionActionOptions = async opts => {
+      calls.push(['options', JSON.parse(JSON.stringify(opts))]);
+    };
+    sandbox.chrome.action = {
+      setBadgeBackgroundColor: async opts => calls.push(['bg', JSON.parse(JSON.stringify(opts))]),
+      setBadgeTextColor: async opts => calls.push(['fg', JSON.parse(JSON.stringify(opts))]),
+      setBadgeText: async opts => calls.push(['text', JSON.parse(JSON.stringify(opts))])
+    };
+    try {
+      const enabledRes = await sandbox.syncActionBadge({ enabled: true, networkBlocking: true, showBlockedBadge: true });
+      assert.strictEqual(enabledRes.ok, true);
+      assert.strictEqual(enabledRes.enabled, true);
+      assert.deepStrictEqual(calls.splice(0), [
+        ['options', { displayActionCountAsBadgeText: true }],
+        ['bg', { color: '#6c5ce7' }],
+        ['fg', { color: '#ffffff' }]
+      ]);
+
+      await sandbox.syncActionBadge({ enabled: true, networkBlocking: true, showBlockedBadge: false });
+      assert.deepStrictEqual(calls.splice(0), [
+        ['options', { displayActionCountAsBadgeText: false }],
+        ['text', { text: '' }]
+      ]);
+
+      await sandbox.syncActionBadge({ enabled: false, networkBlocking: true, showBlockedBadge: true });
+      assert.deepStrictEqual(calls.splice(0), [
+        ['options', { displayActionCountAsBadgeText: false }],
+        ['text', { text: '' }]
+      ]);
+
+      await sandbox.syncActionBadge({ enabled: true, networkBlocking: false, showBlockedBadge: true });
+      assert.deepStrictEqual(calls.splice(0), [
+        ['options', { displayActionCountAsBadgeText: false }],
+        ['text', { text: '' }]
+      ]);
+    } finally {
+      sandbox.chrome.declarativeNetRequest.setExtensionActionOptions = origSetOptions;
+      sandbox.chrome.action = origAction;
+    }
+  });
+
   await t.test('tracking URL cleanup rule strips known tracking params on top-level navigations only', () => {
     const rules = sandbox.getDefaultDynamicRules({ trackingUrlCleanup: true });
     const cleanupRules = rules.filter(rule => rule.id >= 2000 && rule.id <= 2099);

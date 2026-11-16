@@ -484,4 +484,203 @@ test('user scriptlet resource storage manager', async (t) => {
     assert.strictEqual(duplicate.ok, false);
     assert.match(duplicate.error, /Duplicate user-scriptlet source URL/);
   });
+
+  await t.test('concurrent refresh and remove does not resurrect deleted source or its resources', async () => {
+    for (const outcome of ['resolve', 'reject']) {
+      let resolveFetch;
+      let rejectFetch;
+      const pendingFetch = new Promise((resolve, reject) => {
+        resolveFetch = resolve;
+        rejectFetch = reject;
+      });
+      let isRefreshCall = false;
+      const storage = {};
+      const { api } = loadUserResources({
+        storage,
+        fetch: async () => {
+          if (!isRefreshCall) {
+            return {
+              ok: true,
+              status: 200,
+              headers: makeHeaders({ etag: '"v1"' }),
+              text: async () => 'alpha.js text/javascript (() => { globalThis.__alpha = 1; })();'
+            };
+          }
+          return pendingFetch;
+        }
+      });
+
+      const added = await api.addUserScriptletSource({ url: 'https://cdn.example.com/alpha.js' });
+      assert.strictEqual(added.ok, true);
+      const sourceId = storage.userScriptletSources[0].id;
+
+      isRefreshCall = true;
+      const refreshPromise = api.refreshUserScriptletSource(sourceId);
+      await new Promise(resolve => setImmediate(resolve));
+
+      const removed = await api.removeUserScriptletSource(sourceId);
+      assert.deepStrictEqual(plain(removed), { ok: true });
+      assert.strictEqual(storage.userScriptletSources.length, 0);
+      assert.strictEqual(storage.userScriptletResources.alpha, undefined);
+
+      if (outcome === 'resolve') {
+        resolveFetch({
+          ok: true,
+          status: 200,
+          headers: makeHeaders({ etag: '"v2"' }),
+          text: async () => 'alpha.js text/javascript (() => { globalThis.__alpha = 2; })();'
+        });
+      } else {
+        rejectFetch(new Error('network timeout'));
+      }
+
+      const refreshResult = await refreshPromise;
+      assert.strictEqual(refreshResult.ok, false);
+      assert.strictEqual(storage.userScriptletSources.length, 0, `${outcome}: removed source must not resurrect`);
+      assert.strictEqual(storage.userScriptletResources.alpha, undefined, `${outcome}: removed resource must not resurrect`);
+    }
+  });
+
+  await t.test('concurrent refreshes across distinct sources preserve all updates and handle parse errors', async () => {
+    const deferredByUrl = new Map();
+    const makeDeferred = () => {
+      let resolve;
+      const promise = new Promise(r => { resolve = r; });
+      return { promise, resolve };
+    };
+    let refreshMode = false;
+    const storage = {};
+    const { api } = loadUserResources({
+      storage,
+      fetch: async (url) => {
+        if (!refreshMode) {
+          const name = String(url).includes('one') ? 'one.js' : 'two.js';
+          return {
+            ok: true,
+            status: 200,
+            headers: makeHeaders(),
+            text: async () => `${name} text/javascript (() => { globalThis.__${name.slice(0, -3)} = 1; })();`
+          };
+        }
+        return deferredByUrl.get(String(url)).promise;
+      }
+    });
+
+    await api.addUserScriptletSource({ url: 'https://cdn.example.com/one.js' });
+    await api.addUserScriptletSource({ url: 'https://cdn.example.com/two.js' });
+    const id1 = storage.userScriptletSources[0].id;
+    const id2 = storage.userScriptletSources[1].id;
+
+    refreshMode = true;
+    const d1 = makeDeferred();
+    const d2 = makeDeferred();
+    deferredByUrl.set('https://cdn.example.com/one.js', d1);
+    deferredByUrl.set('https://cdn.example.com/two.js', d2);
+
+    const p1 = api.refreshUserScriptletSource(id1);
+    const p2 = api.refreshUserScriptletSource(id2);
+    await new Promise(resolve => setImmediate(resolve));
+
+    d2.resolve({
+      ok: true,
+      status: 200,
+      headers: makeHeaders(),
+      text: async () => 'two.js text/javascript (() => { globalThis.__two = 2; })();'
+    });
+    d1.resolve({
+      ok: true,
+      status: 200,
+      headers: makeHeaders(),
+      text: async () => 'one.js text/javascript (() => { globalThis.__one = 2; })();'
+    });
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    assert.strictEqual(r1.ok, true);
+    assert.strictEqual(r2.ok, true);
+    assert.match(storage.userScriptletResources.one.code, /__one = 2/);
+    assert.match(storage.userScriptletResources.two.code, /__two = 2/);
+    assert.ok(storage.userScriptletSources[0].lastUpdated > 0);
+    assert.ok(storage.userScriptletSources[1].lastUpdated > 0);
+
+    // Invalid parsed resource response must return { ok: false, error } and record lastError
+    const dInvalid = makeDeferred();
+    deferredByUrl.set('https://cdn.example.com/one.js', dInvalid);
+    const pInvalid = api.refreshUserScriptletSource(id1);
+    dInvalid.resolve({
+      ok: true,
+      status: 200,
+      headers: makeHeaders(),
+      text: async () => 'not valid javascript resource format'
+    });
+    const rInvalid = await pInvalid;
+    assert.strictEqual(rInvalid.ok, false);
+    assert.match(rInvalid.error, /No JavaScript scriptlet resources found/);
+    assert.match(storage.userScriptletSources.find(s => s.id === id1).lastError, /No JavaScript scriptlet resources found/);
+    assert.match(storage.userScriptletResources.one.code, /__one = 2/);
+  });
+
+  await t.test('concurrent identical addUserScriptletSource calls reject duplicates cleanly', async () => {
+    const storage = {};
+    const { api } = loadUserResources({
+      storage,
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        headers: makeHeaders(),
+        text: async () => 'dup.js text/javascript (() => { globalThis.__dup = 1; })();'
+      })
+    });
+
+    const [first, second] = await Promise.all([
+      api.addUserScriptletSource({ url: 'https://cdn.example.com/dup.js' }),
+      api.addUserScriptletSource({ url: 'https://cdn.example.com/dup.js' })
+    ]);
+
+    const okCount = [first, second].filter(r => r.ok === true).length;
+    const dupFailCount = [first, second].filter(r => r.ok === false && /already/i.test(r.error)).length;
+    assert.strictEqual(okCount, 1);
+    assert.strictEqual(dupFailCount, 1);
+    assert.strictEqual(storage.userScriptletSources.length, 1);
+  });
+
+  await t.test('parses and prunes domainless ##+js(...) rules without dropping them as comments', async () => {
+    const { api, storage } = loadUserResources({
+      fetch: async url => ({
+        ok: true,
+        status: 200,
+        headers: makeHeaders(),
+        text: async () => url.includes('global')
+          ? 'global-helper.js text/javascript (() => { globalThis.__global = 1; })();'
+          : 'keep-helper.js text/javascript (() => { globalThis.__keep = 1; })();'
+      })
+    });
+
+    const parsed = api.parseUserScriptletRuleText([
+      '! Filter list header comment',
+      '# Host-style comment',
+      '##+js(global-helper, arg1)',
+      'example.com##+js(keep-helper)'
+    ].join('\n'));
+    assert.strictEqual(parsed.ok, true);
+    assert.strictEqual(parsed.errors.length, 0);
+    assert.strictEqual(parsed.rules.length, 2);
+    assert.strictEqual(parsed.rules[0].domains, null);
+    assert.strictEqual(parsed.rules[0].scriptlet, 'global-helper');
+    assert.deepStrictEqual(plain(parsed.rules[0].args), ['arg1']);
+
+    const globalSrc = await api.addUserScriptletSource({ url: 'https://cdn.example.com/global.js' });
+    await api.addUserScriptletSource({ url: 'https://cdn.example.com/keep.js' });
+    const saved = await api.setUserScriptletRuleText([
+      '# comment line',
+      '##+js(global-helper, arg1)',
+      'example.com##+js(keep-helper)'
+    ].join('\n'));
+    assert.strictEqual(saved.ok, true);
+    assert.strictEqual(storage.userScriptletRules.length, 2);
+
+    await api.removeUserScriptletSource(globalSrc.source.id);
+    assert.strictEqual(storage.userScriptletRuleText, '# comment line\nexample.com##+js(keep-helper)');
+    assert.strictEqual(storage.userScriptletRules.length, 1);
+    assert.strictEqual(storage.userScriptletRules[0].scriptlet, 'keep-helper');
+  });
 });

@@ -15,7 +15,6 @@
     quietConsole: false
   };
   let hooksInstalled = false;
-  const nativeToString = Function.prototype.toString;
   const toStringTargets = new Map();
 
   const CRITICAL_EXCLUSIONS = [
@@ -220,13 +219,31 @@
     }
   }
 
-  function markNativeLike(fn, source) {
+  function getNativeToStringLabel(fn) {
+    if (typeof fn === 'function') {
+      try {
+        return fn.call(fn);
+      } catch (_) {}
+    }
+    return 'function toString() { [native code] }';
+  }
+
+  function markNativeLike(fn, source, usePrototypeSpoof = false) {
     if (typeof fn !== 'function') return;
     toStringTargets.set(fn, source);
+    if (usePrototypeSpoof && typeof Object.getPrototypeOf === 'function' &&
+        Object.getPrototypeOf(fn) === Function.prototype) {
+      return;
+    }
     try {
+      const currentToString = typeof Function.prototype.toString === 'function'
+        ? Function.prototype.toString
+        : null;
+      const nativeLabel = getNativeToStringLabel(currentToString);
       const ownToString = function toString() { return source; };
+      toStringTargets.set(ownToString, nativeLabel);
       Object.defineProperty(ownToString, 'toString', {
-        value: function () { return nativeToString.call(nativeToString); },
+        value: function () { return nativeLabel; },
         configurable: true
       });
       Object.defineProperty(fn, 'toString', {
@@ -240,6 +257,7 @@
     if (hooksInstalled || CONFIG.enabled !== true || CONFIG.quietConsole !== true) return;
     hooksInstalled = true;
 
+    const toStringInstalled = installToStringSpoof();
     const nativeFetch = typeof window.fetch === 'function' ? window.fetch : null;
     const nativeXHROpen = window.XMLHttpRequest && XMLHttpRequest.prototype.open;
     const nativeXHRSend = window.XMLHttpRequest && XMLHttpRequest.prototype.send;
@@ -255,7 +273,7 @@
         }
         return nativeFetch.apply(this, arguments);
       };
-      markNativeLike(window.fetch, 'function fetch() { [native code] }');
+      markNativeLike(window.fetch, 'function fetch() { [native code] }', toStringInstalled);
     }
 
     if (typeof nativeXHROpen === 'function' && typeof nativeXHRSend === 'function') {
@@ -277,8 +295,8 @@
         }
         return nativeXHRSend.apply(this, arguments);
       };
-      markNativeLike(XMLHttpRequest.prototype.open, 'function open() { [native code] }');
-      markNativeLike(XMLHttpRequest.prototype.send, 'function send() { [native code] }');
+      markNativeLike(XMLHttpRequest.prototype.open, 'function open() { [native code] }', toStringInstalled);
+      markNativeLike(XMLHttpRequest.prototype.send, 'function send() { [native code] }', toStringInstalled);
     }
 
     if (nativeSendBeacon) {
@@ -289,22 +307,28 @@
         }
         return nativeSendBeacon.apply(this, arguments);
       };
-      markNativeLike(navigator.sendBeacon, 'function sendBeacon() { [native code] }');
+      markNativeLike(navigator.sendBeacon, 'function sendBeacon() { [native code] }', toStringInstalled);
     }
-
-    installToStringSpoof();
   }
 
   function installToStringSpoof() {
-    Function.prototype.toString = function toString() {
+    const previousToString = Function.prototype.toString;
+    if (typeof previousToString !== 'function') return false;
+    const nativeLabel = getNativeToStringLabel(previousToString);
+    const spoofedToString = function toString() {
       if (toStringTargets.has(this)) return toStringTargets.get(this);
-      return nativeToString.call(this);
+      return previousToString.call(this);
     };
+    toStringTargets.set(spoofedToString, nativeLabel);
     try {
-      Object.defineProperty(Function.prototype.toString, 'toString', {
-        value: function () { return nativeToString.call(nativeToString); },
+      Object.defineProperty(Function.prototype, 'toString', {
+        value: spoofedToString,
+        writable: true,
         configurable: true
       });
-    } catch (_) {}
+      return Function.prototype.toString === spoofedToString;
+    } catch (_) {
+      return false;
+    }
   }
 })();

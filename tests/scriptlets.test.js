@@ -532,6 +532,199 @@ test('abort-on-property-write', async (t) => {
   });
 });
 
+// ─── ABORT-CURRENT-SCRIPT ─────
+test('abort-current-script', async (t) => {
+  await t.test('stacks multiple rules on the same property without overwriting earlier ones', () => {
+    const originalWrite = () => 'ok';
+    const doc = {
+      write: originalWrite,
+      currentScript: null,
+      querySelectorAll: () => [],
+      documentElement: { setAttribute: () => {}, getAttribute: () => null }
+    };
+    const sandbox = runScriptlet('abortCurrentScript', ['document.write', 'adblock'], { document: doc });
+    vm.runInContext(`abortCurrentScript(['document.write', 'consentWall'])`, sandbox);
+
+    doc.currentScript = { textContent: 'window.adblock = true;' };
+    assert.throws(() => vm.runInContext('document.write', sandbox), /ReferenceError/);
+
+    doc.currentScript = { textContent: 'consentWall();' };
+    assert.throws(() => vm.runInContext('document.write', sandbox), /ReferenceError/);
+
+    doc.currentScript = { textContent: 'renderArticle();' };
+    assert.strictEqual(vm.runInContext('document.write', sandbox), originalWrite);
+  });
+
+  await t.test('preserves prototype accessors like document.cookie across writes and stacked rules', () => {
+    const jar = ['seed=1'];
+    const DocumentProto = {};
+    Object.defineProperty(DocumentProto, 'cookie', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return jar.join('; ');
+      },
+      set(value) {
+        jar.push(String(value));
+      }
+    });
+    const doc = Object.create(DocumentProto);
+    doc.currentScript = null;
+    doc.querySelectorAll = () => [];
+    doc.documentElement = { setAttribute: () => {}, getAttribute: () => null };
+
+    const sandbox = runScriptlet('abortCurrentScript', ['document.cookie', 'trackerA'], { document: doc });
+    vm.runInContext(`abortCurrentScript(['document.cookie', 'trackerB'])`, sandbox);
+
+    assert.strictEqual(Object.prototype.propertyIsEnumerable.call(doc, 'cookie'), false);
+
+    doc.currentScript = { src: 'https://cdn.example.com/app.js' };
+    assert.strictEqual(vm.runInContext('document.cookie', sandbox), 'seed=1');
+    vm.runInContext("document.cookie = 'session=ok'", sandbox);
+    assert.deepStrictEqual(jar, ['seed=1', 'session=ok']);
+    jar.push('server=2');
+    assert.strictEqual(vm.runInContext('document.cookie', sandbox), 'seed=1; session=ok; server=2');
+
+    doc.currentScript = { src: 'https://trackerA.example.com/detect.js' };
+    assert.throws(() => vm.runInContext('document.cookie', sandbox), /ReferenceError/);
+
+    doc.currentScript = { textContent: 'if (trackerB) check();' };
+    assert.throws(() => vm.runInContext('document.cookie', sandbox), /ReferenceError/);
+  });
+
+  await t.test('handles wrapping document.currentScript without infinite recursion', () => {
+    let activeScript = { textContent: 'normalInit();' };
+    const DocumentProto = {};
+    Object.defineProperty(DocumentProto, 'currentScript', {
+      configurable: true,
+      get() {
+        return activeScript;
+      }
+    });
+    const doc = Object.create(DocumentProto);
+    doc.querySelectorAll = () => [];
+    doc.documentElement = { setAttribute: () => {}, getAttribute: () => null };
+
+    const sandbox = runScriptlet('abortCurrentScript', ['document.currentScript', 'selfTrap'], { document: doc });
+    assert.strictEqual(vm.runInContext('document.currentScript', sandbox), activeScript);
+
+    activeScript = { textContent: 'selfTrap();' };
+    assert.throws(() => vm.runInContext('document.currentScript', sandbox), /ReferenceError/);
+  });
+});
+
+// ─── REGEX FLAG SUPPORT ACROSS SCRIPTLETS ─────
+test('regex-accepting scriptlets honor regex flags cleanly', async (t) => {
+  await t.test('all 10 scriptlets preserve case-insensitive and repeated-call matching under /pattern/flags', async () => {
+    // 1. noSetTimeoutIf (/gi should match case-insensitively and repeatedly)
+    const timerCalls = [];
+    const stSandbox = runScriptlet('noSetTimeoutIf', ['/adTimer/gi'], {
+      setTimeout: fn => { timerCalls.push(fn.name); return 42; }
+    });
+    assert.strictEqual(vm.runInContext('setTimeout(function ADTIMER() {}, 10)', stSandbox), -1);
+    assert.strictEqual(vm.runInContext('setTimeout(function ADTIMER() {}, 10)', stSandbox), -1);
+    assert.strictEqual(vm.runInContext('setTimeout(function normalTimer() {}, 10)', stSandbox), 42);
+    assert.deepStrictEqual(timerCalls, ['normalTimer']);
+
+    // 2. noSetIntervalIf
+    const intervalCalls = [];
+    const siSandbox = runScriptlet('noSetIntervalIf', ['/adTick/gi'], {
+      setInterval: fn => { intervalCalls.push(fn.name); return 7; }
+    });
+    assert.strictEqual(vm.runInContext('setInterval(function ADTICK() {}, 10)', siSandbox), -1);
+    assert.strictEqual(vm.runInContext('setInterval(function ADTICK() {}, 10)', siSandbox), -1);
+    assert.strictEqual(vm.runInContext('setInterval(function okTick() {}, 10)', siSandbox), 7);
+    assert.deepStrictEqual(intervalCalls, ['okTick']);
+
+    // 3. preventFetch
+    const fetchUrls = [];
+    const fetchSandbox = runScriptlet('preventFetch', ['/ads\\.example/i'], {
+      fetch: url => { fetchUrls.push(url); return Promise.resolve({ ok: true, allowed: true }); }
+    });
+    const blockedFetch = await vm.runInContext("fetch('https://ADS.EXAMPLE/pixel.js')", fetchSandbox);
+    assert.strictEqual(blockedFetch.status, 200);
+    await vm.runInContext("fetch('https://cdn.example/app.js')", fetchSandbox);
+    assert.deepStrictEqual(fetchUrls, ['https://cdn.example/app.js']);
+
+    // 4. preventXhr
+    const openedUrls = [];
+    class MockXHR {
+      open(_m, u) { openedUrls.push(u); }
+      send() {}
+    }
+    const xhrSandbox = runScriptlet('preventXhr', ['/beacon\\.example/i'], { XMLHttpRequest: MockXHR });
+    vm.runInContext("var x1 = new XMLHttpRequest(); x1.open('GET', 'https://BEACON.EXAMPLE/ping'); x1.send();", xhrSandbox);
+    vm.runInContext("var x2 = new XMLHttpRequest(); x2.open('GET', 'https://api.example/data'); x2.send();", xhrSandbox);
+    assert.deepStrictEqual(openedUrls, ['https://api.example/data']);
+
+    // 5. preventAddEventListener
+    const addedListeners = [];
+    class MockEventTarget {
+      addEventListener(type, fn) { addedListeners.push([type, fn]); }
+    }
+    const aelSandbox = runScriptlet(
+      'preventAddEventListener',
+      ['/CLICK/i', '/trackAd/i'],
+      { EventTarget: MockEventTarget }
+    );
+    vm.runInContext(
+      "new EventTarget().addEventListener('click', function TrackAd() {}); new EventTarget().addEventListener('click', function allowClick() {});",
+      aelSandbox
+    );
+    assert.strictEqual(addedListeners.length, 1);
+    assert.strictEqual(addedListeners[0][1].name, 'allowClick');
+
+    // 6. preventWindowOpen
+    const openedWindows = [];
+    const woSandbox = runScriptlet('preventWindowOpen', ['/popup\\.bad/i'], {
+      open: url => { openedWindows.push(url); return { closed: false }; }
+    });
+    assert.strictEqual(vm.runInContext("open('https://POPUP.BAD/offer').closed", woSandbox), true);
+    assert.strictEqual(vm.runInContext("open('https://app.example/help').closed", woSandbox), false);
+    assert.deepStrictEqual(openedWindows, ['https://app.example/help']);
+
+    // 7. preventRequestAnimationFrame
+    const rafCalls = [];
+    const rafSandbox = runScriptlet('preventRequestAnimationFrame', ['/loopAd/i'], {
+      requestAnimationFrame: fn => { rafCalls.push(fn.name); return 9; }
+    });
+    assert.strictEqual(vm.runInContext('requestAnimationFrame(function LOOPAD() {})', rafSandbox), 0);
+    assert.strictEqual(vm.runInContext('requestAnimationFrame(function renderUi() {})', rafSandbox), 9);
+    assert.deepStrictEqual(rafCalls, ['renderUi']);
+
+    // 8. abortCurrentScript
+    const acsDoc = { probe: 'ok', currentScript: { textContent: 'DETECTAD()' } };
+    const acsSandbox = runScriptlet('abortCurrentScript', ['document.probe', '/detectAd/gi'], { document: acsDoc });
+    assert.throws(() => vm.runInContext('document.probe', acsSandbox), /ReferenceError/);
+    assert.throws(() => vm.runInContext('document.probe', acsSandbox), /ReferenceError/);
+
+    // 9. preventElementSrcLoading
+    const mediaSets = [];
+    class MockHTMLVideoElement {
+      set src(v) { mediaSets.push(v); }
+      get src() { return mediaSets[mediaSets.length - 1] || ''; }
+    }
+    class MockElement {
+      setAttribute(name, v) { mediaSets.push(name + ":" + v); }
+    }
+    const bmSandbox = runScriptlet('preventElementSrcLoading', ['video', '/adVideo\\.mp4/i'], {
+      HTMLVideoElement: MockHTMLVideoElement,
+      Element: MockElement
+    });
+    vm.runInContext("var v = new HTMLVideoElement(); v.src = 'https://cdn.test/ADVIDEO.MP4'; v.src = 'https://cdn.test/movie.mp4';", bmSandbox);
+    assert.deepStrictEqual(mediaSets, ['https://cdn.test/movie.mp4']);
+
+    // 10. noEvalIf
+    const evalCalls = [];
+    const evalSandbox = runScriptlet('noEvalIf', ['/adEval/i'], {
+      eval: code => { evalCalls.push(code); return 'ran'; }
+    });
+    assert.strictEqual(vm.runInContext("eval('ADEVAL()')", evalSandbox), undefined);
+    assert.strictEqual(vm.runInContext("eval('safeCall()')", evalSandbox), 'ran');
+    assert.deepStrictEqual(evalCalls, ['safeCall()']);
+  });
+});
+
 // ─── SET-CONSTANT ─────
 test('set-constant', async (t) => {
   await t.test('sets boolean true', () => {
@@ -2069,6 +2262,19 @@ test('fingerprint randomization language normalization', async (t) => {
     assert.strictEqual(vm.runInContext('navigator.language', sandbox), 'en-US');
     assert.deepStrictEqual(plain(vm.runInContext('navigator.languages', sandbox)), ['en-US', 'en']);
     assert.strictEqual(vm.runInContext('Object.isFrozen(navigator.languages)', sandbox), true);
+  });
+
+  await t.test('preserves Function.prototype.toString identity across self-inspection', () => {
+    const sandbox = runFingerprintRandomization();
+
+    assert.strictEqual(
+      vm.runInContext('Function.prototype.toString.call(Function.prototype.toString)', sandbox),
+      'function toString() { [native code] }'
+    );
+    assert.strictEqual(
+      vm.runInContext('Function.prototype.toString.toString()', sandbox),
+      'function toString() { [native code] }'
+    );
   });
 
   await t.test('keeps single base-language preferences collapsed to one value', () => {

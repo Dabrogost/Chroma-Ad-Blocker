@@ -84,6 +84,7 @@ function loadHandlers(options = {}) {
     removeSubscription: async () => ({ ok: true }),
     validateConfig: cfg => cfg || {},
     updateDNRState: async () => {},
+    syncActionBadge: async () => ({ ok: true }),
     syncDynamicRules: async () => {},
     syncWhitelistRules: async () => {},
     syncBrowserPrivacyHardening: async () => ({}),
@@ -348,6 +349,46 @@ test('zapper background handlers', async (t) => {
 
     assert.strictEqual(saved.ok, false);
     assert.strictEqual(storage.localCosmeticRules.length, 0);
+  });
+
+  await t.test('recoverable validation failure preserves the active zapper session token for retry', async () => {
+    const { sandbox, storage, getToken } = loadHandlers({ storage: { localCosmeticRules: [] } });
+    await sandbox.handleZapperStart({ tabId: 7 });
+    const token = getToken();
+    const sender = { tab: { id: 7, url: 'https://example.com/page' } };
+
+    const badSelector = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: 'bad{' },
+      sender
+    );
+    assert.strictEqual(badSelector.ok, false);
+
+    const tooBroad = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.six' },
+      sender
+    );
+    assert.strictEqual(tooBroad.ok, false);
+
+    const badDomain = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'other.test', selector: '.annoying' },
+      sender
+    );
+    assert.strictEqual(badDomain.ok, false);
+
+    const retried = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      sender
+    );
+    assert.strictEqual(retried.ok, true);
+    assert.strictEqual(storage.localCosmeticRules.length, 1);
+
+    const reusedAfterSuccess = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      sender
+    );
+    assert.strictEqual(reusedAfterSuccess.ok, false);
+    assert.strictEqual(reusedAfterSuccess.error, 'Invalid zapper session');
+    assert.strictEqual(storage.localCosmeticRules.length, 1);
   });
 
   await t.test('disable and delete update local rules', async () => {

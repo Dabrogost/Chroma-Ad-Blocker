@@ -364,6 +364,11 @@ const ChromaComponents = (() => {
       <div class="protection-list protection-group">
         <h3 class="protection-group-title">Appearance</h3>
         ${renderToggleRow({
+          inputId: 'toggleShowBlockedBadge',
+          name: 'Blocked request badge',
+          desc: 'Show the number of blocked requests per tab on Chroma’s toolbar icon.'
+        })}
+        ${renderToggleRow({
           inputId: 'toggleReduceMotion',
           name: 'Reduce motion',
           desc: 'Turn off animated borders, moving backgrounds, and smooth scrolling. Your system’s reduced-motion preference is also respected.'

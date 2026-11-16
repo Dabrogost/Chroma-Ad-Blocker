@@ -99,17 +99,33 @@ test('DNR match/outcome E2E', async (t) => {
     );
     assert.strictEqual(existingRule, null, `reserved E2E rule id ${ruleId} should be unused`);
 
+    let vacatedRule = null;
     t.after(async () => {
       await evaluate(
         browser.cdp,
         browser.workerSession,
-        `chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [${ruleId}] })`
+        `chrome.declarativeNetRequest.updateDynamicRules(${JSON.stringify({
+          removeRuleIds: [ruleId],
+          ...(vacatedRule ? { addRules: [vacatedRule] } : {})
+        })})`
       );
     });
-    await evaluate(
+    vacatedRule = await evaluate(
       browser.cdp,
       browser.workerSession,
-      `chrome.declarativeNetRequest.updateDynamicRules({ addRules: [${JSON.stringify(rule)}] })`
+      `(async () => {
+        const rules = await chrome.declarativeNetRequest.getDynamicRules();
+        const limit = Number(chrome.declarativeNetRequest.MAX_NUMBER_OF_DYNAMIC_RULES) || 30000;
+        let removed = null;
+        if (rules.length >= limit) {
+          removed = rules.find(r => r.id >= 100000 && r.id < 9000000) || rules[rules.length - 1];
+        }
+        await chrome.declarativeNetRequest.updateDynamicRules({
+          ...(removed ? { removeRuleIds: [removed.id] } : {}),
+          addRules: [${JSON.stringify(rule)}]
+        });
+        return removed;
+      })()`
     );
 
     const installedRule = await evaluate(
@@ -278,17 +294,24 @@ test('DNR match/outcome E2E', async (t) => {
         ${level === 'nested' ? '' : `<iframe src="${origin}/${level === 'top' ? 'child' : 'nested'}"></iframe>`}
       </body></html>`);
     });
+    async function syncWorkerDnr() {
+      await sendRuntimeMessage(browser.cdp, page.sessionId, { type: 'WHITELIST_ADD', domain: 'e2e-sync.invalid' });
+      await sendRuntimeMessage(browser.cdp, page.sessionId, { type: 'WHITELIST_REMOVE', domain: 'e2e-sync.invalid' });
+    }
     t.after(async () => {
       for (const page of pages) await closeTarget(browser.cdp, page);
       await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
       await evaluate(browser.cdp, page.sessionId, `(async () => {
         await chrome.storage.local.remove(['subscriptions', 'sub_network_rules', 'whitelist']);
         await chrome.storage.local.set(${JSON.stringify(original)});
-        await (await import('../background/dnrState.js')).reconcileNetworkDnr('e2e-restore');
       })()`);
+      await syncWorkerDnr();
       await closeTarget(browser.cdp, page);
     });
     await new Promise(resolve => server.listen(0, resolve));
+    for (const sub of (original.subscriptions || [])) {
+      await sendRuntimeMessage(browser.cdp, page.sessionId, { type: 'SUBSCRIPTION_REMOVE', id: sub.id });
+    }
     await evaluate(browser.cdp, page.sessionId, `(async () => {
       const { parseList } = await import('../subscriptions/parser.js');
       const parsed = parseList('/probe.js$script,important');
@@ -297,8 +320,8 @@ test('DNR match/outcome E2E', async (t) => {
         subscriptions: [{ id: 'e2e-whitelist', enabled: true }],
         sub_network_rules: { 'e2e-whitelist': parsed.networkRules }
       });
-      await (await import('../background/dnrState.js')).reconcileNetworkDnr('e2e-whitelist');
     })()`);
+    await syncWorkerDnr();
 
     async function checkPage(host, expected) {
       assert.strictEqual(await evaluate(browser.cdp, browser.workerSession,

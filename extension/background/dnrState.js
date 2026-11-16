@@ -507,6 +507,7 @@ async function performReconciliation(generation, reason) {
       }
       dynamicCommitCompleted = true;
       updateClassificationCache(desiredRules);
+      await syncActionBadge(desired.config);
       // This image (possibly Spotify-only) is authoritative even if a newer desired
       // generation was queued while Chrome committed it. The serialized newer
       // generation will replace the snapshot only after its own successful
@@ -548,6 +549,7 @@ async function performReconciliation(generation, reason) {
       trackingCleanupError = err;
     }
     dynamicCommitCompleted = true;
+    await syncActionBadge(desired.config);
 
     // Chrome has committed this exact runtime image. Publish its action map
     // before checking whether a newer desired-state generation was requested;
@@ -628,6 +630,33 @@ export function updateDNRState() {
 
 export function syncDynamicRules() {
   return reconcileNetworkDnr('default-dynamic-rules');
+}
+
+
+const BADGE_BACKGROUND_COLOR = '#6c5ce7';
+const BADGE_TEXT_COLOR = '#ffffff';
+
+/**
+ * Synchronizes Chrome native DNR per-tab blocked-request badge visibility
+ * with master protection, network blocking, and the user's badge setting.
+ */
+export async function syncActionBadge(config = {}) {
+  const showBadge = config?.enabled !== false && config?.networkBlocking !== false && config?.showBlockedBadge !== false;
+  try {
+    await chrome.declarativeNetRequest?.setExtensionActionOptions?.({
+      displayActionCountAsBadgeText: showBadge
+    });
+    if (showBadge) {
+      await chrome.action?.setBadgeBackgroundColor?.({ color: BADGE_BACKGROUND_COLOR });
+      await chrome.action?.setBadgeTextColor?.({ color: BADGE_TEXT_COLOR });
+    } else {
+      await chrome.action?.setBadgeText?.({ text: '' });
+    }
+    return { ok: true, enabled: showBadge };
+  } catch (err) {
+    if (DEBUG) console.warn('[Chroma DNR] Action badge sync failed:', err);
+    return { ok: false, enabled: showBadge, error: err?.message || String(err) };
+  }
 }
 
 export function syncWhitelistRules() {

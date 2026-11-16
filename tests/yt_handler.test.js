@@ -379,6 +379,104 @@ test('Ad field stripping', async (t) => {
     assert.deepStrictEqual(events, ['youtube_payload_modified']);
   });
 
+  await t.test('retroactively strips initial payloads assigned before bridge handshake enables stripping', () => {
+    const sandbox = createStrippingSandbox(
+      { enabled: false, stripping: false },
+      undefined,
+      'www.youtube.com',
+      (candidate) => {
+        candidate.window.__CHROMA_INTERNAL__.revision = 0;
+      }
+    );
+    const events = [];
+    sandbox.document.addEventListener('__CHROMA_STATS_EVENT__', event => events.push(event.detail));
+
+    const playerPayload = {
+      adPlacements: [{ id: 1 }],
+      playerAds: [{ id: 2 }],
+      adSlots: [{ id: 3 }],
+      videoDetails: { title: 'Main Video' }
+    };
+    const dataPayload = {
+      adSlots: [{ id: 4 }],
+      contents: {
+        twoColumnBrowseResultsRenderer: {
+          tabs: [{
+            tabRenderer: {
+              content: {
+                richGridRenderer: {
+                  contents: [
+                    { richItemRenderer: { content: { adSlotRenderer: {} } } },
+                    { richItemRenderer: { content: { videoRenderer: { videoId: 'keep' } } } }
+                  ]
+                }
+              }
+            }
+          }]
+        }
+      }
+    };
+
+    // Simulate YouTube inline script assigning globals before handshake completes
+    sandbox.window.ytInitialPlayerResponse = playerPayload;
+    sandbox.window.ytInitialData = dataPayload;
+    assert.ok('adPlacements' in sandbox.window.ytInitialPlayerResponse);
+    assert.ok('adSlots' in sandbox.window.ytInitialData);
+
+    // Bridge now delivers active stripping config
+    sandbox.window.__CHROMA_INTERNAL__.config = {
+      enabled: true,
+      stripping: true,
+      acceleration: false,
+      accelerationSpeed: 8
+    };
+    sandbox.window.__CHROMA_INTERNAL__.revision = 1;
+    sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
+
+    assert.strictEqual('adPlacements' in sandbox.window.ytInitialPlayerResponse, false);
+    assert.strictEqual('playerAds' in sandbox.window.ytInitialPlayerResponse, false);
+    assert.strictEqual('adSlots' in sandbox.window.ytInitialPlayerResponse, false);
+    assert.deepStrictEqual(sandbox.window.ytInitialPlayerResponse.videoDetails, { title: 'Main Video' });
+    assert.strictEqual('adSlots' in sandbox.window.ytInitialData, false);
+    const browseContents = sandbox.window.ytInitialData.contents
+      .twoColumnBrowseResultsRenderer.tabs[0].tabRenderer.content.richGridRenderer.contents;
+    assert.strictEqual(browseContents.length, 1);
+    assert.strictEqual(browseContents[0].richItemRenderer.content.videoRenderer.videoId, 'keep');
+    assert.deepStrictEqual(events, ['youtube_payload_modified', 'youtube_payload_modified']);
+
+    // Reading getters again stays quiet and does not duplicate telemetry
+    void sandbox.window.ytInitialPlayerResponse;
+    void sandbox.window.ytInitialData;
+    assert.deepStrictEqual(events, ['youtube_payload_modified', 'youtube_payload_modified']);
+  });
+
+  await t.test('preserves and strips pre-existing window.ytInitialPlayerResponse and window.ytInitialData', () => {
+    const sandbox = createStrippingSandbox(
+      { enabled: true, stripping: true },
+      undefined,
+      'www.youtube.com',
+      (candidate) => {
+        candidate.window.__CHROMA_INTERNAL__.revision = 1;
+        candidate.window.ytInitialPlayerResponse = {
+          adPlacements: [{ id: 'pre-player' }],
+          videoDetails: { title: 'Preexisting Player' }
+        };
+        candidate.window.ytInitialData = {
+          adSlots: [{ id: 'pre-data' }],
+          contents: [{ promotedSparklesTextSearchRenderer: {} }, { videoRenderer: { videoId: 'ok' } }]
+        };
+      }
+    );
+
+    assert.ok(sandbox.window.ytInitialPlayerResponse);
+    assert.strictEqual('adPlacements' in sandbox.window.ytInitialPlayerResponse, false);
+    assert.deepStrictEqual(sandbox.window.ytInitialPlayerResponse.videoDetails, { title: 'Preexisting Player' });
+    assert.ok(sandbox.window.ytInitialData);
+    assert.strictEqual('adSlots' in sandbox.window.ytInitialData, false);
+    assert.strictEqual(sandbox.window.ytInitialData.contents.length, 1);
+    assert.strictEqual(sandbox.window.ytInitialData.contents[0].videoRenderer.videoId, 'ok');
+  });
+
   await t.test('JSON.parse payload prefilter recognizes ad signals cheaply', (st) => {
     const sandbox = createStrippingSandbox({ stripping: true });
 
@@ -777,6 +875,138 @@ test('Ad field stripping', async (t) => {
     assert.strictEqual('adPlacements' in result.playerResponse, false);
     assert.strictEqual('playerAds'    in result.playerResponse, false);
     assert.ok(result.playerResponse.streamingData, 'non-ad fields inside playerResponse preserved');
+  });
+
+  await t.test('beacon suppression respects enabled/feature gates and resets on reused XHR', () => {
+    const openedUrls = [];
+    const sentUrls = [];
+    const createXhrSandbox = (configOverrides) => createStrippingSandbox(
+      configOverrides,
+      undefined,
+      'www.youtube.com',
+      (s) => {
+        s.XMLHttpRequest = class {
+          open(method, url) {
+            this._testUrl = url;
+            openedUrls.push(url);
+          }
+          send() {
+            sentUrls.push(this._testUrl);
+          }
+          addEventListener() {}
+        };
+      }
+    );
+
+    const disabledSandbox = createXhrSandbox({ enabled: false, stripping: true, acceleration: true });
+    for (const url of ['https://www.youtube.com/pcs/activeview?a=1', 'https://www.youtube.com/ptracking?b=2']) {
+      const xhr = new disabledSandbox.XMLHttpRequest();
+      xhr.open('GET', url);
+      xhr.send();
+    }
+    assert.strictEqual(openedUrls.length, 2, 'must not suppress beacons when Chroma is disabled');
+    assert.strictEqual(sentUrls.length, 2);
+
+    openedUrls.length = 0;
+    sentUrls.length = 0;
+    const inactiveFeaturesSandbox = createXhrSandbox({ enabled: true, stripping: false, acceleration: false });
+    const inactiveXhr = new inactiveFeaturesSandbox.XMLHttpRequest();
+    inactiveXhr.open('GET', 'https://www.youtube.com/ptracking?c=3');
+    inactiveXhr.send();
+    assert.deepStrictEqual(openedUrls, ['https://www.youtube.com/ptracking?c=3']);
+    assert.deepStrictEqual(sentUrls, ['https://www.youtube.com/ptracking?c=3']);
+
+    openedUrls.length = 0;
+    sentUrls.length = 0;
+    const activeSandbox = createXhrSandbox({ enabled: true, stripping: true, acceleration: false });
+    const reusedXhr = new activeSandbox.XMLHttpRequest();
+    reusedXhr.open('GET', 'https://www.youtube.com/ptracking?d=4');
+    reusedXhr.send();
+    assert.strictEqual(sentUrls.length, 0, 'beacon should be suppressed when active outside ad session');
+
+    reusedXhr.open('GET', 'https://www.youtube.com/api/stats/playback?v=1');
+    reusedXhr.send();
+    assert.deepStrictEqual(openedUrls, ['https://www.youtube.com/api/stats/playback?v=1']);
+    assert.deepStrictEqual(sentUrls, ['https://www.youtube.com/api/stats/playback?v=1']);
+  });
+
+  await t.test('reused XHR clears prior stripped response overrides cleanly', () => {
+    const sandbox = createStrippingSandbox(
+      { enabled: true, stripping: true },
+      undefined,
+      'www.youtube.com',
+      (s) => {
+        s.XMLHttpRequest = class {
+          constructor() {
+            this._listeners = {};
+            this._rawResponseText = '';
+            this.readyState = 0;
+            this.responseType = '';
+          }
+          get responseText() { return this._rawResponseText; }
+          get response() { return this._rawResponseText; }
+          open(method, url) {
+            this._testUrl = url;
+            this.readyState = 1;
+          }
+          addEventListener(type, fn) {
+            (this._listeners[type] = this._listeners[type] || []).push(fn);
+          }
+          send() {
+            this.readyState = 4;
+            if (this._testUrl.includes('/youtubei/v1/player')) {
+              this._rawResponseText = JSON.stringify({
+                adPlacements: [{ id: 1 }],
+                videoDetails: { title: this._testUrl }
+              });
+            } else {
+              this._rawResponseText = JSON.stringify({ ok: true, secondRequest: true });
+            }
+            for (const fn of this._listeners.readystatechange || []) {
+              fn.call(this);
+            }
+          }
+        };
+      }
+    );
+
+    const xhr = new sandbox.XMLHttpRequest();
+    xhr.open('POST', 'https://www.youtube.com/youtubei/v1/player?a=1');
+    xhr.send();
+    const firstParsed = sandbox._nativeJSONParse(xhr.responseText);
+    assert.strictEqual('adPlacements' in firstParsed, false);
+    assert.strictEqual(firstParsed.videoDetails.title, 'https://www.youtube.com/youtubei/v1/player?a=1');
+
+    // Reusing the same XHR instance for a different request must not freeze or re-corrupt responses
+    xhr.open('GET', 'https://www.youtube.com/api/other');
+    xhr.send();
+    assert.deepStrictEqual(sandbox._nativeJSONParse(xhr.responseText), { ok: true, secondRequest: true });
+    assert.deepStrictEqual(sandbox._nativeJSONParse(xhr.response), { ok: true, secondRequest: true });
+
+    // And reusing it for another stripped player response updates both response properties
+    xhr.open('POST', 'https://www.youtube.com/youtubei/v1/player?a=2');
+    xhr.send();
+    const thirdParsed = sandbox._nativeJSONParse(xhr.responseText);
+    assert.strictEqual('adPlacements' in thirdParsed, false);
+    assert.strictEqual(thirdParsed.videoDetails.title, 'https://www.youtube.com/youtubei/v1/player?a=2');
+  });
+
+  await t.test('Function.prototype.toString spoofing cloaks self-inspection without own .toString property', () => {
+    const sandbox = createStrippingSandbox({ enabled: true, stripping: true });
+
+    const result = vm.runInContext(`({
+      selfCall: Function.prototype.toString.call(Function.prototype.toString),
+      propToString: Function.prototype.toString.toString(),
+      hasOwnToString: Object.prototype.hasOwnProperty.call(Function.prototype.toString, 'toString'),
+      xhrOpen: Function.prototype.toString.call(XMLHttpRequest.prototype.open),
+      jsonParse: Function.prototype.toString.call(JSON.parse)
+    })`, sandbox);
+
+    assert.strictEqual(result.selfCall, 'function toString() { [native code] }');
+    assert.strictEqual(result.propToString, 'function toString() { [native code] }');
+    assert.strictEqual(result.hasOwnToString, false);
+    assert.strictEqual(result.xhrOpen, 'function open() { [native code] }');
+    assert.strictEqual(result.jsonParse, 'function parse() { [native code] }');
   });
 
   await t.test('non-YouTube host exits before installing broad page hooks', (st) => {

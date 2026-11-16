@@ -303,7 +303,52 @@ test('DNR diagnostics classify installed dynamic rule actions', async (t) => {
     await harness.requestLog.flushLog();
 
     assert.strictEqual(harness.stored.requestLog.length, 500);
-    assert.strictEqual(harness.stored.requestLog[0].url, 'https://example.test/150.js');
-    assert.strictEqual(harness.stored.requestLog[499].url, 'https://example.test/649.js');
+    assert.strictEqual(harness.stored.requestLog[0].url, 'https://example.test/649.js');
+    assert.strictEqual(harness.stored.requestLog[499].url, 'https://example.test/150.js');
+  });
+
+  await t.test('records matched rules newest-first within a batch, in getMergedLog, and across flushes', async () => {
+    const harness = loadHarness({ dynamicRules: [{ id: 100001, action: { type: 'block' } }] });
+    harness.requestLog.initRequestLogListener();
+    await settle();
+
+    harness.emit(matchedInfo(100001, 'https://example.test/1.js'));
+    harness.emit(matchedInfo(100001, 'https://example.test/2.js'));
+
+    let merged = await harness.requestLog.getMergedLog();
+    assert.deepStrictEqual(
+      Array.from(merged, entry => entry.url),
+      ['https://example.test/2.js', 'https://example.test/1.js']
+    );
+
+    harness.emit(matchedInfo(100001, 'https://example.test/3.js'));
+    await harness.requestLog.flushLog();
+
+    harness.emit(matchedInfo(100001, 'https://example.test/4.js'));
+    harness.emit(matchedInfo(100001, 'https://example.test/5.js'));
+
+    merged = await harness.requestLog.getMergedLog();
+    assert.deepStrictEqual(
+      Array.from(merged, entry => entry.url),
+      [
+        'https://example.test/5.js',
+        'https://example.test/4.js',
+        'https://example.test/3.js',
+        'https://example.test/2.js',
+        'https://example.test/1.js'
+      ]
+    );
+
+    await harness.requestLog.flushLog();
+    assert.deepStrictEqual(
+      harness.stored.requestLog.map(entry => entry.url),
+      [
+        'https://example.test/5.js',
+        'https://example.test/4.js',
+        'https://example.test/3.js',
+        'https://example.test/2.js',
+        'https://example.test/1.js'
+      ]
+    );
   });
 });

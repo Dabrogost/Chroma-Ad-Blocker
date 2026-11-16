@@ -30,6 +30,14 @@ export const USER_SCRIPTLET_STORAGE_KEYS = Object.freeze({
   rules: 'userScriptletRules'
 });
 
+let _userScriptletStorageTail = Promise.resolve();
+
+function serializeUserScriptletStorage(task) {
+  const run = _userScriptletStorageTail.then(task);
+  _userScriptletStorageTail = run.catch(() => {});
+  return run;
+}
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -84,7 +92,7 @@ function parseHeaderLine(line) {
 }
 
 function isCommentLine(line) {
-  return line.startsWith('!') || line.startsWith('#') || line.startsWith('[') || line.startsWith('//');
+  return line.startsWith('!') || (line.startsWith('#') && !line.startsWith('##')) || line.startsWith('[') || line.startsWith('//');
 }
 
 export function parseUserScriptletResourceText(text, options = {}) {
@@ -422,53 +430,54 @@ function mergeSourceResources(existingResources, sourceId, entries) {
   return next;
 }
 
-async function persistRefreshedSource(source, fetched, existingSources, existingResources) {
+async function prepareFetchedSource(source, fetched) {
   const now = Date.now();
   if (fetched.notModified) {
-    const nextSources = existingSources.map(item => item.id === source.id
-      ? {
-          ...item,
-          lastUpdated: now,
-          lastError: null,
-          etag: fetched.etag,
-          lastModified: fetched.lastModified
-        }
-      : item
-    );
-    await chrome.storage.local.set({ [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources });
-    return { ok: true, notModified: true };
+    return {
+      notModified: true,
+      now,
+      etag: fetched.etag,
+      lastModified: fetched.lastModified
+    };
   }
 
   const parsed = parseUserScriptletResourceText(fetched.text || '');
   const entries = await attachHashes(buildResourceEntries(parsed.resources, source.id, now));
-  const nextResources = mergeSourceResources(existingResources, source.id, entries);
   const sourceHash = await sha256Hex(fetched.text || '');
   const resourceNames = entries.map(entry => entry.displayName || entry.name);
 
-  const nextSources = existingSources.map(item => item.id === source.id
-    ? {
-        ...item,
-        lastUpdated: now,
-        lastError: null,
-        etag: fetched.etag,
-        lastModified: fetched.lastModified,
-        sha256: sourceHash,
-        resourceCount: entries.length,
-        resourceNames
-      }
-    : item
-  );
+  return {
+    notModified: false,
+    now,
+    entries,
+    sourceHash,
+    resourceNames,
+    etag: fetched.etag,
+    lastModified: fetched.lastModified,
+    skipped: parsed.skipped
+  };
+}
 
-  await chrome.storage.local.set({
-    [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources,
-    [USER_SCRIPTLET_STORAGE_KEYS.resources]: nextResources
-  });
+function buildUpdatedSourceRecord(item, prepared) {
+  if (prepared.notModified) {
+    return {
+      ...item,
+      lastUpdated: prepared.now,
+      lastError: null,
+      etag: prepared.etag,
+      lastModified: prepared.lastModified
+    };
+  }
 
   return {
-    ok: true,
-    resourceCount: entries.length,
-    resourceNames,
-    skipped: parsed.skipped
+    ...item,
+    lastUpdated: prepared.now,
+    lastError: null,
+    etag: prepared.etag,
+    lastModified: prepared.lastModified,
+    sha256: prepared.sourceHash,
+    resourceCount: prepared.entries.length,
+    resourceNames: prepared.resourceNames
   };
 }
 
@@ -500,13 +509,16 @@ export async function addUserScriptletSource(input) {
   const validation = validateUserScriptletSourceUrl(input?.url);
   if (!validation.ok) return { ok: false, error: validation.error };
 
-  const { userScriptletSources = [], userScriptletResources = {} } = await chrome.storage.local.get([
-    USER_SCRIPTLET_STORAGE_KEYS.sources,
-    USER_SCRIPTLET_STORAGE_KEYS.resources
-  ]);
-  const sources = asArray(userScriptletSources);
-  if (sources.length >= MAX_USER_SOURCES) return { ok: false, error: `User resource limit is ${MAX_USER_SOURCES}` };
-  if (sources.some(source => source?.url === validation.url)) return { ok: false, error: 'Resource URL already added' };
+  const precheck = await serializeUserScriptletStorage(async () => {
+    const { userScriptletSources = [] } = await chrome.storage.local.get([
+      USER_SCRIPTLET_STORAGE_KEYS.sources
+    ]);
+    const sources = asArray(userScriptletSources);
+    if (sources.length >= MAX_USER_SOURCES) return { ok: false, error: `User resource limit is ${MAX_USER_SOURCES}` };
+    if (sources.some(source => source?.url === validation.url)) return { ok: false, error: 'Resource URL already added' };
+    return { ok: true };
+  });
+  if (!precheck.ok) return precheck;
 
   const now = Date.now();
   const source = {
@@ -525,71 +537,144 @@ export async function addUserScriptletSource(input) {
 
   try {
     const fetched = await fetchUserScriptletSource(source);
-    const nextSources = sources.concat(source);
-    const result = await persistRefreshedSource(source, fetched, nextSources, userScriptletResources);
-    const settings = await getUserScriptletSettings();
-    return {
-      ...result,
-      source: settings.sources.find(item => item.id === source.id) || sourceSafeView(source)
-    };
+    const prepared = await prepareFetchedSource(source, fetched);
+    return await serializeUserScriptletStorage(async () => {
+      const { userScriptletSources = [], userScriptletResources = {} } = await chrome.storage.local.get([
+        USER_SCRIPTLET_STORAGE_KEYS.sources,
+        USER_SCRIPTLET_STORAGE_KEYS.resources
+      ]);
+      const latestSources = asArray(userScriptletSources);
+      if (latestSources.length >= MAX_USER_SOURCES) {
+        return { ok: false, error: `User resource limit is ${MAX_USER_SOURCES}` };
+      }
+      if (latestSources.some(item => item?.url === validation.url)) {
+        return { ok: false, error: 'Resource URL already added' };
+      }
+      if (prepared.notModified) {
+        return { ok: false, error: 'Resource response was unexpectedly empty' };
+      }
+
+      const nextResources = mergeSourceResources(userScriptletResources, source.id, prepared.entries);
+      const savedSource = buildUpdatedSourceRecord(source, prepared);
+      const nextSources = latestSources.concat(savedSource);
+
+      await chrome.storage.local.set({
+        [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources,
+        [USER_SCRIPTLET_STORAGE_KEYS.resources]: nextResources
+      });
+
+      return {
+        ok: true,
+        resourceCount: prepared.entries.length,
+        resourceNames: prepared.resourceNames,
+        skipped: prepared.skipped,
+        source: sourceSafeView(savedSource)
+      };
+    });
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
   }
 }
 
 export async function refreshUserScriptletSource(id) {
-  const { userScriptletSources = [], userScriptletResources = {} } = await chrome.storage.local.get([
-    USER_SCRIPTLET_STORAGE_KEYS.sources,
-    USER_SCRIPTLET_STORAGE_KEYS.resources
-  ]);
-  const sources = asArray(userScriptletSources);
-  const source = sources.find(item => item?.id === id);
+  const source = await serializeUserScriptletStorage(async () => {
+    const { userScriptletSources = [] } = await chrome.storage.local.get([
+      USER_SCRIPTLET_STORAGE_KEYS.sources
+    ]);
+    const found = asArray(userScriptletSources).find(item => item?.id === id);
+    return found ? { ...found } : null;
+  });
   if (!source) return { ok: false, error: 'User scriptlet resource not found' };
 
   try {
     const fetched = await fetchUserScriptletSource(source);
-    return persistRefreshedSource(source, fetched, sources, userScriptletResources);
+    const prepared = await prepareFetchedSource(source, fetched);
+    return await serializeUserScriptletStorage(async () => {
+      const { userScriptletSources = [], userScriptletResources = {} } = await chrome.storage.local.get([
+        USER_SCRIPTLET_STORAGE_KEYS.sources,
+        USER_SCRIPTLET_STORAGE_KEYS.resources
+      ]);
+      const latestSources = asArray(userScriptletSources);
+      const currentSource = latestSources.find(item => item?.id === id);
+      if (!currentSource) {
+        return { ok: false, error: 'User scriptlet resource not found' };
+      }
+
+      if (prepared.notModified) {
+        const nextSources = latestSources.map(item =>
+          item?.id === id ? buildUpdatedSourceRecord(item, prepared) : item
+        );
+        await chrome.storage.local.set({ [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources });
+        return { ok: true, notModified: true };
+      }
+
+      const nextResources = mergeSourceResources(userScriptletResources, currentSource.id, prepared.entries);
+      const nextSources = latestSources.map(item =>
+        item?.id === id ? buildUpdatedSourceRecord(item, prepared) : item
+      );
+
+      await chrome.storage.local.set({
+        [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources,
+        [USER_SCRIPTLET_STORAGE_KEYS.resources]: nextResources
+      });
+
+      return {
+        ok: true,
+        resourceCount: prepared.entries.length,
+        resourceNames: prepared.resourceNames,
+        skipped: prepared.skipped
+      };
+    });
   } catch (err) {
     const error = err?.message || String(err);
-    const nextSources = sources.map(item => item.id === id ? { ...item, lastError: error } : item);
-    await chrome.storage.local.set({ [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources });
+    await serializeUserScriptletStorage(async () => {
+      const { userScriptletSources = [] } = await chrome.storage.local.get([
+        USER_SCRIPTLET_STORAGE_KEYS.sources
+      ]);
+      const latestSources = asArray(userScriptletSources);
+      if (!latestSources.some(item => item?.id === id)) return;
+      const nextSources = latestSources.map(item => item?.id === id ? { ...item, lastError: error } : item);
+      await chrome.storage.local.set({ [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources });
+    });
     return { ok: false, error };
   }
 }
 
 export async function removeUserScriptletSource(id) {
-  const {
-    userScriptletSources = [],
-    userScriptletResources = {},
-    userScriptletRuleText = ''
-  } = await chrome.storage.local.get([
-    USER_SCRIPTLET_STORAGE_KEYS.sources,
-    USER_SCRIPTLET_STORAGE_KEYS.resources,
-    USER_SCRIPTLET_STORAGE_KEYS.ruleText
-  ]);
-  const sources = asArray(userScriptletSources);
-  const removedSource = sources.find(source => source?.id === id);
-  const nextSources = sources.filter(source => source?.id !== id);
-  if (nextSources.length === sources.length) return { ok: false, error: 'User scriptlet resource not found' };
+  return serializeUserScriptletStorage(async () => {
+    const {
+      userScriptletSources = [],
+      userScriptletResources = {},
+      userScriptletRuleText = ''
+    } = await chrome.storage.local.get([
+      USER_SCRIPTLET_STORAGE_KEYS.sources,
+      USER_SCRIPTLET_STORAGE_KEYS.resources,
+      USER_SCRIPTLET_STORAGE_KEYS.ruleText
+    ]);
+    const sources = asArray(userScriptletSources);
+    const removedSource = sources.find(source => source?.id === id);
+    const nextSources = sources.filter(source => source?.id !== id);
+    if (nextSources.length === sources.length) return { ok: false, error: 'User scriptlet resource not found' };
 
-  const nextResources = { ...asObject(userScriptletResources) };
-  const removedResourceNames = collectResourceNamesForSource(nextResources, removedSource);
-  for (const [name, resource] of Object.entries(nextResources)) {
-    if (resource?.sourceId === id) delete nextResources[name];
-  }
-  const prunedRules = pruneRuleTextForRemovedResources(userScriptletRuleText, removedResourceNames);
+    const nextResources = { ...asObject(userScriptletResources) };
+    const removedResourceNames = collectResourceNamesForSource(nextResources, removedSource);
+    for (const [name, resource] of Object.entries(nextResources)) {
+      if (resource?.sourceId === id) delete nextResources[name];
+    }
+    const prunedRules = pruneRuleTextForRemovedResources(userScriptletRuleText, removedResourceNames);
 
-  const update = {
-    [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources,
-    [USER_SCRIPTLET_STORAGE_KEYS.resources]: nextResources
-  };
-  if (prunedRules) {
-    update[USER_SCRIPTLET_STORAGE_KEYS.ruleText] = prunedRules.ruleText;
-    update[USER_SCRIPTLET_STORAGE_KEYS.rules] = prunedRules.rules;
-  }
+    const update = {
+      [USER_SCRIPTLET_STORAGE_KEYS.sources]: nextSources,
+      [USER_SCRIPTLET_STORAGE_KEYS.resources]: nextResources
+    };
+    if (prunedRules) {
+      update[USER_SCRIPTLET_STORAGE_KEYS.ruleText] = prunedRules.ruleText;
+      update[USER_SCRIPTLET_STORAGE_KEYS.rules] = prunedRules.rules;
+    }
 
-  await chrome.storage.local.set(update);
-  return { ok: true };
+    await chrome.storage.local.set(update);
+    return { ok: true };
+  });
 }
 
 export async function setUserScriptletRuleText(text) {
@@ -605,11 +690,13 @@ export async function setUserScriptletRuleText(text) {
     };
   }
 
-  await chrome.storage.local.set({
-    [USER_SCRIPTLET_STORAGE_KEYS.ruleText]: ruleText,
-    [USER_SCRIPTLET_STORAGE_KEYS.rules]: parsed.rules
+  return serializeUserScriptletStorage(async () => {
+    await chrome.storage.local.set({
+      [USER_SCRIPTLET_STORAGE_KEYS.ruleText]: ruleText,
+      [USER_SCRIPTLET_STORAGE_KEYS.rules]: parsed.rules
+    });
+    return { ok: true, parsedRuleCount: parsed.rules.length };
   });
-  return { ok: true, parsedRuleCount: parsed.rules.length };
 }
 
 export async function exportUserScriptletSettings() {

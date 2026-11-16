@@ -37,6 +37,7 @@ const ChromaApp = (() => {
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
     ['toggleQuietConsole', 'quietConsole',             false, { masterLinked: false }],
+    ['toggleShowBlockedBadge', 'showBlockedBadge',     true,  { masterLinked: false }],
     ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
     ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
     ['toggleGeolocationProtection', 'geolocationProtection', false],
@@ -822,7 +823,8 @@ const ChromaApp = (() => {
         setProtectionTogglePending(elId, true);
         const nextConfig = { [key]: isChecked };
         let nextEnabled = $('toggleEnabled')?.checked;
-        if (options.masterLinked !== false && isChecked && !$('toggleEnabled')?.checked) {
+        const masterReenabled = options.masterLinked !== false && isChecked && !$('toggleEnabled')?.checked;
+        if (masterReenabled) {
           nextEnabled = true;
           nextConfig.enabled = true;
           $('toggleEnabled').checked = true;
@@ -848,6 +850,7 @@ const ChromaApp = (() => {
         }
         config[key] = isChecked;
         if (typeof nextEnabled === 'boolean') config.enabled = nextEnabled;
+        if (masterReenabled) syncUI(config, true);
         setProtectionTogglePending(elId, false);
         syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
       });
@@ -1469,7 +1472,7 @@ const ChromaApp = (() => {
       const lines = String(ruleText || '').replace(/\r\n?/g, '\n').split('\n');
       for (const rawLine of lines) {
         const line = rawLine.trim();
-        if (!line || line.startsWith('!') || line.startsWith('#') || line.startsWith('[') || line.startsWith('//')) continue;
+        if (!line || line.startsWith('!') || (line.startsWith('#') && !line.startsWith('##')) || line.startsWith('[') || line.startsWith('//')) continue;
         const match = line.match(/##\+js\(\s*([^,\s)]+)/);
         const name = normalizeUserScriptletResourceName(match?.[1]?.replace(/^['"]|['"]$/g, ''));
         if (name) counts.set(name, (counts.get(name) || 0) + 1);

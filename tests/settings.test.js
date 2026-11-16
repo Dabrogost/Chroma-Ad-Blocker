@@ -1642,6 +1642,43 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(doc.querySelector('#userScriptletRulesStatus').classList.contains('form-error'));
   });
 
+  await t.test('domainless ##+js(...) rules count as linked and missing resources in UI', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        USER_SCRIPTLETS_GET: {
+          sources: [{
+            id: 'usr_global',
+            name: 'Global',
+            url: 'https://cdn.example.com/global.js',
+            lastUpdated: Date.now(),
+            lastError: null,
+            resourceCount: 1,
+            resourceNames: ['global-helper.js']
+          }],
+          ruleText: [
+            '# comment line',
+            '##+js(global-helper, arg1)',
+            '##+js(missing-global)'
+          ].join('\n'),
+          parsedRuleCount: 2,
+          availableResourceNames: ['global-helper.js']
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const chips = Array.from(doc.querySelectorAll('#userScriptletAvailableResourceList .user-scriptlet-chip'));
+    assert.strictEqual(chips.length, 2);
+    assert.strictEqual(chips[0].querySelector('.user-scriptlet-chip__name').textContent, 'global-helper.js');
+    assert.strictEqual(chips[0].querySelector('.user-scriptlet-chip__status').textContent, 'Linked');
+    assert.strictEqual(chips[1].querySelector('.user-scriptlet-chip__name').textContent, 'missing-global');
+    assert.strictEqual(chips[1].querySelector('.user-scriptlet-chip__status').textContent, 'Missing');
+    assert.strictEqual(doc.querySelector('#userScriptletRulesStatus').textContent, '2 saved rule(s) \u00b7 1 linked resource(s) \u00b7 1 missing resource(s).');
+  });
+
   await t.test('user scriptlet source add failures restore controls', async () => {
     const harness = createSettingsHarness({
       responses: {
@@ -3392,6 +3429,84 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.ok(calls.every(call => call.behavior === 'instant'));
   });
 
+  await t.test('re-enabling one child toggle after master-off restores preserved toggle states and speed controls', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: {
+          enabled: true,
+          networkBlocking: true,
+          cosmetic: true,
+          stripping: true,
+          hideShorts: false,
+          acceleration: true,
+          accelerationSpeed: 12,
+          suppressWarnings: true
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const master = doc.querySelector('#toggleEnabled');
+    const network = doc.querySelector('#toggleNetwork');
+    const cosmetic = doc.querySelector('#toggleCosmetic');
+    const acceleration = doc.querySelector('#toggleAcceleration');
+    const shorts = doc.querySelector('#toggleShorts');
+    const speed12 = doc.querySelector('[data-speed="12"]');
+
+    assert.strictEqual(master.checked, true);
+    assert.strictEqual(network.checked, true);
+    assert.strictEqual(acceleration.checked, true);
+    assert.strictEqual(speed12.disabled, false);
+
+    // Turn Master Protection off
+    harness.messages.length = 0;
+    master.checked = false;
+    master.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    assert.strictEqual(master.checked, false);
+    assert.strictEqual(network.checked, false);
+    assert.strictEqual(cosmetic.checked, false);
+    assert.strictEqual(acceleration.checked, false);
+    assert.strictEqual(shorts.checked, false);
+    assert.strictEqual(speed12.disabled, true);
+
+    // Re-enable master by checking a single child toggle (#toggleShorts)
+    harness.messages.length = 0;
+    shorts.checked = true;
+    shorts.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    const enableMsg = harness.messages.find(msg => msg.type === 'CONFIG_SET');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(enableMsg.config)), {
+      hideShorts: true,
+      enabled: true
+    });
+    assert.strictEqual(master.checked, true);
+    assert.strictEqual(shorts.checked, true);
+    assert.strictEqual(network.checked, true);
+    assert.strictEqual(cosmetic.checked, true);
+    assert.strictEqual(acceleration.checked, true);
+    assert.strictEqual(speed12.disabled, false);
+    assert.strictEqual(speed12.getAttribute('aria-pressed'), 'true');
+
+    // Unchecking #toggleShorts must keep Master Protection enabled because preserved toggles are still on
+    harness.messages.length = 0;
+    shorts.checked = false;
+    shorts.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    const disableShortsMsg = harness.messages.find(msg => msg.type === 'CONFIG_SET');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(disableShortsMsg.config)), {
+      hideShorts: false
+    });
+    assert.strictEqual(master.checked, true);
+    assert.strictEqual(network.checked, true);
+  });
+
   await t.test('skeleton CSS includes reduced-motion handling', () => {
     assert.match(uiCss, /\.skeleton-line/);
     assert.match(uiCss, /@keyframes skeleton-shimmer/);
@@ -3413,5 +3528,205 @@ test('settings page proxy and zapper management safety', async (t) => {
       uiCss,
       /\.protection-list\.hydration-fade-in\s*{[\s\S]*?animation:\s*border-cycle 16s linear infinite,\s*hydration-fade-in 0\.18s ease-out;[\s\S]*?}/
     );
+  });
+
+  async function createProxyEditorHarness(initialProxies, onProxyConfigSet) {
+    const dom = new JSDOM('<!doctype html><div id="proxyRouterContainer"></div><button id="addProxyServerBtn"></button><div id="proxyFeedback"></div>', {
+      url: 'chrome-extension://test/ui/settings.html#proxy',
+      runScripts: 'outside-only'
+    });
+    let proxyConfigs = initialProxies.map(p => ({ ...p, domains: [...(p.domains || [])] }));
+    const config = { globalProxyEnabled: false, globalProxyId: null };
+    const messages = [];
+    const sandbox = {
+      window: dom.window,
+      document: dom.window.document,
+      console,
+      confirm: () => true,
+      setTimeout,
+      clearTimeout,
+      MSG: {
+        CONFIG_GET: 'CONFIG_GET',
+        CONFIG_SET: 'CONFIG_SET',
+        PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
+        PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
+        PROXY_TEST: 'PROXY_TEST'
+      },
+      ChromaApp: {
+        scrollBehavior: () => 'smooth',
+        sendMutation: message => sandbox.notifyBackground(message),
+        $: id => dom.window.document.getElementById(id),
+        escapeHTML: value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;'
+        }[ch])),
+        isSettingsPage: () => true,
+        openProxySettings: () => {}
+      },
+      chrome: {
+        storage: {
+          local: {
+            get: async key => (key === 'config' ? { config } : {})
+          }
+        }
+      },
+      notifyBackground: async msg => {
+        messages.push(msg);
+        if (msg.type === 'CONFIG_GET') return config;
+        if (msg.type === 'PROXY_CONFIG_GET') return proxyConfigs;
+        if (msg.type === 'PROXY_CONFIG_SET') {
+          if (onProxyConfigSet) {
+            const custom = await onProxyConfigSet(msg, { proxyConfigs });
+            if (custom) return custom;
+          }
+          proxyConfigs = msg.proxyConfigs;
+          return { ok: true };
+        }
+        if (msg.type === 'CONFIG_SET') {
+          Object.assign(config, msg.config);
+          return { ok: true };
+        }
+        return {};
+      }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext([domUtilsJs, proxyUiJs].join('\n'), sandbox);
+    await sandbox.ChromaProxyUI.loadProxyRouterUI();
+    await settleDomAsyncWork();
+    return {
+      dom,
+      messages,
+      getProxyConfigs: () => proxyConfigs,
+      getCards: () => [...dom.window.document.querySelectorAll('.proxy-card')]
+    };
+  }
+
+  await t.test('proxy clear button resets stale credential state and restores on save failure', async () => {
+    let failNextSave = true;
+    const harness = await createProxyEditorHarness(
+      [{
+        id: 1,
+        name: 'Auth Proxy',
+        host: 'vpn.example.com',
+        port: '8080',
+        type: 'PROXY',
+        accepted: true,
+        enabled: true,
+        domains: [],
+        hasCredentials: true
+      }],
+      () => {
+        if (failNextSave) return { ok: false, error: 'Storage busy' };
+        return null;
+      }
+    );
+
+    let card = harness.getCards()[0];
+    card.querySelector('.proxy-clear-settings-btn').click();
+    await settleDomAsyncWork();
+
+    card = harness.getCards()[0];
+    assert.strictEqual(card.querySelector('.proxy-active-group').classList.contains('is-hidden'), false);
+    assert.strictEqual(card.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+    assert.match(card.querySelector('.proxy-error').textContent, /Storage busy/);
+
+    failNextSave = false;
+    card.querySelector('.proxy-clear-settings-btn').click();
+    await settleDomAsyncWork();
+
+    assert.deepStrictEqual(harness.getProxyConfigs(), []);
+    card = harness.getCards()[0];
+    assert.strictEqual(card.querySelector('.proxy-input-group').classList.contains('is-hidden'), false);
+    assert.strictEqual(card.querySelector('.proxy-active-group').classList.contains('is-hidden'), true);
+    assert.doesNotMatch(card.querySelector('.proxy-credential-help').textContent, /Credentials saved locally/);
+    assert.notStrictEqual(card.querySelector('.proxy-pass').placeholder, 'Password saved');
+    assert.strictEqual(card.querySelector('.proxy-clear-credentials-btn').classList.contains('is-hidden'), true);
+  });
+
+  await t.test('proxy accept failure rolls back mutated card state instead of poisoning sibling saves', async () => {
+    let failFirstSave = true;
+    const harness = await createProxyEditorHarness(
+      [
+        { id: 1, name: '', host: '', port: '', type: 'PROXY', accepted: false, enabled: true, domains: [], hasCredentials: false },
+        { id: 2, name: '', host: '', port: '', type: 'PROXY', accepted: false, enabled: true, domains: [], hasCredentials: false }
+      ],
+      () => {
+        if (failFirstSave) {
+          failFirstSave = false;
+          return { ok: false, errors: ['proxy[0]: invalid host'] };
+        }
+        return null;
+      }
+    );
+
+    let cards = harness.getCards();
+    cards[0].querySelector('.proxy-host').value = 'bad..host';
+    cards[0].querySelector('.proxy-port').value = '8080';
+    cards[0].querySelector('.proxy-accept-btn').click();
+    await settleDomAsyncWork();
+
+    assert.match(cards[0].querySelector('.proxy-error').textContent, /proxy\[0\]: invalid host/);
+    assert.strictEqual(cards[0].querySelector('.proxy-input-group').classList.contains('is-hidden'), false);
+
+    cards[1].querySelector('.proxy-host').value = 'good.example.com';
+    cards[1].querySelector('.proxy-port').value = '3128';
+    cards[1].querySelector('.proxy-accept-btn').click();
+    await settleDomAsyncWork();
+
+    const saved = harness.getProxyConfigs();
+    assert.strictEqual(saved.length, 1);
+    assert.strictEqual(saved[0].id, 2);
+    assert.strictEqual(saved[0].host, 'good.example.com');
+    assert.strictEqual(saved[0].port, '3128');
+  });
+
+  await t.test('proxy accept normalizes inline host:port input into active view', async () => {
+    const harness = await createProxyEditorHarness([
+      { id: 1, name: '', host: '', port: '', type: 'PROXY', accepted: false, enabled: true, domains: [], hasCredentials: false }
+    ]);
+
+    let card = harness.getCards()[0];
+    card.querySelector('.proxy-host').value = 'https://proxy.example.com:8443/path';
+    card.querySelector('.proxy-port').value = '';
+    card.querySelector('.proxy-accept-btn').click();
+    await settleDomAsyncWork();
+
+    const saved = harness.getProxyConfigs();
+    assert.strictEqual(saved.length, 1);
+    assert.strictEqual(saved[0].host, 'proxy.example.com');
+    assert.strictEqual(saved[0].port, '8443');
+
+    card = harness.getCards()[0];
+    assert.strictEqual(card.querySelector('.proxy-active-group').classList.contains('is-hidden'), false);
+    assert.strictEqual(card.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+    assert.strictEqual(card.querySelector('.proxy-host').value, 'proxy.example.com');
+    assert.strictEqual(card.querySelector('.proxy-port').value, '8443');
+    assert.match(card.querySelector('.proxy-active-group').textContent, /proxy\.example\.com:8443/);
+  });
+
+  await t.test('blocked request badge toggle renders in Appearance and persists independently of master state', async () => {
+    const harness = createSettingsHarness({
+      config: { enabled: false }
+    });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const badgeToggle = harness.dom.window.document.getElementById('toggleShowBlockedBadge');
+    assert.ok(badgeToggle);
+    assert.strictEqual(badgeToggle.checked, true);
+    assert.strictEqual(badgeToggle.disabled, false);
+
+    harness.messages.length = 0;
+    badgeToggle.checked = false;
+    badgeToggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    const configSet = harness.messages.find(msg => msg.type === 'CONFIG_SET');
+    assert.ok(configSet);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(configSet.config)), { showBlockedBadge: false });
   });
 });
