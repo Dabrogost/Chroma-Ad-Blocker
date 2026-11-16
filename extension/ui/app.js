@@ -37,6 +37,7 @@ const ChromaApp = (() => {
     ['toggleOffers',       'hideOffers',               true],
     ['toggleWarnings',     'suppressWarnings',         true],
     ['toggleQuietConsole', 'quietConsole',             false, { masterLinked: false }],
+    ['toggleShowBlockedBadge', 'showBlockedBadge',     true,  { masterLinked: false }],
     ['toggleFingerprintRandomization', 'fingerprintRandomization', false],
     ['toggleBrowserPrivacyHardening', 'browserPrivacyHardening', false],
     ['toggleGeolocationProtection', 'geolocationProtection', false],

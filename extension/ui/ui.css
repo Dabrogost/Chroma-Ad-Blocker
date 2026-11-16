@@ -638,7 +638,8 @@ footer {
   border-radius: var(--r-pill); cursor: pointer; transition: 0.2s;
   text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em;
 }
-.reset-btn:hover { color: var(--text); border-color: var(--c-blue); background: rgba(0, 136, 255, 0.1); transform: translateY(-1px); }
+.reset-btn:hover,
+.reset-btn:focus-visible { color: var(--text); border-color: rgba(0, 255, 204, 0.32); background: rgba(0, 255, 204, 0.065); transform: translateY(-1px); }
 
 .reset-btn:disabled,
 .reset-btn[disabled] {

@@ -9,7 +9,7 @@ export const CONFIG_KEYS = Object.freeze([
   'hideMerch', 'hideOffers', 'suppressWarnings', 'accelerationSpeed', 'enabled',
   'globalProxyEnabled', 'globalProxyId', 'chromeServiceProxyBypass',
   'webRtcLeakProtection', 'fingerprintRandomization', 'browserPrivacyHardening',
-  'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks', 'quietConsole'
+  'geolocationProtection', 'trackingUrlCleanup', 'deAmpLinks', 'quietConsole', 'showBlockedBadge'
 ]);
 const WEBRTC_MODES = new Set(['off', 'auto', 'balanced', 'strict']);
 

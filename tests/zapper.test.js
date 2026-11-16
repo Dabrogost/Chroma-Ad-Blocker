@@ -84,6 +84,7 @@ function loadHandlers(options = {}) {
     removeSubscription: async () => ({ ok: true }),
     validateConfig: cfg => cfg || {},
     updateDNRState: async () => {},
+    syncActionBadge: async () => ({ ok: true }),
     syncDynamicRules: async () => {},
     syncWhitelistRules: async () => {},
     syncBrowserPrivacyHardening: async () => ({}),

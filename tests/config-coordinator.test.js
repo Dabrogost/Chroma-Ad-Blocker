@@ -237,6 +237,7 @@ test('handleConfigSet + syncProxyState + configCoordinator settles and cleans in
     reconcileSubscriptionRuntimeState: async () => {},
     syncUserScripts: async () => {},
     isNetworkProtectionActive: () => true,
+    syncActionBadge: async () => ({ ok: true }),
     updateDNRState: async () => {},
     syncWebRtcLeakProtection: async () => {},
     syncBrowserPrivacyHardening: async () => {},

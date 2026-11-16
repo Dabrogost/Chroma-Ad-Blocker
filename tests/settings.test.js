@@ -3707,4 +3707,26 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(card.querySelector('.proxy-port').value, '8443');
     assert.match(card.querySelector('.proxy-active-group').textContent, /proxy\.example\.com:8443/);
   });
+
+  await t.test('blocked request badge toggle renders in Appearance and persists independently of master state', async () => {
+    const harness = createSettingsHarness({
+      config: { enabled: false }
+    });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const badgeToggle = harness.dom.window.document.getElementById('toggleShowBlockedBadge');
+    assert.ok(badgeToggle);
+    assert.strictEqual(badgeToggle.checked, true);
+    assert.strictEqual(badgeToggle.disabled, false);
+
+    harness.messages.length = 0;
+    badgeToggle.checked = false;
+    badgeToggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+
+    const configSet = harness.messages.find(msg => msg.type === 'CONFIG_SET');
+    assert.ok(configSet);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(configSet.config)), { showBlockedBadge: false });
+  });
 });

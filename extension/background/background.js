@@ -54,6 +54,7 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
         trackingUrlCleanup: true,
         deAmpLinks: false,
         quietConsole: false,
+        showBlockedBadge: true,
       },
       statsV2: createDefaultStatsV2(),
       requestLog: [],

@@ -9,7 +9,7 @@ import { reconcileSubscriptionRuntimeState } from '../../subscriptions/manager.j
 import { syncUserScripts } from '../../scriptlets/engine.js';
 import { validateConfig } from '../configState.js';
 import { serializeConfigMutation } from '../configCoordinator.js';
-import { isNetworkProtectionActive, updateDNRState } from '../dnrState.js';
+import { isNetworkProtectionActive, syncActionBadge, updateDNRState } from '../dnrState.js';
 import { syncProxyState } from '../proxy.js';
 import { syncWebRtcLeakProtection } from '../webrtc.js';
 import { syncBrowserPrivacyHardening, syncGeolocationProtection } from '../browserPrivacy.js';
@@ -50,8 +50,11 @@ export function handleConfigSet(msg) {
       currentConfig.spotifyAdBlocking !== newConfig.spotifyAdBlocking ||
       currentConfig.acceleration !== newConfig.acceleration ||
       currentConfig.trackingUrlCleanup !== newConfig.trackingUrlCleanup;
+    const badgeChanged = currentConfig.showBlockedBadge !== newConfig.showBlockedBadge;
     if (networkStateChanged || dynamicBehaviorChanged) {
       await updateDNRState();
+    } else if (badgeChanged) {
+      await syncActionBadge(newConfig);
     }
     if (masterStateChanged) {
       await reconcileSubscriptionRuntimeState();
