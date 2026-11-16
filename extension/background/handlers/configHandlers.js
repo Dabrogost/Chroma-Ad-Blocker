@@ -57,14 +57,20 @@ export function handleConfigSet(msg) {
       await reconcileSubscriptionRuntimeState();
       await syncUserScripts();
     }
+    let effectiveConfig = newConfig;
     if (proxyStateChanged) {
-      await syncProxyState(proxyConfigs);
+      const runWithNestedMutations = serializeConfigMutation.allowNestedMutations || (fn => fn());
+      await runWithNestedMutations(() => syncProxyState(proxyConfigs));
+      const { config: syncedConfig } = await chrome.storage.local.get('config');
+      if (syncedConfig && typeof syncedConfig === 'object') {
+        effectiveConfig = syncedConfig;
+      }
     }
-    await syncWebRtcLeakProtection(newConfig, proxyConfigs);
-    await syncBrowserPrivacyHardening(newConfig);
-    await syncGeolocationProtection(newConfig);
+    await syncWebRtcLeakProtection(effectiveConfig, proxyConfigs);
+    await syncBrowserPrivacyHardening(effectiveConfig);
+    await syncGeolocationProtection(effectiveConfig);
 
-    await notifyConfigChanged(newConfig);
+    await notifyConfigChanged(effectiveConfig);
     return { ok: true };
   });
 }

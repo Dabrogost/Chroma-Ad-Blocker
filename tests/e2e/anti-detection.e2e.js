@@ -241,7 +241,7 @@ test('bundled site rules in Chrome', async (t) => {
       const result = await streamingFixture(browser, host);
       for (const state of [result.top, result.frame]) {
         assert.deepEqual(state, { parserAd: false, redirectLoader: false, dynamicAd: false,
-          delayedAd: false, adClicks: 0, played: 1, opens: host.includes('totalsportek') ? 0 : 1,
+          delayedAd: false, adClicks: 0, played: 1, opens: (host.includes('totalsportek') || host.includes('nflbite')) ? 0 : 1,
           watch: true, ready: true }, host);
       }
     }

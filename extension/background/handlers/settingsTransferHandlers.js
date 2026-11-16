@@ -220,11 +220,12 @@ async function validateSettingsImportPayload(payload) {
 }
 
 async function reconcileSettingsImportRuntime(config, proxyConfigs, options = {}) {
+  const runWithNestedMutations = serializeConfigMutation.allowNestedMutations || (fn => fn());
   const steps = [
     ['dnr', () => updateDNRState()],
     ['subscription-runtime', () => reconcileSubscriptionRuntimeState()],
     ['user-scripts', () => syncUserScripts()],
-    ['proxy', () => syncProxyState(proxyConfigs)],
+    ['proxy', () => runWithNestedMutations(() => syncProxyState(proxyConfigs))],
     ['webrtc', () => syncWebRtcLeakProtection(config, proxyConfigs)],
     ['browser-privacy', () => syncBrowserPrivacyHardening(config)],
     ['geolocation', () => syncGeolocationProtection(config)]

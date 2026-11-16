@@ -504,6 +504,25 @@ const ChromaProxyUI = (() => {
     container.appendChild(manage);
   }
 
+  function normalizeEditorEndpoint(rawHost, rawPort) {
+    const host = String(rawHost || '').trim().replace(/^[a-z][a-z0-9+\-.]*:\/\//i, '').replace(/\/.*$/, '');
+    const port = String(rawPort || '').trim();
+    const lastColon = host.lastIndexOf(':');
+    if (lastColon > -1 && host.indexOf(':') === lastColon) {
+      const portStr = host.slice(lastColon + 1).trim();
+      if (/^\d+$/.test(portStr)) {
+        const parsed = Number.parseInt(portStr, 10);
+        if (parsed >= 1 && parsed <= 65535) {
+          return {
+            host: host.slice(0, lastColon).trim(),
+            port: String(parsed)
+          };
+        }
+      }
+    }
+    return { host, port };
+  }
+
   function createProxyStore(proxyConfigs) {
     const buildProxySavePayload = (credentialById = new Map()) => proxyConfigs
       .filter(pc => pc.accepted === true)
@@ -818,21 +837,32 @@ const ChromaProxyUI = (() => {
 
       acceptBtn.addEventListener('click', async () => {
         showProxyError('');
-        const host = hostInput.value.trim().replace(/^[a-z][a-z0-9+\-.]*:\/\//i, '').replace(/\/.*$/, '');
-        pc.name = nameInput.value.trim();
-        pc.type = typeSelect.value;
-        pc.host = host;
-        pc.port = portInput.value.trim();
-        pc.enabled = pc.enabled !== false;
         const credentialResult = readCredentialAction();
         if (!credentialResult.ok) {
           showProxyError(credentialResult.error);
           return;
         }
+        const { host, port } = normalizeEditorEndpoint(hostInput.value, portInput.value);
+        const previousState = {
+          name: pc.name,
+          type: pc.type,
+          host: pc.host,
+          port: pc.port,
+          enabled: pc.enabled,
+          accepted: pc.accepted,
+          hasCredentials: pc.hasCredentials,
+          credentialAction: pc.credentialAction
+        };
+        pc.name = nameInput.value.trim();
+        pc.type = typeSelect.value;
+        pc.host = host;
+        pc.port = port;
+        pc.enabled = pc.enabled !== false;
         pc.accepted = true;
-        
+
         const result = await saveAllConfigs(new Map([[pc.id, credentialResult.credential]])); // Force immediate save and wait for background to sync
         if (!result || result.ok === false || result.errors?.length) {
+          Object.assign(pc, previousState);
           showProxyError(result?.error || result?.errors?.[0] || 'Unable to save proxy settings.');
           return;
         }
@@ -845,8 +875,22 @@ const ChromaProxyUI = (() => {
       });
 
       clearBtn.addEventListener('click', async () => {
+        showProxyError('');
+        const previousState = {
+          accepted: pc.accepted,
+          hasCredentials: pc.hasCredentials,
+          credentialAction: pc.credentialAction
+        };
         pc.accepted = false;
-        await saveAllConfigs();
+        const result = await saveAllConfigs();
+        if (!result || result.ok === false || result.errors?.length) {
+          Object.assign(pc, previousState);
+          showProxyError(result?.error || result?.errors?.[0] || 'Unable to clear proxy settings.');
+          return;
+        }
+        pc.hasCredentials = false;
+        clearCredentialInputs();
+        resetCredentialStateAfterSave();
         replaceThisCard();
       });
 

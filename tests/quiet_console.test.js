@@ -369,4 +369,82 @@ test('Quiet Console shared page layer', async (t) => {
     assert.strictEqual(sandbox.getNativeCallCounts().fetch, 1);
     assert.strictEqual(response.status, 299);
   });
+
+  await t.test('Function.prototype.toString hides self-inspection and preserves prior wrappers', () => {
+    const listeners = Object.create(null);
+    const sandbox = {
+      console,
+      Uint8Array,
+      Uint8ClampedArray,
+      crypto: { getRandomValues: buf => buf.fill(1) },
+      setTimeout: (fn) => { fn(); return 1; },
+      clearTimeout: () => {},
+      URL
+    };
+    sandbox.window = sandbox;
+    sandbox.self = sandbox;
+    sandbox.globalThis = sandbox;
+    sandbox.__CHROMA_QUIET_CONSOLE__ = true;
+    sandbox.location = { hostname: 'example.com' };
+    sandbox.navigator = { sendBeacon: function sendBeacon() { return false; } };
+    sandbox.document = {
+      addEventListener(type, fn) {
+        (listeners[type] = listeners[type] || []).push(fn);
+      },
+      dispatchEvent(event) {
+        for (const fn of listeners[event.type] || []) fn(event);
+      }
+    };
+
+    vm.createContext(sandbox);
+    vm.runInContext(`
+      window.fetch = function fetch() { return Promise.resolve({ status: 200 }); };
+      window.XMLHttpRequest = class XMLHttpRequest { open() {} send() {} };
+      window.Navigator = function Navigator() {};
+      window.HTMLCanvasElement = function HTMLCanvasElement() {};
+      window.HTMLCanvasElement.prototype.toDataURL = function toDataURL() { return 'data:image/png;base64,'; };
+      window.__origToDataUrl = window.HTMLCanvasElement.prototype.toDataURL;
+      window.__origToDataUrlSource = window.__origToDataUrl.toString();
+      window.CustomEvent = class CustomEvent { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } };
+    `, sandbox);
+
+    // 1. Evaluate quiet_console.js at document_start before FPR loads
+    vm.runInContext(quietConsoleCode, sandbox);
+
+    // 2. Simulate fingerprintRandomization.js installing its Function.prototype.toString Proxy
+    const fprCode = fs.readFileSync(
+      path.join(__dirname, '..', 'extension', 'scriptlets', 'fingerprintRandomization.js'),
+      'utf8'
+    );
+    vm.runInContext(fprCode, sandbox);
+
+    // 3. Activate Quiet Console asynchronously when config event fires
+    vm.runInContext(
+      `document.dispatchEvent(new CustomEvent('__CHROMA_QUIET_CONSOLE_CONFIG__', { detail: { enabled: true, quietConsole: true } }));`,
+      sandbox
+    );
+
+    const probe = vm.runInContext(`({
+      selfCall: Function.prototype.toString.call(Function.prototype.toString),
+      propToString: Function.prototype.toString.toString(),
+      hasOwnToStringOnSpoof: Object.prototype.hasOwnProperty.call(Function.prototype.toString, 'toString'),
+      hasOwnToStringOnFetch: Object.prototype.hasOwnProperty.call(window.fetch, 'toString'),
+      fetchDirect: window.fetch.toString(),
+      fetchViaCall: Function.prototype.toString.call(window.fetch),
+      origToDataUrlSource: window.__origToDataUrlSource,
+      canvasWrappedChanged: HTMLCanvasElement.prototype.toDataURL !== window.__origToDataUrl,
+      canvasViaCall: Function.prototype.toString.call(HTMLCanvasElement.prototype.toDataURL),
+      canvasDirect: HTMLCanvasElement.prototype.toDataURL.toString()
+    })`, sandbox);
+
+    assert.strictEqual(probe.selfCall, 'function toString() { [native code] }');
+    assert.strictEqual(probe.propToString, 'function toString() { [native code] }');
+    assert.strictEqual(probe.hasOwnToStringOnSpoof, false);
+    assert.strictEqual(probe.hasOwnToStringOnFetch, false);
+    assert.strictEqual(probe.fetchDirect, 'function fetch() { [native code] }');
+    assert.strictEqual(probe.fetchViaCall, 'function fetch() { [native code] }');
+    assert.strictEqual(probe.canvasWrappedChanged, true);
+    assert.strictEqual(probe.canvasViaCall, probe.origToDataUrlSource);
+    assert.strictEqual(probe.canvasDirect, probe.origToDataUrlSource);
+  });
 });

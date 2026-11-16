@@ -22,10 +22,16 @@
     quietConsole: false,
   };
 
+  function normalizeHostname(value) {
+    return String(value || '').trim().toLowerCase().replace(/\.$/, '');
+  }
+
   function isHostOrSubdomain(hostname, domain) {
     if (typeof domain !== 'string') return false;
-    const normalizedDomain = domain.toLowerCase();
-    return hostname === normalizedDomain || hostname.endsWith('.' + normalizedDomain);
+    const normalizedHost = normalizeHostname(hostname);
+    const normalizedDomain = normalizeHostname(domain);
+    if (!normalizedHost || !normalizedDomain) return false;
+    return normalizedHost === normalizedDomain || normalizedHost.endsWith('.' + normalizedDomain);
   }
 
   function isStoredSubscriptionDomain(domain) {
@@ -73,7 +79,7 @@
     return included && !excluded;
   }
 
-  const currentHostname = String(window.location.hostname || '').toLowerCase();
+  const currentHostname = normalizeHostname(window.location.hostname);
   const isYouTube = isHostOrSubdomain(currentHostname, 'youtube.com');
   const isTwitch  = isHostOrSubdomain(currentHostname, 'twitch.tv');
   // Dailymotion measures generic ad bait. Keep site-specific and user-picked
@@ -217,7 +223,7 @@
   }
 
   function recordSelectorStats(styleDef) {
-    if (!styleDef.stats || !styleDef.isEnabled()) return;
+    if (IS_WHITELISTED || !styleDef.stats || !styleDef.isEnabled()) return;
     const count = countNewSelectorMatches(styleDef.stats.selectors, styleDef.id);
     if (count > 0) {
       queueStatsEvent({ ...styleDef.stats.event, count });
@@ -373,8 +379,10 @@
     });
   }
 
-  function getMatchingLocalZapperSelectors(rules, hostname = window.location.hostname) {
+  function getMatchingLocalZapperSelectors(rules, hostname = currentHostname) {
     if (!Array.isArray(rules)) return [];
+    const normalizedHost = normalizeHostname(hostname);
+    if (!normalizedHost) return [];
 
     return getValidSelectors(
       rules
@@ -384,18 +392,18 @@
           rule.enabled === true &&
           typeof rule.domain === 'string' &&
           typeof rule.selector === 'string' &&
-          domainMatches(hostname, rule.domain.toLowerCase())
+          domainMatches(normalizedHost, normalizeHostname(rule.domain))
         )
         .map(rule => rule.selector)
     );
   }
 
   function shouldRunDomCleanup() {
-    return CONFIG.enabled && CONFIG.cosmetic && !skipGenericCosmetics;
+    return !IS_WHITELISTED && CONFIG.enabled && CONFIG.cosmetic && !skipGenericCosmetics;
   }
 
   function shouldRunObserver() {
-    return CONFIG.enabled && (CONFIG.cosmetic || CONFIG.suppressWarnings);
+    return !IS_WHITELISTED && CONFIG.enabled && (CONFIG.cosmetic || CONFIG.suppressWarnings);
   }
 
   // ─── COSMETIC FILTERING ─────
@@ -600,7 +608,7 @@
         chromaSheetContent.set(styleDef.id, styleDef.content);
       }
 
-      const isEnabled = styleDef.isEnabled();
+      const isEnabled = !IS_WHITELISTED && styleDef.isEnabled();
       const currentSheets = document.adoptedStyleSheets || [];
 
       if (isEnabled && !currentSheets.includes(sheet)) {
@@ -618,7 +626,7 @@
   // ─── ANTI-ADBLOCK WARNING SUPPRESSION ─────
   function suppressAdblockWarnings(nodes) {
 
-    if (!CONFIG.enabled || !CONFIG.suppressWarnings || !WARNING_SELECTOR_COMBINED) return;
+    if (IS_WHITELISTED || !CONFIG.enabled || !CONFIG.suppressWarnings || !WARNING_SELECTOR_COMBINED) return;
 
     let removedCount = 0;
 
@@ -666,8 +674,15 @@
   }
 
   // ─── DOM OBSERVER ─────
+  function stopObserver() {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+  }
+
   function startObserver() {
-    if (observer) observer.disconnect();
+    stopObserver();
 
     let pendingNodes = new Set();
     let pendingFrame = false;
@@ -758,8 +773,10 @@
 
   // ─── NAVIGATION HANDLING (SPA) ─────
   function onYTNavigate() {
+    if (IS_WHITELISTED) return;
     [500, 1500].forEach(delay => { // 500ms catches initial DOM swap; 1500ms catches lazy-rendered ad slots
       setTimeout(() => {
+        if (IS_WHITELISTED) return;
         suppressAdblockWarnings();
         if (shouldRunDomCleanup()) {
           removeLeftoverAdContainers();
@@ -786,10 +803,7 @@
       if (shouldRunObserver()) {
         startObserver();
       } else {
-        if (observer) {
-          observer.disconnect();
-          observer = null;
-        }
+        stopObserver();
       }
 
       injectAllCSS();
@@ -799,8 +813,9 @@
   if (chrome.storage?.onChanged?.addListener) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      if (IS_WHITELISTED) return;
       let cosmeticRuntimeChanged = false;
+      let whitelistStateChanged = false;
+
       if (changes.localCosmeticRules) {
         LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(changes.localCosmeticRules.newValue || []);
         cosmeticRuntimeChanged = true;
@@ -812,6 +827,36 @@
         rebuildHideSelectors();
         cosmeticRuntimeChanged = true;
       }
+      if (changes.whitelist) {
+        const whitelist = Array.isArray(changes.whitelist.newValue) ? changes.whitelist.newValue : [];
+        const nextWhitelisted = whitelist.some(domain => isHostOrSubdomain(currentHostname, domain));
+        if (nextWhitelisted !== IS_WHITELISTED) {
+          IS_WHITELISTED = nextWhitelisted;
+          whitelistStateChanged = true;
+        }
+      }
+
+      if (whitelistStateChanged) {
+        reconcilePendingStats();
+        publishQuietConsoleConfig();
+        if (shouldRunObserver()) {
+          startObserver();
+        } else {
+          stopObserver();
+        }
+        injectAllCSS();
+        if (!IS_WHITELISTED) {
+          if (CONFIG.enabled && CONFIG.suppressWarnings) {
+            suppressAdblockWarnings();
+          }
+          if (shouldRunDomCleanup()) {
+            removeLeftoverAdContainers();
+          }
+        }
+        return;
+      }
+
+      if (IS_WHITELISTED) return;
       if (cosmeticRuntimeChanged) injectAllCSS();
     });
   }
@@ -862,16 +907,11 @@
         return;
       }
 
-      IS_WHITELISTED = whitelist.some(domain => isHostOrSubdomain(hostname.toLowerCase(), domain));
+      IS_WHITELISTED = whitelist.some(domain => isHostOrSubdomain(currentHostname, domain));
       statsConfigReady = true;
       const startupEvents = pendingScriptletStats;
       pendingScriptletStats = null;
       for (const type of startupEvents || []) queueStatsEvent({ layer: 'scriptlet', type });
-      publishQuietConsoleConfig();
-      if (IS_WHITELISTED) {
-        if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
-        return;
-      }
 
       if (data.HIDE_SELECTORS) {
         BUILTIN_HIDE_SELECTORS = getValidSelectors(data.HIDE_SELECTORS);
@@ -879,14 +919,23 @@
 
       SUBSCRIPTION_HIDE_SELECTORS = getMatchingSubscriptionCosmeticSelectors(
         data.subscriptionCosmeticRules || [],
-        hostname
+        currentHostname
       );
       rebuildHideSelectors();
 
-      LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(data.localCosmeticRules || [], hostname);
-      
+      LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(data.localCosmeticRules || [], currentHostname);
+
       if (data.WARNING_SELECTORS) {
         WARNING_SELECTOR_COMBINED = data.WARNING_SELECTORS.join(',');
+      }
+
+      reconcilePendingStats();
+      publishQuietConsoleConfig();
+      if (IS_WHITELISTED) {
+        stopObserver();
+        injectAllCSS();
+        if (DEBUG) console.log('[Chroma] Domain is whitelisted. Staying inactive.');
+        return;
       }
 
       injectAllCSS();

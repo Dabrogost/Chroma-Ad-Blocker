@@ -171,34 +171,37 @@ export async function handleZapperSaveRule(msg, sender) {
     return { ok: true };
   }
 
-  try {
-    const pageUrl = sender.tab?.url ? new URL(sender.tab.url) : null;
-    const senderHost = pageUrl?.hostname?.toLowerCase() || '';
-    const domain = normalizeDomain(msg.domain);
-    if (!domain || !senderHost || !domainMatches(senderHost, domain)) {
-      return { ok: false, error: 'Invalid domain' };
-    }
-
-    const selector = typeof msg.selector === 'string' ? msg.selector.trim() : '';
-    const validation = await validateZapperSelectorInTab(tabId, selector);
-    if (!validation.ok) return validation;
-
-    const existing = await getStoredZapperRules();
-    const rule = {
-      id: `zapper_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      domain,
-      selector,
-      enabled: true,
-      createdAt: Date.now(),
-      source: 'zapper'
-    };
-
-    const next = [...existing, rule].slice(-ZAPPER_MAX_RULES);
-    await chrome.storage.local.set({ localCosmeticRules: next });
-    return { ok: true, rule };
-  } finally {
-    clearZapperSession(tabId);
+  const pageUrl = sender.tab?.url ? new URL(sender.tab.url) : null;
+  const senderHost = pageUrl?.hostname?.toLowerCase() || '';
+  const domain = normalizeDomain(msg.domain);
+  if (!domain || !senderHost || !domainMatches(senderHost, domain)) {
+    return { ok: false, error: 'Invalid domain' };
   }
+
+  const selector = typeof msg.selector === 'string' ? msg.selector.trim() : '';
+  const validation = await validateZapperSelectorInTab(tabId, selector);
+  if (!validation.ok) return validation;
+
+  // Preserve session state across recoverable validation failures, but re-check
+  // that the session was not cancelled or consumed while validation ran.
+  if (zapperSessions.get(tabId)?.token !== msg.token) {
+    return { ok: false, error: 'Invalid zapper session' };
+  }
+
+  const existing = await getStoredZapperRules();
+  const rule = {
+    id: `zapper_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    domain,
+    selector,
+    enabled: true,
+    createdAt: Date.now(),
+    source: 'zapper'
+  };
+
+  const next = [...existing, rule].slice(-ZAPPER_MAX_RULES);
+  await chrome.storage.local.set({ localCosmeticRules: next });
+  clearZapperSession(tabId);
+  return { ok: true, rule };
 }
 
 export async function handleZapperRulesGet() {
