@@ -7,15 +7,135 @@
 import { domainMatches, normalizeDomain } from './domainValidation.js';
 
 const ZAPPER_SESSION_TTL_MS = 2 * 60 * 1000;
+const ZAPPER_SESSIONS_KEY = 'zapperSessions';
 const ZAPPER_MAX_RULES = 500;
 const ZAPPER_MAX_SELECTOR_LEN = 512;
 const ZAPPER_MAX_MATCHES = 5;
-const zapperSessions = new Map();
+const fallbackZapperSessions = new Map();
+const zapperTimeouts = new Map();
+let zapperSessionQueue = Promise.resolve();
+let zapperRulesQueue = Promise.resolve();
 
-function clearZapperSession(tabId) {
-  const session = zapperSessions.get(tabId);
-  if (session?.timeoutId) clearTimeout(session.timeoutId);
-  zapperSessions.delete(tabId);
+function enqueueZapperSessionOp(task) {
+  const run = zapperSessionQueue.then(task, task);
+  zapperSessionQueue = run.catch(() => {});
+  return run;
+}
+
+function enqueueZapperRulesMutation(task) {
+  const run = zapperRulesQueue.then(task, task);
+  zapperRulesQueue = run.catch(() => {});
+  return run;
+}
+
+function getSessionStorage() {
+  const session = chrome?.storage?.session;
+  return session && typeof session.get === 'function' && typeof session.set === 'function'
+    ? session
+    : null;
+}
+
+function clearZapperTimer(tabId) {
+  const timeoutId = zapperTimeouts.get(tabId);
+  if (timeoutId) clearTimeout(timeoutId);
+  zapperTimeouts.delete(tabId);
+}
+
+function isSessionActive(session, now = Date.now()) {
+  if (!session || typeof session !== 'object' || typeof session.token !== 'string') return false;
+  const expiresAt = Number.isFinite(session.expiresAt)
+    ? session.expiresAt
+    : (Number.isFinite(session.createdAt) ? session.createdAt + ZAPPER_SESSION_TTL_MS : 0);
+  return now < expiresAt;
+}
+
+function pruneSessionEntries(rawSessions, now = Date.now()) {
+  const next = {};
+  let pruned = false;
+  if (!rawSessions || typeof rawSessions !== 'object' || Array.isArray(rawSessions)) {
+    return { sessions: next, changed: rawSessions !== undefined };
+  }
+  for (const [key, entry] of Object.entries(rawSessions)) {
+    if (isSessionActive(entry, now)) {
+      next[key] = {
+        token: entry.token,
+        createdAt: entry.createdAt,
+        expiresAt: Number.isFinite(entry.expiresAt) ? entry.expiresAt : entry.createdAt + ZAPPER_SESSION_TTL_MS
+      };
+    } else {
+      pruned = true;
+    }
+  }
+  return { sessions: next, changed: pruned };
+}
+
+function scheduleSessionTimeout(tabId, token) {
+  clearZapperTimer(tabId);
+  const timeoutId = setTimeout(() => {
+    clearZapperSession(tabId, token).catch(() => {});
+  }, ZAPPER_SESSION_TTL_MS);
+  zapperTimeouts.set(tabId, timeoutId);
+}
+
+function clearZapperSession(tabId, expectedToken = null) {
+  return enqueueZapperSessionOp(async () => {
+    const key = String(tabId);
+    const sessionStorage = getSessionStorage();
+    if (!sessionStorage) {
+      const existing = fallbackZapperSessions.get(tabId);
+      if (expectedToken !== null && existing?.token !== expectedToken) return;
+      clearZapperTimer(tabId);
+      fallbackZapperSessions.delete(tabId);
+      return;
+    }
+
+    const stored = await sessionStorage.get(ZAPPER_SESSIONS_KEY);
+    const { sessions, changed } = pruneSessionEntries(stored?.[ZAPPER_SESSIONS_KEY]);
+    const existing = sessions[key];
+    if (expectedToken !== null && existing?.token !== expectedToken) {
+      if (changed) await sessionStorage.set({ [ZAPPER_SESSIONS_KEY]: sessions });
+      return;
+    }
+    clearZapperTimer(tabId);
+    let didDelete = false;
+    if (Object.prototype.hasOwnProperty.call(sessions, key)) {
+      delete sessions[key];
+      didDelete = true;
+    }
+    if (changed || didDelete) {
+      await sessionStorage.set({ [ZAPPER_SESSIONS_KEY]: sessions });
+    }
+  });
+}
+
+function getZapperSession(tabId) {
+  return enqueueZapperSessionOp(async () => {
+    const now = Date.now();
+    const key = String(tabId);
+    const sessionStorage = getSessionStorage();
+    if (!sessionStorage) {
+      for (const [entryTabId, entry] of fallbackZapperSessions.entries()) {
+        if (!isSessionActive(entry, now)) {
+          clearZapperTimer(entryTabId);
+          fallbackZapperSessions.delete(entryTabId);
+        }
+      }
+      const entry = fallbackZapperSessions.get(tabId);
+      return isSessionActive(entry, now) ? entry : null;
+    }
+
+    const stored = await sessionStorage.get(ZAPPER_SESSIONS_KEY);
+    const { sessions, changed } = pruneSessionEntries(stored?.[ZAPPER_SESSIONS_KEY], now);
+    if (changed) {
+      await sessionStorage.set({ [ZAPPER_SESSIONS_KEY]: sessions });
+    }
+    const entry = sessions[key];
+    if (!isSessionActive(entry, now)) {
+      clearZapperTimer(tabId);
+      return null;
+    }
+    return entry;
+  });
 }
 
 function createZapperToken() {
@@ -25,15 +145,26 @@ function createZapperToken() {
 }
 
 function startZapperSession(tabId) {
-  clearZapperSession(tabId);
-  const token = createZapperToken();
-  const timeoutId = setTimeout(() => clearZapperSession(tabId), ZAPPER_SESSION_TTL_MS);
-  zapperSessions.set(tabId, {
-    token,
-    createdAt: Date.now(),
-    timeoutId
+  return enqueueZapperSessionOp(async () => {
+    const now = Date.now();
+    const token = createZapperToken();
+    const session = {
+      token,
+      createdAt: now,
+      expiresAt: now + ZAPPER_SESSION_TTL_MS
+    };
+    const sessionStorage = getSessionStorage();
+    if (!sessionStorage) {
+      fallbackZapperSessions.set(tabId, session);
+    } else {
+      const stored = await sessionStorage.get(ZAPPER_SESSIONS_KEY);
+      const { sessions } = pruneSessionEntries(stored?.[ZAPPER_SESSIONS_KEY], now);
+      sessions[String(tabId)] = session;
+      await sessionStorage.set({ [ZAPPER_SESSIONS_KEY]: sessions });
+    }
+    scheduleSessionTimeout(tabId, token);
+    return token;
   });
-  return token;
 }
 
 function isValidZapperSelectorText(input) {
@@ -135,7 +266,7 @@ export async function handleZapperStart(msg) {
   const tab = await getActiveHttpTab(msg);
   if (!tab) return { ok: false, error: 'Element zapper only works on http and https pages.' };
 
-  const token = startZapperSession(tab.id);
+  const token = await startZapperSession(tab.id);
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id, allFrames: false },
@@ -152,7 +283,7 @@ export async function handleZapperStart(msg) {
     });
     return { ok: true };
   } catch {
-    clearZapperSession(tab.id);
+    await clearZapperSession(tab.id, token);
     return { ok: false, error: 'Could not start the zapper on this site. Check extension site access for this page.' };
   }
 }
@@ -161,13 +292,13 @@ export async function handleZapperSaveRule(msg, sender) {
   const tabId = sender?.tab?.id;
   if (!Number.isInteger(tabId)) return { ok: false, error: 'Missing tab context' };
 
-  const session = zapperSessions.get(tabId);
+  const session = await getZapperSession(tabId);
   if (!session || typeof msg.token !== 'string' || msg.token !== session.token) {
     return { ok: false, error: 'Invalid zapper session' };
   }
 
   if (msg.action === 'cancel' || msg.action === 'hideOnce') {
-    clearZapperSession(tabId);
+    await clearZapperSession(tabId, msg.token);
     return { ok: true };
   }
 
@@ -182,26 +313,29 @@ export async function handleZapperSaveRule(msg, sender) {
   const validation = await validateZapperSelectorInTab(tabId, selector);
   if (!validation.ok) return validation;
 
-  // Preserve session state across recoverable validation failures, but re-check
-  // that the session was not cancelled or consumed while validation ran.
-  if (zapperSessions.get(tabId)?.token !== msg.token) {
-    return { ok: false, error: 'Invalid zapper session' };
-  }
+  return enqueueZapperRulesMutation(async () => {
+    // Preserve session state across recoverable validation failures, but re-check
+    // that the session was not cancelled, expired, or consumed while validation ran.
+    const activeSession = await getZapperSession(tabId);
+    if (!activeSession || activeSession.token !== msg.token) {
+      return { ok: false, error: 'Invalid zapper session' };
+    }
 
-  const existing = await getStoredZapperRules();
-  const rule = {
-    id: `zapper_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    domain,
-    selector,
-    enabled: true,
-    createdAt: Date.now(),
-    source: 'zapper'
-  };
+    const existing = await getStoredZapperRules();
+    const rule = {
+      id: `zapper_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      domain,
+      selector,
+      enabled: true,
+      createdAt: Date.now(),
+      source: 'zapper'
+    };
 
-  const next = [...existing, rule].slice(-ZAPPER_MAX_RULES);
-  await chrome.storage.local.set({ localCosmeticRules: next });
-  clearZapperSession(tabId);
-  return { ok: true, rule };
+    const next = [...existing, rule].slice(-ZAPPER_MAX_RULES);
+    await chrome.storage.local.set({ localCosmeticRules: next });
+    await clearZapperSession(tabId, msg.token);
+    return { ok: true, rule };
+  });
 }
 
 export async function handleZapperRulesGet() {
@@ -209,28 +343,32 @@ export async function handleZapperRulesGet() {
 }
 
 export async function handleZapperRuleRemove(msg) {
-  const id = typeof msg.id === 'string' ? msg.id : '';
-  const existing = await getStoredZapperRules();
-  const next = existing.filter(rule => rule.id !== id);
-  if (next.length !== existing.length) {
-    await chrome.storage.local.set({ localCosmeticRules: next });
-  }
-  return { ok: true };
+  return enqueueZapperRulesMutation(async () => {
+    const id = typeof msg.id === 'string' ? msg.id : '';
+    const existing = await getStoredZapperRules();
+    const next = existing.filter(rule => rule.id !== id);
+    if (next.length !== existing.length) {
+      await chrome.storage.local.set({ localCosmeticRules: next });
+    }
+    return { ok: true };
+  });
 }
 
 export async function handleZapperRuleSet(msg) {
-  const id = typeof msg.id === 'string' ? msg.id : '';
   if (typeof msg.enabled !== 'boolean') return { ok: false, error: 'Invalid rule state' };
-  const enabled = msg.enabled === true;
-  const existing = await getStoredZapperRules();
-  let changed = false;
-  const next = existing.map(rule => {
-    if (rule.id !== id) return rule;
-    changed = true;
-    return { ...rule, enabled };
+  return enqueueZapperRulesMutation(async () => {
+    const id = typeof msg.id === 'string' ? msg.id : '';
+    const enabled = msg.enabled === true;
+    const existing = await getStoredZapperRules();
+    let changed = false;
+    const next = existing.map(rule => {
+      if (rule.id !== id) return rule;
+      changed = true;
+      return { ...rule, enabled };
+    });
+    if (changed) {
+      await chrome.storage.local.set({ localCosmeticRules: next });
+    }
+    return { ok: true };
   });
-  if (changed) {
-    await chrome.storage.local.set({ localCosmeticRules: next });
-  }
-  return { ok: true };
 }

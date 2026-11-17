@@ -160,9 +160,46 @@
     return CONFIG.enabled === true && CONFIG.quietConsole === true && isQuietableUrl(url);
   }
 
+  const QUIET_XHR_PROPS = ['readyState', 'status', 'statusText', 'responseText', 'response'];
+  const quietXhrState = new WeakMap();
+
+  function getQuietXhrState(xhr) {
+    let state = quietXhrState.get(xhr);
+    if (!state) {
+      state = { generation: 0, suppressed: false, timerId: null, savedDescriptors: null };
+      quietXhrState.set(xhr, state);
+    }
+    return state;
+  }
+
+  function restoreQuietXhr(xhr) {
+    const state = quietXhrState.get(xhr);
+    if (!state) return;
+    if (state.timerId !== null) {
+      try {
+        clearTimeout(state.timerId);
+      } catch (_) {}
+      state.timerId = null;
+    }
+    if (!state.savedDescriptors) return;
+    const saved = state.savedDescriptors;
+    state.savedDescriptors = null;
+    for (const key of QUIET_XHR_PROPS) {
+      if (Object.prototype.hasOwnProperty.call(saved, key)) {
+        try {
+          Object.defineProperty(xhr, key, saved[key]);
+        } catch (_) {}
+      } else {
+        try {
+          delete xhr[key];
+        } catch (_) {}
+      }
+    }
+  }
+
   function defineValue(target, key, value) {
     try {
-      Object.defineProperty(target, key, { value, configurable: true });
+      Object.defineProperty(target, key, { value, writable: true, configurable: true });
       return;
     } catch (_) {}
     try {
@@ -188,8 +225,21 @@
     });
   }
 
-  function completeQuietXhr(xhr) {
+  function completeQuietXhr(xhr, state) {
+    const expectedGeneration = state.generation;
+    let completed = false;
     const finish = () => {
+      completed = true;
+      state.timerId = null;
+      if (state.generation !== expectedGeneration || state.suppressed !== true) return;
+      if (!state.savedDescriptors) {
+        const saved = Object.create(null);
+        for (const key of QUIET_XHR_PROPS) {
+          const desc = Object.getOwnPropertyDescriptor(xhr, key);
+          if (desc) saved[key] = desc;
+        }
+        state.savedDescriptors = saved;
+      }
       defineValue(xhr, 'readyState', 4);
       defineValue(xhr, 'status', 200);
       defineValue(xhr, 'statusText', 'OK');
@@ -213,7 +263,8 @@
     };
 
     try {
-      setTimeout(finish, 0);
+      const id = setTimeout(finish, 0);
+      if (!completed) state.timerId = id;
     } catch (_) {
       finish();
     }
@@ -279,18 +330,21 @@
     if (typeof nativeXHROpen === 'function' && typeof nativeXHRSend === 'function') {
       XMLHttpRequest.prototype.open = function open(method, url, ...rest) {
         const requestUrl = getRequestUrl(url);
-        this.__chromaQuietConsoleUrl = requestUrl;
-        this.__chromaQuietConsoleSuppressed = false;
+        const state = getQuietXhrState(this);
+        state.generation += 1;
+        state.suppressed = false;
+        restoreQuietXhr(this);
         if (shouldQuiet(requestUrl)) {
-          this.__chromaQuietConsoleSuppressed = true;
+          state.suppressed = true;
           log('quiet xhr', requestUrl);
           return;
         }
         return nativeXHROpen.apply(this, arguments);
       };
       XMLHttpRequest.prototype.send = function send(...args) {
-        if (this.__chromaQuietConsoleSuppressed === true) {
-          completeQuietXhr(this);
+        const state = quietXhrState.get(this);
+        if (state && state.suppressed === true) {
+          completeQuietXhr(this, state);
           return;
         }
         return nativeXHRSend.apply(this, arguments);

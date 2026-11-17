@@ -58,15 +58,48 @@ function plain(value) {
 
 function loadHandlers(options = {}) {
   const storage = options.storage || {};
+  const sessionStorage = options.sessionStorage !== undefined ? options.sessionStorage : {};
+  const storageDelayMs = options.storageDelayMs || 0;
   let capturedToken = null;
   const scriptingCalls = [];
+  const tick = () => (storageDelayMs > 0 ? new Promise(resolve => setTimeout(resolve, storageDelayMs)) : Promise.resolve());
+
+  const makeStorageArea = (backing) => ({
+    get: async (key) => {
+      await tick();
+      if (Array.isArray(key)) {
+        const out = {};
+        key.forEach(k => {
+          out[k] = backing[k] === undefined ? undefined : plain(backing[k]);
+        });
+        return out;
+      }
+      if (typeof key === 'string') {
+        return { [key]: backing[key] === undefined ? undefined : plain(backing[key]) };
+      }
+      return {};
+    },
+    set: async (values) => {
+      await tick();
+      for (const [k, v] of Object.entries(values)) {
+        backing[k] = v === undefined ? undefined : plain(v);
+      }
+    }
+  });
+
+  const chromeStorage = {
+    local: makeStorageArea(storage)
+  };
+  if (sessionStorage !== null) {
+    chromeStorage.session = makeStorageArea(sessionStorage);
+  }
 
   const sandbox = {
     MSG,
     URL,
     Number,
     Math,
-    Date,
+    Date: options.Date || Date,
     Uint8Array,
     Map,
     Set,
@@ -95,20 +128,7 @@ function loadHandlers(options = {}) {
     getMergedLog: async () => [],
     runProxyTest: async () => ({ ok: true }),
     chrome: {
-      storage: {
-        local: {
-          get: async (key) => {
-            if (Array.isArray(key)) {
-              const out = {};
-              key.forEach(k => { out[k] = storage[k]; });
-              return out;
-            }
-            if (typeof key === 'string') return { [key]: storage[key] };
-            return {};
-          },
-          set: async (values) => Object.assign(storage, values)
-        }
-      },
+      storage: chromeStorage,
       tabs: {
         get: async id => ({ id, url: 'https://example.com/page' }),
         query: async () => [{ id: 7, url: 'https://example.com/page' }],
@@ -407,6 +427,76 @@ test('zapper background handlers', async (t) => {
 
     await sandbox.handleZapperRuleRemove({ id: 'zapper_1' });
     assert.deepStrictEqual(storage.localCosmeticRules, []);
+  });
+
+  await t.test('active zapper session survives service worker restart via session storage and still enforces TTL', async () => {
+    const sharedLocal = { localCosmeticRules: [] };
+    const sharedSession = {};
+    let fakeNow = 10_000;
+    const FakeDate = Object.assign(function (...args) { return new Date(...args); }, {
+      now: () => fakeNow
+    });
+
+    const worker1 = loadHandlers({ storage: sharedLocal, sessionStorage: sharedSession, Date: FakeDate });
+    const started = await worker1.sandbox.handleZapperStart({ tabId: 7 });
+    assert.strictEqual(started.ok, true);
+    const token = worker1.getToken();
+    assert.ok(token);
+
+    // Simulate MV3 service worker termination and recreation within the 2-minute TTL.
+    fakeNow += 45_000;
+    const worker2 = loadHandlers({ storage: sharedLocal, sessionStorage: sharedSession, Date: FakeDate });
+    const saved = await worker2.sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'https://example.com/page' } }
+    );
+    assert.strictEqual(saved.ok, true);
+    assert.strictEqual(sharedLocal.localCosmeticRules.length, 1);
+
+    // Expired sessions across a restart must still be rejected without relying on in-memory timers.
+    const started2 = await worker2.sandbox.handleZapperStart({ tabId: 7 });
+    assert.strictEqual(started2.ok, true);
+    const token2 = worker2.getToken();
+    fakeNow += 2 * 60 * 1000 + 1;
+    const worker3 = loadHandlers({ storage: sharedLocal, sessionStorage: sharedSession, Date: FakeDate });
+    const expired = await worker3.sandbox.handleZapperSaveRule(
+      { action: 'save', token: token2, domain: 'example.com', selector: '.annoying2' },
+      { tab: { id: 7, url: 'https://example.com/page' } }
+    );
+    assert.strictEqual(expired.ok, false);
+    assert.strictEqual(expired.error, 'Invalid zapper session');
+    assert.strictEqual(sharedLocal.localCosmeticRules.length, 1);
+  });
+
+  await t.test('concurrent rule mutations serialize cleanly and reject duplicate save tokens', async () => {
+    const storage = {
+      localCosmeticRules: [
+        { id: 'zapper_1', domain: 'example.com', selector: '.a', enabled: true, createdAt: 1, source: 'zapper' },
+        { id: 'zapper_2', domain: 'example.com', selector: '.b', enabled: true, createdAt: 2, source: 'zapper' },
+        { id: 'zapper_3', domain: 'example.com', selector: '.c', enabled: true, createdAt: 3, source: 'zapper' }
+      ]
+    };
+    const { sandbox, getToken } = loadHandlers({ storage, storageDelayMs: 5 });
+    await sandbox.handleZapperStart({ tabId: 7 });
+    const token = getToken();
+    const sender = { tab: { id: 7, url: 'https://example.com/page' } };
+
+    const [toggle1, toggle2, removed3, saveA, saveB] = await Promise.all([
+      sandbox.handleZapperRuleSet({ id: 'zapper_1', enabled: false }),
+      sandbox.handleZapperRuleSet({ id: 'zapper_2', enabled: false }),
+      sandbox.handleZapperRuleRemove({ id: 'zapper_3' }),
+      sandbox.handleZapperSaveRule({ action: 'save', token, domain: 'example.com', selector: '.d' }, sender),
+      sandbox.handleZapperSaveRule({ action: 'save', token, domain: 'example.com', selector: '.d' }, sender)
+    ]);
+
+    assert.strictEqual(toggle1.ok, true);
+    assert.strictEqual(toggle2.ok, true);
+    assert.strictEqual(removed3.ok, true);
+    assert.strictEqual([saveA.ok, saveB.ok].filter(Boolean).length, 1);
+    assert.strictEqual(storage.localCosmeticRules.find(r => r.id === 'zapper_1')?.enabled, false);
+    assert.strictEqual(storage.localCosmeticRules.find(r => r.id === 'zapper_2')?.enabled, false);
+    assert.strictEqual(storage.localCosmeticRules.find(r => r.id === 'zapper_3'), undefined);
+    assert.strictEqual(storage.localCosmeticRules.filter(r => r.selector === '.d').length, 1);
   });
 });
 

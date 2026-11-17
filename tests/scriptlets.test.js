@@ -932,6 +932,50 @@ test('scriptlet native wrapper camouflage', async (t) => {
     assert.strictEqual(sandbox.window.fetch, originalFetch);
   });
 
+  await t.test('m3u-prune strips /g and /y flags so consecutive ad segments and playlists match reliably', async () => {
+    const playlistBody = '#EXTM3U\n#EXTINF:5,\nad1.ts\n#EXTINF:5,\nad2.ts\n#EXTINF:5,\nAD3.ts\n#EXTINF:5,\ncontent.ts\n';
+    class FakeResponse {
+      constructor(body, init = {}) {
+        this._body = body;
+        this.status = init.status || 200;
+        this.statusText = init.statusText || 'OK';
+        this.headers = init.headers || {};
+      }
+      clone() { return new FakeResponse(this._body, this); }
+      async text() { return this._body; }
+    }
+
+    const win = makeWindow();
+    win.Response = FakeResponse;
+    win.fetch = async () => new FakeResponse(playlistBody);
+    win.XMLHttpRequest = class {
+      constructor() { this._listeners = {}; this.readyState = 0; this.responseText = ''; }
+      open() {}
+      addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); }
+      send() {
+        this.readyState = 4;
+        this.responseText = playlistBody;
+        for (const fn of this._listeners.readystatechange || []) fn();
+      }
+    };
+
+    const sandbox = runScriptlet('m3uPrune', ['/ad\\d+\\.ts/gi', '/playlist\\.m3u8/gy'], win);
+
+    const expected = '#EXTM3U\n#EXTINF:5,\ncontent.ts\n';
+    const r1 = await vm.runInContext('window.fetch("playlist.m3u8").then(r => r.text())', sandbox);
+    const r2 = await vm.runInContext('window.fetch("playlist.m3u8").then(r => r.text())', sandbox);
+    assert.strictEqual(r1, expected);
+    assert.strictEqual(r2, expected);
+
+    const xhrText = vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      xhr.open('GET', 'playlist.m3u8');
+      xhr.send();
+      return xhr.responseText;
+    })()`, sandbox);
+    assert.strictEqual(xhrText, expected);
+  });
+
   await t.test('preserves patched prototype method names', () => {
     function EventTarget() {}
     EventTarget.prototype.addEventListener = function addEventListener() {};
@@ -2155,6 +2199,57 @@ test('scriptlet engine master lifecycle', async (t) => {
     assert.deepStrictEqual(
       harness.registeredContentScripts.map(script => script.id).sort(),
       ['chroma_fpr', 'chroma_quiet_console', 'chroma_yahoo_recipe']
+    );
+  });
+
+  await t.test('syncFpr and syncQuietConsole drain queued changes before resolving callers', async () => {
+    const storageState = lifecycleStorage(true);
+    storageState.config = { enabled: true, fingerprintRandomization: true, quietConsole: true };
+    const harness = loadScriptletEngine(storageState);
+
+    let releaseFpr;
+    let releaseQuiet;
+    let blockFpr = true;
+    let blockQuiet = true;
+    let fprStarted;
+    let quietStarted;
+    const fprBlocked = new Promise(resolve => { releaseFpr = resolve; });
+    const quietBlocked = new Promise(resolve => { releaseQuiet = resolve; });
+    const fprAtRegister = new Promise(resolve => { fprStarted = resolve; });
+    const quietAtRegister = new Promise(resolve => { quietStarted = resolve; });
+
+    const origRegister = harness.sandbox.chrome.scripting.registerContentScripts;
+    harness.sandbox.chrome.scripting.registerContentScripts = async (scripts) => {
+      for (const script of scripts) {
+        if (script.id === 'chroma_fpr' && blockFpr) {
+          blockFpr = false;
+          fprStarted();
+          await fprBlocked;
+        }
+        if (script.id === 'chroma_quiet_console' && blockQuiet) {
+          blockQuiet = false;
+          quietStarted();
+          await quietBlocked;
+        }
+      }
+      return origRegister(scripts);
+    };
+
+    const initialSync = harness.sandbox.initScriptletEngine();
+    await Promise.all([fprAtRegister, quietAtRegister]);
+
+    const oldConfig = storageState.config;
+    storageState.config = { enabled: true, fingerprintRandomization: false, quietConsole: false };
+    harness.getChangeListener()({ config: { oldValue: oldConfig, newValue: storageState.config } }, 'local');
+    const secondSync = harness.sandbox.initScriptletEngine();
+
+    releaseFpr();
+    releaseQuiet();
+    await Promise.all([initialSync, secondSync]);
+
+    assert.deepStrictEqual(
+      harness.registeredContentScripts.map(script => script.id),
+      ['chroma_yahoo_recipe']
     );
   });
 });

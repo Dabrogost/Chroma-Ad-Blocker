@@ -1251,7 +1251,13 @@
     }
 
     const video = currentAdVideo || targetAdVideo || safeQuery('#movie_player video, .html5-main-video');
-    if (!video) return;
+    if (!video) {
+      if (!chromaAdSessionActive) {
+        deactivateSessionSheet();
+        if (adOverlayHost) adOverlayHost.classList.remove('active');
+      }
+      return;
+    }
 
     if (rawAdShowing && currentAdVideo) {
       targetAdVideo = currentAdVideo;
@@ -1344,14 +1350,21 @@
   }
 
   // ─── NAVIGATION & EVENT HANDLERS ─────
-  function onYTNavigate() {
-    cleanupVideoState();
+  function resetAdAccelerationSession() {
+    if (adOverlayHost) adOverlayHost.classList.remove('active');
     chromaAdSessionActive = false;
     chromaAdSkipped = false;
+    _chromaFastWatcher = false;
+    deactivateSessionSheet();
+    cleanupVideoState();
     lastAdDetectTime = 0;
+    lastVideoDuration = 0;
     cachedCurrentAd = 1;
     cachedTotalAds = 1;
+  }
 
+  function onYTNavigate() {
+    resetAdAccelerationSession();
     startPolling();
   }
 
@@ -1385,11 +1398,7 @@
       initSkipButtonListener();
     } else {
       stopPolling();
-      if (adOverlayHost) adOverlayHost.classList.remove('active');
-      chromaAdSessionActive = false;
-      _chromaFastWatcher = false;
-      deactivateSessionSheet();
-      cleanupVideoState();
+      resetAdAccelerationSession();
     }
   });
 

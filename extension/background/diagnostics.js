@@ -9,6 +9,13 @@
 
 const HEALTH_DIAGNOSTICS_KEY = 'healthDiagnostics';
 const MAX_TEXT_LENGTH = 180;
+let diagnosticsQueue = Promise.resolve();
+
+function enqueueDiagnosticsMutation(task) {
+  const run = diagnosticsQueue.then(task, task);
+  diagnosticsQueue = run.catch(() => {});
+  return run;
+}
 
 function sanitizeText(value, maxLength = MAX_TEXT_LENGTH) {
   return String(value ?? '')
@@ -46,25 +53,29 @@ async function readDiagnostics() {
     : {};
 }
 
-export async function recordHealthDiagnostic(id, entry = {}) {
-  try {
-    const key = normalizeArea(id);
-    const diagnostics = await readDiagnostics();
-    diagnostics[key] = normalizeEntry(entry);
-    await chrome.storage.local.set({ [HEALTH_DIAGNOSTICS_KEY]: diagnostics });
-  } catch {
-    // Diagnostics must never break the sync path they are observing.
-  }
+export function recordHealthDiagnostic(id, entry = {}) {
+  return enqueueDiagnosticsMutation(async () => {
+    try {
+      const key = normalizeArea(id);
+      const diagnostics = await readDiagnostics();
+      diagnostics[key] = normalizeEntry(entry);
+      await chrome.storage.local.set({ [HEALTH_DIAGNOSTICS_KEY]: diagnostics });
+    } catch {
+      // Diagnostics must never break the sync path they are observing.
+    }
+  });
 }
 
-export async function clearHealthDiagnostic(id) {
-  try {
-    const key = normalizeArea(id);
-    const diagnostics = await readDiagnostics();
-    if (!Object.prototype.hasOwnProperty.call(diagnostics, key)) return;
-    delete diagnostics[key];
-    await chrome.storage.local.set({ [HEALTH_DIAGNOSTICS_KEY]: diagnostics });
-  } catch {
-    // Diagnostics must never break the sync path they are observing.
-  }
+export function clearHealthDiagnostic(id) {
+  return enqueueDiagnosticsMutation(async () => {
+    try {
+      const key = normalizeArea(id);
+      const diagnostics = await readDiagnostics();
+      if (!Object.prototype.hasOwnProperty.call(diagnostics, key)) return;
+      delete diagnostics[key];
+      await chrome.storage.local.set({ [HEALTH_DIAGNOSTICS_KEY]: diagnostics });
+    } catch {
+      // Diagnostics must never break the sync path they are observing.
+    }
+  });
 }

@@ -1340,6 +1340,48 @@ test('YouTube ad acceleration', async (t) => {
     assert.strictEqual(intervalsStarted, 0, 'Navigation should not start the accelerator timer while acceleration is disabled');
   });
 
+  await t.test('YouTube navigation mid-ad clears active overlay and session stylesheet without a destination video', () => {
+    const mockPlayer = createMockElement('div');
+    mockPlayer.className = 'html5-video-player ad-showing';
+    const mockVideo = createMockElement('video');
+    mockVideo.closest = (sel) => (sel === '.html5-video-player' ? mockPlayer : null);
+    let hasVideo = true;
+    const createdElements = [];
+
+    const sandbox = createSandbox((doc) => {
+      const origCreate = doc.createElement;
+      doc.createElement = (tag) => {
+        const el = origCreate(tag);
+        createdElements.push(el);
+        return el;
+      };
+      doc.querySelector = (sel) => {
+        if (!hasVideo && (sel.includes('video') || sel.includes('ad-showing'))) return null;
+        if (sel.includes('.ad-showing') || sel.includes('.html5-video-player')) return mockPlayer;
+        if (sel.includes('video')) return hasVideo ? mockVideo : null;
+        return null;
+      };
+      doc.getElementsByClassName = (cls) => (cls === 'ad-showing' && hasVideo ? [mockPlayer] : []);
+    });
+
+    sandbox.handleAdAcceleration();
+    const overlayHost = createdElements.find(el => el.tagName === 'DIV' && el.shadowRoot);
+    assert.ok(overlayHost, 'adOverlayHost should exist during active ad');
+    assert.strictEqual(overlayHost.classList.contains('active'), true);
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 1);
+    assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, true);
+
+    hasVideo = false;
+    sandbox.document.dispatchEvent({ type: 'yt-navigate-finish' });
+    assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, false);
+    assert.strictEqual(overlayHost.classList.contains('active'), false);
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(overlayHost.classList.contains('active'), false);
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+  });
+
   await t.test('initial load does not start handshake polling when acceleration is already known off', async () => {
     let intervalsStarted = 0;
     createSandbox(null, { acceleration: false }, (sandbox) => {

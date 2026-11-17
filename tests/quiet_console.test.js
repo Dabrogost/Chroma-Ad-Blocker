@@ -314,6 +314,92 @@ test('Quiet Console shared page layer', async (t) => {
     assert.strictEqual(sandbox.getNativeCallCounts().xhrSend, 1);
   });
 
+  await t.test('clears shadowed response properties when reusing an accessor-based XHR', () => {
+    const listeners = Object.create(null);
+    const quietSandBoxTimers = [];
+    class AccessorXhr {
+      constructor() {
+        this._readyState = 0;
+        this._status = 0;
+        this._statusText = '';
+        this._responseText = '';
+      }
+      get readyState() { return this._readyState; }
+      get status() { return this._status; }
+      get statusText() { return this._statusText; }
+      get responseText() { return this._responseText; }
+      get response() { return this._responseText; }
+      open() {
+        this._readyState = 1;
+        this._status = 0;
+        this._statusText = '';
+        this._responseText = '';
+      }
+      send() {
+        this._readyState = 4;
+        this._status = 201;
+        this._statusText = 'Created';
+        this._responseText = '{"ok":true}';
+      }
+    }
+
+    const sandbox = {
+      console,
+      window: null,
+      document: {
+        addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }
+      },
+      navigator: { sendBeacon: () => true },
+      XMLHttpRequest: AccessorXhr,
+      CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+      setTimeout: (fn) => { quietSandBoxTimers.push(fn); return quietSandBoxTimers.length; },
+      clearTimeout: (id) => { quietSandBoxTimers[id - 1] = null; },
+      URL
+    };
+    sandbox.window = sandbox;
+    sandbox.location = { hostname: 'example.com', href: 'https://example.com/' };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(quietConsoleCode, sandbox);
+    for (const fn of listeners['__CHROMA_QUIET_CONSOLE_CONFIG__'] || []) {
+      fn(new sandbox.CustomEvent('__CHROMA_QUIET_CONSOLE_CONFIG__', { detail: { enabled: true, quietConsole: true } }));
+    }
+
+    const xhr = new sandbox.XMLHttpRequest();
+    xhr.open('GET', 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js');
+    xhr.send();
+    while (quietSandBoxTimers.length) {
+      const fn = quietSandBoxTimers.shift();
+      if (fn) fn();
+    }
+    assert.strictEqual(xhr.status, 200);
+    assert.strictEqual(xhr.responseText, '{}');
+
+    // Reuse after completed quiet completion: prototype getters must not stay shadowed.
+    xhr.open('GET', 'https://example.com/api/data');
+    xhr.send();
+    assert.strictEqual(xhr.readyState, 4);
+    assert.strictEqual(xhr.status, 201);
+    assert.strictEqual(xhr.statusText, 'Created');
+    assert.strictEqual(xhr.responseText, '{"ok":true}');
+    assert.strictEqual(xhr.response, '{"ok":true}');
+
+    // Reuse before deferred quiet completion fires: stale timer must not overwrite or fire onload.
+    let loadCalls = 0;
+    xhr.onload = () => { loadCalls++; };
+    xhr.open('GET', 'https://googleads.g.doubleclick.net/pagead/id');
+    xhr.send();
+    xhr.open('GET', 'https://example.com/api/next');
+    xhr.send();
+    while (quietSandBoxTimers.length) {
+      const fn = quietSandBoxTimers.shift();
+      if (fn) fn();
+    }
+    assert.strictEqual(loadCalls, 0);
+    assert.strictEqual(xhr.status, 201);
+    assert.strictEqual(xhr.responseText, '{"ok":true}');
+  });
+
   await t.test('short-circuits generic ad beacons', () => {
     const sandbox = createSandbox();
     sandbox.setQuietConfig({ enabled: true, quietConsole: true });

@@ -3708,6 +3708,114 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(card.querySelector('.proxy-active-group').textContent, /proxy\.example\.com:8443/);
   });
 
+  await t.test('proxy delete and clear credentials roll back when background save fails', async () => {
+    const harness = await createProxyEditorHarness(
+      [{
+        id: 1,
+        name: 'Auth Proxy',
+        host: 'vpn.example.com',
+        port: '8080',
+        type: 'PROXY',
+        accepted: true,
+        enabled: true,
+        domains: [{ host: 'youtube.com', enabled: true }],
+        hasCredentials: true
+      }],
+      () => ({ ok: false, error: 'Storage busy' })
+    );
+
+    const card = harness.getCards()[0];
+    card.querySelector('.proxy-clear-credentials-btn').click();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(card.querySelector('.proxy-clear-credentials-btn').classList.contains('is-hidden'), false);
+    assert.strictEqual(card.querySelector('.proxy-pass').placeholder, 'Password saved');
+    assert.match(card.querySelector('.proxy-error').textContent, /Storage busy/);
+    assert.strictEqual(harness.getProxyConfigs().length, 1);
+
+    card.querySelector('.proxy-del-server-btn').click();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(harness.getCards().length, 1);
+    assert.strictEqual(harness.getProxyConfigs().length, 1);
+    assert.match(card.querySelector('.proxy-error').textContent, /Storage busy/);
+  });
+
+  await t.test('proxy domain add, toggle, and concurrent remove preserve valid state and indices', async () => {
+    let failNextSave = true;
+    let releaseFirstRemove = null;
+    let removeSaves = 0;
+    let holdConcurrentRemoves = false;
+
+    const harness = await createProxyEditorHarness(
+      [{
+        id: 1,
+        name: 'Main Proxy',
+        host: 'vpn.example.com',
+        port: '8080',
+        type: 'PROXY',
+        accepted: true,
+        enabled: true,
+        domains: [
+          { host: 'alpha.example', enabled: true },
+          { host: 'beta.example', enabled: true },
+          { host: 'gamma.example', enabled: true }
+        ],
+        hasCredentials: false
+      }],
+      async () => {
+        if (failNextSave) return { ok: false, error: 'Write rejected' };
+        if (holdConcurrentRemoves) {
+          removeSaves++;
+          if (removeSaves === 1) {
+            await new Promise(resolve => { releaseFirstRemove = resolve; });
+          }
+        }
+        return null;
+      }
+    );
+
+    const card = harness.getCards()[0];
+
+    // Invalid domain is rejected client-side without mutating state.
+    card.querySelector('.proxy-domain-input').value = 'bad host..example';
+    card.querySelector('.proxy-add-domain-btn').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(card.querySelectorAll('.proxy-domain-row').length, 3);
+    assert.match(harness.dom.window.document.getElementById('proxyFeedback').textContent, /valid domain/);
+
+    // Failed add rolls back and keeps user input for retry.
+    card.querySelector('.proxy-domain-input').value = 'delta.example';
+    card.querySelector('.proxy-add-domain-btn').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(card.querySelectorAll('.proxy-domain-row').length, 3);
+    assert.strictEqual(card.querySelector('.proxy-domain-input').value, 'delta.example');
+
+    // Failed domain toggle rolls back checkbox and state.
+    const firstToggle = card.querySelectorAll('.proxy-domain-row .d-toggle')[0];
+    firstToggle.checked = false;
+    firstToggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+    assert.strictEqual(firstToggle.checked, true);
+    assert.strictEqual(harness.getProxyConfigs()[0].domains[0].enabled, true);
+
+    // Concurrent remove clicks resolve by domain identity instead of stale array index closures.
+    failNextSave = false;
+    holdConcurrentRemoves = true;
+    const removeButtons = card.querySelectorAll('.proxy-domain-row .d-del-btn');
+    removeButtons[0].click(); // alpha.example
+    removeButtons[1].click(); // beta.example
+    await new Promise(resolve => setTimeout(resolve, 0));
+    releaseFirstRemove?.();
+    await settleDomAsyncWork();
+
+    assert.deepStrictEqual(
+      harness.getProxyConfigs()[0].domains.map(d => d.host),
+      ['gamma.example']
+    );
+    assert.strictEqual(card.querySelectorAll('.proxy-domain-row').length, 1);
+  });
+
   await t.test('blocked request badge toggle renders in Appearance and persists independently of master state', async () => {
     const harness = createSettingsHarness({
       config: { enabled: false }

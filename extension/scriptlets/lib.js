@@ -1247,7 +1247,7 @@ export function m3uPrune(args) {
     if (!p) return null;
     if (p.startsWith('/') && p.lastIndexOf('/') > 0) {
       const last = p.lastIndexOf('/');
-      try { return new RegExp(p.slice(1, last), p.slice(last + 1)); } catch (e) { return null; }
+      try { return new RegExp(p.slice(1, last), p.slice(last + 1).replace(/[gy]/g, '')); } catch (e) { return null; }
     }
     return new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   };

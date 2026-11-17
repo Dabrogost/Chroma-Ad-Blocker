@@ -19,6 +19,9 @@ const healthJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ba
   .replace("import { getProxyRoutingStatus } from './proxy.js';", "var getProxyRoutingStatus = globalThis._mockGetProxyRoutingStatus;")
   .replace(/^export\s+/gm, '');
 
+const diagnosticsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'diagnostics.js'), 'utf8')
+  .replace(/^export\s+/gm, '');
+
 const manifest = {
   version: '1.2.3',
   minimum_chrome_version: '122',
@@ -1598,5 +1601,98 @@ test('health diagnostics', async (t) => {
       health.overall.issues.some(issue => issue.area === 'dnr' && issue.severity === 'error'),
       true
     );
+  });
+});
+
+function loadDiagnosticsSandbox(initialDiagnostics = {}, hooks = {}) {
+  let storedDiagnostics = plain(initialDiagnostics);
+  const tick = () => new Promise(resolve => setTimeout(resolve, 10));
+  const chrome = {
+    storage: {
+      local: {
+        get: async (key) => {
+          await tick();
+          if (hooks.onGet) await hooks.onGet(key);
+          return { [key]: plain(storedDiagnostics) };
+        },
+        set: async (values) => {
+          await tick();
+          if (hooks.onSet) await hooks.onSet(values);
+          storedDiagnostics = plain(values.healthDiagnostics);
+        }
+      }
+    }
+  };
+  const sandbox = {
+    chrome,
+    Object,
+    Array,
+    String,
+    Number,
+    Date,
+    Promise
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(diagnosticsJsCode, sandbox);
+  return {
+    sandbox,
+    getStored: () => plain(storedDiagnostics)
+  };
+}
+
+test('health diagnostics serialize concurrent storage updates', async (t) => {
+  await t.test('concurrent recordHealthDiagnostic calls preserve all diagnostic entries', async () => {
+    const { sandbox, getStored } = loadDiagnosticsSandbox();
+
+    await Promise.all([
+      sandbox.recordHealthDiagnostic('fingerprintSync', { area: 'fingerprint', message: 'FPR failed' }),
+      sandbox.recordHealthDiagnostic('quietConsoleSync', { area: 'scriptlets', message: 'Quiet console failed' }),
+      sandbox.recordHealthDiagnostic('yahooRecipeSync', { area: 'scriptlets', message: 'Yahoo recipe failed' })
+    ]);
+
+    const stored = getStored();
+    assert.deepStrictEqual(Object.keys(stored).sort(), ['fingerprintSync', 'quietConsoleSync', 'yahooRecipeSync']);
+  });
+
+  await t.test('concurrent clearHealthDiagnostic calls do not resurrect sibling diagnostics', async () => {
+    const { sandbox, getStored } = loadDiagnosticsSandbox({
+      fingerprintSync: { area: 'fingerprint', severity: 'warning', message: 'old1' },
+      quietConsoleSync: { area: 'scriptlets', severity: 'warning', message: 'old2' },
+      dnrState: { area: 'dnr', severity: 'warning', message: 'keep me' }
+    });
+
+    await Promise.all([
+      sandbox.clearHealthDiagnostic('fingerprintSync'),
+      sandbox.clearHealthDiagnostic('quietConsoleSync')
+    ]);
+
+    assert.deepStrictEqual(Object.keys(getStored()), ['dnrState']);
+  });
+
+  await t.test('concurrent record and clear mutations preserve ordering and survive storage failures', async () => {
+    let failNextSet = true;
+    const { sandbox, getStored } = loadDiagnosticsSandbox(
+      { staleArea: { area: 'dnr', severity: 'warning', message: 'stale' } },
+      {
+        onSet: async () => {
+          if (failNextSet) {
+            failNextSet = false;
+            throw new Error('Transient storage error');
+          }
+        }
+      }
+    );
+
+    await Promise.all([
+      sandbox.recordHealthDiagnostic('failingArea', { area: 'dnr', message: 'Should fail safely' }),
+      sandbox.clearHealthDiagnostic('staleArea'),
+      sandbox.recordHealthDiagnostic('healthyArea', { area: 'proxy', message: 'Persisted after failure' })
+    ]);
+
+    const stored = getStored();
+    assert.strictEqual(stored.staleArea, undefined);
+    assert.strictEqual(stored.failingArea, undefined);
+    assert.strictEqual(stored.healthyArea?.message, 'Persisted after failure');
   });
 });
