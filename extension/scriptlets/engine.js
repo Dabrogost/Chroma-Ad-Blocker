@@ -251,9 +251,11 @@ function escapeTemplateArg(value) {
 
 function applyUserScriptletArgs(code, args) {
   const safeArgs = Array.isArray(args) ? args : [];
-  return String(code || '')
-    .replace(/\{\{args\}\}/g, JSON.stringify(safeArgs))
-    .replace(/\{\{(\d+)\}\}/g, (_, index) => escapeTemplateArg(safeArgs[Number(index) - 1]));
+  const serializedArgs = JSON.stringify(safeArgs);
+  return String(code || '').replace(
+    /\{\{(args|\d+)\}\}/g,
+    (_, token) => (token === 'args' ? serializedArgs : escapeTemplateArg(safeArgs[Number(token) - 1]))
+  );
 }
 
 function buildSubscriptionScriptletCode(fn, args, quietConsole = false) {
@@ -634,12 +636,12 @@ async function _syncFprImpl() {
       id: FPR_ID,
       js: config.quietConsole === true ? [FPR_QUIET_FILE, FPR_FILE] : [FPR_FILE],
       matches: ['<all_urls>'],
+      excludeMatches,
       runAt: 'document_start',
       world: 'MAIN',
       allFrames: true,
       persistAcrossSessions: true
     };
-    if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
 
     try {
       if (isRegistered) {
@@ -737,17 +739,17 @@ async function _syncQuietConsoleImpl() {
       return;
     }
 
+    const excludeMatches = whitelistToExcludeMatches(whitelist);
     const script = {
       id: QUIET_CONSOLE_ID,
       js: [QUIET_CONSOLE_FILE],
       matches: ['<all_urls>'],
+      excludeMatches,
       runAt: 'document_start',
       world: 'MAIN',
       allFrames: true,
       persistAcrossSessions: true
     };
-    const excludeMatches = whitelistToExcludeMatches(whitelist);
-    if (excludeMatches.length > 0) script.excludeMatches = excludeMatches;
 
     if (isRegistered && typeof chrome.scripting.updateContentScripts === 'function') {
       await chrome.scripting.updateContentScripts([script]);

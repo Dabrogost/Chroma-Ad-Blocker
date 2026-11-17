@@ -54,6 +54,7 @@ test('Content script generic functionality', async (t) => {
     let activeObservers = 0;
     let observeCalls = 0;
     let disconnectCalls = 0;
+    const observedTargets = [];
     const location = options.location || { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' };
     const sandbox = {
       chrome: {
@@ -110,7 +111,11 @@ test('Content script generic functionality', async (t) => {
       clearInterval: () => {},
       setTimeout: (fn) => fn(),
       MutationObserver: class {
-        observe() {
+        observe(target) {
+          if (!target || typeof target !== 'object') {
+            throw new TypeError("Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.");
+          }
+          observedTargets.push(target);
           observeCalls++;
           activeObservers++;
         }
@@ -165,7 +170,7 @@ test('Content script generic functionality', async (t) => {
       storageChangeListeners.forEach(listener => listener(changes, 'local'));
     };
     sandbox.__sendRuntimeMessage = message => runtimeMessageListener?.(message);
-    sandbox.__getObserverState = () => ({ activeObservers, observeCalls, disconnectCalls });
+    sandbox.__getObserverState = () => ({ activeObservers, observeCalls, disconnectCalls, observedTargets });
     sandbox.globalThis = sandbox;
 
     if (setupDoc) setupDoc(sandbox.document);
@@ -916,5 +921,83 @@ test('Content script generic functionality', async (t) => {
       JSON.parse(JSON.stringify(sandbox.__dispatchedEvents.filter(e => e?.type === '__CHROMA_QUIET_CONSOLE_CONFIG__').at(-1).detail)),
       { enabled: true, quietConsole: true }
     );
+  });
+
+  await t.test('startObserver falls back to document when documentElement is null at document_start', async () => {
+    const sandbox = createSandbox(
+      (doc) => {
+        doc.documentElement = null;
+        doc.body = null;
+      },
+      {
+        storageGet: () => Promise.reject(new Error('storage offline'))
+      }
+    );
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.strictEqual(sandbox.__getObserverState().observeCalls, 1);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 1);
+    assert.strictEqual(sandbox.__getObserverState().observedTargets[0], sandbox.document);
+  });
+
+  await t.test('filters invalid WARNING_SELECTORS entries without breaking valid warning suppression', async () => {
+    const validWarning = createMockElement();
+    const sandbox = createSandbox(
+      (doc) => {
+        const originalQuerySelector = doc.querySelector;
+        doc.querySelector = (sel) => {
+          if (sel === '[invalid-selector') throw new SyntaxError('Invalid selector');
+          return originalQuerySelector(sel);
+        };
+        doc.querySelectorAll = (sel) => {
+          if (sel.includes('[invalid-selector')) throw new SyntaxError('Invalid selector');
+          if (sel.includes('.real-warning')) return [validWarning];
+          return [];
+        };
+      },
+      {
+        storage: {
+          config: { enabled: true, cosmetic: true, suppressWarnings: true },
+          whitelist: [],
+          HIDE_SELECTORS: ['.ad-banner'],
+          WARNING_SELECTORS: ['.real-warning', '[invalid-selector']
+        }
+      }
+    );
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.strictEqual(validWarning.removed, true);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 1);
+  });
+
+  await t.test('early CONFIG_UPDATE disabling protection is not overwritten by stale init storage read', async () => {
+    let resolveStorage;
+    const pendingStorage = new Promise(resolve => { resolveStorage = resolve; });
+    const sandbox = createSandbox(null, {
+      location: { hostname: 'www.youtube.com', href: 'https://www.youtube.com/' },
+      storageGet: () => pendingStorage
+    });
+
+    sandbox.__sendRuntimeMessage({
+      type: 'CONFIG_UPDATE',
+      config: { enabled: false, cosmetic: false, suppressWarnings: false }
+    });
+
+    resolveStorage({
+      config: { enabled: true, cosmetic: true, suppressWarnings: true, quietConsole: true },
+      whitelist: [],
+      HIDE_SELECTORS: ['.ad-showing'],
+      WARNING_SELECTORS: ['ytd-enforcement-message-view-model'],
+      subscriptionCosmeticRules: [],
+      localCosmeticRules: []
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.strictEqual(sandbox.CONFIG.enabled, false);
+    assert.strictEqual(sandbox.CONFIG.cosmetic, false);
+    assert.strictEqual(sandbox.CONFIG.suppressWarnings, false);
+    assert.strictEqual(sandbox.CONFIG.quietConsole, true);
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+    assert.strictEqual(sandbox.__getObserverState().activeObservers, 0);
   });
 });

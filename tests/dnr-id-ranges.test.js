@@ -35,6 +35,7 @@ const dnrStateCode = '{\n' + fs.readFileSync(path.join(__dirname, '..', 'extensi
       classifyDnrMatch,
       isNetworkProtectionActive,
       reconcileNetworkDnr,
+      waitForLatestNetworkDnr,
       updateDNRState,
       syncDynamicRules,
       syncWhitelistRules
@@ -961,6 +962,31 @@ test('Network DNR reconciliation', async (t) => {
     assert.deepStrictEqual(dnr.getEnabledRulesets(), []);
     assert.deepStrictEqual(dnr.getDynamicRules(), []);
     assert.strictEqual(dnr.updateDynamicRulesCalls.length, 0);
+    assert.strictEqual(dnr.updateEnabledRulesetsCalls.length, 2);
+  });
+
+  await t.test('waitForLatestNetworkDnr resolves with the superseding generation result without re-queuing', async () => {
+    const storage = {
+      config: { enabled: true, networkBlocking: true, trackingUrlCleanup: false }
+    };
+    let dnr;
+    dnr = loadDnrState({
+      storage,
+      existingEnabledRulesets: [],
+      beforeEnabledRulesetsUpdate: async (_args, callIndex) => {
+        if (callIndex !== 0) return;
+        storage.config.networkBlocking = false;
+        dnr.updateDNRState();
+      }
+    });
+
+    const staleResult = await dnr.reconcileNetworkDnr('superseded-activation');
+    assert.strictEqual(staleResult.stale, true);
+
+    const settled = await dnr.waitForLatestNetworkDnr();
+    assert.strictEqual(settled.ok, true);
+    assert.strictEqual(settled.active, false);
+    assert.strictEqual(settled.stale, undefined);
     assert.strictEqual(dnr.updateEnabledRulesetsCalls.length, 2);
   });
 

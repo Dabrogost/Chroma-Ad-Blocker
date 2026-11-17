@@ -33,7 +33,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = globalThis._mockSyncBrowserPrivacyHardening || (async () => ({})); var syncGeolocationProtection = globalThis._mockSyncGeolocationProtection || (async () => ({}));")
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = globalThis._mockClearHealthDiagnostic || (async () => {}); var recordHealthDiagnostic = globalThis._mockRecordHealthDiagnostic || (async () => {});")
   .replace("import { updateDNRState, syncDynamicRules } from './dnrState.js';", "")
-  .replace("import { initRequestLogListener } from './requestLog.js';", "var initRequestLogListener = globalThis._mockInitRequestLogListener || (() => {});")
+  .replace("import { initRequestLogListener, resetRequestLog } from './requestLog.js';", "var initRequestLogListener = globalThis._mockInitRequestLogListener || (() => {}); var resetRequestLog = globalThis._mockResetRequestLog || (async () => {});")
   .replace(/^export\s+/gm, "");
 
 const defaultDynamicRulesCodeRaw = fs.readFileSync(path.join(__dirname, '..', 'extension', 'background', 'defaultDynamicRules.js'), 'utf8');
@@ -791,6 +791,7 @@ test('network lifecycle paths preserve an inactive desired state', async () => {
   let runtimeRules = [];
   let reconcileCount = 0;
   let refreshCount = 0;
+  let resetRequestLogCount = 0;
   const webRtcLifecycleStates = [];
   const browserPrivacyLifecycleStates = [];
   const geolocationLifecycleStates = [];
@@ -842,6 +843,10 @@ test('network lifecycle paths preserve an inactive desired state', async () => {
     _mockSyncBrowserPrivacyHardening: async config => { browserPrivacyLifecycleStates.push(config?.enabled !== false); },
     _mockSyncGeolocationProtection: async config => { geolocationLifecycleStates.push(config?.enabled !== false); },
     _mockInitRequestLogListener: () => {},
+    _mockResetRequestLog: async () => {
+      resetRequestLogCount++;
+      storage.requestLog = [];
+    },
     _mockClearHealthDiagnostic: async () => {},
     _mockRecordHealthDiagnostic: async () => {}
   };
@@ -862,8 +867,11 @@ test('network lifecycle paths preserve an inactive desired state', async () => {
   assert.strictEqual(geolocationLifecycleStates.length, 2);
 
   runtimeRules = ['stale-rule'];
+  storage.requestLog = [{ url: 'https://stale.example/ad.js' }];
   await listeners.startup();
   assert.deepStrictEqual(runtimeRules, [], 'startup recovery');
+  assert.strictEqual(resetRequestLogCount, 1, 'startup recovery resets requestLog via resetRequestLog()');
+  assert.deepStrictEqual(storage.requestLog, [], 'startup recovery clears stored requestLog');
   assert.strictEqual(webRtcLifecycleStates.length, 3);
   assert.strictEqual(browserPrivacyLifecycleStates.length, 3);
   assert.strictEqual(geolocationLifecycleStates.length, 3);

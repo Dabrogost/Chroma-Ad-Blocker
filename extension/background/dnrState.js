@@ -66,6 +66,8 @@ const STATIC_RULE_ACTION_OVERRIDES = new Map([
 ]);
 
 let requestedGeneration = 0;
+let lastSettledGeneration = 0;
+let lastSettledResult = null;
 let reconciliationTail = Promise.resolve();
 let dynamicRuleClassificationsReady = false;
 let classificationHydrationPromise = null;
@@ -617,9 +619,34 @@ async function reconcileGeneration(generation, reason) {
  */
 export function reconcileNetworkDnr(reason = 'requested') {
   const generation = ++requestedGeneration;
-  const run = reconciliationTail.then(() => reconcileGeneration(generation, reason));
+  const run = reconciliationTail.then(async () => {
+    try {
+      const result = await reconcileGeneration(generation, reason);
+      lastSettledGeneration = generation;
+      lastSettledResult = result;
+      return result;
+    } catch (err) {
+      lastSettledGeneration = generation;
+      lastSettledResult = { ok: false, error: err?.message || String(err) };
+      throw err;
+    }
+  });
   reconciliationTail = run.catch(() => {});
   return run;
+}
+
+/**
+ * Waits for any superseding queued DNR reconciliation generation to settle
+ * without advancing requestedGeneration.
+ */
+export async function waitForLatestNetworkDnr(maxHops = 10) {
+  for (let hop = 0; hop < maxHops && lastSettledGeneration < requestedGeneration; hop++) {
+    await reconciliationTail;
+  }
+  if (lastSettledGeneration < requestedGeneration) {
+    return { ok: true, stale: true };
+  }
+  return lastSettledResult || { ok: true, stale: true };
 }
 
 // Compatibility names retained for callers; all now perform the same full,
