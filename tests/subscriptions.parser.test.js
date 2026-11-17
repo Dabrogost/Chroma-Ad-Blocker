@@ -101,6 +101,49 @@ test('Subscription parser trust boundary', async (t) => {
     assert.strictEqual(parsed.stats.translatedRegexFilter, 0);
   });
 
+  await t.test('parses path-based network rules instead of skipping them as regexes', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '/ads/banner.js',
+      '/pagead/js/adsbygoogle.js$script',
+      '@@/ads/allowed.js',
+      '/a/b.js$domain=example.com|~sub.example.com',
+      '/^https?:\\/\\/ads\\.example\\.com\\//',
+      '/^https?:\\/\\/ads\\.example\\.com\\/$/$script'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.skipped.regex, 2);
+    assert.strictEqual(parsed.networkRules.length, 4);
+
+    assert.deepStrictEqual(plain(parsed.networkRules[0]), {
+      priority: 1,
+      action: { type: 'block' },
+      condition: { urlFilter: '/ads/banner.js' }
+    });
+    assert.deepStrictEqual(plain(parsed.networkRules[1]), {
+      priority: 1,
+      action: { type: 'block' },
+      condition: {
+        urlFilter: '/pagead/js/adsbygoogle.js',
+        resourceTypes: ['script']
+      }
+    });
+    assert.deepStrictEqual(plain(parsed.networkRules[2]), {
+      priority: 2,
+      action: { type: 'allow' },
+      condition: { urlFilter: '/ads/allowed.js' }
+    });
+    assert.deepStrictEqual(plain(parsed.networkRules[3]), {
+      priority: 1,
+      action: { type: 'block' },
+      condition: {
+        urlFilter: '/a/b.js',
+        initiatorDomains: ['example.com'],
+        excludedInitiatorDomains: ['sub.example.com']
+      }
+    });
+  });
+
   await t.test('separates positive and negative cosmetic domains', () => {
     const { parseList } = loadParser();
     const parsed = parseList([

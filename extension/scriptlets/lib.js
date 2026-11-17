@@ -316,7 +316,9 @@ export function hideElement(args) {
   };
 
   // Budget persistent observer churn to one DOM sweep per frame/timer tick.
-  new MutationObserver(scheduleHide).observe(document.documentElement, {
+  const observeTarget = document.documentElement || document;
+  if (!observeTarget) return;
+  new MutationObserver(scheduleHide).observe(observeTarget, {
     childList: true,
     subtree: true
   });
@@ -357,7 +359,9 @@ export function releaseScrollLock() {
   };
 
   // Budget persistent observer churn to one DOM sweep per frame/timer tick.
-  new MutationObserver(scheduleRelease).observe(document.documentElement, {
+  const observeTarget = document.documentElement || document;
+  if (!observeTarget) return;
+  new MutationObserver(scheduleRelease).observe(observeTarget, {
     attributes: true,
     attributeFilter: ['style', 'class'],
     subtree: true
@@ -486,7 +490,9 @@ export function hideUpward(args) {
   };
 
   // Budget persistent observer churn to one DOM sweep per frame/timer tick.
-  new MutationObserver(scheduleHide).observe(document.documentElement, {
+  const observeTarget = document.documentElement || document;
+  if (!observeTarget) return;
+  new MutationObserver(scheduleHide).observe(observeTarget, {
     childList: true,
     subtree: true
   });
@@ -591,7 +597,9 @@ export function removeClass(args) {
   };
 
   // Budget persistent observer churn to one DOM sweep per frame/timer tick.
-  new MutationObserver(scheduleRemove).observe(document.documentElement, {
+  const observeTarget = document.documentElement || document;
+  if (!observeTarget) return;
+  new MutationObserver(scheduleRemove).observe(observeTarget, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -640,7 +648,9 @@ export function removeAttr(args) {
   };
 
   // Budget persistent observer churn to one DOM sweep per frame/timer tick.
-  new MutationObserver(scheduleRemove).observe(document.documentElement, {
+  const observeTarget = document.documentElement || document;
+  if (!observeTarget) return;
+  new MutationObserver(scheduleRemove).observe(observeTarget, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -950,7 +960,9 @@ export function replaceNodeText(args) {
   };
 
   // Budget persistent observer churn to one DOM sweep per frame/timer tick.
-  new MutationObserver(scheduleSweep).observe(document.documentElement, {
+  const observeTarget = document.documentElement || document;
+  if (!observeTarget) return;
+  new MutationObserver(scheduleSweep).observe(observeTarget, {
     childList: true,
     subtree: true,
     characterData: true

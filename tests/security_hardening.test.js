@@ -30,7 +30,7 @@ const backgroundJsCode = backgroundJsCodeRaw
   .replace("import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';", "var syncBrowserPrivacyHardening = async () => ({}); var syncGeolocationProtection = async () => ({});")
   .replace("import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';", "var clearHealthDiagnostic = async () => {}; var recordHealthDiagnostic = async () => {};")
   .replace("import { updateDNRState, syncDynamicRules } from './dnrState.js';", "var updateDNRState = async () => {}; var syncDynamicRules = async () => {};")
-  .replace("import { initRequestLogListener } from './requestLog.js';", "var initRequestLogListener = () => {};")
+  .replace("import { initRequestLogListener, resetRequestLog } from './requestLog.js';", "var initRequestLogListener = () => {}; var resetRequestLog = async () => {};")
   .replace(/^export\s+/gm, "");
 
 const plain = value => JSON.parse(JSON.stringify(value));

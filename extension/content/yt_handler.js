@@ -1290,8 +1290,9 @@
     
     updateAdOverlay(video, chromaAdSessionActive, rawAdShowing, hasAdUI);
 
-    if (!getVideoState(video).listenersAdded) {
-      getVideoState(video).listenersAdded = true;
+    const state = getVideoState(video);
+    if (!state.listenersAdded) {
+      state.listenersAdded = true;
       video.addEventListener('volumechange', enforceMuteHandler);
       video.addEventListener('play', enforceMuteHandler);
     }
@@ -1299,29 +1300,27 @@
     if (chromaAdSessionActive) {
       if (!video.muted) {
         video.muted = true;
+        state.chromaMuted = true;
       }
       if (video.volume > 0) {
-        if (!getVideoState(video).savedVolume) {
-          getVideoState(video).savedVolume = video.volume;
+        if (state.savedVolume == null) {
+          state.savedVolume = video.volume;
         }
         video.volume = 0;
       }
-      
-      const state = getVideoState(video);
+
       if (rawAdShowing) applyAcceleratedPlaybackRate(video, state);
-      state.chromaMuted = true;
     } else {
-      if (video.muted && getVideoState(video).chromaMuted) {
+      if (video.muted && state.chromaMuted) {
         video.muted = false;
       }
-      const savedVol = getVideoState(video).savedVolume;
+      const savedVol = state.savedVolume;
       if (savedVol != null) {
         if (savedVol > 0) {
           video.volume = savedVol;
         }
-        getVideoState(video).savedVolume = null;
+        state.savedVolume = null;
       }
-      const state = getVideoState(video);
       restorePlaybackRate(video, state);
       state.chromaMuted = false;
     }

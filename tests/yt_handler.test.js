@@ -1290,6 +1290,42 @@ test('YouTube ad acceleration', async (t) => {
     assert.strictEqual(mockVideo.muted, false, 'Video should be unmuted');
   });
 
+  await t.test('preserves user-muted state across ad end and acceleration disable', () => {
+    const mockVideo = createMockElement('video');
+    mockVideo.muted = true;
+    mockVideo.volume = 0.7;
+    mockVideo.readyState = 4;
+    let adShowing = true;
+
+    const sandbox = createSandbox((doc) => {
+      doc.querySelector = (sel) => {
+        if (sel.includes('.ad-showing')) return adShowing ? createMockElement('div') : null;
+        if (sel.includes('.video-ads') || sel.includes('.ytp-ad-module') || sel.includes('.ytp-ad-simple-ad-badge')) {
+          return adShowing ? mockVideo : null;
+        }
+        if (sel.includes('#movie_player') || sel.includes('.html5-main-video') || sel === 'video') return mockVideo;
+        return null;
+      };
+      doc.getElementsByClassName = (cls) => (cls === 'ad-showing' && adShowing ? [createMockElement()] : []);
+    });
+
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(mockVideo.muted, true);
+
+    adShowing = false;
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(mockVideo.muted, true, 'ending ad must not unmute a pre-muted video');
+    assert.strictEqual(mockVideo.volume, 0.7);
+
+    // Also check mid-ad acceleration disable cleanup on a pre-muted video
+    adShowing = true;
+    sandbox.handleAdAcceleration();
+    sandbox.window.__CHROMA_INTERNAL__.config.acceleration = false;
+    sandbox.window.__CHROMA_INTERNAL__.revision = 1;
+    sandbox.document.dispatchEvent({ type: '__CHROMA_CONFIG_UPDATE__' });
+    assert.strictEqual(mockVideo.muted, true, 'disabling acceleration mid-ad must preserve pre-muted state');
+  });
+
   await t.test('YouTube navigation does not start polling when acceleration is off', async () => {
     const sandbox = createSandbox(null, { acceleration: false });
     let intervalsStarted = 0;

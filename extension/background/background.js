@@ -24,7 +24,7 @@ import { syncWebRtcLeakProtection } from './webrtc.js';
 import { syncBrowserPrivacyHardening, syncGeolocationProtection } from './browserPrivacy.js';
 import { clearHealthDiagnostic, recordHealthDiagnostic } from './diagnostics.js';
 import { updateDNRState, syncDynamicRules } from './dnrState.js';
-import { initRequestLogListener } from './requestLog.js';
+import { initRequestLogListener, resetRequestLog } from './requestLog.js';
 
 const DEBUG = false;
 
@@ -118,7 +118,7 @@ chrome.runtime.onStartup.addListener(async () => {
   await syncGeolocationProtection(storedConfig || {});
   await updateDNRState();
   await reconcileSubscriptionRuntimeState();
-  await chrome.storage.local.set({ requestLog: [] });
+  await resetRequestLog();
   await ensureAlarm();
   await initScriptletEngine();
 

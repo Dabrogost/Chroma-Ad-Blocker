@@ -303,6 +303,28 @@ function compileNetworkPattern(pattern) {
 }
 
 // ─── NETWORK RULE PARSER ─────
+function isNetworkRegexRule(stripped) {
+  if (!stripped || !stripped.startsWith('/') || stripped.length < 2) return false;
+  if (stripped.endsWith('/')) return true;
+
+  let escaped = false;
+  for (let i = 1; i < stripped.length; i++) {
+    const ch = stripped[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '/' && stripped[i + 1] === '$') {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Parses a network or exception rule line into a partial DNR rule object (no id assigned).
  * @param {string} line
@@ -318,8 +340,8 @@ function parseNetworkRule(line, isException = false) {
     // Pure wildcards — useless rules
     if (stripped === '*' || stripped === '*$*') return networkParseResult(null);
 
-    // Regex network rules are not supported by this parser.
-    if (stripped.startsWith('/') && stripped.slice(1).lastIndexOf('/') > 0) return networkParseResult(null, 'regex');
+    // Regex network rules (/.../ or /.../$options) are not supported by this parser.
+    if (isNetworkRegexRule(stripped)) return networkParseResult(null, 'regex');
 
     // Split pattern from options on first '$'
     const dollarIdx = stripped.indexOf('$');

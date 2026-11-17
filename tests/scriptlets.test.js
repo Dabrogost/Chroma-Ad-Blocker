@@ -1109,6 +1109,39 @@ test('persistent observer scriptlets', async (t) => {
     rafCallbacks.shift()();
     assert.strictEqual(queryCount, 2);
   });
+
+  await t.test('observer scriptlets fall back to document when documentElement is null at document_start', () => {
+    const observedTargets = [];
+    const doc = {
+      documentElement: null,
+      body: null,
+      querySelectorAll: () => [],
+      getElementsByTagName: () => []
+    };
+    for (const [name, args] of [
+      ['hideElement', ['.ad-slot']],
+      ['releaseScrollLock', []],
+      ['hideUpward', ['.ad-slot', 'div']],
+      ['removeClass', ['noscroll']],
+      ['removeAttr', ['disabled']],
+      ['replaceNodeText', ['#text', 'a', 'b']]
+    ]) {
+      const win = makeWindow();
+      win.document = doc;
+      win.MutationObserver = class {
+        observe(target) {
+          if (!target || typeof target !== 'object') {
+            throw new TypeError("Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.");
+          }
+          observedTargets.push({ name, target });
+        }
+      };
+      runScriptlet(name, args, win);
+    }
+
+    assert.strictEqual(observedTargets.length, 6);
+    assert.ok(observedTargets.every(entry => entry.target === doc));
+  });
 });
 
 test('reddit-promoted-ads', async (t) => {
@@ -1280,7 +1313,7 @@ function loadScriptletEngine(storageState, options = {}) {
           for (const script of scripts) {
             const index = registeredContentScripts.findIndex(existing => existing.id === script.id);
             if (index === -1) registeredContentScripts.push(script);
-            else registeredContentScripts[index] = script;
+            else registeredContentScripts[index] = { ...registeredContentScripts[index], ...script };
           }
         }
       }
@@ -1666,6 +1699,52 @@ test('scriptlet engine whitelist hardening', async (t) => {
     assert.strictEqual(registeredContentScripts.some(script => script.id === 'chroma_quiet_console'), false);
   });
 
+  await t.test('FPR and Quiet Console clear stale excludeMatches when sites leave the whitelist', async () => {
+    const storage = {
+      subscriptionScriptletRules: [],
+      userScriptletRules: [],
+      userScriptletResources: {},
+      whitelist: ['example.com'],
+      fprWhitelist: ['fpr-only.example'],
+      config: { enabled: true, fingerprintRandomization: true, quietConsole: true }
+    };
+    const { sandbox, registeredContentScripts, getChangeListener } = loadScriptletEngine(storage);
+
+    sandbox.chrome.storage.local.get = async (keys) => {
+      const out = {};
+      for (const key of (Array.isArray(keys) ? keys : [keys])) out[key] = storage[key];
+      return out;
+    };
+
+    await sandbox.initScriptletEngine();
+
+    const fprBefore = registeredContentScripts.find(script => script.id === 'chroma_fpr');
+    const quietBefore = registeredContentScripts.find(script => script.id === 'chroma_quiet_console');
+    assert.deepStrictEqual(plain(fprBefore.excludeMatches), [
+      '*://example.com/*',
+      '*://*.example.com/*',
+      '*://fpr-only.example/*',
+      '*://*.fpr-only.example/*'
+    ]);
+    assert.deepStrictEqual(plain(quietBefore.excludeMatches), [
+      '*://example.com/*',
+      '*://*.example.com/*'
+    ]);
+
+    storage.whitelist = [];
+    storage.fprWhitelist = [];
+    getChangeListener()({
+      whitelist: { oldValue: ['example.com'], newValue: [] },
+      fprWhitelist: { oldValue: ['fpr-only.example'], newValue: [] }
+    }, 'local');
+    await new Promise(resolve => setImmediate(resolve));
+
+    const fprAfter = registeredContentScripts.find(script => script.id === 'chroma_fpr');
+    const quietAfter = registeredContentScripts.find(script => script.id === 'chroma_quiet_console');
+    assert.deepStrictEqual(plain(fprAfter.excludeMatches), []);
+    assert.deepStrictEqual(plain(quietAfter.excludeMatches), []);
+  });
+
   await t.test('user resource scriptlets use MAIN world, all frames, and coarse telemetry', async () => {
     const { sandbox, registered } = loadScriptletEngine({
       subscriptionScriptletRules: [],
@@ -1706,6 +1785,40 @@ test('scriptlet engine whitelist hardening', async (t) => {
     assert.match(code, /__CHROMA_SCRIPTLET_STATS__/);
     assert.doesNotMatch(code, /private-source-id/);
     assert.doesNotMatch(code, /sourceId|scriptlet:/);
+  });
+
+  await t.test('user resource {{args}} preserves dollar replacement sequences and avoids double-interpolation', async () => {
+    const { sandbox, registered } = loadScriptletEngine({
+      subscriptionScriptletRules: [],
+      userScriptletRules: [{
+        scriptlet: 'dollar-args.js',
+        args: ['foo$$bar', '$&', '{{1}}'],
+        domains: ['example.net']
+      }],
+      userScriptletResources: {
+        'dollar-args': {
+          name: 'dollar-args',
+          displayName: 'dollar-args.js',
+          code: 'window.__allArgs = {{args}}; window.__first = "{{1}}";'
+        }
+      },
+      whitelist: [],
+      config: {},
+      fprWhitelist: []
+    });
+
+    await sandbox.initScriptletEngine();
+
+    assert.strictEqual(registered.length, 1);
+    const code = registered[0].js[0].code;
+    const win = {};
+    vm.runInNewContext(code, {
+      window: win,
+      document: { dispatchEvent() {} },
+      CustomEvent: class {}
+    });
+    assert.deepStrictEqual(plain(win.__allArgs), ['foo$$bar', '$&', '{{1}}']);
+    assert.strictEqual(win.__first, 'foo$$bar');
   });
 
   await t.test('whitelist changes update subscription and advanced exclusions while enabled', async () => {

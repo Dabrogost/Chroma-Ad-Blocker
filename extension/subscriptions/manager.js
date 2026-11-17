@@ -17,7 +17,7 @@
 import { DEFAULT_SUBSCRIPTIONS } from './lists.js';
 import { parseList }             from './parser.js';
 import { SCRIPTLET_MAP } from '../scriptlets/lib.js';
-import { reconcileNetworkDnr } from '../background/dnrState.js';
+import { reconcileNetworkDnr, waitForLatestNetworkDnr } from '../background/dnrState.js';
 import { validateRemoteHttpsUrl } from '../core/remoteUrl.js';
 
 const DEBUG = false;
@@ -1049,6 +1049,9 @@ export async function removeSubscription(id) {
   let reconciliation;
   try {
     reconciliation = await rebuildNetworkRules();
+    if (reconciliation?.stale === true && typeof waitForLatestNetworkDnr === 'function') {
+      reconciliation = await waitForLatestNetworkDnr();
+    }
   } catch (err) {
     return {
       ok: false,

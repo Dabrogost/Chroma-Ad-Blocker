@@ -71,7 +71,7 @@ function loadManager(options = {}) {
     .replace(/import\s*\{\s*DEFAULT_SUBSCRIPTIONS\s*\}\s*from\s*['"]\.\/lists\.js['"];?/, 'var DEFAULT_SUBSCRIPTIONS = globalThis._DEFAULT_SUBSCRIPTIONS;')
     .replace(/import\s*\{\s*parseList\s*\}\s*from\s*['"]\.\/parser\.js['"];?/, 'var parseList = globalThis._parseList;')
     .replace(/import\s*\{\s*SCRIPTLET_MAP\s*\}\s*from\s*['"]\.\.\/scriptlets\/lib\.js['"];?/, 'var SCRIPTLET_MAP = globalThis._SCRIPTLET_MAP;')
-    .replace(/import\s*\{\s*reconcileNetworkDnr\s*\}\s*from\s*['"]\.\.\/background\/dnrState\.js['"];?/, 'var reconcileNetworkDnr = globalThis._reconcileNetworkDnr;')
+    .replace(/import\s*\{\s*reconcileNetworkDnr,\s*waitForLatestNetworkDnr\s*\}\s*from\s*['"]\.\.\/background\/dnrState\.js['"];?/, 'var reconcileNetworkDnr = globalThis._reconcileNetworkDnr; var waitForLatestNetworkDnr = globalThis._waitForLatestNetworkDnr;')
     .replace(/import\s*\{\s*validateRemoteHttpsUrl\s*\}\s*from\s*['"]\.\.\/core\/remoteUrl\.js['"];?/, '')
     .replace('const FETCH_TIMEOUT  = 30000;', `const FETCH_TIMEOUT  = ${options.fetchTimeout || 30000};`)
     .replace(/^export\s+/gm, '')
@@ -146,6 +146,7 @@ function loadManager(options = {}) {
       appliedRules.push(plain(rules));
       return { ok: true };
     }),
+    _waitForLatestNetworkDnr: options.waitForLatestNetworkDnr,
     _SCRIPTLET_MAP: options.scriptletMap || new Map([['set-constant', () => {}], ['json-prune', () => {}]])
   };
   sandbox.globalThis = sandbox;
@@ -1364,6 +1365,72 @@ test('Subscription lifecycle manager', async (t) => {
     assert.deepStrictEqual(plain(await manager.removeSubscription('sub-a')), { ok: true });
     assert.deepStrictEqual(plain(storage.subscriptions), []);
     assert.strictEqual('sub-a' in storage.sub_network_rules, false);
+  });
+
+  await t.test('removeSubscription finishes removal after a superseding DNR reconciliation settles cleanly', async () => {
+    const storage = {
+      subscriptions: [
+        { id: 'sub-a', enabled: true, isCustom: true },
+        { id: 'sub-b', enabled: true, isCustom: true }
+      ],
+      sub_network_rules: {
+        'sub-a': [networkRule('||a.example^')],
+        'sub-b': [networkRule('||b.example^')]
+      },
+      sub_cosmetic_rules: {
+        'sub-a': [{ domains: null, selector: '.a', isException: false }],
+        'sub-b': [{ domains: null, selector: '.b', isException: false }]
+      },
+      sub_scriptlet_rules: {
+        'sub-a': [],
+        'sub-b': []
+      }
+    };
+    let requestedGeneration = 0;
+    let settledGeneration = 0;
+    let settledResult = null;
+    let tail = Promise.resolve();
+    const manager = loadManager({
+      storage,
+      reconcileNetworkDnr: async () => {
+        const generation = ++requestedGeneration;
+        const run = tail.then(async () => {
+          await new Promise(r => setTimeout(r, 10));
+          const result = generation !== requestedGeneration
+            ? { ok: true, stale: true }
+            : (() => {
+                const rules = [];
+                for (const sub of storage.subscriptions || []) {
+                  if (sub?.enabled === false || sub?.cosmeticOnly || sub?.pendingRemoval === true) continue;
+                  rules.push(...(storage.sub_network_rules?.[sub.id] || []));
+                }
+                return { ok: true, rules: plain(rules) };
+              })();
+          settledGeneration = generation;
+          settledResult = result;
+          return result;
+        });
+        tail = run.catch(() => {});
+        return run;
+      },
+      waitForLatestNetworkDnr: async () => {
+        while (settledGeneration < requestedGeneration) {
+          await tail;
+        }
+        return settledResult;
+      }
+    });
+
+    const [resA, resB] = await Promise.all([
+      manager.removeSubscription('sub-a'),
+      manager.removeSubscription('sub-b')
+    ]);
+
+    assert.deepStrictEqual(plain(resA), { ok: true });
+    assert.deepStrictEqual(plain(resB), { ok: true });
+    assert.deepStrictEqual(plain(storage.subscriptions), []);
+    assert.deepStrictEqual(plain(storage.sub_network_rules), {});
+    assert.deepStrictEqual(plain(storage.sub_cosmetic_rules), {});
   });
 
   await t.test('transactional staging builds a complete replace-all image without mutation', () => {

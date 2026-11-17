@@ -96,6 +96,10 @@
   let LOCAL_ZAPPER_SELECTORS = [];
   let WARNING_SELECTOR_COMBINED = '';
   let IS_WHITELISTED = false;
+  const liveUpdatedConfigKeys = new Set();
+  let liveWhitelistUpdated = false;
+  let liveLocalCosmeticUpdated = false;
+  let liveSubscriptionCosmeticUpdated = false;
   let statsQueue = [];
   let statsTimer = null;
   let statsConfigReady = false;
@@ -630,35 +634,39 @@
 
     let removedCount = 0;
 
-    if (!nodes) {
-      const els = document.querySelectorAll(WARNING_SELECTOR_COMBINED);
-      if (els.length > 0) {
-        els.forEach(el => {
-          el.remove();
-          removedCount++;
-        });
-      }
-    } else {
-      const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes];
-      for (const node of nodesToProcess) {
-        if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
-
-        if (typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
-          node.remove();
-          removedCount++;
-          continue;
+    try {
+      if (!nodes) {
+        const els = document.querySelectorAll(WARNING_SELECTOR_COMBINED);
+        if (els.length > 0) {
+          els.forEach(el => {
+            el.remove();
+            removedCount++;
+          });
         }
+      } else {
+        const nodesToProcess = Array.isArray(nodes) ? nodes : [nodes];
+        for (const node of nodesToProcess) {
+          if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
 
-        if (node.firstElementChild && typeof node.querySelectorAll === 'function') {
-          const els = node.querySelectorAll(WARNING_SELECTOR_COMBINED);
-          if (els.length > 0) {
-            els.forEach(el => {
-              el.remove();
-              removedCount++;
-            });
+          if (typeof node.matches === 'function' && node.matches(WARNING_SELECTOR_COMBINED)) {
+            node.remove();
+            removedCount++;
+            continue;
+          }
+
+          if (node.firstElementChild && typeof node.querySelectorAll === 'function') {
+            const els = node.querySelectorAll(WARNING_SELECTOR_COMBINED);
+            if (els.length > 0) {
+              els.forEach(el => {
+                el.remove();
+                removedCount++;
+              });
+            }
           }
         }
       }
+    } catch (e) {
+      if (DEBUG) console.warn('[Chroma] Invalid warning selector:', e);
     }
 
     if (removedCount > 0) {
@@ -715,7 +723,9 @@
       }
     });
 
-    observer.observe(document.documentElement, {
+    const observeTarget = document.documentElement || document;
+    if (!observeTarget) return;
+    observer.observe(observeTarget, {
       childList: true,
       subtree: true,
     });
@@ -795,7 +805,10 @@
   // but content.js runs on <all_urls>. Using window.MSG here would silently
   // drop config updates on all other sites.
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'CONFIG_UPDATE') {
+    if (msg.type === 'CONFIG_UPDATE' && msg.config && typeof msg.config === 'object') {
+      for (const key of Object.keys(msg.config)) {
+        liveUpdatedConfigKeys.add(key);
+      }
       Object.assign(CONFIG, msg.config);
       reconcilePendingStats();
       publishQuietConsoleConfig();
@@ -817,10 +830,12 @@
       let whitelistStateChanged = false;
 
       if (changes.localCosmeticRules) {
+        liveLocalCosmeticUpdated = true;
         LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(changes.localCosmeticRules.newValue || []);
         cosmeticRuntimeChanged = true;
       }
       if (changes.subscriptionCosmeticRules) {
+        liveSubscriptionCosmeticUpdated = true;
         SUBSCRIPTION_HIDE_SELECTORS = getMatchingSubscriptionCosmeticSelectors(
           changes.subscriptionCosmeticRules.newValue || []
         );
@@ -828,6 +843,7 @@
         cosmeticRuntimeChanged = true;
       }
       if (changes.whitelist) {
+        liveWhitelistUpdated = true;
         const whitelist = Array.isArray(changes.whitelist.newValue) ? changes.whitelist.newValue : [];
         const nextWhitelisted = whitelist.some(domain => isHostOrSubdomain(currentHostname, domain));
         if (nextWhitelisted !== IS_WHITELISTED) {
@@ -889,8 +905,12 @@
     try {
       const data = await chrome.storage.local.get(['config', 'HIDE_SELECTORS', 'WARNING_SELECTORS', 'whitelist', 'subscriptionCosmeticRules', 'localCosmeticRules']);
 
-      if (data.config) {
-        Object.assign(CONFIG, data.config);
+      if (data.config && typeof data.config === 'object') {
+        for (const [key, value] of Object.entries(data.config)) {
+          if (!liveUpdatedConfigKeys.has(key)) {
+            CONFIG[key] = value;
+          }
+        }
       }
 
       const whitelist = data.whitelist || [];
@@ -907,7 +927,9 @@
         return;
       }
 
-      IS_WHITELISTED = whitelist.some(domain => isHostOrSubdomain(currentHostname, domain));
+      if (!liveWhitelistUpdated) {
+        IS_WHITELISTED = whitelist.some(domain => isHostOrSubdomain(currentHostname, domain));
+      }
       statsConfigReady = true;
       const startupEvents = pendingScriptletStats;
       pendingScriptletStats = null;
@@ -917,16 +939,20 @@
         BUILTIN_HIDE_SELECTORS = getValidSelectors(data.HIDE_SELECTORS);
       }
 
-      SUBSCRIPTION_HIDE_SELECTORS = getMatchingSubscriptionCosmeticSelectors(
-        data.subscriptionCosmeticRules || [],
-        currentHostname
-      );
+      if (!liveSubscriptionCosmeticUpdated) {
+        SUBSCRIPTION_HIDE_SELECTORS = getMatchingSubscriptionCosmeticSelectors(
+          data.subscriptionCosmeticRules || [],
+          currentHostname
+        );
+      }
       rebuildHideSelectors();
 
-      LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(data.localCosmeticRules || [], currentHostname);
+      if (!liveLocalCosmeticUpdated) {
+        LOCAL_ZAPPER_SELECTORS = getMatchingLocalZapperSelectors(data.localCosmeticRules || [], currentHostname);
+      }
 
       if (data.WARNING_SELECTORS) {
-        WARNING_SELECTOR_COMBINED = data.WARNING_SELECTORS.join(',');
+        WARNING_SELECTOR_COMBINED = getValidSelectors(data.WARNING_SELECTORS).join(',');
       }
 
       reconcilePendingStats();
