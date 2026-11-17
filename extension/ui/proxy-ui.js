@@ -601,14 +601,36 @@ const ChromaProxyUI = (() => {
       updateChromeServiceBypassWarning(proxyConfigState.globalProxyEnabled === true);
     };
 
+    const nextProxyId = () => {
+      const maxId = proxyConfigs.reduce((max, item) => (
+        Number.isSafeInteger(item?.id) ? Math.max(max, item.id) : max
+      ), 0);
+      return Math.max(Date.now(), maxId + 1);
+    };
+
+    const reindexProxyCards = () => {
+      container.querySelectorAll('.proxy-card').forEach((cardEl, idx) => {
+        cardEl.dataset.index = String(idx);
+      });
+    };
+
+    const clearGlobalSelectionIfRemoved = (proxyId) => {
+      if (proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === proxyId) {
+        proxyConfigState.globalProxyEnabled = false;
+        proxyConfigState.globalProxyId = null;
+        applyGlobalButtonState();
+      }
+    };
+
     const renderProxyCard = (pc, index) => {
       const card = document.createElement('div');
       card.className = 'protection-list proxy-card';
       card.dataset.index = index;
       card.dataset.proxyId = pc.id;
 
-      const inputGroupId = `proxyInputGroup_${index}`;
-      const activeGroupId = `proxyActiveGroup_${index}`;
+      const cardKey = pc.id ?? index;
+      const inputGroupId = `proxyInputGroup_${cardKey}`;
+      const activeGroupId = `proxyActiveGroup_${cardKey}`;
 
       appendEditorCard(card, pc, index, inputGroupId, activeGroupId);
 
@@ -961,11 +983,12 @@ const ChromaProxyUI = (() => {
         clearCredentialInputs();
         resetCredentialStateAfterSave();
         replaceThisCard();
+        clearGlobalSelectionIfRemoved(pc.id);
       });
 
       editBtn?.addEventListener('click', () => {
-        const inputGroup = document.getElementById(inputGroupId);
-        const activeGroup = document.getElementById(activeGroupId);
+        const inputGroup = card.querySelector('.proxy-input-group');
+        const activeGroup = card.querySelector('.proxy-active-group');
         setHidden(inputGroup, false);
         setHidden(activeGroup, true);
         hostInput.focus?.();
@@ -984,10 +1007,12 @@ const ChromaProxyUI = (() => {
             return;
           }
         }
+        clearGlobalSelectionIfRemoved(removed.id);
         if (proxyConfigs.length === 0) {
           await renderAll();
         } else {
           card.remove();
+          reindexProxyCards();
         }
       });
 
@@ -1053,7 +1078,7 @@ const ChromaProxyUI = (() => {
 
     addBtn.onclick = async () => {
       const newPc = {
-        id: Date.now(),
+        id: nextProxyId(),
         type: 'PROXY',
         host: '',
         port: '',
@@ -1065,9 +1090,8 @@ const ChromaProxyUI = (() => {
       };
       proxyConfigs.push(newPc);
       container.querySelector('.proxy-empty')?.remove();
-      container.insertBefore(renderProxyCard(newPc, proxyConfigs.length - 1), container.querySelector('.proxy-chrome-service-bypass-control'));
-      const newCard = container.querySelector(`[data-index="${proxyConfigs.length - 1}"]`);
-      newCard?.scrollIntoView({ behavior: scrollBehavior() });
+      const newCard = container.insertBefore(renderProxyCard(newPc, proxyConfigs.length - 1), container.querySelector('.proxy-chrome-service-bypass-control'));
+      newCard?.scrollIntoView?.({ behavior: scrollBehavior() });
       newCard?.querySelector('.proxy-host')?.focus({ preventScroll: true });
     };
 

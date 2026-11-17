@@ -1,6 +1,12 @@
 (function() {
   'use strict';
 
+  if (typeof globalThis.__CHROMA_CLEANUP_ZAPPER__ === 'function') {
+    try {
+      globalThis.__CHROMA_CLEANUP_ZAPPER__();
+    } catch (_) {}
+  }
+
   const ROOT_ATTR = 'data-chroma-zapper';
   const MENU_ATTR = 'data-chroma-zapper-menu';
   const MAX_SELECTOR_LEN = 512;
@@ -435,6 +441,8 @@
     event.stopImmediatePropagation();
     finish('cancel');
   }
+
+  globalThis.__CHROMA_CLEANUP_ZAPPER__ = cleanup;
 
   globalThis.__CHROMA_START_ZAPPER__ = function(sessionToken) {
     if (active) cleanup();

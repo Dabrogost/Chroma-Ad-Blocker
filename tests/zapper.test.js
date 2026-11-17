@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { JSDOM } = require('jsdom');
 
 function handlerModuleForVm(file) {
   let source = fs.readFileSync(
@@ -539,4 +540,72 @@ test('content local zapper rules', async (t) => {
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.strictEqual(sandbox.document.adoptedStyleSheets.some(sheet => sheet.content.includes('.annoying')), false);
   });
+});
+
+test('re-injecting content zapper cleans up prior session overlays, listeners, and stale tokens', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="ad-box">Ad</div></body></html>', {
+    url: 'https://example.com/article'
+  });
+  const { window } = dom;
+  const { document } = window;
+  const sentMessages = [];
+
+  const sandbox = vm.createContext({
+    window,
+    document,
+    Node: window.Node,
+    Element: window.Element,
+    CSS: { escape: value => String(value).replace(/([^\w-])/g, '\\$1') },
+    chrome: {
+      runtime: {
+        sendMessage: async (msg) => {
+          sentMessages.push(msg);
+          if (msg?.type === 'ZAPPER_SAVE_RULE') {
+            return msg.token === 'token-2'
+              ? { ok: true }
+              : { ok: false, error: 'Invalid zapper session' };
+          }
+          return { ok: true };
+        }
+      }
+    },
+    console,
+    Map,
+    Set
+  });
+  sandbox.globalThis = sandbox;
+
+  // Simulate two ZAPPER_START executions on the same tab without clearing first.
+  vm.runInContext(zapperJsCode, sandbox);
+  sandbox.__CHROMA_START_ZAPPER__('token-1');
+  assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 2);
+
+  vm.runInContext(zapperJsCode, sandbox);
+  sandbox.__CHROMA_START_ZAPPER__('token-2');
+  assert.strictEqual(
+    document.querySelectorAll('[data-chroma-zapper]').length,
+    2,
+    'expected prior overlay nodes to be removed on re-injection'
+  );
+
+  // Click the target element -> save -> confirmSave; only active token-2 should fire.
+  const target = document.getElementById('ad-box');
+  target.getBoundingClientRect = () => ({ left: 10, top: 10, width: 100, height: 40 });
+  target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+
+  const saveBtn = document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]');
+  assert.ok(saveBtn, 'expected zapper action menu to open');
+  saveBtn.click();
+
+  const confirmBtn = document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]');
+  assert.ok(confirmBtn, 'expected save confirmation button to open');
+  confirmBtn.click();
+
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  const saveMessages = sentMessages.filter(m => m?.type === 'ZAPPER_SAVE_RULE');
+  assert.strictEqual(saveMessages.length, 1);
+  assert.strictEqual(saveMessages[0].token, 'token-2');
+  assert.strictEqual(target.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
 });

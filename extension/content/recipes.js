@@ -5,7 +5,9 @@
   const log = (...a) => { if (DEBUG) console.log('[Chroma Recipes]', ...a); };
 
   const nativeCreateElement = Document.prototype.createElement;
-  const nativeQuerySelectorAll = Document.prototype.querySelectorAll;
+  const nativeDocQuerySelectorAll = Document.prototype.querySelectorAll;
+  const nativeElemQuerySelectorAll = typeof Element !== 'undefined' ? Element.prototype?.querySelectorAll : null;
+  const nativeElemMatches = typeof Element !== 'undefined' ? Element.prototype?.matches : null;
   const nativeAddDocEventListener = document.addEventListener.bind(document);
   const nativeRemoveDocEventListener = document.removeEventListener.bind(document);
 
@@ -629,12 +631,40 @@ ${HIDE_SELECTORS.join(',\n')} {
     hiddenElements.clear();
   }
 
+  function queryAllInScope(scope, selector) {
+    if (scope === document) return nativeDocQuerySelectorAll.call(scope, selector);
+    if (nativeElemQuerySelectorAll && typeof Element !== 'undefined' && scope instanceof Element) {
+      return nativeElemQuerySelectorAll.call(scope, selector);
+    }
+    return scope.querySelectorAll(selector);
+  }
+
+  function elementMatches(el, selector) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+    if (nativeElemMatches && typeof Element !== 'undefined' && el instanceof Element) {
+      return nativeElemMatches.call(el, selector);
+    }
+    return typeof el.matches === 'function' ? el.matches(selector) : false;
+  }
+
   function sweep(root) {
     if (!isActive) return;
+    const hideSelector = HIDE_SELECTORS.join(',');
     const scope = root && root.querySelectorAll ? root : document;
+
+    if (root && root !== document && root !== document.documentElement && root !== document.body &&
+        root.nodeType === Node.ELEMENT_NODE && !insideRecipeCard(root)) {
+      let rootMatched = false;
+      try {
+        rootMatched = elementMatches(root, hideSelector);
+      } catch (_) {}
+      if (rootMatched || (typeof root.id === 'string' && AD_ID_PATTERN.test(root.id))) {
+        hideElement(root);
+      }
+    }
     let nodes;
     try {
-      nodes = nativeQuerySelectorAll.call(scope, HIDE_SELECTORS.join(','));
+      nodes = queryAllInScope(scope, hideSelector);
     } catch (_) { return; }
     for (const el of nodes) {
       if (insideRecipeCard(el)) continue;
@@ -642,7 +672,10 @@ ${HIDE_SELECTORS.join(',\n')} {
     }
 
     // ID-pattern sweep for things the selector list can't express generically.
-    const idCandidates = nativeQuerySelectorAll.call(scope, '[id]');
+    let idCandidates;
+    try {
+      idCandidates = queryAllInScope(scope, '[id]');
+    } catch (_) { return; }
     for (const el of idCandidates) {
       if (!AD_ID_PATTERN.test(el.id)) continue;
       if (insideRecipeCard(el)) continue;

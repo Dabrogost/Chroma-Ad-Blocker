@@ -3530,13 +3530,13 @@ test('settings page proxy and zapper management safety', async (t) => {
     );
   });
 
-  async function createProxyEditorHarness(initialProxies, onProxyConfigSet) {
+  async function createProxyEditorHarness(initialProxies, onProxyConfigSet, initialConfig = {}) {
     const dom = new JSDOM('<!doctype html><div id="proxyRouterContainer"></div><button id="addProxyServerBtn"></button><div id="proxyFeedback"></div>', {
       url: 'chrome-extension://test/ui/settings.html#proxy',
       runScripts: 'outside-only'
     });
     let proxyConfigs = initialProxies.map(p => ({ ...p, domains: [...(p.domains || [])] }));
-    const config = { globalProxyEnabled: false, globalProxyId: null };
+    const config = { globalProxyEnabled: false, globalProxyId: null, ...initialConfig };
     const messages = [];
     const sandbox = {
       window: dom.window,
@@ -3814,6 +3814,67 @@ test('settings page proxy and zapper management safety', async (t) => {
       ['gamma.example']
     );
     assert.strictEqual(card.querySelectorAll('.proxy-domain-row').length, 1);
+  });
+
+  await t.test('deleting a non-last proxy and adding a new one preserves unique card IDs, focus, Edit target, and global state', async () => {
+    const harness = await createProxyEditorHarness(
+      [
+        { id: 1, name: 'Proxy A', host: 'a.example.com', port: '8080', type: 'PROXY', accepted: true, enabled: true, domains: [], hasCredentials: false },
+        { id: 2, name: 'Proxy B', host: 'b.example.com', port: '8080', type: 'PROXY', accepted: true, enabled: true, domains: [], hasCredentials: false }
+      ],
+      null,
+      { globalProxyEnabled: true, globalProxyId: 1, chromeServiceProxyBypass: false }
+    );
+    const { document } = harness.dom.window;
+
+    assert.strictEqual(
+      document.querySelector('.proxy-chrome-service-bypass-warning')?.classList.contains('is-hidden'),
+      false
+    );
+
+    // Delete Proxy A (index 0, currently active global fallback).
+    harness.getCards()[0].querySelector('.proxy-del-server-btn').click();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(harness.getCards().length, 1);
+    assert.strictEqual(harness.getCards()[0].dataset.index, '0');
+    assert.strictEqual(
+      document.querySelector('.proxy-chrome-service-bypass-warning')?.classList.contains('is-hidden'),
+      true
+    );
+
+    // Add Proxy C and verify focus lands on C's host input and all group IDs remain unique.
+    document.getElementById('addProxyServerBtn').click();
+    await settleDomAsyncWork();
+
+    let cards = harness.getCards();
+    assert.strictEqual(cards.length, 2);
+    const cardB = cards[0];
+    const cardC = cards[1];
+    assert.strictEqual(document.activeElement, cardC.querySelector('.proxy-host'));
+
+    const allInputGroupIds = [...document.querySelectorAll('.proxy-input-group')].map(el => el.id);
+    const allActiveGroupIds = [...document.querySelectorAll('.proxy-active-group')].map(el => el.id);
+    assert.strictEqual(new Set(allInputGroupIds).size, 2);
+    assert.strictEqual(new Set(allActiveGroupIds).size, 2);
+
+    // Save Proxy C and click Edit on Proxy C -> C opens while B stays in active view.
+    cardC.querySelector('.proxy-host').value = 'c.example.com';
+    cardC.querySelector('.proxy-port').value = '9090';
+    cardC.querySelector('.proxy-accept-btn').click();
+    await settleDomAsyncWork();
+
+    cards = harness.getCards();
+    const savedB = cards[0];
+    const savedC = cards[1];
+    assert.strictEqual(savedB.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+    assert.strictEqual(savedC.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+
+    savedC.querySelector('.proxy-edit-btn').click();
+    assert.strictEqual(savedC.querySelector('.proxy-input-group').classList.contains('is-hidden'), false);
+    assert.strictEqual(savedC.querySelector('.proxy-active-group').classList.contains('is-hidden'), true);
+    assert.strictEqual(savedB.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+    assert.strictEqual(savedB.querySelector('.proxy-active-group').classList.contains('is-hidden'), false);
   });
 
   await t.test('blocked request badge toggle renders in Appearance and persists independently of master state', async () => {

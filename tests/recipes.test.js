@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { JSDOM } = require('jsdom');
 
 const root = path.join(__dirname, '..');
 const recipesCode = fs.readFileSync(path.join(root, 'extension', 'content', 'recipes.js'), 'utf8');
@@ -567,4 +568,123 @@ test('recipe manifest entries are covered by the authenticated bridge in executi
     assert.ok(interceptor.matches.includes(match), `${match} must load interceptor before recipes`);
     assert.ok(protection.matches.includes(match), `${match} must load isolated protection`);
   }
+});
+
+test('MutationObserver sweep hides dynamically inserted elements and descendants in real DOM', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body><main></main></body></html>', {
+    url: 'https://www.allrecipes.com/recipe/123'
+  });
+  const { window } = dom;
+  const { document } = window;
+  const frames = [];
+  let observerCallback = null;
+
+  class ObservingMutationObserver {
+    constructor(callback) {
+      observerCallback = callback;
+    }
+    observe() {}
+    disconnect() {}
+  }
+
+  const bridgeState = { enabled: true, revision: 1 };
+  const api = Object.freeze({
+    createCssStyleSheet: () => ({ replaceSync() {} }),
+    getAdoptedStyleSheets: () => document.adoptedStyleSheets || [],
+    setAdoptedStyleSheets: sheets => { document.adoptedStyleSheets = sheets; },
+    requestAnimationFrame: cb => { frames.push(cb); return frames.length; },
+    cancelAnimationFrame: () => {},
+    addEventListener: window.addEventListener.bind(window),
+    removeEventListener: window.removeEventListener.bind(window)
+  });
+  const internalBridge = {};
+  Object.defineProperties(internalBridge, {
+    config: { enumerable: true, get: () => Object.freeze({ enabled: bridgeState.enabled }) },
+    revision: { enumerable: true, get: () => bridgeState.revision },
+    api: { enumerable: true, value: api }
+  });
+  Object.freeze(internalBridge);
+  Object.defineProperty(window, '__CHROMA_INTERNAL__', {
+    value: internalBridge,
+    writable: false,
+    configurable: false
+  });
+
+  const sandbox = vm.createContext({
+    window,
+    document,
+    location: window.location,
+    history: window.history,
+    Document: window.Document,
+    Element: window.Element,
+    HTMLScriptElement: window.HTMLScriptElement,
+    Location: window.Location,
+    History: window.History,
+    MutationObserver: ObservingMutationObserver,
+    CSSStyleSheet: class { replaceSync() {} },
+    Node: window.Node,
+    CustomEvent: window.CustomEvent,
+    console,
+    Map,
+    Set,
+    WeakMap,
+    Reflect,
+    Object,
+    Array,
+    Number,
+    String
+  });
+  sandbox.globalThis = sandbox;
+  vm.runInContext(recipesCode, sandbox);
+
+  if (document.readyState === 'loading') {
+    await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+  }
+
+  assert.strictEqual(typeof observerCallback, 'function');
+
+  // Verify real DOM Document.prototype.querySelectorAll rejects Element receivers.
+  const probe = document.createElement('div');
+  assert.throws(() => window.Document.prototype.querySelectorAll.call(probe, '*'), TypeError);
+
+  const wrapper = document.createElement('div');
+  wrapper.id = 'google_ads_wrapper';
+  const selectorDescendant = document.createElement('div');
+  selectorDescendant.className = 'adthrive-ad';
+  const idDescendant = document.createElement('div');
+  idDescendant.id = 'ad-banner-1';
+  wrapper.appendChild(selectorDescendant);
+  wrapper.appendChild(idDescendant);
+  document.body.appendChild(wrapper);
+
+  const directSelectorNode = document.createElement('ins');
+  directSelectorNode.className = 'adsbygoogle';
+  document.body.appendChild(directSelectorNode);
+
+  const recipeCard = document.createElement('div');
+  recipeCard.className = 'wprm-recipe-container';
+  const protectedAd = document.createElement('div');
+  protectedAd.id = 'ad-inside-recipe';
+  recipeCard.appendChild(protectedAd);
+  document.body.appendChild(recipeCard);
+
+  observerCallback([{ addedNodes: [wrapper, directSelectorNode, recipeCard] }]);
+  assert.ok(frames.length > 0);
+  while (frames.length > 0) frames.shift()();
+
+  assert.strictEqual(wrapper.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(selectorDescendant.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(idDescendant.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(directSelectorNode.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(protectedAd.style.getPropertyValue('display'), '');
+
+  bridgeState.enabled = false;
+  bridgeState.revision = 2;
+  document.dispatchEvent(new window.CustomEvent('__CHROMA_CONFIG_UPDATE__', {
+    detail: { enabled: false }
+  }));
+  assert.strictEqual(wrapper.style.getPropertyValue('display'), '');
+  assert.strictEqual(selectorDescendant.style.getPropertyValue('display'), '');
+  assert.strictEqual(idDescendant.style.getPropertyValue('display'), '');
+  assert.strictEqual(directSelectorNode.style.getPropertyValue('display'), '');
 });
