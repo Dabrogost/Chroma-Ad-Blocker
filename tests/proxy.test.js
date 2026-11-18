@@ -32,6 +32,8 @@ function createProxySandbox({
   proxyClearTakesEffect = true
 } = {}) {
   let authListener = null;
+  let completedListener = null;
+  let errorListener = null;
   let storageChangeListener = null;
   let proxySettingsChangeListener = null;
   const proxySetCalls = [];
@@ -124,6 +126,8 @@ function createProxySandbox({
       }
     },
     webRequest: {
+      onCompleted: { addListener: (listener) => { completedListener = listener; } },
+      onErrorOccurred: { addListener: (listener) => { errorListener = listener; } },
       onAuthRequired: {
         addListener: (listener) => {
           authListener = listener;
@@ -196,6 +200,8 @@ function createProxySandbox({
     get authListener() {
       return authListener;
     },
+    get completedListener() { return completedListener; },
+    get errorListener() { return errorListener; },
     get storageChangeListener() {
       return storageChangeListener;
     },
@@ -1231,6 +1237,42 @@ test('Proxy auth matching hardening', async (t) => {
       challenger: { host: 'proxy.example.com', port: 8080 }
     })), { cancel: true });
     assert.strictEqual(harness.getProxyAuthAttemptCount(), 1024);
+  });
+
+  await t.test('completed and errored requests release auth tracking so busy sessions exceed 1024 challenges cleanly', async () => {
+    const unique = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1, authIv: 'iv1', authCipher: 'cipher1' })]
+    });
+    await activateStoredRoutes(unique);
+
+    for (let index = 0; index < 1030; index++) {
+      const requestId = `completed-${index}`;
+      const res = await invokeAuth(unique, {
+        isProxy: true,
+        requestId,
+        url: 'https://example.com/video',
+        challenger: { host: 'proxy.example.com', port: 8080 }
+      });
+      assert.deepStrictEqual(plain(res), {
+        authCredentials: { username: 'user:iv1', password: 'pass:cipher1' }
+      });
+      if (index % 2 === 0) {
+        unique.completedListener({ requestId });
+      } else {
+        unique.errorListener({ requestId });
+      }
+    }
+
+    assert.strictEqual(unique.getProxyAuthAttemptCount(), 0);
+    const overCapRes = await invokeAuth(unique, {
+      isProxy: true,
+      requestId: 'completed-1030',
+      url: 'https://example.com/video',
+      challenger: { host: 'proxy.example.com', port: 8080 }
+    });
+    assert.deepStrictEqual(plain(overCapRes), {
+      authCredentials: { username: 'user:iv1', password: 'pass:cipher1' }
+    });
   });
 
   await t.test('SOCKS routes never release credentials by exact or port-only matching', async () => {

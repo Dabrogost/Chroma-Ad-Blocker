@@ -221,14 +221,15 @@ async function validateSettingsImportPayload(payload) {
 
 async function reconcileSettingsImportRuntime(config, proxyConfigs, options = {}) {
   const runWithNestedMutations = serializeConfigMutation.allowNestedMutations || (fn => fn());
+  let effectiveConfig = config;
   const steps = [
     ['dnr', () => updateDNRState()],
     ['subscription-runtime', () => reconcileSubscriptionRuntimeState()],
     ['user-scripts', () => syncUserScripts()],
     ['proxy', () => runWithNestedMutations(() => syncProxyState(proxyConfigs))],
-    ['webrtc', () => syncWebRtcLeakProtection(config, proxyConfigs)],
-    ['browser-privacy', () => syncBrowserPrivacyHardening(config)],
-    ['geolocation', () => syncGeolocationProtection(config)]
+    ['webrtc', () => syncWebRtcLeakProtection(effectiveConfig, proxyConfigs)],
+    ['browser-privacy', () => syncBrowserPrivacyHardening(effectiveConfig)],
+    ['geolocation', () => syncGeolocationProtection(effectiveConfig)]
   ];
   const errors = [];
   const warnings = [];
@@ -255,12 +256,36 @@ async function reconcileSettingsImportRuntime(config, proxyConfigs, options = {}
           : null;
         throw new Error(result.error || nestedError || `${step} did not reach the requested state`);
       }
+      if (step === 'proxy' && result && typeof result === 'object') {
+        const proxyFailed = Boolean(
+          result.error ||
+          result.conflict === true ||
+          (result.requested?.active === true && result.effective?.active !== true) ||
+          (result.requested?.active === false && result.controlledByThisExtension === true && result.mode === 'pac_script')
+        );
+        if (proxyFailed) {
+          throw new Error(
+            result.error ||
+            (result.conflict
+              ? 'Proxy settings are controlled by another extension'
+              : 'Proxy routing did not reach the requested state')
+          );
+        }
+        try {
+          const latest = await chrome.storage.local.get('config');
+          if (isImportObject(latest?.config)) {
+            effectiveConfig = validateConfig(latest.config);
+          }
+        } catch {
+          // Keep existing config snapshot if reading post-proxy config fails.
+        }
+      }
     } catch (error) {
       errors.push({ step, error: importErrorMessage(error) });
       if (options.continueOnError !== true) break;
     }
   }
-  return { ok: errors.length === 0, errors, warnings };
+  return { ok: errors.length === 0, config: effectiveConfig, errors, warnings };
 }
 
 async function restoreSettingsImportSnapshot(snapshot) {
@@ -410,8 +435,9 @@ async function performConfigImport(msg) {
     return settingsImportFailure('reconciliation', failure.step, failure.error, snapshot);
   }
 
+  const effectiveConfig = isImportObject(reconciliation.config) ? reconciliation.config : config;
   try {
-    await notifyConfigChanged(config);
+    await notifyConfigChanged(effectiveConfig);
   } catch {
     // Content notifications are best-effort. Stored state and authoritative
     // background runtime have already reconciled successfully.
@@ -420,7 +446,7 @@ async function performConfigImport(msg) {
   return {
     ok: true,
     imported: {
-      configKeys: Object.keys(config).length,
+      configKeys: Object.keys(effectiveConfig).length,
       whitelist: validation.whitelist.length,
       fprWhitelist: validation.fprWhitelist.length,
       proxyConfigs: proxyConfigs.length,

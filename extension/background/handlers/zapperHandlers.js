@@ -190,7 +190,9 @@ async function validateZapperSelectorInTab(tabId, selector) {
       world: 'ISOLATED',
       func: (sel, maxMatches) => {
         try {
-          const matches = document.querySelectorAll(sel).length;
+          const matches = Array.from(document.querySelectorAll(sel)).filter(
+            el => !el.closest('[data-chroma-zapper]')
+          ).length;
           return {
             ok: matches > 0 && matches <= maxMatches,
             count: matches
@@ -301,9 +303,23 @@ export async function handleZapperSaveRule(msg, sender) {
     await clearZapperSession(tabId, msg.token);
     return { ok: true };
   }
+  if (msg.action !== 'save') {
+    return { ok: false, error: 'Invalid zapper action' };
+  }
 
-  const pageUrl = sender.tab?.url ? new URL(sender.tab.url) : null;
-  const senderHost = pageUrl?.hostname?.toLowerCase() || '';
+  let pageUrl = null;
+  if (sender.tab?.url) {
+    try {
+      pageUrl = new URL(sender.tab.url);
+    } catch {
+      pageUrl = null;
+    }
+  }
+  const senderHost = (
+    pageUrl && (pageUrl.protocol === 'http:' || pageUrl.protocol === 'https:')
+      ? pageUrl.hostname.toLowerCase().replace(/\.$/, '')
+      : ''
+  );
   const domain = normalizeDomain(msg.domain);
   if (!domain || !senderHost || !domainMatches(senderHost, domain)) {
     return { ok: false, error: 'Invalid domain' };
@@ -322,6 +338,7 @@ export async function handleZapperSaveRule(msg, sender) {
     }
 
     const existing = await getStoredZapperRules();
+    const deduped = existing.filter(r => !(r.domain === domain && r.selector === selector));
     const rule = {
       id: `zapper_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       domain,
@@ -331,7 +348,7 @@ export async function handleZapperSaveRule(msg, sender) {
       source: 'zapper'
     };
 
-    const next = [...existing, rule].slice(-ZAPPER_MAX_RULES);
+    const next = [...deduped, rule].slice(-ZAPPER_MAX_RULES);
     await chrome.storage.local.set({ localCosmeticRules: next });
     await clearZapperSession(tabId, msg.token);
     return { ok: true, rule };

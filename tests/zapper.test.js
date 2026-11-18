@@ -671,3 +671,106 @@ test('failed zapper save removes confirmation menu and unlocks hover selection f
   assert.strictEqual(secondTarget.style.getPropertyValue('display'), 'none');
   assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
 });
+
+test('Bug 12 zapper and zapperHandlers alignment regressions', async (t) => {
+  await t.test('rejects invalid action, malformed sender URL, and deduplicates existing rules cleanly', async () => {
+    const existingRule = {
+      id: 'zapper_old',
+      domain: 'example.com',
+      selector: '.annoying',
+      enabled: false,
+      createdAt: 1,
+      source: 'zapper'
+    };
+    const { sandbox, storage, getToken } = loadHandlers({
+      storage: { localCosmeticRules: [existingRule] }
+    });
+    await sandbox.handleZapperStart({ tabId: 7 });
+    const token = getToken();
+
+    const badAction = await sandbox.handleZapperSaveRule(
+      { action: 'bogus', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'https://example.com/page' } }
+    );
+    assert.strictEqual(badAction.ok, false);
+    assert.match(badAction.error, /Invalid zapper action/);
+
+    const badSenderUrl = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'not-a-valid-url' } }
+    );
+    assert.strictEqual(badSenderUrl.ok, false);
+    assert.strictEqual(badSenderUrl.error, 'Invalid domain');
+
+    const trailingDot = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'https://example.com./page' } }
+    );
+    assert.strictEqual(trailingDot.ok, true);
+    assert.strictEqual(storage.localCosmeticRules.length, 1);
+    assert.strictEqual(storage.localCosmeticRules[0].enabled, true);
+  });
+
+  await t.test('zapper ignores duplicate confirmSave clicks, stale saves after Escape, and cleans up on expired session', async () => {
+    const dom = new JSDOM('<!doctype html><html><body><div id="ad-box">Ad</div></body></html>', {
+      url: 'https://example.com/article'
+    });
+    const { window } = dom;
+    const { document } = window;
+    let resolveSave;
+    const saveCalls = [];
+
+    const sandbox = vm.createContext({
+      __CHROMA_INTERNAL_TEST_STRICT__: true,
+      window,
+      document,
+      Node: window.Node,
+      Element: window.Element,
+      CSS: { escape: value => String(value).replace(/([^\w-])/g, '\\$1') },
+      chrome: {
+        runtime: {
+          sendMessage: async (msg) => {
+            if (msg?.type === 'ZAPPER_SAVE_RULE' && msg.action === 'save') {
+              saveCalls.push(msg);
+              return new Promise(resolve => { resolveSave = resolve; });
+            }
+            return { ok: true };
+          }
+        }
+      },
+      console,
+      Map,
+      Set
+    });
+    sandbox.globalThis = sandbox;
+    vm.runInContext(zapperJsCode, sandbox);
+
+    const api = sandbox.__CHROMA_ZAPPER_TEST__;
+    const target = document.getElementById('ad-box');
+    target.getBoundingClientRect = () => ({ left: 10, top: 10, width: 100, height: 40 });
+    assert.strictEqual(api.isValidSelector('[data-x="javascript:alert(1)"]', target), false);
+
+    // 1. In-flight save ignores double clicks and ignores late success after Esc cancel.
+    sandbox.__CHROMA_START_ZAPPER__('token-inflight');
+    target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 15, clientY: 15 }));
+    document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+    const confirmBtn = document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]');
+    confirmBtn.click();
+    confirmBtn.click();
+    assert.strictEqual(saveCalls.length, 1, 'duplicate confirmSave while in flight must be ignored');
+
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    resolveSave({ ok: true });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.notStrictEqual(target.style.getPropertyValue('display'), 'none', 'canceled save must not hide element');
+
+    // 2. Expired session error cleans up zapper overlay cleanly.
+    sandbox.__CHROMA_START_ZAPPER__('token-expired');
+    target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 15, clientY: 15 }));
+    document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+    document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]').click();
+    resolveSave({ ok: false, error: 'Invalid zapper session' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
+  });
+});

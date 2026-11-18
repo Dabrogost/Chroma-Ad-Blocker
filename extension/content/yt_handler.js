@@ -638,46 +638,131 @@
   ];
 
   // Fetch wrapper — intercepts YouTube API responses and strips ad fields before returning.
-  window.fetch = async function(...args) {
-    const url = requestUrl(args[0]);
-    if (args[1]?.body) {
-      const headers = args[1].headers ?? args[0]?.headers;
-      const body = await prepareSabrFetchBody(url, args[1].body, headers);
-      if (body !== args[1].body) args[1] = { ...args[1], body };
-    } else if (CONFIG.enabled && CONFIG.stripping && sabrRecovery?.requestUntil >= Date.now() &&
-        url.includes('/youtubei/v1/player') && typeof Request === 'function' && args[0] instanceof Request) {
-      try {
-        const headers = new Headers(args[1]?.headers ?? args[0].headers);
-        const body = headers.get('content-encoding')?.toLowerCase() === 'gzip'
-          ? args[0].clone().body : await args[0].clone().text();
-        const prepared = await prepareSabrFetchBody(url, body, headers, true);
-        if (prepared !== body) args[0] = new Request(args[0], { body: prepared });
-      } catch (_) {} // A consumed/uncloneable request follows native fetch semantics.
-    }
-    const sabrState = sabrRequestState(url);
-    const response = await _nativeFetch.apply(this, args);
-    if (!(CONFIG.enabled && CONFIG.stripping)) return response;
+  window.fetch = function fetch(...args) {
+    const self = this;
+    return (async () => {
+      const url = requestUrl(args[0]);
+      if (args[1]?.body) {
+        const headers = args[1].headers ?? args[0]?.headers;
+        const body = await prepareSabrFetchBody(url, args[1].body, headers);
+        if (body !== args[1].body) args[1] = { ...args[1], body };
+      } else if (CONFIG.enabled && CONFIG.stripping && sabrRecovery?.requestUntil >= Date.now() &&
+          url.includes('/youtubei/v1/player') && typeof Request === 'function' && args[0] instanceof Request) {
+        try {
+          const headers = new Headers(args[1]?.headers ?? args[0].headers);
+          const body = headers.get('content-encoding')?.toLowerCase() === 'gzip'
+            ? args[0].clone().body : await args[0].clone().text();
+          const prepared = await prepareSabrFetchBody(url, body, headers, true);
+          if (prepared !== body) args[0] = new Request(args[0], { body: prepared });
+        } catch (_) {} // A consumed/uncloneable request follows native fetch semantics.
+      }
+      const sabrState = sabrRequestState(url);
+      const response = await _nativeFetch.apply(self, args);
+      if (!(CONFIG.enabled && CONFIG.stripping)) return response;
 
-    if (sabrState) return recoverSabrResponse(response, sabrState);
-    if (YT_API_PATHS.some(p => url.includes(p))) {
-      try {
-        const clone = response.clone();
-        const json = await clone.json();
-        const modified = cleanYoutubePayload(json);
-        if (modified) {
-          return new Response(JSON.stringify(json), {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-          });
-        }
-      } catch (_) {}
-    }
-    return response;
+      if (sabrState) return recoverSabrResponse(response, sabrState);
+      if (YT_API_PATHS.some(p => url.includes(p))) {
+        try {
+          const clone = response.clone();
+          const json = await clone.json();
+          const modified = cleanYoutubePayload(json);
+          if (modified) {
+            return new Response(JSON.stringify(json), {
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+            });
+          }
+        } catch (_) {}
+      }
+      return response;
+    })();
   };
+  try {
+    Object.defineProperty(window.fetch, 'length', {
+      value: typeof _nativeFetch?.length === 'number' ? _nativeFetch.length : 1,
+      configurable: true
+    });
+  } catch (_) {}
   // Save reference before YouTube's scripts re-wrap window.fetch, so the
   // toString spoof can map our wrapper even after it's no longer the outermost fetch.
   const _ourFetch = window.fetch;
+
+  const _xhrRespTextDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText');
+  const _xhrRespDesc = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'response');
+  const _canInterceptXhrGetters = Boolean(
+    _xhrRespTextDesc && typeof _xhrRespTextDesc.get === 'function' && _xhrRespTextDesc.configurable !== false &&
+    _xhrRespDesc && typeof _xhrRespDesc.get === 'function' && _xhrRespDesc.configurable !== false
+  );
+  let _wrappedRespTextGet = null;
+  let _wrappedRespGet = null;
+
+  if (_canInterceptXhrGetters) {
+    const stripXhrText = (xhr, origText) => {
+      const cache = xhr._chromaStrippedCache;
+      if (cache && cache.computedText) return cache.text;
+      let nextText = origText;
+      try {
+        if (origText && mightContainYoutubeAdPayloadSignal(origText)) {
+          const json = _nativeJSONParse(origText);
+          if (cleanYoutubePayload(json)) {
+            nextText = JSON.stringify(json);
+          }
+        }
+      } catch (_) {}
+      xhr._chromaStrippedCache = { ...(cache || {}), computedText: true, text: nextText };
+      return nextText;
+    };
+
+    const stripXhrJson = (xhr, origJson) => {
+      const cache = xhr._chromaStrippedCache;
+      if (cache && cache.computedJson) return cache.modified ? cache.json : origJson;
+      let nextJson = origJson;
+      let modified = false;
+      try {
+        if (origJson && typeof origJson === 'object') {
+          const serialized = JSON.stringify(origJson);
+          if (serialized && mightContainYoutubeAdPayloadSignal(serialized)) {
+            const cloned = _nativeJSONParse(serialized);
+            if (cleanYoutubePayload(cloned)) {
+              nextJson = cloned;
+              modified = true;
+            }
+          }
+        }
+      } catch (_) {}
+      xhr._chromaStrippedCache = { ...(cache || {}), computedJson: true, modified, json: nextJson };
+      return modified ? nextJson : origJson;
+    };
+
+    _wrappedRespTextGet = function responseText() {
+      const origText = _xhrRespTextDesc.get.call(this);
+      if (this.readyState !== 4 || !this._chromaShouldStrip) return origText;
+      const rt = this.responseType;
+      if (rt && rt !== '' && rt !== 'text') return origText;
+      return stripXhrText(this, origText);
+    };
+
+    _wrappedRespGet = function response() {
+      const origResp = _xhrRespDesc.get.call(this);
+      if (this.readyState !== 4 || !this._chromaShouldStrip) return origResp;
+      const rt = this.responseType;
+      if (rt === 'json') return stripXhrJson(this, origResp);
+      if (!rt || rt === '' || rt === 'text') return stripXhrText(this, _xhrRespTextDesc.get.call(this));
+      return origResp;
+    };
+
+    try {
+      Object.defineProperty(XMLHttpRequest.prototype, 'responseText', {
+        ..._xhrRespTextDesc,
+        get: _wrappedRespTextGet
+      });
+      Object.defineProperty(XMLHttpRequest.prototype, 'response', {
+        ..._xhrRespDesc,
+        get: _wrappedRespGet
+      });
+    } catch (_) {}
+  }
 
   // XHR wrapper — saves the request URL so the send wrapper can check it.
   // The beacon suppression IIFE (below) captures this as its _origOpen, giving the
@@ -688,9 +773,10 @@
       delete this.response;
       this._chromaResponseOverridden = false;
     }
+    this._chromaStrippedCache = null;
     this._chromaYTUrl = String(url);
     this._chromaShouldStrip = false;
-    if (!this._chromaReadyStateHooked && typeof this.addEventListener === 'function') {
+    if (!_canInterceptXhrGetters && !this._chromaReadyStateHooked && typeof this.addEventListener === 'function') {
       this._chromaReadyStateHooked = true;
       this.addEventListener('readystatechange', function() {
         if (this.readyState !== 4 || !this._chromaShouldStrip) return;
@@ -940,11 +1026,27 @@
       [XMLHttpRequest.prototype.send,   'function send() { [native code] }'],
       [JSON.parse,                      'function parse() { [native code] }'],
     ]);
+    if (_wrappedRespTextGet) {
+      _targets.set(_wrappedRespTextGet, 'function get responseText() { [native code] }');
+    }
+    if (_wrappedRespGet) {
+      _targets.set(_wrappedRespGet, 'function get response() { [native code] }');
+    }
 
-    const _spoof = function toString() {
-      if (_targets.has(this)) return _targets.get(this);
-      return typeof _nativeToString === 'function' ? _nativeToString.call(this) : '';
-    };
+    const _spoof = {
+      toString() {
+        if (_targets.has(this)) return _targets.get(this);
+        if (typeof _nativeToString !== 'function') return '';
+        try {
+          return _nativeToString.call(this);
+        } catch (err) {
+          if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+            try { Error.captureStackTrace(err, _spoof); } catch (_) {}
+          }
+          throw err;
+        }
+      }
+    }.toString;
 
     const _nativeLabel = typeof _nativeToString === 'function'
       ? _nativeToString.call(_nativeToString)
@@ -952,8 +1054,14 @@
     _targets.set(_spoof, _nativeLabel);
 
     try {
-      Function.prototype.toString = _spoof;
-    } catch (_) {}
+      Object.defineProperty(Function.prototype, 'toString', {
+        value: _spoof,
+        writable: true,
+        configurable: true
+      });
+    } catch (_) {
+      try { Function.prototype.toString = _spoof; } catch (__) {}
+    }
   })();
 
   // ─── AD ACCELERATION ─────

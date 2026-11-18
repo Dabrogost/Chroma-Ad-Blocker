@@ -1173,6 +1173,58 @@ test('health diagnostics', async (t) => {
     ));
   });
 
+  await t.test('unavailable geolocation API when disabled does not produce false reconciliation errors', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: { enabled: true, networkBlocking: true, geolocationProtection: false }
+      },
+      geolocationStatus: {
+        requested: false,
+        enabled: false,
+        available: false,
+        active: false,
+        effective: false,
+        controlled: null,
+        setting: null,
+        error: 'Chrome geolocation content setting unavailable'
+      },
+      geolocationSyncResult: {
+        ok: false,
+        stale: false,
+        available: false,
+        error: 'Chrome geolocation content setting unavailable'
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+    assert.strictEqual(health.geolocation.reconciliationError, null);
+    assert.strictEqual(health.overall.issues.some(issue => issue.area === 'geolocation'), false);
+    assert.strictEqual(health.overall.status, 'healthy');
+  });
+
+  await t.test('failed webrtc and browserPrivacy clear verification during release surfaces warnings', async () => {
+    const sandbox = loadHealthSandbox({
+      storage: {
+        config: {
+          enabled: false,
+          networkBlocking: true,
+          browserPrivacyHardening: true,
+          webRtcLeakProtection: 'strict'
+        }
+      },
+      webrtcSyncResult: { ok: false, stale: false, available: true, error: 'clear failed' },
+      browserPrivacySyncResult: {
+        ok: false,
+        stale: false,
+        results: [{ key: 'thirdPartyCookiesAllowed', available: false, ok: false, error: 'Release applied but could not be verified: read failed' }]
+      }
+    });
+
+    const health = await sandbox.getHealthStatus();
+    assert.ok(health.overall.issues.some(issue => issue.area === 'webrtc' && /could not release/i.test(issue.message)));
+    assert.ok(health.overall.issues.some(issue => issue.area === 'browserPrivacy' && /could not verify release/i.test(issue.message)));
+  });
+
   await t.test('proxy health never exposes auth fields or proxy hosts', async () => {
     const sandbox = loadHealthSandbox({
       storage: {

@@ -1017,6 +1017,22 @@ function reserveProxyAuthAttempt(requestId) {
   return true;
 }
 
+function releaseProxyAuthAttempt(requestId) {
+  if (typeof requestId === 'string' && requestId) {
+    _authAttempts.delete(requestId);
+  }
+}
+
+chrome.webRequest.onCompleted?.addListener(
+  details => releaseProxyAuthAttempt(details?.requestId),
+  { urls: ["<all_urls>"] }
+);
+
+chrome.webRequest.onErrorOccurred?.addListener(
+  details => releaseProxyAuthAttempt(details?.requestId),
+  { urls: ["<all_urls>"] }
+);
+
 chrome.webRequest.onAuthRequired.addListener(
   function(details, callback) {
     if (!details.isProxy) {

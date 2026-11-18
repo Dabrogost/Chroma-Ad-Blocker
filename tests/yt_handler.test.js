@@ -1082,6 +1082,87 @@ test('Ad field stripping', async (t) => {
     assert.ok('adPlacements' in result, 'non-YouTube pages should not get YouTube payload pruning');
     assert.strictEqual(sandbox.CONFIG, undefined, 'test-only exports should not be installed after scope guard exit');
   });
+
+  await t.test('Bug 8 yt_handler stealth and pre-open readystatechange regressions', () => {
+    const sandbox = createStrippingSandbox(
+      { enabled: true, stripping: true },
+      undefined,
+      'www.youtube.com',
+      (s) => {
+        s.XMLHttpRequest = class {
+          constructor() {
+            this._listeners = {};
+            this._rawResponseText = '';
+            this._rawJson = null;
+            this.readyState = 0;
+            this.responseType = '';
+          }
+          get responseText() {
+            if (this.responseType === 'json') throw new Error('InvalidStateError');
+            return this._rawResponseText;
+          }
+          get response() {
+            return this.responseType === 'json' ? this._rawJson : this._rawResponseText;
+          }
+          open(method, url) {
+            this._testUrl = url;
+            this.readyState = 1;
+          }
+          addEventListener(type, fn) {
+            (this._listeners[type] = this._listeners[type] || []).push(fn);
+          }
+          send() {
+            this.readyState = 4;
+            const payload = { adPlacements: [{ id: 1 }], videoDetails: { title: 'PreOpen' } };
+            this._rawResponseText = JSON.stringify(payload);
+            this._rawJson = payload;
+            for (const fn of this._listeners.readystatechange || []) {
+              fn.call(this);
+            }
+          }
+        };
+      }
+    );
+
+    const fetchMeta = vm.runInContext(`({
+      tag: Object.prototype.toString.call(window.fetch),
+      name: window.fetch.name,
+      hasPrototypeOnToString: 'prototype' in Function.prototype.toString
+    })`, sandbox);
+    assert.strictEqual(fetchMeta.tag, '[object Function]');
+    assert.strictEqual(fetchMeta.name, 'fetch');
+    assert.strictEqual(fetchMeta.hasPrototypeOnToString, false);
+
+    let thrownStack = '';
+    try {
+      vm.runInContext('Function.prototype.toString.call(null)', sandbox);
+    } catch (err) {
+      thrownStack = String(err.stack || '');
+    }
+    assert.doesNotMatch(thrownStack, /yt_handler\.js/);
+
+    const textXhr = new sandbox.XMLHttpRequest();
+    let preOpenText = null;
+    textXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) preOpenText = sandbox._nativeJSONParse(this.responseText);
+    });
+    textXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    textXhr.send();
+    assert.strictEqual('adPlacements' in preOpenText, false);
+    assert.strictEqual(preOpenText.videoDetails.title, 'PreOpen');
+
+    const jsonXhr = new sandbox.XMLHttpRequest();
+    jsonXhr.responseType = 'json';
+    let preOpenJson = null;
+    jsonXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) preOpenJson = this.response;
+    });
+    jsonXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    jsonXhr.send();
+    assert.strictEqual('adPlacements' in preOpenJson, false);
+    assert.strictEqual(preOpenJson.videoDetails.title, 'PreOpen');
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(jsonXhr, 'responseText'), false);
+  });
 });
 
 // ─── YOUTUBE AD ACCELERATION ─────

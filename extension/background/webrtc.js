@@ -278,7 +278,6 @@ async function syncWebRtcLeakProtectionImpl(config, proxyConfigs, generation) {
     if (desired.action === 'clear') {
       if (controlledByThisExtension || (BLOCKED_LEVELS.has(levelOfControl) && !_webRtcPreferenceReleased)) {
         await chromeSettingCall(setting, 'clear', WEBRTC_SCOPE);
-        _webRtcPreferenceReleased = true;
       }
       if (generation !== _webRtcGeneration) {
         return { ok: false, stale: true, available: true, requested, enabled };
@@ -286,7 +285,7 @@ async function syncWebRtcLeakProtectionImpl(config, proxyConfigs, generation) {
       const afterClear = await chromeSettingCall(setting, 'get', WEBRTC_GET_DETAILS);
       const afterLevel = afterClear?.levelOfControl || null;
       const released = afterLevel !== 'controlled_by_this_extension';
-      if (!released) _webRtcPreferenceReleased = false;
+      _webRtcPreferenceReleased = released && BLOCKED_LEVELS.has(afterLevel);
       return {
         ok: released,
         stale: false,

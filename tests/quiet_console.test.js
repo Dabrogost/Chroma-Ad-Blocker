@@ -533,4 +533,155 @@ test('Quiet Console shared page layer', async (t) => {
     assert.strictEqual(probe.canvasViaCall, probe.origToDataUrlSource);
     assert.strictEqual(probe.canvasDirect, probe.origToDataUrlSource);
   });
+
+  await t.test('abort() cancels pending quiet XHR completion and suppresses listeners', () => {
+    const timers = [];
+    class AbortableXHR {
+      constructor() {
+        this._listeners = Object.create(null);
+        this.readyState = 0;
+        this.status = 0;
+      }
+      addEventListener(type, fn) {
+        (this._listeners[type] = this._listeners[type] || []).push(fn);
+      }
+      dispatchEvent(ev) {
+        for (const fn of this._listeners[ev.type] || []) fn.call(this, ev);
+        return true;
+      }
+      open() { this.readyState = 1; }
+      send() {}
+      abort() { this.readyState = 0; }
+    }
+
+    const listeners = Object.create(null);
+    const sandbox = {
+      console,
+      window: null,
+      document: {
+        addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); }
+      },
+      navigator: { sendBeacon: () => true },
+      XMLHttpRequest: AbortableXHR,
+      CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
+      Event: class { constructor(type) { this.type = type; } },
+      setTimeout: (fn) => { timers.push(fn); return timers.length; },
+      clearTimeout: (id) => { timers[id - 1] = null; },
+      URL
+    };
+    sandbox.window = sandbox;
+    sandbox.location = { hostname: 'example.com', href: 'https://example.com/' };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(quietConsoleCode, sandbox);
+    for (const fn of listeners['__CHROMA_QUIET_CONSOLE_CONFIG__'] || []) {
+      fn(new sandbox.CustomEvent('__CHROMA_QUIET_CONSOLE_CONFIG__', { detail: { enabled: true, quietConsole: true } }));
+    }
+
+    const xhr = new sandbox.XMLHttpRequest();
+    let fired = 0;
+    xhr.onload = () => { fired++; };
+    xhr.addEventListener('load', () => { fired++; });
+    xhr.open('GET', 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js');
+    xhr.send();
+    xhr.abort();
+    while (timers.length) {
+      const fn = timers.shift();
+      if (fn) fn();
+    }
+    assert.strictEqual(fired, 0, 'abort() must cancel deferred quiet completion');
+  });
+
+  await t.test('completeQuietXhr dispatches addEventListener listeners without double-firing DOM EventTarget onload', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html></html>', { url: 'https://example.com/' });
+    const { window } = dom;
+    const listeners = Object.create(null);
+    const sandbox = {
+      console,
+      window,
+      document: window.document,
+      navigator: { sendBeacon: () => true },
+      XMLHttpRequest: window.XMLHttpRequest,
+      Event: window.Event,
+      ProgressEvent: window.ProgressEvent,
+      CustomEvent: window.CustomEvent,
+      setTimeout: (fn) => { fn(); return 1; },
+      clearTimeout: () => {},
+      URL
+    };
+    sandbox.location = window.location;
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(quietConsoleCode, sandbox);
+    sandbox.document.dispatchEvent(new window.CustomEvent('__CHROMA_QUIET_CONSOLE_CONFIG__', {
+      detail: { enabled: true, quietConsole: true }
+    }));
+
+    const xhr = new window.XMLHttpRequest();
+    let attrLoad = 0;
+    let listenerLoad = 0;
+    let listenerReady = 0;
+    xhr.onload = () => { attrLoad++; };
+    xhr.addEventListener('load', () => { listenerLoad++; });
+    xhr.addEventListener('readystatechange', () => { if (xhr.readyState === 4) listenerReady++; });
+    xhr.open('GET', 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js');
+    xhr.send();
+
+    assert.strictEqual(attrLoad, 1);
+    assert.strictEqual(listenerLoad, 1);
+    assert.strictEqual(listenerReady, 1);
+    assert.strictEqual(xhr.status, 200);
+    assert.strictEqual(xhr.responseText, '{}');
+  });
+
+  await t.test('captures pristine fetch at document_start and ignores forged config events when secure port channel is active', async () => {
+    const { webcrypto } = require('crypto');
+    const { MessageChannel, MessageEvent } = globalThis;
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html></html>', { url: 'https://example.com/' });
+    const { window } = dom;
+    let spyCalls = 0;
+    let nativeCalls = 0;
+    window.fetch = function fetch() {
+      nativeCalls++;
+      return Promise.resolve({ ok: true, status: 299 });
+    };
+
+    const sandbox = {
+      console,
+      window,
+      document: window.document,
+      navigator: { sendBeacon: () => true },
+      XMLHttpRequest: window.XMLHttpRequest,
+      CustomEvent: window.CustomEvent,
+      MessageEvent,
+      MessageChannel,
+      crypto: webcrypto,
+      Response: class { constructor(b, init = {}) { this.status = init.status || 200; } },
+      setTimeout: (fn) => { fn(); return 1; },
+      clearTimeout: () => {},
+      URL
+    };
+    sandbox.location = window.location;
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(quietConsoleCode, sandbox);
+
+    // Page script attempts to replace window.fetch and forge a public config event
+    const originalFetchBeforeSpy = window.fetch;
+    window.fetch = () => {
+      spyCalls++;
+      return Promise.resolve({ status: 500 });
+    };
+    window.document.dispatchEvent(new window.CustomEvent('__CHROMA_QUIET_CONSOLE_CONFIG__', {
+      detail: { enabled: true, quietConsole: true }
+    }));
+
+    // Forged public event must not activate hooks when secure port is active
+    assert.strictEqual(window.fetch !== originalFetchBeforeSpy && spyCalls === 0, true);
+    await window.fetch('https://googleads.g.doubleclick.net/pagead/id');
+    assert.strictEqual(spyCalls, 1, 'forged event must not have installed hooks');
+    assert.strictEqual(nativeCalls, 0);
+  });
 });

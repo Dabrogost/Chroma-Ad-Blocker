@@ -575,6 +575,7 @@ const ChromaApp = (() => {
         ? { type: MSG.STATS_GET }
         : { type: MSG.STATS_GET, options: { summaryOnly: true } };
       stats = await notifyBackground(message) || null;
+      if (stats?.ok === false) stats = null;
       available = !!stats;
     } catch (error) {
       console.error('Chroma stats failed to load:', error);
@@ -1005,7 +1006,7 @@ const ChromaApp = (() => {
       });
       $('exportStatsJson')?.addEventListener('click', async () => {
         const exported = await notifyBackground({ type: MSG.STATS_EXPORT });
-        if (!exported) return;
+        if (!exported || exported.ok === false) return;
         const text = JSON.stringify(exported, null, 2);
         try {
           const blob = new Blob([text], { type: 'application/json' });
@@ -1020,7 +1021,10 @@ const ChromaApp = (() => {
 
       $('exportConfigJson')?.addEventListener('click', async () => {
         const exported = await notifyBackground({ type: MSG.CONFIG_EXPORT });
-        if (!exported) return;
+        if (!exported || exported.ok === false || exported.schema !== 'chroma-settings') {
+          setText('settingsBackupStatus', exported?.error || 'Settings export failed.');
+          return;
+        }
         const text = JSON.stringify(exported, null, 2);
         try {
           const blob = new Blob([text], { type: 'application/json' });
@@ -1223,7 +1227,11 @@ const ChromaApp = (() => {
 
       let subscriptions = [];
       try {
-        subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+        const response = await notifyBackground({ type: MSG.SUBSCRIPTION_GET });
+        if (!Array.isArray(response)) {
+          throw new Error(response?.error || 'Subscriptions unavailable');
+        }
+        subscriptions = response;
 
         const {
           appliedNetworkStateVersion = 0,
@@ -1635,9 +1643,9 @@ const ChromaApp = (() => {
         console.error('Chroma user scriptlets failed to load:', error);
       }
 
-      if (!settings) {
+      if (!settings || settings.ok === false) {
         setSectionError('userScriptletSourceList', 'User scriptlets unavailable.');
-        setUserScriptletRulesStatus('User scriptlets unavailable.', true);
+        setUserScriptletRulesStatus(settings?.error || 'User scriptlets unavailable.', true);
         setSectionReady('userScriptletPanel');
         return;
       }
@@ -2062,7 +2070,10 @@ const ChromaApp = (() => {
 
       async function getLogEntries() {
         try {
-          return await notifyBackground({ type: MSG.LOG_GET }) || [];
+          const response = await notifyBackground({ type: MSG.LOG_GET });
+          if (!response) return [];
+          if (!Array.isArray(response)) return null;
+          return response;
         } catch (error) {
           console.error('Chroma request log failed to load:', error);
           return null;

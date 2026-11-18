@@ -227,8 +227,15 @@ export async function handleProxyConfigGet() {
 export function handleProxyConfigSet(msg) {
   return serializeConfigMutation(async () => {
     const { proxyConfigs: existingProxyConfigs = [] } = await chrome.storage.local.get('proxyConfigs');
-    const { ok, configs, droppedCount, errors } = await validateProxyConfigsForStorage(msg.proxyConfigs, existingProxyConfigs);
-    if (!ok) return { ok: false, error: errors[0] };
+    const { ok, configs, droppedCount, errors } = await validateProxyConfigsForStorage(msg?.proxyConfigs, existingProxyConfigs);
+    if (!ok || droppedCount > 0 || errors.length > 0) {
+      return {
+        ok: false,
+        error: errors[0] || 'Invalid proxy configuration',
+        errors,
+        droppedCount
+      };
+    }
     await chrome.storage.local.set({ proxyConfigs: configs });
     return { ok: true, storedCount: configs.length, droppedCount, errors };
   });

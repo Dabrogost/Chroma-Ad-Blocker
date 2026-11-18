@@ -100,11 +100,10 @@ function normalizeHostname(raw) {
   if (!value || value === 'localhost') return null;
 
   value = value.replace(/^\|\|/, '');
-  value = value.replace(/\^.*$/, '');
   value = value.replace(/^\*\./, '');
   value = value.replace(/^\.+|\.+$/g, '');
 
-  if (!value || value.includes('/') || value.includes(':') || value.includes('*')) return null;
+  if (!value || value.includes('^') || value.includes('/') || value.includes(':') || value.includes('*')) return null;
   if (value.includes('|') || value.includes('$') || value.includes('~')) return null;
 
   const ascii = domainToASCII(value);
@@ -131,7 +130,11 @@ function domainFromLine(line) {
   if (hostsMatch) return normalizeHostname(hostsMatch[1]);
 
   if (value.startsWith('||')) {
-    return normalizeHostname(value.slice(2).split('$')[0]);
+    const body = value.slice(2);
+    if (body.includes('$') || body.includes('/')) return null;
+    const caretIdx = body.indexOf('^');
+    if (caretIdx !== -1 && caretIdx !== body.length - 1) return null;
+    return normalizeHostname(caretIdx === -1 ? body : body.slice(0, -1));
   }
 
   if (/^[a-z0-9*.-]+$/i.test(value)) {
@@ -273,6 +276,43 @@ function isGeneratedResource(resource) {
   return false;
 }
 
+function isUnconditionalDomainBlockRule(rule) {
+  const condition = rule?.condition;
+  if (!rule || rule.action?.type !== 'block' || !condition || typeof condition !== 'object') {
+    return false;
+  }
+  if ((Number(rule.priority) || 1) < 1) return false;
+  const urlFilter = condition.urlFilter;
+  if (typeof urlFilter !== 'string' || !/^\|\|[a-z0-9.-]+\^$/i.test(urlFilter)) {
+    return false;
+  }
+  if (condition.isUrlFilterCaseSensitive === true || condition.regexFilter) return false;
+  if (condition.domainType) return false;
+  for (const arrayKey of [
+    'resourceTypes',
+    'excludedResourceTypes',
+    'initiatorDomains',
+    'excludedInitiatorDomains',
+    'requestDomains',
+    'excludedRequestDomains',
+    'requestMethods',
+    'excludedRequestMethods'
+  ]) {
+    if (Array.isArray(condition[arrayKey]) && condition[arrayKey].length > 0) return false;
+  }
+  return true;
+}
+
+function collectProtectedFilters(rules, target = new Set()) {
+  if (!Array.isArray(rules)) return target;
+  for (const rule of rules) {
+    if (isUnconditionalDomainBlockRule(rule)) {
+      target.add(rule.condition.urlFilter.toLowerCase());
+    }
+  }
+  return target;
+}
+
 function currentStaticState(resources) {
   const protectedFilters = new Set();
   const reservedIds = new Set();
@@ -298,11 +338,8 @@ function currentStaticState(resources) {
     protectedRuleCount += rules.length;
     for (const rule of rules) {
       if (Number.isInteger(rule.id)) reservedIds.add(rule.id);
-      const urlFilter = rule.condition?.urlFilter;
-      if (!urlFilter) continue;
-
-      protectedFilters.add(urlFilter);
     }
+    collectProtectedFilters(rules, protectedFilters);
   }
 
   return {
@@ -531,9 +568,11 @@ if (require.main === module) {
 }
 
 module.exports = {
+  collectProtectedFilters,
   compareStableDomains,
   countEligibleDomains,
   domainFromLine,
+  isUnconditionalDomainBlockRule,
   normalizeHostname,
   parseOisd,
   requireFullCapacity,

@@ -35,7 +35,7 @@ export function abortOnPropertyRead(args) {
         Object.defineProperty(obj, key, {
           get: abort,
           set() {},
-          enumerable: desc ? desc.enumerable : true,
+          enumerable: desc ? desc.enumerable : false,
           configurable: true
         });
         return;
@@ -64,7 +64,7 @@ export function abortOnPropertyRead(args) {
       if (!accessor) trap(value, index + 1);
       Object.defineProperty(obj, key, {
         configurable: true,
-        enumerable: desc ? desc.enumerable : true,
+        enumerable: desc ? desc.enumerable : false,
         get() {
           const current = accessor ? ownOrProtoDesc.get?.call(this) : value;
           trap(current, index + 1);
@@ -130,7 +130,7 @@ export function setConstant(args) {
   else if (raw === 'falseFunc') value = function() { return false; };
   else if (raw === 'emptyArray') value = [];
   else if (raw === 'emptyObj')   value = {};
-  else if (!isNaN(raw))     value = Number(raw);
+  else if (typeof raw === 'string' && raw.trim() !== '' && !isNaN(raw)) value = Number(raw);
   else                      value = raw;
 
   const parts = prop.split('.');
@@ -328,15 +328,48 @@ export function preventFetch(args) {
   };
 
   const orig = window.fetch;
-  window.fetch = function(input) {
-    const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+  const wrappedFetch = function(input) {
+    const url = typeof input === 'string'
+      ? input
+      : (input && typeof input.url === 'string'
+          ? input.url
+          : (input && typeof input.href === 'string' ? input.href : ''));
     if (matches(url)) {
       return Promise.resolve(new Response(new Blob([''], { type: 'text/plain' }), { status: 200 }));
     }
     return orig.apply(this, arguments);
   };
-  try { Object.defineProperty(window.fetch, 'name', { value: orig.name || 'fetch', configurable: true }); } catch (e) {}
-  window.fetch.toString = () => orig.toString();
+  try { Object.defineProperty(wrappedFetch, 'name', { value: orig.name || 'fetch', configurable: true }); } catch (e) {}
+  try { Object.defineProperty(wrappedFetch, 'length', { value: typeof orig.length === 'number' ? orig.length : 1, configurable: true }); } catch (e) {}
+  try {
+    const prevToString = Function.prototype.toString;
+    const origLabel = prevToString.call(orig);
+    const spoofLabel = prevToString.call(prevToString);
+    const targets = new WeakMap();
+    targets.set(wrappedFetch, origLabel);
+    const spoof = {
+      toString() {
+        if (targets.has(this)) return targets.get(this);
+        try {
+          return prevToString.call(this);
+        } catch (err) {
+          if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+            try { Error.captureStackTrace(err, spoof); } catch (_) {}
+          }
+          throw err;
+        }
+      }
+    }.toString;
+    targets.set(spoof, spoofLabel);
+    Object.defineProperty(Function.prototype, 'toString', {
+      value: spoof,
+      writable: true,
+      configurable: true
+    });
+  } catch (e) {
+    try { Object.defineProperty(wrappedFetch, 'toString', { value: () => orig.toString(), configurable: true }); } catch (_) {}
+  }
+  window.fetch = wrappedFetch;
 }
 
 /**
@@ -393,51 +426,94 @@ export function preventXhr(args) {
   };
 
   const OrigXHR = window.XMLHttpRequest;
+  const proto = OrigXHR && OrigXHR.prototype;
+  if (!proto || typeof proto.open !== 'function' || typeof proto.send !== 'function') return;
 
-  function PatchedXHR() {
-    const instance = new OrigXHR();
-    let _blocked = false;
+  const blockedInstances = new WeakSet();
+  const targets = new WeakMap();
 
-    const nativeOpen = instance.open;
-    const origOpen = nativeOpen.bind(instance);
-    instance.open = function(method, url) {
-      _blocked = false;
-      if (matches(String(url))) { _blocked = true; return; }
-      return origOpen.apply(instance, arguments);
-    };
-    try { Object.defineProperty(instance.open, 'name', { value: nativeOpen.name || 'open', configurable: true }); } catch (e) {}
-    instance.open.toString = () => nativeOpen.toString();
-
-    const nativeSend = instance.send;
-    const origSend = nativeSend.bind(instance);
-    instance.send = function() {
-      if (_blocked) return;
-      return origSend.apply(instance, arguments);
-    };
-    try { Object.defineProperty(instance.send, 'name', { value: nativeSend.name || 'send', configurable: true }); } catch (e) {}
-    instance.send.toString = () => nativeSend.toString();
-
-    return instance;
-  }
-
-  // Preserve prototype chain so instanceof and static XHR constants work
-  PatchedXHR.prototype = OrigXHR.prototype;
-  try { Object.setPrototypeOf(PatchedXHR, OrigXHR); } catch (e) {}
-  for (const key of ['UNSENT', 'OPENED', 'HEADERS_RECEIVED', 'LOADING', 'DONE']) {
-    if (key in OrigXHR) {
-      try {
-        Object.defineProperty(PatchedXHR, key, {
-          value: OrigXHR[key],
-          writable: false,
-          enumerable: true,
-          configurable: true
-        });
-      } catch (e) {}
+  const nativeOpen = proto.open;
+  const wrappedOpen = function(method, url) {
+    blockedInstances.delete(this);
+    if (matches(String(url))) {
+      blockedInstances.add(this);
+      return;
     }
+    return nativeOpen.apply(this, arguments);
+  };
+  try { Object.defineProperty(wrappedOpen, 'name', { value: nativeOpen.name || 'open', configurable: true }); } catch (e) {}
+  try { Object.defineProperty(wrappedOpen, 'length', { value: typeof nativeOpen.length === 'number' ? nativeOpen.length : 2, configurable: true }); } catch (e) {}
+
+  const nativeSend = proto.send;
+  const wrappedSend = function() {
+    if (blockedInstances.has(this)) return;
+    return nativeSend.apply(this, arguments);
+  };
+  try { Object.defineProperty(wrappedSend, 'name', { value: nativeSend.name || 'send', configurable: true }); } catch (e) {}
+  try { Object.defineProperty(wrappedSend, 'length', { value: typeof nativeSend.length === 'number' ? nativeSend.length : 0, configurable: true }); } catch (e) {}
+
+  const nativeSetRequestHeader = typeof proto.setRequestHeader === 'function' ? proto.setRequestHeader : null;
+  let wrappedSetRequestHeader = null;
+  if (nativeSetRequestHeader) {
+    wrappedSetRequestHeader = function() {
+      if (blockedInstances.has(this)) return;
+      return nativeSetRequestHeader.apply(this, arguments);
+    };
+    try { Object.defineProperty(wrappedSetRequestHeader, 'name', { value: nativeSetRequestHeader.name || 'setRequestHeader', configurable: true }); } catch (e) {}
+    try { Object.defineProperty(wrappedSetRequestHeader, 'length', { value: typeof nativeSetRequestHeader.length === 'number' ? nativeSetRequestHeader.length : 2, configurable: true }); } catch (e) {}
   }
-  try { Object.defineProperty(PatchedXHR, 'name', { value: OrigXHR.name || 'XMLHttpRequest', configurable: true }); } catch (e) {}
-  PatchedXHR.toString = () => OrigXHR.toString();
-  Object.defineProperty(window, 'XMLHttpRequest', { value: PatchedXHR, writable: true, configurable: true });
+
+  let spoofInstalled = false;
+  try {
+    const prevToString = Function.prototype.toString;
+    targets.set(wrappedOpen, prevToString.call(nativeOpen));
+    targets.set(wrappedSend, prevToString.call(nativeSend));
+    if (wrappedSetRequestHeader) targets.set(wrappedSetRequestHeader, prevToString.call(nativeSetRequestHeader));
+    const spoofLabel = prevToString.call(prevToString);
+    const spoof = {
+      toString() {
+        if (targets.has(this)) return targets.get(this);
+        try {
+          return prevToString.call(this);
+        } catch (err) {
+          if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+            try { Error.captureStackTrace(err, spoof); } catch (_) {}
+          }
+          throw err;
+        }
+      }
+    }.toString;
+    targets.set(spoof, spoofLabel);
+    Object.defineProperty(Function.prototype, 'toString', {
+      value: spoof,
+      writable: true,
+      configurable: true
+    });
+    spoofInstalled = true;
+  } catch (e) {}
+
+  const installProtoMethod = (key, wrapped, nativeFn) => {
+    const desc = Object.getOwnPropertyDescriptor(proto, key);
+    if (!spoofInstalled) {
+      try { Object.defineProperty(wrapped, 'toString', { value: () => nativeFn.toString(), configurable: true }); } catch (e) {}
+    }
+    try {
+      Object.defineProperty(proto, key, {
+        value: wrapped,
+        writable: desc ? desc.writable !== false : true,
+        enumerable: desc ? desc.enumerable : false,
+        configurable: desc ? desc.configurable !== false : true
+      });
+    } catch (e) {
+      proto[key] = wrapped;
+    }
+  };
+
+  installProtoMethod('open', wrappedOpen, nativeOpen);
+  installProtoMethod('send', wrappedSend, nativeSend);
+  if (wrappedSetRequestHeader) {
+    installProtoMethod('setRequestHeader', wrappedSetRequestHeader, nativeSetRequestHeader);
+  }
 }
 
 /**
@@ -555,44 +631,73 @@ export function protectStylesheets() {
     return false;
   };
 
+  const installMethod = (proto, name, makeWrapper) => {
+    if (!proto) return;
+    const desc = Object.getOwnPropertyDescriptor(proto, name);
+    const orig = desc && typeof desc.value === 'function' ? desc.value : proto[name];
+    if (typeof orig !== 'function' || (desc && desc.configurable === false && desc.writable === false)) return;
+    const wrapped = makeWrapper(orig);
+    try { Object.defineProperty(wrapped, 'name', { value: orig.name || name, configurable: true }); } catch (e) {}
+    try { Object.defineProperty(wrapped, 'length', { value: orig.length, configurable: true }); } catch (e) {}
+    try {
+      const prevToString = Function.prototype.toString;
+      const origLabel = prevToString.call(orig);
+      const spoofLabel = prevToString.call(prevToString);
+      const targets = new WeakMap();
+      targets.set(wrapped, origLabel);
+      const spoof = {
+        toString() {
+          if (targets.has(this)) return targets.get(this);
+          try {
+            return prevToString.call(this);
+          } catch (err) {
+            if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+              try { Error.captureStackTrace(err, spoof); } catch (_) {}
+            }
+            throw err;
+          }
+        }
+      }.toString;
+      targets.set(spoof, spoofLabel);
+      Object.defineProperty(Function.prototype, 'toString', {
+        value: spoof,
+        writable: true,
+        configurable: true
+      });
+    } catch (e) {}
+    try {
+      Object.defineProperty(proto, name, {
+        value: wrapped,
+        configurable: desc ? desc.configurable : true,
+        writable: desc ? desc.writable : true,
+        enumerable: desc ? desc.enumerable : true
+      });
+    } catch (e) {}
+  };
+
   // Wrap Node.prototype.removeChild
-  const origRemoveChild = Node.prototype.removeChild;
-  Object.defineProperty(Node.prototype, 'removeChild', {
-    value: function(child) {
-      if (isStyle(child)) return child;
-      return origRemoveChild.call(this, child);
-    },
-    configurable: false,
-    writable: false
+  installMethod(Node.prototype, 'removeChild', (origRemoveChild) => function(child) {
+    if (isStyle(child) && (!('parentNode' in child) || child.parentNode === this)) return child;
+    return origRemoveChild.call(this, child);
   });
 
   // Wrap Element.prototype.remove
-  const origRemove = Element.prototype.remove;
-  Object.defineProperty(Element.prototype, 'remove', {
-    value: function() {
-      if (isStyle(this)) return;
-      return origRemove.call(this);
-    },
-    configurable: false,
-    writable: false
+  installMethod(Element.prototype, 'remove', (origRemove) => function() {
+    if (isStyle(this)) return;
+    return origRemove.call(this);
   });
 
   // Wrap Element.prototype.replaceChildren
-  const origReplaceChildren = Element.prototype.replaceChildren;
-  Object.defineProperty(Element.prototype, 'replaceChildren', {
-    value: function(...newChildren) {
-      if (this === document.head || this === document.documentElement) {
-        const existing = Array.from(this.children).filter(isStyle);
-        origReplaceChildren.call(this, ...newChildren);
-        for (const s of existing) {
-          if (!this.contains(s)) this.appendChild(s);
-        }
-        return;
+  installMethod(Element.prototype, 'replaceChildren', (origReplaceChildren) => function(...newChildren) {
+    if (this === document.head || this === document.documentElement) {
+      const existing = Array.from(this.children).filter(isStyle);
+      origReplaceChildren.call(this, ...newChildren);
+      for (const s of existing) {
+        if (!this.contains(s)) this.appendChild(s);
       }
-      return origReplaceChildren.call(this, ...newChildren);
-    },
-    configurable: false,
-    writable: false
+      return;
+    }
+    return origReplaceChildren.call(this, ...newChildren);
   });
 }
 
@@ -1225,9 +1330,39 @@ export function replaceNodeText(args) {
 
   const sweep = () => {
     try {
-      const nodes = tag === '*'
-        ? document.querySelectorAll('*')
-        : document.getElementsByTagName(tag);
+      if (tag === '*') {
+        if (typeof document.createTreeWalker === 'function' && typeof NodeFilter === 'object' && NodeFilter) {
+          const walker = document.createTreeWalker(document.documentElement || document, NodeFilter.SHOW_TEXT);
+          let textNode;
+          while ((textNode = walker.nextNode())) {
+            const before = textNode.nodeValue;
+            if (!before) continue;
+            const after = replaceIn(before);
+            if (after !== before) textNode.nodeValue = after;
+          }
+        } else if (document.documentElement) {
+          const walkText = (node) => {
+            if (!node) return;
+            if (node.nodeType === 3) {
+              const before = node.nodeValue ?? node.textContent;
+              if (!before) return;
+              const after = replaceIn(before);
+              if (after !== before) {
+                if ('nodeValue' in node) node.nodeValue = after;
+                else node.textContent = after;
+              }
+              return;
+            }
+            const children = node.childNodes;
+            if (children && children.length) {
+              for (let i = 0; i < children.length; i++) walkText(children[i]);
+            }
+          };
+          walkText(document.documentElement);
+        }
+        return;
+      }
+      const nodes = document.getElementsByTagName(tag);
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
         if (!n || !n.textContent) continue;

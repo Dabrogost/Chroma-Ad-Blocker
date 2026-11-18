@@ -329,11 +329,18 @@
         }
       }
 
+      const farbledAudioChannels = new _WeakSet();
+
       if (AudioBuf) {
         replaceProtoMethod(AudioBuf.prototype, 'getChannelData', function (orig) {
           return wrap(orig, function (t, thisArg, args) {
             const r = _Reflect.apply(t, thisArg, args);
-            try { farbleAudio(r); } catch (e) {}
+            try {
+              if (r && !farbledAudioChannels.has(r)) {
+                farbledAudioChannels.add(r);
+                farbleAudio(r);
+              }
+            } catch (e) {}
             return r;
           });
         });

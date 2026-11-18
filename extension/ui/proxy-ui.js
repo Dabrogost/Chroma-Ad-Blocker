@@ -1107,7 +1107,11 @@ const ChromaProxyUI = (() => {
     if (settingsMode && !addBtn) return;
     let proxyConfigs = [];
     try {
-      proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+      const response = await notifyBackground({ type: MSG.PROXY_CONFIG_GET });
+      if (!Array.isArray(response)) {
+        throw new Error(response?.error || 'Proxy configuration unavailable');
+      }
+      proxyConfigs = response;
     } catch (error) {
       console.error('Chroma proxy config failed to load:', error);
       clearElement(container);

@@ -19,9 +19,13 @@ function sortedArray(value) {
  */
 function networkRuleDedupeShape(rule) {
   const condition = rule?.condition || {};
+  const rawUrlFilter = typeof condition.urlFilter === 'string' ? condition.urlFilter : '';
+  const urlFilter = condition.isUrlFilterCaseSensitive === true
+    ? rawUrlFilter
+    : rawUrlFilter.toLowerCase();
   return {
     actionType: rule?.action?.type || '',
-    urlFilter: condition.urlFilter || '',
+    urlFilter,
     regexFilter: condition.regexFilter || '',
     resourceTypes: sortedArray(condition.resourceTypes),
     domainType: condition.domainType || '',
@@ -59,6 +63,7 @@ function canonicalDomainBlockDomain(rule) {
     shape.actionType !== 'block' ||
     shape.priority !== 1 ||
     !match ||
+    rule?.condition?.isUrlFilterCaseSensitive === true ||
     shape.regexFilter !== '' ||
     shape.resourceTypes.length !== 0 ||
     shape.domainType !== '' ||
@@ -68,7 +73,7 @@ function canonicalDomainBlockDomain(rule) {
     return null;
   }
 
-  return match[1];
+  return match[1].toLowerCase();
 }
 
 function classifyStaticRule(rule) {

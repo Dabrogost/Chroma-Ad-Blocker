@@ -953,6 +953,7 @@ test('Subscription lifecycle manager', async (t) => {
       parseList: () => ({
         networkRules: [
           networkRule('||already-static.example^'),
+          networkRule('||Already-Static.Example^'),
           networkRule('||fresh.example^')
         ],
         cosmeticRules: [],

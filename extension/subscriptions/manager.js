@@ -69,9 +69,13 @@ function subscriptionUrlKey(value) {
 
 function networkRuleDedupeKey(rule) {
   const condition = rule?.condition || {};
+  const rawUrlFilter = typeof condition.urlFilter === 'string' ? condition.urlFilter : '';
+  const urlFilter = condition.isUrlFilterCaseSensitive === true
+    ? rawUrlFilter
+    : rawUrlFilter.toLowerCase();
   return JSON.stringify({
     actionType: rule?.action?.type || '',
-    urlFilter: condition.urlFilter || '',
+    urlFilter,
     regexFilter: condition.regexFilter || '',
     resourceTypes: sortedArray(condition.resourceTypes),
     domainType: condition.domainType || '',
@@ -376,6 +380,7 @@ function simpleDomainBlockDomain(rule) {
     rule?.action?.type !== 'block' ||
     (Number(rule?.priority) || 0) !== 1 ||
     !match ||
+    condition.isUrlFilterCaseSensitive === true ||
     (condition.regexFilter || '') !== '' ||
     sortedArray(condition.resourceTypes).length !== 0 ||
     (condition.domainType || '') !== '' ||
@@ -384,7 +389,7 @@ function simpleDomainBlockDomain(rule) {
   ) {
     return null;
   }
-  return match[1];
+  return match[1].toLowerCase();
 }
 
 function staticRuleLookupHasRule(lookup, rule) {

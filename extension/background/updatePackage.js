@@ -58,13 +58,28 @@ function normalizeVersion(version) {
   return String(version || '').trim().replace(/^v/i, '');
 }
 
+function parseVersionParts(version) {
+  const normalized = normalizeVersion(version);
+  if (!normalized) return null;
+  const [coreWithPre] = normalized.split('+');
+  const dashIdx = coreWithPre.indexOf('-');
+  const core = dashIdx === -1 ? coreWithPre : coreWithPre.slice(0, dashIdx);
+  const prerelease = dashIdx === -1 ? '' : coreWithPre.slice(dashIdx + 1);
+  if (!/^\d+(?:\.\d+){0,3}$/.test(core)) return null;
+  const parts = core.split('.').map(Number);
+  while (parts.length < 4) parts.push(0);
+  return { parts, prerelease };
+}
+
 function isNewerVersion(local, remote) {
-  const parse = value => normalizeVersion(value).split('.').map(Number);
-  const [lMaj, lMin, lPat] = parse(local);
-  const [rMaj, rMin, rPat] = parse(remote);
-  if (rMaj !== lMaj) return rMaj > lMaj;
-  if (rMin !== lMin) return rMin > lMin;
-  return rPat > lPat;
+  const l = parseVersionParts(local);
+  const r = parseVersionParts(remote);
+  if (!l || !r) return false;
+  for (let i = 0; i < 4; i++) {
+    if (r.parts[i] !== l.parts[i]) return r.parts[i] > l.parts[i];
+  }
+  if (l.prerelease && !r.prerelease) return true;
+  return false;
 }
 
 function formatBytes(bytes) {
@@ -249,8 +264,12 @@ async function inflateRaw(bytes) {
   if (typeof DecompressionStream !== 'function') {
     throw new PackageInspectionError('unsupported_zip', 'This browser cannot inspect compressed ZIP entries.');
   }
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    throw new PackageInspectionError('invalid_zip', 'Release ZIP contains corrupt compressed entry data.');
+  }
 }
 
 async function readEntryBytes(zipBytes, entry) {
@@ -266,37 +285,69 @@ async function readEntryBytes(zipBytes, entry) {
 }
 
 function normalizeManifestPath(path) {
-  if (typeof path !== 'string' || path.includes('*')) return null;
-  const normalized = path.trim().replace(/^\/+/, '').replace(/\\/g, '/');
+  if (typeof path !== 'string' || path.includes('*') || path.includes('\\')) return null;
+  const normalized = path.trim().replace(/^\/+/, '');
   return isSafeZipPath(normalized) ? normalized : null;
+}
+
+function assertSafeManifestGlob(path) {
+  if (typeof path !== 'string') {
+    throw new PackageInspectionError('unsafe_manifest_path', 'Release ZIP manifest references an invalid file path.');
+  }
+  const normalized = path.trim().replace(/^\/+/, '');
+  if (!normalized || normalized.includes('\\') || /^[a-z]:/i.test(normalized) || normalized.endsWith('/')) {
+    throw new PackageInspectionError('unsafe_manifest_path', `Release ZIP manifest references an unsafe file path: ${path}.`);
+  }
+  const parts = normalized.split('/');
+  if (parts.some(part => !part || part === '.' || part === '..')) {
+    throw new PackageInspectionError('unsafe_manifest_path', `Release ZIP manifest references an unsafe file path: ${path}.`);
+  }
 }
 
 function collectManifestReferencedPaths(manifest) {
   const paths = new Set(['manifest.json']);
-  const add = value => {
+  const addRequired = value => {
+    if (value == null) return;
     const normalized = normalizeManifestPath(value);
-    if (normalized) paths.add(normalized);
+    if (!normalized) {
+      throw new PackageInspectionError('unsafe_manifest_path', `Release ZIP manifest references an unsafe file path: ${String(value)}.`);
+    }
+    paths.add(normalized);
   };
-  const addIconMap = icons => {
-    if (!icons || typeof icons !== 'object') return;
-    Object.values(icons).forEach(add);
+  const addIconSource = icons => {
+    if (icons == null) return;
+    if (typeof icons === 'string') {
+      addRequired(icons);
+      return;
+    }
+    if (typeof icons !== 'object' || Array.isArray(icons)) {
+      throw new PackageInspectionError('unsafe_manifest_path', 'Release ZIP manifest has an invalid icon path entry.');
+    }
+    Object.values(icons).forEach(addRequired);
   };
 
-  add(manifest?.background?.service_worker);
-  add(manifest?.action?.default_popup);
-  addIconMap(manifest?.action?.default_icon);
-  addIconMap(manifest?.icons);
-  add(manifest?.options_ui?.page);
+  addRequired(manifest?.background?.service_worker);
+  addRequired(manifest?.action?.default_popup);
+  addIconSource(manifest?.action?.default_icon);
+  addIconSource(manifest?.icons);
+  addRequired(manifest?.options_ui?.page);
+  addRequired(manifest?.options_page);
 
   for (const script of manifest?.content_scripts || []) {
-    for (const file of script.js || []) add(file);
-    for (const file of script.css || []) add(file);
+    for (const file of script.js || []) addRequired(file);
+    for (const file of script.css || []) addRequired(file);
   }
   for (const resource of manifest?.declarative_net_request?.rule_resources || []) {
-    add(resource.path);
+    addRequired(resource.path);
   }
   for (const group of manifest?.web_accessible_resources || []) {
-    for (const resource of group.resources || []) add(resource);
+    for (const resource of group.resources || []) {
+      if (typeof resource === 'string' && resource.includes('*')) {
+        assertSafeManifestGlob(resource);
+      } else {
+        addRequired(resource);
+      }
+    }
   }
 
   return [...paths].sort();
@@ -348,16 +399,49 @@ async function requiredSha256Hex(arrayBuffer) {
   return hash;
 }
 
+const RELEASE_DOWNLOAD_PREFIX_PATH = '/Dabrogost/Chroma-Ad-Blocker/releases/download/';
+
 function validateGitHubReleaseAssetUrl(asset, expectedName) {
   if (!asset || typeof asset !== 'object') return false;
-  if (asset.name !== expectedName) return false;
-  if (typeof asset.downloadUrl !== 'string' || !asset.downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) return false;
-  try {
-    const url = new URL(asset.downloadUrl);
-    return url.protocol === 'https:' && url.hostname === 'github.com' && url.pathname.endsWith(`/${expectedName}`);
-  } catch {
+  if (asset.name !== expectedName || typeof expectedName !== 'string' || !expectedName) return false;
+  if (expectedName.includes('/') || expectedName.includes('\\') || expectedName === '.' || expectedName === '..') return false;
+  const downloadUrl = asset.downloadUrl;
+  if (typeof downloadUrl !== 'string' || !downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) return false;
+  if (downloadUrl.includes('?') || downloadUrl.includes('#') || downloadUrl.includes('\\') || /\s/.test(downloadUrl)) {
     return false;
   }
+
+  const remainder = downloadUrl.slice(RELEASE_DOWNLOAD_PREFIX.length);
+  const segments = remainder.split('/');
+  if (segments.length !== 2) return false;
+  for (const segment of segments) {
+    if (!segment || segment === '.' || segment === '..') return false;
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      return false;
+    }
+    if (!decoded || decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\')) {
+      return false;
+    }
+  }
+  if (segments[1] !== expectedName) return false;
+
+  if (typeof URL === 'function') {
+    try {
+      const url = new URL(downloadUrl);
+      if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password) {
+        return false;
+      }
+      if (url.search || url.hash || url.pathname !== `${RELEASE_DOWNLOAD_PREFIX_PATH}${remainder}`) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 function validateAssetDownloadUrl(asset) {
@@ -510,7 +594,14 @@ export async function inspectUpdateZip(arrayBuffer, { expectedVersion, currentMa
       return fail('missing_manifest', 'Release ZIP does not contain manifest.json at the archive root.');
     }
 
-    const manifestBytes = await readEntryBytes(zipBytes, manifestEntry);
+    // Validate local headers, decompression, sizes, and CRC32 for every entry, not just manifest.json.
+    let manifestBytes = null;
+    for (const entry of entries) {
+      const entryBytes = await readEntryBytes(zipBytes, entry);
+      if (entry.name === 'manifest.json') {
+        manifestBytes = entryBytes;
+      }
+    }
     const manifest = JSON.parse(decodeUtf8(manifestBytes));
     const version = validateManifest(manifest, expectedVersion, currentManifest);
     const referencedPaths = collectManifestReferencedPaths(manifest);
@@ -572,8 +663,9 @@ async function downloadAssetBytes(asset) {
 }
 
 export async function inspectLatestUpdatePackage(options = {}) {
+  let update = null;
   try {
-    const update = await checkForUpdate({ force: options.force === true });
+    update = await checkForUpdate({ force: options.force === true });
     if (!update?.updateAvailable) {
       if (update?.assetStatus === 'unavailable' || update?.assetStatus === 'missing-version') {
         return {
@@ -663,10 +755,15 @@ export async function inspectLatestUpdatePackage(options = {}) {
       reason: `Release ZIP inspected: v${inspection.package.version}, ${inspection.package.entryCount} files, ${formatBytes(bytes.byteLength)}.`
     };
   } catch (error) {
+    const hasAvailableUpdate = update?.updateAvailable === true;
     return {
       ok: false,
-      updateAvailable: false,
-      latestVersion: null,
+      updateAvailable: hasAvailableUpdate,
+      latestVersion: hasAvailableUpdate ? (update.latestVersion || null) : null,
+      ...(hasAvailableUpdate ? {
+        release: update.release || null,
+        asset: update.asset || null
+      } : {}),
       package: null,
       code: error?.code || 'package_inspection_failed',
       reason: error?.message || 'Release package inspection failed.'

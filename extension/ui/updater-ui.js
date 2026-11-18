@@ -13,7 +13,49 @@ const ChromaUpdaterUI = (() => {
   const PROBE_FILE_NAME = '.chroma-write-probe';
   const EXPECTED_EXTENSION_NAME = 'Chroma Ad-Blocker';
   const RELEASE_DOWNLOAD_PREFIX = 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/';
+  const RELEASE_DOWNLOAD_PREFIX_PATH = '/Dabrogost/Chroma-Ad-Blocker/releases/download/';
   const RELEASE_ZIP_BASENAME = 'chroma-ad-blocker';
+
+  function isExpectedReleaseDownloadUrl(downloadUrl, expectedName) {
+    if (typeof downloadUrl !== 'string' || typeof expectedName !== 'string' || !expectedName) return false;
+    if (expectedName.includes('/') || expectedName.includes('\\') || expectedName === '.' || expectedName === '..') return false;
+    if (!downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) return false;
+    if (downloadUrl.includes('?') || downloadUrl.includes('#') || downloadUrl.includes('\\') || /\s/.test(downloadUrl)) {
+      return false;
+    }
+
+    const remainder = downloadUrl.slice(RELEASE_DOWNLOAD_PREFIX.length);
+    const segments = remainder.split('/');
+    if (segments.length !== 2) return false;
+    for (const segment of segments) {
+      if (!segment || segment === '.' || segment === '..') return false;
+      let decoded;
+      try {
+        decoded = decodeURIComponent(segment);
+      } catch {
+        return false;
+      }
+      if (!decoded || decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\')) {
+        return false;
+      }
+    }
+    if (segments[1] !== expectedName) return false;
+
+    if (typeof URL === 'function') {
+      try {
+        const url = new URL(downloadUrl);
+        if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password) {
+          return false;
+        }
+        if (url.search || url.hash || url.pathname !== `${RELEASE_DOWNLOAD_PREFIX_PATH}${remainder}`) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  }
   const UPDATE_MANIFEST_ASSET_NAME = 'updates.json';
   const UPDATE_MANIFEST_VERIFICATION = 'signed-updates.json';
   const MAX_ZIP_BYTES = 200 * 1024 * 1024;
@@ -471,11 +513,7 @@ const ChromaUpdaterUI = (() => {
     if (asset.name !== expectedName) {
       return { ok: false, reason: `Latest release asset is ${asset.name || 'unnamed'}, expected ${expectedName}.` };
     }
-    if (
-      typeof asset.downloadUrl !== 'string'
-      || !asset.downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)
-      || !asset.downloadUrl.endsWith(`/${expectedName}`)
-    ) {
+    if (!isExpectedReleaseDownloadUrl(asset.downloadUrl, expectedName)) {
       return { ok: false, reason: 'Latest release asset does not expose the expected direct GitHub download URL.' };
     }
     if (!Number.isFinite(Number(asset.size)) || Number(asset.size) <= 0) {
@@ -489,11 +527,7 @@ const ChromaUpdaterUI = (() => {
     if (updateManifestAsset.name !== UPDATE_MANIFEST_ASSET_NAME) {
       return { ok: false, reason: `Latest release update manifest is ${updateManifestAsset.name || 'unnamed'}, expected updates.json.` };
     }
-    if (
-      typeof updateManifestAsset.downloadUrl !== 'string'
-      || !updateManifestAsset.downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)
-      || !updateManifestAsset.downloadUrl.endsWith(`/${UPDATE_MANIFEST_ASSET_NAME}`)
-    ) {
+    if (!isExpectedReleaseDownloadUrl(updateManifestAsset.downloadUrl, UPDATE_MANIFEST_ASSET_NAME)) {
       return { ok: false, reason: 'Latest release updates.json does not expose the expected direct GitHub download URL.' };
     }
     if (!Number.isFinite(Number(updateManifestAsset.size)) || Number(updateManifestAsset.size) <= 0) {
@@ -696,10 +730,7 @@ const ChromaUpdaterUI = (() => {
     if (!hasInstallVerification(packageInspection)) {
       throw new Error('Verified package metadata is missing signed updates.json verification.');
     }
-    if (
-      !asset.downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)
-      || !asset.downloadUrl.endsWith(`/${asset.name}`)
-    ) {
+    if (!isExpectedReleaseDownloadUrl(asset.downloadUrl, asset.name)) {
       throw new Error('Verified package URL no longer matches the expected GitHub release asset.');
     }
 

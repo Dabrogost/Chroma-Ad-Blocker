@@ -506,4 +506,29 @@ test('WebRTC privacy setting sync', async (t) => {
     assert.strictEqual(harness.storedValue, 'default_public_interface_only');
     assert.strictEqual(harness.levelOfControl, 'controlled_by_this_extension');
   });
+
+  await t.test('reacquiring control after an external-release clear still clears on later disable', async () => {
+    const storage = {
+      config: { enabled: false, webRtcLeakProtection: 'off' },
+      proxyConfigs: []
+    };
+    const harness = createWebRtcSandbox({
+      value: 'default_public_interface_only',
+      levelOfControl: 'controlled_by_other_extensions',
+      storage
+    });
+
+    const first = await harness.syncWebRtcLeakProtection(storage.config, []);
+    assert.strictEqual(first.ok, true);
+    assert.strictEqual(harness.clearCalls.length, 1);
+
+    // Suppose Chrome still or again reports this extension holds control while disabled.
+    harness.emitSettingChange({
+      value: 'disable_non_proxied_udp',
+      levelOfControl: 'controlled_by_this_extension'
+    });
+    await flushAsyncWork();
+    assert.strictEqual(harness.levelOfControl, 'controllable_by_this_extension');
+    assert.ok(harness.clearCalls.length >= 2);
+  });
 });

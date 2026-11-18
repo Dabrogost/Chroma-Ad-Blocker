@@ -299,6 +299,7 @@ function createSettingsHarness({
     MSG: {
       CONFIG_GET: 'CONFIG_GET',
       CONFIG_SET: 'CONFIG_SET',
+      CONFIG_EXPORT: 'CONFIG_EXPORT',
       UPDATE_CHECK: 'UPDATE_CHECK',
       UPDATE_PACKAGE_INSPECT: 'UPDATE_PACKAGE_INSPECT',
       STATS_GET: 'STATS_GET',
@@ -4031,5 +4032,59 @@ test('settings page proxy and zapper management safety', async (t) => {
     const configSet = harness.messages.find(msg => msg.type === 'CONFIG_SET');
     assert.ok(configSet);
     assert.deepStrictEqual(JSON.parse(JSON.stringify(configSet.config)), { showBlockedBadge: false });
+  });
+
+  await t.test('settings UI treats router handler_error responses as unavailable without crashing or exporting error JSON', async () => {
+    const handlerError = { ok: false, code: 'handler_error', error: 'Message handler failed' };
+    const consoleErrors = [];
+    const origError = console.error;
+    console.error = (...args) => consoleErrors.push(args.map(String).join(' '));
+    try {
+      const harness = createSettingsHarness({
+        responses: {
+          PROXY_CONFIG_GET: handlerError,
+          SUBSCRIPTION_GET: handlerError,
+          USER_SCRIPTLETS_GET: handlerError,
+          LOG_GET: handlerError,
+          STATS_GET: handlerError,
+          CONFIG_EXPORT: handlerError,
+          STATS_EXPORT: handlerError
+        }
+      });
+
+      let blobCalls = 0;
+      harness.sandbox.Blob = class MockBlob {
+        constructor() { blobCalls += 1; }
+      };
+      harness.sandbox.URL = {
+        createObjectURL: () => 'blob:mock',
+        revokeObjectURL: () => {}
+      };
+
+      await harness.sandbox.ChromaApp.initSharedUI();
+      await harness.sandbox.ChromaProxyUI.loadProxyRouterUI();
+      await settleDomAsyncWork();
+
+      const doc = harness.dom.window.document;
+      assert.match(doc.getElementById('proxyRouterContainer')?.textContent || '', /Proxy router unavailable/);
+      assert.match(doc.getElementById('subscriptionList')?.textContent || '', /unavailable/i);
+      assert.match(doc.getElementById('userScriptletSourceList')?.textContent || '', /User scriptlets unavailable/);
+      assert.strictEqual(doc.getElementById('logStreamState')?.textContent, 'Unavailable');
+
+      const logToggle = doc.getElementById('requestLogSummary');
+      logToggle?.click();
+      await settleDomAsyncWork();
+      assert.strictEqual(doc.getElementById('logStreamState')?.textContent, 'Unavailable');
+
+      doc.getElementById('exportStatsJson')?.click();
+      doc.getElementById('exportConfigJson')?.click();
+      await settleDomAsyncWork();
+
+      assert.strictEqual(blobCalls, 0);
+      assert.strictEqual(doc.getElementById('settingsBackupStatus')?.textContent, 'Message handler failed');
+      assert.strictEqual(consoleErrors.some(line => line.includes('TypeError')), false, consoleErrors.join('\n'));
+    } finally {
+      console.error = origError;
+    }
   });
 });

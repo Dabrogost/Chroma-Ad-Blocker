@@ -2671,3 +2671,166 @@ test('protectStylesheets preserves real stylesheets while allowing removal of em
   assert.strictEqual(document.head.contains(realLink), true);
   assert.strictEqual(document.head.contains(realStyle), true);
 });
+
+test('Bug 8 scriptlet stealth and determinism regressions', async (t) => {
+  await t.test('abort-on-property-read does not leave enumerable properties for absent parents', () => {
+    const sandbox = runScriptlet('abortOnPropertyRead', ['absentNs.detect']);
+    assert.strictEqual(Object.keys(sandbox).includes('absentNs'), false);
+    assert.strictEqual(vm.runInContext('Object.getOwnPropertyDescriptor(window, "absentNs").enumerable', sandbox), false);
+    vm.runInContext('window.absentNs = {}', sandbox);
+    assert.throws(() => vm.runInContext('window.absentNs.detect', sandbox), /ReferenceError/);
+  });
+
+  await t.test('set-constant keeps empty string values as empty string instead of 0', () => {
+    const sandbox = runScriptlet('setConstant', ['emptyFlag', '']);
+    assert.strictEqual(vm.runInContext('window.emptyFlag', sandbox), '');
+  });
+
+  await t.test('prevent-fetch matches URL objects and cloaks Function.prototype.toString without own .toString', async () => {
+    let called = false;
+    const win = makeWindow();
+    win.URL = URL;
+    win.fetch = function fetch() { called = true; return Promise.resolve({ ok: true }); };
+    const sandbox = runScriptlet('preventFetch', ['blocked.example'], win);
+    const res = await vm.runInContext('window.fetch(new URL("https://blocked.example/beacon"))', sandbox);
+    assert.strictEqual(called, false);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(vm.runInContext('Object.prototype.hasOwnProperty.call(window.fetch, "toString")', sandbox), false);
+    assert.match(vm.runInContext('Function.prototype.toString.call(window.fetch)', sandbox), /function fetch/);
+  });
+
+  await t.test('prevent-xhr preserves constructor/prototype identity, cloaks methods, and suppresses blocked setRequestHeader', () => {
+    const opened = [];
+    const sent = [];
+    const headers = [];
+    class BaseXHR {
+      constructor() {
+        this.readyState = 0;
+      }
+      open(_m, u) {
+        this.readyState = 1;
+        opened.push(u);
+      }
+      setRequestHeader(k, v) {
+        if (this.readyState !== 1) throw new Error('InvalidStateError');
+        headers.push([k, v]);
+      }
+      send() {
+        sent.push(true);
+      }
+    }
+    const sandbox = runScriptlet('preventXhr', ['/ads/'], { XMLHttpRequest: BaseXHR });
+    const checks = vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      const ctorOk = xhr.constructor === window.XMLHttpRequest;
+      const instOk = xhr instanceof window.XMLHttpRequest;
+      const hasOwnOpen = Object.prototype.hasOwnProperty.call(xhr, 'open');
+      const hasOwnSend = Object.prototype.hasOwnProperty.call(xhr, 'send');
+      const protoOpenStr = Function.prototype.toString.call(window.XMLHttpRequest.prototype.open);
+      xhr.open('GET', 'https://example.com/ads/px');
+      xhr.setRequestHeader('X-Ad', '1');
+      xhr.send();
+      xhr.open('GET', 'https://example.com/api/ok');
+      xhr.setRequestHeader('X-Ok', '2');
+      xhr.send();
+      return { ctorOk, instOk, hasOwnOpen, hasOwnSend, protoOpenStr };
+    })()`, sandbox);
+    assert.strictEqual(checks.ctorOk, true);
+    assert.strictEqual(checks.instOk, true);
+    assert.strictEqual(checks.hasOwnOpen, false);
+    assert.strictEqual(checks.hasOwnSend, false);
+    assert.match(checks.protoOpenStr, /open\(/);
+    assert.deepStrictEqual(opened, ['https://example.com/api/ok']);
+    assert.deepStrictEqual(headers, [['X-Ok', '2']]);
+    assert.deepStrictEqual(sent, [true]);
+  });
+
+  await t.test('protectStylesheets keeps prototype descriptors configurable and writable', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+      url: 'https://www.allrecipes.com/'
+    });
+    const { window } = dom;
+    const sandbox = {
+      window,
+      document: window.document,
+      Node: window.Node,
+      Element: window.Element,
+      console,
+      Array
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(libCode, sandbox);
+    vm.runInContext('protectStylesheets()', sandbox);
+
+    for (const [proto, prop] of [
+      [window.Node.prototype, 'removeChild'],
+      [window.Element.prototype, 'remove'],
+      [window.Element.prototype, 'replaceChildren']
+    ]) {
+      const desc = Object.getOwnPropertyDescriptor(proto, prop);
+      assert.strictEqual(desc.configurable, true);
+      assert.strictEqual(desc.writable, true);
+    }
+  });
+
+  await t.test('replace-node-text with wildcard updates text nodes without wiping DOM elements', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html><head><title>ad_title</title></head><body><div id="wrap"><span>ad_banner</span><button id="keep">OK</button></div></body></html>');
+    const { window } = dom;
+    const sandbox = {
+      window,
+      document: window.document,
+      NodeFilter: window.NodeFilter,
+      MutationObserver: window.MutationObserver,
+      console,
+      setTimeout: (fn) => { fn(); return 1; }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(libCode, sandbox);
+    vm.runInContext('replaceNodeText(["*", "ad_banner", "clean"])', sandbox);
+
+    assert.ok(window.document.head);
+    assert.ok(window.document.body);
+    assert.ok(window.document.getElementById('keep'));
+    assert.strictEqual(window.document.querySelector('#wrap span').textContent, 'clean');
+  });
+
+  await t.test('fingerprintRandomization does not drift AudioBuffer channel data across repeated reads', () => {
+    const sandbox = {
+      console,
+      location: { hostname: 'audio.example.com' },
+      crypto: {
+        getRandomValues: buf => {
+          for (let i = 0; i < buf.length; i++) buf[i] = (i + 3) & 0xff;
+          return buf;
+        }
+      },
+      Uint8Array,
+      Uint8ClampedArray
+    };
+    sandbox.self = sandbox;
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(`
+      class AudioBuffer {
+        constructor() { this._ch = new Float32Array(2048); }
+        getChannelData() { return this._ch; }
+        copyFromChannel(dest) { dest.set(this._ch.subarray(0, dest.length)); }
+      }
+      self.AudioBuffer = AudioBuffer;
+    `, sandbox);
+    vm.runInContext(fingerprintRandomizationCode, sandbox);
+
+    const drift = vm.runInContext(`(() => {
+      const ab = new AudioBuffer();
+      const first = Array.from(ab.getChannelData(0));
+      const second = Array.from(ab.getChannelData(0));
+      return first.some((v, i) => v !== second[i]);
+    })()`, sandbox);
+    assert.strictEqual(drift, false);
+  });
+});
