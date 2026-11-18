@@ -825,6 +825,30 @@ test('prevent-fetch', async (t) => {
     await vm.runInContext('window.fetch("https://cdn.other.com/asset.js")', sandbox);
     assert.strictEqual(fetchCalled, true, 'Non-matching fetch should pass through');
   });
+
+  await t.test('treats multi-slash paths like /ads/img as literal substrings instead of RegExp("ads", "img")', async () => {
+    const fetchUrls = [];
+    const win = makeWindow();
+    win.fetch = (url) => { fetchUrls.push(url); return Promise.resolve({}); };
+    const sandbox = runScriptlet('preventFetch', ['/ads/img'], win);
+    await vm.runInContext('window.fetch("https://example.com/ads/img/logo.png")', sandbox);
+    await vm.runInContext('window.fetch("https://example.com/uploads/photo.png")', sandbox);
+    assert.deepStrictEqual(fetchUrls, ['https://example.com/uploads/photo.png']);
+  });
+});
+
+test('replace-node-text handles slash paths and malformed regex literals safely', () => {
+  const scriptNode = { textContent: 'load("/ads/sdk.js"); keep();' };
+  const win = makeWindow();
+  win.document = {
+    documentElement: null,
+    querySelectorAll: () => [],
+    getElementsByTagName: (tag) => (tag === 'script' ? [scriptNode] : [])
+  };
+  runScriptlet('replaceNodeText', ['script', '/ads/sdk.js', '"/safe.js"'], win);
+  assert.strictEqual(scriptNode.textContent, 'load(""/safe.js""); keep();');
+
+  assert.doesNotThrow(() => runScriptlet('replaceNodeText', ['script', '/invalid[/', ''], win));
 });
 
 // ─── NO-EVAL-IF ─────
@@ -1013,6 +1037,66 @@ test('scriptlet native wrapper camouflage', async (t) => {
       return xhr.responseText;
     })()`, sandbox);
     assert.strictEqual(xhrText, expected);
+  });
+
+  await t.test('prevent-xhr and m3u-prune reset per-request state when an XHR instance is reused', () => {
+    const sentUrls = [];
+    class ReusedProtoXHR {
+      constructor() {
+        this.readyState = 0;
+        this._rawText = '';
+        this._listeners = {};
+      }
+      get responseText() { return this._rawText; }
+      get response() { return this._rawText; }
+      open(method, url) {
+        this._url = url;
+        this.readyState = 1;
+      }
+      addEventListener(type, fn) {
+        (this._listeners[type] = this._listeners[type] || []).push(fn);
+      }
+      send() {
+        sentUrls.push(this._url);
+        this.readyState = 4;
+        for (const fn of this._listeners.readystatechange || []) fn.call(this);
+      }
+    }
+
+    const xhrSandbox = runScriptlet('preventXhr', ['/ads/'], { XMLHttpRequest: ReusedProtoXHR });
+    vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      xhr.open('GET', 'https://example.com/ads/pixel');
+      xhr.send();
+      xhr.open('GET', 'https://example.com/api/legit');
+      xhr.send();
+    })()`, xhrSandbox);
+    assert.deepStrictEqual(sentUrls, ['https://example.com/api/legit']);
+
+    const m3uSandbox = runScriptlet('m3uPrune', ['/ad-seg/'], { XMLHttpRequest: ReusedProtoXHR });
+    const responses = vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      xhr._rawText = '#EXTM3U\\n#EXTINF:5,\\nhttps://cdn.example/ad-seg/1.ts\\n#EXTINF:5,\\nhttps://cdn.example/live/1.ts';
+      xhr.open('GET', 'https://example.com/live.m3u8?seq=1');
+      xhr.send();
+      const first = xhr.responseText;
+
+      xhr._rawText = '#EXTM3U\\n#EXTINF:5,\\nhttps://cdn.example/live/2.ts';
+      xhr.open('GET', 'https://example.com/live.m3u8?seq=2');
+      xhr.send();
+      const second = xhr.responseText;
+
+      xhr._rawText = '{"ok":true}';
+      xhr.open('GET', 'https://example.com/api/status');
+      xhr.send();
+      const third = xhr.responseText;
+      return { first, second, third };
+    })()`, m3uSandbox);
+    assert.deepStrictEqual(plain(responses), {
+      first: '#EXTM3U\n#EXTINF:5,\nhttps://cdn.example/live/1.ts',
+      second: '#EXTM3U\n#EXTINF:5,\nhttps://cdn.example/live/2.ts',
+      third: '{"ok":true}'
+    });
   });
 
   await t.test('preserves patched prototype method names', () => {

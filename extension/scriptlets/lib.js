@@ -162,11 +162,43 @@ export function noSetTimeoutIf(args) {
   const delay   = args[1];
   if (!pattern) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
@@ -191,11 +223,43 @@ export function noSetIntervalIf(args) {
   const delay   = args[1];
   if (!pattern) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
@@ -218,11 +282,43 @@ export function noSetIntervalIf(args) {
 export function preventFetch(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -251,11 +347,43 @@ export function preventFetch(args) {
 export function preventXhr(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -273,6 +401,7 @@ export function preventXhr(args) {
     const nativeOpen = instance.open;
     const origOpen = nativeOpen.bind(instance);
     instance.open = function(method, url) {
+      _blocked = false;
       if (matches(String(url))) { _blocked = true; return; }
       return origOpen.apply(instance, arguments);
     };
@@ -711,9 +840,40 @@ export function removeAttr(args) {
 export function removeNodeText(args) {
   const tag = (args[0] || '*').toLowerCase();
   const pattern = args[1] || '';
-  const regexParts = /^\/(.*)\/([a-z]*)$/.exec(pattern);
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+  const regexParts = parseRegexLiteral(pattern);
   let re;
-  try { re = regexParts ? new RegExp(regexParts[1], regexParts[2]) : null; }
+  try { re = regexParts ? new RegExp(regexParts[0], regexParts[1]) : null; }
   catch { return; }
   const matches = text => {
     if (!re) return text.includes(pattern);
@@ -777,14 +937,41 @@ export function preventAddEventListener(args) {
   let invalidRegex = false;
   const compile = (p) => {
     if (!p || p === '*') return null;
-    if (p.startsWith('/') && p.lastIndexOf('/') > 0) {
-      const lastSlash = p.lastIndexOf('/');
-      try {
-        const re = new RegExp(p.slice(1, lastSlash), p.slice(lastSlash + 1).replace(/[gy]/g, ''));
-        return (s) => re.test(String(s));
-      } catch (e) {
-        invalidRegex = true;
-        return null;
+    if (typeof p === 'string' && p.length >= 2 && p[0] === '/') {
+      let esc = false;
+      let inClass = false;
+      let unclosedBracket = false;
+      let closeIdx = -1;
+      for (let i = 1; i < p.length; i++) {
+        const ch = p[i];
+        if (esc) { esc = false; continue; }
+        if (ch === '\\') { esc = true; continue; }
+        if (inClass) { if (ch === ']') inClass = false; continue; }
+        if (ch === '[' && !unclosedBracket) {
+          let e2 = false;
+          let hasClose = false;
+          for (let j = i + 1; j < p.length; j++) {
+            if (e2) { e2 = false; continue; }
+            if (p[j] === '\\') { e2 = true; continue; }
+            if (p[j] === ']') { hasClose = true; break; }
+          }
+          if (hasClose) { inClass = true; continue; }
+          unclosedBracket = true;
+        }
+        if (ch === '/') { closeIdx = i; break; }
+      }
+      if (closeIdx > 1 && closeIdx === p.lastIndexOf('/')) {
+        const body = p.slice(1, closeIdx);
+        const rawFlags = p.slice(closeIdx + 1);
+        if (/^[dgimsuvy]*$/.test(rawFlags) && !(rawFlags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(rawFlags))) {
+          try {
+            const re = new RegExp(body, rawFlags.replace(/[gy]/g, ''));
+            return (s) => re.test(String(s));
+          } catch (e) {
+            invalidRegex = true;
+            return null;
+          }
+        }
       }
     }
     return (s) => String(s).includes(p);
@@ -852,11 +1039,43 @@ export function setCookie(args) {
 export function preventWindowOpen(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -961,12 +1180,45 @@ export function replaceNodeText(args) {
   const replacement = args[2] !== undefined ? args[2] : '';
   if (!pattern) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (isRegex) {
-    const lastSlash = pattern.lastIndexOf('/');
-    const flags = pattern.slice(lastSlash + 1);
-    re = new RegExp(pattern.slice(1, lastSlash), flags.includes('g') ? flags : flags + 'g');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
+    try {
+      const flags = regexParts[1];
+      re = new RegExp(regexParts[0], flags.includes('g') ? flags : flags + 'g');
+    } catch (e) { return; }
   }
 
   const replaceIn = (str) => re ? str.replace(re, replacement) : str.split(pattern).join(replacement);
@@ -1020,11 +1272,43 @@ export function replaceNodeText(args) {
 export function preventRequestAnimationFrame(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => {
@@ -1058,11 +1342,43 @@ export function abortCurrentScript(args) {
   const needle = args[1];
   if (!prop) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (needle && needle.startsWith('/') && needle.lastIndexOf('/') > 0) {
-    const lastSlash = needle.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(needle);
+  if (regexParts) {
     try {
-      re = new RegExp(needle.slice(1, lastSlash), needle.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const needleMatches = (str) => {
@@ -1225,11 +1541,43 @@ export function preventElementSrcLoading(args) {
   const ctorName = tagToProto[tag];
   if (!ctorName || !window[ctorName]) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -1284,11 +1632,43 @@ export function m3uPrune(args) {
   const urlPattern = args[1];
   if (!needle) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   const compile = (p) => {
     if (!p) return null;
-    if (p.startsWith('/') && p.lastIndexOf('/') > 0) {
-      const last = p.lastIndexOf('/');
-      try { return new RegExp(p.slice(1, last), p.slice(last + 1).replace(/[gy]/g, '')); } catch (e) { return null; }
+    const regexParts = parseRegexLiteral(p);
+    if (regexParts) {
+      try { return new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, '')); } catch (e) { return null; }
     }
     return new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   };
@@ -1355,9 +1735,15 @@ export function m3uPrune(args) {
   function PatchedXHR() {
     const xhr = new OrigXHR();
     let watchedUrl = '';
+    let responseOverridden = false;
     const nativeOpen = xhr.open;
     const origOpen = nativeOpen.bind(xhr);
     xhr.open = function(method, url) {
+      if (responseOverridden) {
+        delete xhr.responseText;
+        delete xhr.response;
+        responseOverridden = false;
+      }
       watchedUrl = String(url || '');
       return origOpen.apply(xhr, arguments);
     };
@@ -1369,6 +1755,7 @@ export function m3uPrune(args) {
         const text = xhr.responseText;
         const pruned = prune(text);
         if (pruned === text) return;
+        responseOverridden = true;
         Object.defineProperty(xhr, 'responseText', { value: pruned, configurable: true });
         Object.defineProperty(xhr, 'response',     { value: pruned, configurable: true });
       } catch (e) {}
@@ -1447,12 +1834,43 @@ export function cookieRemover(args) {
   const pattern = args[0];
   if (!pattern) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (isRegex) {
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      const last = pattern.lastIndexOf('/');
-      re = new RegExp(pattern.slice(1, last), pattern.slice(last + 1));
+      re = new RegExp(regexParts[0], regexParts[1]);
     } catch (e) { return; }
   }
   const matches = (name) => re ? re.test(name) : name === pattern || name.includes(pattern);
@@ -1575,11 +1993,43 @@ export function noEvalIf(args) {
   const pattern = args[0];
   if (!pattern) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);

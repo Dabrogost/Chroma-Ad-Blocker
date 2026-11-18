@@ -28,34 +28,36 @@ import { initRequestLogListener, resetRequestLog } from './requestLog.js';
 
 const DEBUG = false;
 
+const DEFAULT_CONFIG = Object.freeze({
+  networkBlocking: true,
+  stripping: true,
+  spotifyAdBlocking: true,
+  acceleration: false,
+  cosmetic: true,
+  hideShorts: false,
+  hideMerch: true,
+  hideOffers: true,
+  suppressWarnings: true,
+  accelerationSpeed: 8,
+  enabled: true,
+  globalProxyEnabled: false,
+  globalProxyId: null,
+  chromeServiceProxyBypass: true,
+  webRtcLeakProtection: 'auto',
+  fingerprintRandomization: false,
+  browserPrivacyHardening: false,
+  geolocationProtection: false,
+  trackingUrlCleanup: true,
+  deAmpLinks: false,
+  quietConsole: false,
+  showBlockedBadge: true,
+});
+
 // --- INSTALL / STARTUP ---
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') {
     await chrome.storage.local.set({
-      config: {
-        networkBlocking: true,
-        stripping: true,
-        spotifyAdBlocking: true,
-        acceleration: false,
-        cosmetic: true,
-        hideShorts: false,
-        hideMerch: true,
-        hideOffers: true,
-        suppressWarnings: true,
-        accelerationSpeed: 8,
-        enabled: true,
-        globalProxyEnabled: false,
-        globalProxyId: null,
-        chromeServiceProxyBypass: true,
-        webRtcLeakProtection: 'auto',
-        fingerprintRandomization: false,
-        browserPrivacyHardening: false,
-        geolocationProtection: false,
-        trackingUrlCleanup: true,
-        deAmpLinks: false,
-        quietConsole: false,
-        showBlockedBadge: true,
-      },
+      config: { ...DEFAULT_CONFIG },
       statsV2: createDefaultStatsV2(),
       requestLog: [],
       HIDE_SELECTORS: [
@@ -92,6 +94,17 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
       proxyConfigs: []
     });
     if (DEBUG) console.log('[Chroma Ad-Blocker] Installed. Default config applied.');
+  } else if (reason === 'update') {
+    const { config: existingConfig } = await chrome.storage.local.get('config');
+    if (existingConfig && typeof existingConfig === 'object' && !Array.isArray(existingConfig)) {
+      if (Object.keys(DEFAULT_CONFIG).some(key => existingConfig[key] === undefined)) {
+        const mergedConfig = { ...DEFAULT_CONFIG };
+        for (const [key, value] of Object.entries(existingConfig)) {
+          if (value !== undefined) mergedConfig[key] = value;
+        }
+        await chrome.storage.local.set({ config: mergedConfig });
+      }
+    }
   }
 
   const { config: storedConfig, proxyConfigs: storedProxyConfigs = [] } = await chrome.storage.local.get(['config', 'proxyConfigs']);

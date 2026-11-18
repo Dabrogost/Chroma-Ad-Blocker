@@ -2656,6 +2656,61 @@ test('settings page proxy and zapper management safety', async (t) => {
     }
   });
 
+  await t.test('open settings syncs config toggles and local zapper rules on storage changes without invoking health diagnostics', async () => {
+    let localZapperRules = [];
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: { enabled: true, cosmetic: true, acceleration: false, accelerationSpeed: 8 },
+        ZAPPER_RULES_GET: () => ({ rules: localZapperRules })
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const healthBefore = countMessages(harness.messages, 'HEALTH_GET');
+    assert.strictEqual(doc.querySelector('#toggleEnabled').checked, true);
+    assert.strictEqual(doc.querySelector('#toggleCosmetic').checked, true);
+
+    await harness.emitStorageChange({
+      config: {
+        oldValue: { enabled: true, cosmetic: true, acceleration: false, accelerationSpeed: 8 },
+        newValue: { enabled: false, cosmetic: true, acceleration: true, accelerationSpeed: 12 }
+      }
+    }, 'local');
+
+    assert.strictEqual(doc.querySelector('#toggleEnabled').checked, false);
+    assert.strictEqual(doc.querySelector('#toggleCosmetic').checked, false);
+
+    await harness.emitStorageChange({
+      config: {
+        oldValue: { enabled: false, cosmetic: true, acceleration: true, accelerationSpeed: 12 },
+        newValue: { enabled: true, cosmetic: false, acceleration: true, accelerationSpeed: 12 }
+      }
+    }, 'local');
+
+    assert.strictEqual(doc.querySelector('#toggleEnabled').checked, true);
+    assert.strictEqual(doc.querySelector('#toggleCosmetic').checked, false);
+    assert.strictEqual(doc.querySelector('#toggleAcceleration').checked, true);
+    assert.ok(doc.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
+
+    localZapperRules = [{
+      id: 'zap_live_1',
+      domain: 'example.com',
+      selector: '#banner-ad',
+      enabled: true,
+      createdAt: 1700000000000
+    }];
+    await harness.emitStorageChange({
+      localCosmeticRules: { oldValue: [], newValue: localZapperRules }
+    }, 'local');
+
+    assert.match(doc.querySelector('#localZapperRules').textContent, /#banner-ad/);
+    assert.strictEqual(doc.querySelector('#zapperRuleCount').textContent, '1');
+    assert.strictEqual(countMessages(harness.messages, 'HEALTH_GET'), healthBefore);
+  });
+
   await t.test('health panel surfaces Allow User Scripts diagnostic', async () => {
     const harness = createSettingsHarness({
       responses: {

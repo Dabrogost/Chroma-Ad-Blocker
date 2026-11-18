@@ -13,6 +13,7 @@ test('Spotify rules fail closed and respect independent toggle and parent-domain
   for (const config of [undefined, {}, { enabled: true }, { ...active, enabled: false },
     { ...active, spotifyAdBlocking: false }, { ...active, spotifyAdBlocking: 'true' }]) assert.deepEqual(rules(config), []);
   for (const domain of ['open.spotify.com', 'spotify.com']) assert.deepEqual(rules(active, [domain]), []);
+  assert.equal(rules({ spotifyAdBlocking: true }).length, 14);
   assert.equal(rules({ ...active, networkBlocking: false, stripping: false }, ['example.com']).length, 14);
 });
 

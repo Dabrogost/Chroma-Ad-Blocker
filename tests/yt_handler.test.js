@@ -991,6 +991,70 @@ test('Ad field stripping', async (t) => {
     assert.strictEqual(thirdParsed.videoDetails.title, 'https://www.youtube.com/youtubei/v1/player?a=2');
   });
 
+  await t.test('pre-send readystatechange listeners observe stripped text and json responses without defining responseText on json XHRs', () => {
+    const sandbox = createStrippingSandbox(
+      { enabled: true, stripping: true },
+      undefined,
+      'www.youtube.com',
+      (s) => {
+        s.XMLHttpRequest = class {
+          constructor() {
+            this._listeners = {};
+            this._rawResponseText = '';
+            this._rawJson = null;
+            this.readyState = 0;
+            this.responseType = '';
+          }
+          get responseText() {
+            if (this.responseType === 'json') throw new Error('InvalidStateError');
+            return this._rawResponseText;
+          }
+          get response() {
+            return this.responseType === 'json' ? this._rawJson : this._rawResponseText;
+          }
+          open(method, url) {
+            this._testUrl = url;
+            this.readyState = 1;
+          }
+          addEventListener(type, fn) {
+            (this._listeners[type] = this._listeners[type] || []).push(fn);
+          }
+          send() {
+            this.readyState = 4;
+            const payload = { adPlacements: [{ id: 1 }], videoDetails: { title: 'Clean Video' } };
+            this._rawResponseText = JSON.stringify(payload);
+            this._rawJson = payload;
+            for (const fn of this._listeners.readystatechange || []) {
+              fn.call(this);
+            }
+          }
+        };
+      }
+    );
+
+    const textXhr = new sandbox.XMLHttpRequest();
+    textXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    let observedText = null;
+    textXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) observedText = sandbox._nativeJSONParse(this.responseText);
+    });
+    textXhr.send();
+    assert.strictEqual('adPlacements' in observedText, false);
+    assert.strictEqual(observedText.videoDetails.title, 'Clean Video');
+
+    const jsonXhr = new sandbox.XMLHttpRequest();
+    jsonXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    jsonXhr.responseType = 'json';
+    let observedJson = null;
+    jsonXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) observedJson = this.response;
+    });
+    jsonXhr.send();
+    assert.strictEqual('adPlacements' in observedJson, false);
+    assert.strictEqual(observedJson.videoDetails.title, 'Clean Video');
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(jsonXhr, 'responseText'), false);
+  });
+
   await t.test('Function.prototype.toString spoofing cloaks self-inspection without own .toString property', () => {
     const sandbox = createStrippingSandbox({ enabled: true, stripping: true });
 

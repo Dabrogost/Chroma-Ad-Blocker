@@ -689,36 +689,48 @@
       this._chromaResponseOverridden = false;
     }
     this._chromaYTUrl = String(url);
+    this._chromaShouldStrip = false;
+    if (!this._chromaReadyStateHooked && typeof this.addEventListener === 'function') {
+      this._chromaReadyStateHooked = true;
+      this.addEventListener('readystatechange', function() {
+        if (this.readyState !== 4 || !this._chromaShouldStrip) return;
+        try {
+          const rt = this.responseType;
+          if (rt && rt !== '' && rt !== 'text' && rt !== 'json') return;
+          const text = rt === 'json' ? JSON.stringify(this.response) : this.responseText;
+          if (!text || !mightContainYoutubeAdPayloadSignal(text)) return;
+          const json = _nativeJSONParse(text);
+          const modified = cleanYoutubePayload(json);
+          if (modified) {
+            this._chromaResponseOverridden = true;
+            if (rt === 'json') {
+              Object.defineProperty(this, 'response', {
+                value: json,
+                writable: false,
+                configurable: true
+              });
+            } else {
+              const stripped = JSON.stringify(json);
+              Object.defineProperty(this, 'responseText', { value: stripped, writable: false, configurable: true });
+              Object.defineProperty(this, 'response', {
+                value: stripped,
+                writable: false,
+                configurable: true
+              });
+            }
+          }
+        } catch (_) {}
+      });
+    }
     return _nativeXHROpen.apply(this, arguments);
   };
 
   XMLHttpRequest.prototype.send = function(...args) {
     const url = this._chromaYTUrl || '';
-    const sendSeq = (this._chromaSendSeq || 0) + 1;
-    this._chromaSendSeq = sendSeq;
     if (args.length) args[0] = prepareSabrPlayerBody(url, args[0]);
-    if (CONFIG.enabled && CONFIG.stripping && YT_API_PATHS.some(p => url.includes(p))) {
-      this.addEventListener('readystatechange', function() {
-        if (this.readyState !== 4 || this._chromaSendSeq !== sendSeq) return;
-        try {
-          const rt = this.responseType;
-          if (rt && rt !== '' && rt !== 'text' && rt !== 'json') return;
-          const text = rt === 'json' ? JSON.stringify(this.response) : this.responseText;
-          const json = _nativeJSONParse(text);
-          const modified = cleanYoutubePayload(json);
-          if (modified) {
-            const stripped = JSON.stringify(json);
-            this._chromaResponseOverridden = true;
-            Object.defineProperty(this, 'responseText', { value: stripped, writable: false, configurable: true });
-            Object.defineProperty(this, 'response', {
-              value: rt === 'json' ? json : stripped,
-              writable: false,
-              configurable: true
-            });
-          }
-        } catch (_) {}
-      });
-    }
+    this._chromaShouldStrip = Boolean(
+      CONFIG.enabled && CONFIG.stripping && YT_API_PATHS.some(p => url.includes(p))
+    );
     return _nativeXHRSend.apply(this, args);
   };
 

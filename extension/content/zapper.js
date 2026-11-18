@@ -378,6 +378,7 @@
     if (action === 'save') {
       const selectorInfo = generateSelectorInfo(current);
       if (!selectorInfo) {
+        removeMenu();
         showMessage('Could not create a safe selector.');
         return;
       }
@@ -389,6 +390,7 @@
     if (action === 'confirmSave') {
       const selectorInfo = pendingSelector;
       if (!selectorInfo) {
+        removeMenu();
         showMessage('No selector is ready to save.');
         return;
       }
@@ -404,6 +406,8 @@
           cleanup();
           return;
         }
+        pendingSelector = null;
+        removeMenu();
         showMessage(res?.error || 'Could not save this rule.');
       });
     }

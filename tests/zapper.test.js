@@ -609,3 +609,65 @@ test('re-injecting content zapper cleans up prior session overlays, listeners, a
   assert.strictEqual(target.style.getPropertyValue('display'), 'none');
   assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
 });
+
+test('failed zapper save removes confirmation menu and unlocks hover selection for retry', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="ad-box">Ad</div><div id="retry-box">Retry</div></body></html>', {
+    url: 'https://example.com/article'
+  });
+  const { window } = dom;
+  const { document } = window;
+  let shouldSucceed = false;
+
+  const sandbox = vm.createContext({
+    window,
+    document,
+    Node: window.Node,
+    Element: window.Element,
+    CSS: { escape: value => String(value).replace(/([^\w-])/g, '\\$1') },
+    chrome: {
+      runtime: {
+        sendMessage: async (msg) => {
+          if (msg?.type === 'ZAPPER_SAVE_RULE' && msg.action === 'save') {
+            return shouldSucceed
+              ? { ok: true }
+              : { ok: false, error: 'Could not validate selector on this tab' };
+          }
+          return { ok: true };
+        }
+      }
+    },
+    console,
+    Map,
+    Set
+  });
+  sandbox.globalThis = sandbox;
+  vm.runInContext(zapperJsCode, sandbox);
+
+  const firstTarget = document.getElementById('ad-box');
+  const secondTarget = document.getElementById('retry-box');
+  firstTarget.getBoundingClientRect = () => ({ left: 10, top: 20, width: 100, height: 40 });
+  secondTarget.getBoundingClientRect = () => ({ left: 50, top: 80, width: 120, height: 30 });
+
+  sandbox.__CHROMA_START_ZAPPER__('token-retry');
+  firstTarget.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 15, clientY: 25 }));
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]').click();
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.strictEqual(document.querySelector('[data-chroma-zapper-menu]'), null);
+  const [outlineEl, tooltipEl] = document.querySelectorAll('[data-chroma-zapper="true"]');
+  assert.strictEqual(tooltipEl.textContent, 'Could not validate selector on this tab');
+
+  secondTarget.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 60, clientY: 90 }));
+  assert.strictEqual(outlineEl.style.left, '50px');
+  assert.strictEqual(outlineEl.style.top, '80px');
+
+  shouldSucceed = true;
+  secondTarget.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 60, clientY: 90 }));
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]').click();
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.strictEqual(secondTarget.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
+});

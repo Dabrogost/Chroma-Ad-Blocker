@@ -493,17 +493,81 @@ const SCRIPTLET_REGEX_ARG_INDEXES = new Map([
   ['no-eval-if', [0]]
 ]);
 
+function hasClosingBracketBeforeRegexEnd(str, bracketIndex) {
+  let escape = false;
+  for (let i = bracketIndex + 1; i < str.length; i++) {
+    const ch = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escape = true;
+      continue;
+    }
+    if (ch === ']') return true;
+    if (ch === '/' && /^[a-zA-Z]*\s*(?:,|$)/.test(str.slice(i + 1))) {
+      return false;
+    }
+  }
+  return false;
+}
+
+function findRegexLiteralSlash(str, startIndex = 0) {
+  if (typeof str !== 'string' || str[startIndex] !== '/') return -1;
+  let escape = false;
+  let inCharClass = false;
+  let unclosedBracket = false;
+  for (let i = startIndex + 1; i < str.length; i++) {
+    const ch = str[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escape = true;
+      continue;
+    }
+    if (inCharClass) {
+      if (ch === ']') inCharClass = false;
+      continue;
+    }
+    if (ch === '[' && !unclosedBracket) {
+      if (hasClosingBracketBeforeRegexEnd(str, i)) {
+        inCharClass = true;
+        continue;
+      }
+      unclosedBracket = true;
+    }
+    if (ch === '/') {
+      return i > startIndex + 1 ? i : -1;
+    }
+  }
+  return -1;
+}
+
+function parseRegexLiteral(arg) {
+  if (typeof arg !== 'string' || arg.length < 2 || arg[0] !== '/') return null;
+  const closeIdx = findRegexLiteralSlash(arg, 0);
+  if (closeIdx === -1) return null;
+  const pattern = arg.slice(1, closeIdx);
+  const flags = arg.slice(closeIdx + 1);
+  if (!/^[a-zA-Z]*$/.test(flags)) return null;
+  if (flags.length > 0 && /^[A-Za-z0-9_-]+$/.test(pattern) && !/^(?:i|g|gi|ig)$/.test(flags)) {
+    return null;
+  }
+  return { pattern, flags };
+}
+
 function isRegexLiteral(arg) {
-  return typeof arg === 'string' && arg.startsWith('/') && arg.lastIndexOf('/') > 0;
+  return Boolean(parseRegexLiteral(arg));
 }
 
 function isSafeRegexLiteral(arg) {
-  const lastSlash = arg.lastIndexOf('/');
-  const pattern = arg.slice(1, lastSlash);
-  const flags = arg.slice(lastSlash + 1);
-  if (!/^[dgimsuvy]*$/.test(flags)) return false;
+  const parsed = parseRegexLiteral(arg);
+  if (!parsed || !/^[dgimsuvy]*$/.test(parsed.flags)) return false;
   try {
-    new RegExp(pattern, flags);
+    new RegExp(parsed.pattern, parsed.flags);
     return true;
   } catch {
     return false;
@@ -525,10 +589,16 @@ function splitScriptletArgs(inner) {
   let current = '';
   let quote = null;
   let escape = false;
-  let inRegex = false;
+  let regexEndIndex = -1;
 
   for (let i = 0; i < inner.length; i++) {
     const ch = inner[i];
+
+    if (regexEndIndex !== -1) {
+      current += ch;
+      if (i === regexEndIndex) regexEndIndex = -1;
+      continue;
+    }
 
     if (escape) {
       current += ch;
@@ -548,12 +618,6 @@ function splitScriptletArgs(inner) {
       continue;
     }
 
-    if (inRegex) {
-      current += ch;
-      if (ch === '/') inRegex = false;
-      continue;
-    }
-
     if (ch === '"' || ch === "'") {
       quote = ch;
       current += ch;
@@ -561,7 +625,10 @@ function splitScriptletArgs(inner) {
     }
 
     if (ch === '/' && current.trim() === '') {
-      inRegex = true;
+      const closeIdx = findRegexLiteralSlash(inner, i);
+      if (closeIdx !== -1 && /^[a-zA-Z]*\s*(?:,|$)/.test(inner.slice(closeIdx + 1))) {
+        regexEndIndex = closeIdx;
+      }
       current += ch;
       continue;
     }

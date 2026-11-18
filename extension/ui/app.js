@@ -599,14 +599,37 @@ const ChromaApp = (() => {
     }, true);
     safeHydrateSection('motion preference', initMotionPreference);
 
-    const refreshStatsOnStorageChange = (changes, area) => {
-      if (area === 'local' && changes.statsV2) {
+    let config = {};
+    let configReady = false;
+    const refreshOnStorageChange = (changes, area) => {
+      if (area !== 'local') return;
+      if (changes.statsV2) {
         safeHydrateSection('stats', loadStatsUI);
+      }
+      if (settingsMode && changes.localCosmeticRules) {
+        safeHydrateSection('local zapper rules', loadLocalZapperRulesUI);
+      }
+      if (
+        configReady &&
+        changes.config?.newValue &&
+        typeof changes.config.newValue === 'object' &&
+        !Array.isArray(changes.config.newValue) &&
+        Object.keys(changes.config.newValue).length > 0 &&
+        !document.querySelector('.control-pending')
+      ) {
+        config = { ...config, ...changes.config.newValue };
+        const enabled = config.enabled !== false;
+        if ($('toggleEnabled')) {
+          $('toggleEnabled').checked = enabled;
+          updateStatusDot(enabled);
+        }
+        syncUI(config, enabled);
+        syncSpeedUI(config.accelerationSpeed ?? 8, enabled && !!config.acceleration);
       }
     };
 
     if (!settingsMode) {
-      chrome.storage.onChanged.addListener(refreshStatsOnStorageChange);
+      chrome.storage.onChanged.addListener(refreshOnStorageChange);
       safeHydrateSection('stats', loadStatsUI);
     }
 
@@ -766,7 +789,6 @@ const ChromaApp = (() => {
       setControlPending(id, pending, { disable: settingsMode, visual: settingsMode });
     }
 
-    let config = {};
     try {
       const configResponse = await notifyBackground({ type: MSG.CONFIG_GET });
       if (!configResponse && settingsMode) {
@@ -791,6 +813,7 @@ const ChromaApp = (() => {
     }
     syncUI(config, isEnabled);
     setControlsPending(false);
+    configReady = true;
     syncSpeedUI(config.accelerationSpeed ?? 8, isEnabled && !!config.acceleration);
     CONFIG_TOGGLES.forEach(([id]) => controlFeedback(id));
     setControlPending('toggleWhitelist', true);
@@ -928,7 +951,7 @@ const ChromaApp = (() => {
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
     if (settingsMode) {
-      chrome.storage.onChanged.addListener(refreshStatsOnStorageChange);
+      chrome.storage.onChanged.addListener(refreshOnStorageChange);
     }
 
     wireStatsControls();
