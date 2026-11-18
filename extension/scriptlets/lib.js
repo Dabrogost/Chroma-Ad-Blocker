@@ -43,22 +43,37 @@ export function abortOnPropertyRead(args) {
       // Keep absent parents absent. A fabricated object can itself change the
       // page's initialization branch. Follow assignments and lazy getters so
       // the leaf remains protected when a publisher replaces its namespace.
-      let value = obj[key];
-      trap(value, index + 1);
-      if (desc && !desc.configurable) return;
-      const accessor = desc && !('value' in desc);
+      let ownOrProtoDesc = desc;
+      if (!ownOrProtoDesc) {
+        let proto = Object.getPrototypeOf(obj);
+        while (proto) {
+          const candidate = Object.getOwnPropertyDescriptor(proto, key);
+          if (candidate) {
+            ownOrProtoDesc = candidate;
+            break;
+          }
+          proto = Object.getPrototypeOf(proto);
+        }
+      }
+      const accessor = Boolean(ownOrProtoDesc && !('value' in ownOrProtoDesc));
+      if (desc && !desc.configurable) {
+        trap(accessor ? obj[key] : desc.value, index + 1);
+        return;
+      }
+      let value = ownOrProtoDesc && 'value' in ownOrProtoDesc ? ownOrProtoDesc.value : undefined;
+      if (!accessor) trap(value, index + 1);
       Object.defineProperty(obj, key, {
         configurable: true,
         enumerable: desc ? desc.enumerable : true,
         get() {
-          const current = accessor ? desc.get?.call(this) : value;
+          const current = accessor ? ownOrProtoDesc.get?.call(this) : value;
           trap(current, index + 1);
           return current;
         },
-        set: accessor ? (desc.set && function(next) {
-          desc.set.call(this, next);
-          trap(desc.get?.call(this), index + 1);
-        }) : (desc?.writable === false ? undefined : function(next) {
+        set: accessor ? (ownOrProtoDesc.set && function(next) {
+          ownOrProtoDesc.set.call(this, next);
+          trap(ownOrProtoDesc.get?.call(this), index + 1);
+        }) : (ownOrProtoDesc?.writable === false ? undefined : function(next) {
           value = next;
           trap(next, index + 1);
         })
@@ -276,8 +291,21 @@ export function preventXhr(args) {
     return instance;
   }
 
-  // Preserve prototype chain so instanceof checks pass
+  // Preserve prototype chain so instanceof and static XHR constants work
   PatchedXHR.prototype = OrigXHR.prototype;
+  try { Object.setPrototypeOf(PatchedXHR, OrigXHR); } catch (e) {}
+  for (const key of ['UNSENT', 'OPENED', 'HEADERS_RECEIVED', 'LOADING', 'DONE']) {
+    if (key in OrigXHR) {
+      try {
+        Object.defineProperty(PatchedXHR, key, {
+          value: OrigXHR[key],
+          writable: false,
+          enumerable: true,
+          configurable: true
+        });
+      } catch (e) {}
+    }
+  }
   try { Object.defineProperty(PatchedXHR, 'name', { value: OrigXHR.name || 'XMLHttpRequest', configurable: true }); } catch (e) {}
   PatchedXHR.toString = () => OrigXHR.toString();
   Object.defineProperty(window, 'XMLHttpRequest', { value: PatchedXHR, writable: true, configurable: true });
@@ -1335,6 +1363,19 @@ export function m3uPrune(args) {
     return xhr;
   }
   PatchedXHR.prototype = OrigXHR.prototype;
+  try { Object.setPrototypeOf(PatchedXHR, OrigXHR); } catch (e) {}
+  for (const key of ['UNSENT', 'OPENED', 'HEADERS_RECEIVED', 'LOADING', 'DONE']) {
+    if (key in OrigXHR) {
+      try {
+        Object.defineProperty(PatchedXHR, key, {
+          value: OrigXHR[key],
+          writable: false,
+          enumerable: true,
+          configurable: true
+        });
+      } catch (e) {}
+    }
+  }
   try { Object.defineProperty(PatchedXHR, 'name', { value: OrigXHR.name || 'XMLHttpRequest', configurable: true }); } catch (e) {}
   PatchedXHR.toString = () => OrigXHR.toString();
   Object.defineProperty(window, 'XMLHttpRequest', { value: PatchedXHR, writable: true, configurable: true });

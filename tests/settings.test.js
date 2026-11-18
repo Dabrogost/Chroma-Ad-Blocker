@@ -2854,6 +2854,85 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(master.checked, false);
   });
 
+  await t.test('stale master CONFIG_GET refresh does not overwrite concurrent sub-toggle state', async () => {
+    let configGetCalls = 0;
+    const delayedRefreshGet = deferred();
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: () => {
+          configGetCalls++;
+          if (configGetCalls === 1) {
+            return { enabled: false, networkBlocking: true, cosmetic: true, quietConsole: true };
+          }
+          // Return pre-toggle snapshot out-of-order after concurrent quietConsole change
+          return delayedRefreshGet.promise;
+        },
+        CONFIG_SET: { ok: true }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const master = doc.querySelector('#toggleEnabled');
+    const quiet = doc.querySelector('#toggleQuietConsole');
+    const cosmetic = doc.querySelector('#toggleCosmetic');
+
+    // 1. User enables master switch; CONFIG_SET finishes, post-set CONFIG_GET stays in flight
+    master.checked = true;
+    master.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork(10);
+
+    // 2. Concurrent click turns Quiet Console off while master's CONFIG_GET is still pending
+    quiet.checked = false;
+    quiet.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork(10);
+
+    // 3. Stale CONFIG_GET (quietConsole: true, cosmetic: true) resolves after sub-toggle settled
+    delayedRefreshGet.resolve({ enabled: true, networkBlocking: true, cosmetic: true, quietConsole: true });
+    await settleDomAsyncWork(20);
+
+    assert.strictEqual(master.checked, true);
+    assert.strictEqual(cosmetic.checked, true);
+    assert.strictEqual(quiet.checked, false);
+  });
+
+  await t.test('settings import keeps acceleration speed controls disabled when imported config omits acceleration', async () => {
+    let importedConfig = { enabled: false, acceleration: true, accelerationSpeed: 12 };
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: () => ({ ...importedConfig }),
+        CONFIG_IMPORT: () => {
+          importedConfig = { enabled: true, accelerationSpeed: 8 };
+          return { ok: true, imported: { configKeys: 2 } };
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const fileInput = doc.querySelector('#importConfigFile');
+    const payload = JSON.stringify({
+      schema: 'chroma-settings',
+      version: 1,
+      config: { enabled: true }
+    });
+    Object.defineProperty(fileInput, 'files', {
+      value: [{ size: payload.length, text: async () => payload }],
+      configurable: true
+    });
+    fileInput.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork(40);
+
+    assert.strictEqual(doc.querySelector('#settingsBackupStatus').textContent, 'Settings imported.');
+    assert.strictEqual(doc.querySelector('#toggleAcceleration').checked, false);
+    assert.strictEqual(doc.querySelector('#speedSelectorRow').classList.contains('disabled'), true);
+    assert.strictEqual(doc.querySelector('.speed-btn').disabled, true);
+  });
+
   await t.test('settings config null keeps controls disabled and shows an error', async () => {
     const harness = createSettingsHarness({ responses: { CONFIG_GET: null } });
 

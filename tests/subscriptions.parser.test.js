@@ -193,4 +193,30 @@ test('Subscription parser trust boundary', async (t) => {
     assert.throws(() => parseList('! one\n! two\n! three', { maxLines: 2 }), /too many lines/);
     assert.throws(() => parseList('! one\n! two\n! three\n', { maxLines: 2 }), /too many lines/);
   });
+
+  await t.test('preserves leading single-pipe URL-start anchor rules while rejecting bare or mid-pattern pipes', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '|https://ads.example.com/banner.js$script',
+      '@@|https://good.example.com/sdk.js$script',
+      '|https://exact.example/pixel.gif|$image',
+      '|$script',
+      '|*$script',
+      'http://bad|pipe.example/ad.js$script'
+    ].join('\n'));
+
+    assert.deepStrictEqual(
+      plain(parsed.networkRules.map(rule => ({
+        action: rule.action.type,
+        urlFilter: rule.condition.urlFilter
+      }))),
+      [
+        { action: 'block', urlFilter: '|https://ads.example.com/banner.js' },
+        { action: 'allow', urlFilter: '|https://good.example.com/sdk.js' },
+        { action: 'block', urlFilter: '|https://exact.example/pixel.gif|' }
+      ]
+    );
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 3);
+    assert.strictEqual(parsed.skipped.malformed, 0);
+  });
 });

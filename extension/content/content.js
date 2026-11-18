@@ -328,7 +328,7 @@
     if (!target || target.includes('\\')) return null;
     const slashIndex = target.indexOf('/');
     const hostname = (slashIndex === -1 ? target : target.slice(0, slashIndex)).toLowerCase();
-    if (!isValidHostname(hostname)) return null;
+    if (!isValidHostname(hostname) || !hostname.includes('.')) return null;
     const path = slashIndex === -1 ? '/' : '/' + target.slice(slashIndex + 1);
     try {
       return new URL(`${protocol}//${hostname}${path}`).href;
@@ -348,24 +348,20 @@
     const hostname = url.hostname.toLowerCase();
     const path = url.pathname;
 
-    if (isGoogleAmpViewerHost(hostname)) {
-      const httpsMatch = path.match(/^\/amp\/s\/(.+)$/);
-      if (httpsMatch) return buildAmpTargetUrl(httpsMatch[1], 'https:');
+    const matchAmpViewerPath = (prefix) => {
+      if (!path.startsWith(prefix)) return null;
+      const rest = path.slice(prefix.length);
+      if (!rest || rest === 's') return null;
+      if (rest.startsWith('s/')) return buildAmpTargetUrl(rest.slice(2), 'https:');
+      return buildAmpTargetUrl(rest, 'http:');
+    };
 
-      const httpMatch = path.match(/^\/amp\/(.+)$/);
-      if (httpMatch && !httpMatch[1].startsWith('s/')) {
-        return buildAmpTargetUrl(httpMatch[1], 'http:');
-      }
+    if (isGoogleAmpViewerHost(hostname)) {
+      return matchAmpViewerPath('/amp/');
     }
 
     if (hostname.endsWith('.cdn.ampproject.org')) {
-      const httpsCacheMatch = path.match(/^\/c\/s\/(.+)$/);
-      if (httpsCacheMatch) return buildAmpTargetUrl(httpsCacheMatch[1], 'https:');
-
-      const httpCacheMatch = path.match(/^\/c\/(.+)$/);
-      if (httpCacheMatch && !httpCacheMatch[1].startsWith('s/')) {
-        return buildAmpTargetUrl(httpCacheMatch[1], 'http:');
-      }
+      return matchAmpViewerPath('/c/');
     }
 
     return null;

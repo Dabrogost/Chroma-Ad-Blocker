@@ -231,6 +231,7 @@ async function reconcileSettingsImportRuntime(config, proxyConfigs, options = {}
     ['geolocation', () => syncGeolocationProtection(config)]
   ];
   const errors = [];
+  const warnings = [];
   for (const [step, task] of steps) {
     try {
       let result;
@@ -239,6 +240,16 @@ async function reconcileSettingsImportRuntime(config, proxyConfigs, options = {}
         if (result?.stale !== true) break;
       }
       if (result && typeof result === 'object' && (result.ok === false || result.stale === true)) {
+        if (
+          step === 'user-scripts' &&
+          (result.unavailable === true || result.error === 'UserScripts API unavailable')
+        ) {
+          warnings.push({
+            step,
+            error: importErrorMessage(result.error || 'UserScripts API unavailable')
+          });
+          continue;
+        }
         const nestedError = Array.isArray(result.results)
           ? result.results.find(item => item?.error)?.error
           : null;
@@ -249,7 +260,7 @@ async function reconcileSettingsImportRuntime(config, proxyConfigs, options = {}
       if (options.continueOnError !== true) break;
     }
   }
-  return { ok: errors.length === 0, errors };
+  return { ok: errors.length === 0, errors, warnings };
 }
 
 async function restoreSettingsImportSnapshot(snapshot) {
@@ -418,6 +429,7 @@ async function performConfigImport(msg) {
       userScriptletRules: validation.userScriptlets.importedRules || 0
     },
     droppedProxyCount: validation.proxyValidation.droppedCount,
-    proxyErrors: validation.proxyValidation.errors
+    proxyErrors: validation.proxyValidation.errors,
+    ...(reconciliation.warnings?.length > 0 ? { warnings: reconciliation.warnings } : {})
   };
 }

@@ -289,7 +289,9 @@ function isLikelyDnrUrlFilter(pattern) {
     if (hostPart.includes('*') && !hostPart.replace(/\*/g, '').includes('.')) return false;
   }
 
-  const bodyStart = pattern.startsWith('||') ? 2 : 0;
+  const bodyStart = pattern.startsWith('||') ? 2 : (pattern.startsWith('|') ? 1 : 0);
+  if (bodyStart >= pattern.length) return false;
+  if (pattern.replace(/[|*]/g, '').length === 0) return false;
   for (let i = bodyStart; i < pattern.length; i++) {
     if (pattern[i] === '|' && i !== pattern.length - 1) return false;
   }

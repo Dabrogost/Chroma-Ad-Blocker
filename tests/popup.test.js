@@ -583,6 +583,20 @@ test('popup.js functionality', async (t) => {
     await elements['cardNetwork'].dispatchEvent({ type: 'keydown', key: 'Enter' });
     assert.strictEqual(chromeMock.runtime.optionsOpened, 2);
   });
+
+  await t.test('popup disables site controls when active tab is an IPv6 literal', async () => {
+    const { sandbox, elements, messages, chromeMock } = createSandbox();
+    chromeMock.tabs.query = async () => [{ id: 1, url: 'http://[::1]:8080/dashboard' }];
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork();
+
+    assert.strictEqual(elements['toggleWhitelist'].disabled, true);
+    assert.strictEqual(elements['toggleFprWhitelist'].disabled, true);
+    assert.strictEqual(elements['zapElementBtn'].disabled, true);
+    assert.strictEqual(elements['zapperStatus'].textContent, 'Unavailable on this page');
+    assert.strictEqual(messages.some(m => m.type === 'WHITELIST_ADD' || m.type === 'FPR_WHITELIST_ADD'), false);
+  });
 });
 
 test('UI hardening copy', () => {

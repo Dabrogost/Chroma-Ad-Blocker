@@ -705,6 +705,26 @@ test('Content script generic functionality', async (t) => {
       sandbox.getDeAmpRedirectUrl('https://google.evil.com/amp/s/example.com/story'),
       null
     );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://www.google.com/amp/s'),
+      null
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://www.google.com/amp/s/'),
+      null
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://example-com.cdn.ampproject.org/c/s'),
+      null
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://www.google.com/amp/foo'),
+      null
+    );
+    assert.strictEqual(
+      sandbox.getDeAmpRedirectUrl('https://www.google.com/amp/s/localhost/admin'),
+      null
+    );
   });
 
   await t.test('De-AMP skips current and target whitelisted domains', () => {

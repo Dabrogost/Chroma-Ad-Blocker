@@ -500,6 +500,28 @@ test('abort-on-property-read', async (t) => {
     assert.throws(() => vm.runInContext('_sp_.nested.detect', sandbox), /ReferenceError/);
   });
 
+  await t.test('does not eagerly evaluate configurable intermediate getters at install time', () => {
+    const sandbox = runScriptlet('abortOnPropertyRead', ['unused']);
+    vm.runInContext(`
+      var getterCalls = 0;
+      var ready = false;
+      Object.defineProperty(window, 'lazyNs', {
+        configurable: true,
+        get() {
+          getterCalls++;
+          if (!ready) throw new Error('not ready yet');
+          return { detect: 'blocked', safe: 'ok' };
+        }
+      });
+      abortOnPropertyRead(['lazyNs.detect']);
+    `, sandbox);
+
+    assert.strictEqual(vm.runInContext('getterCalls', sandbox), 0);
+    vm.runInContext('ready = true', sandbox);
+    assert.strictEqual(vm.runInContext('lazyNs.safe', sandbox), 'ok');
+    assert.throws(() => vm.runInContext('lazyNs.detect', sandbox), /ReferenceError/);
+  });
+
   await t.test('leaves non-configurable properties usable', () => {
     const root = {};
     Object.defineProperty(root, 'locked', { value: 7, configurable: false });
@@ -892,20 +914,30 @@ test('scriptlet native wrapper camouflage', async (t) => {
     }
   });
 
-  await t.test('preserves XMLHttpRequest constructor name and source', () => {
+  await t.test('preserves XMLHttpRequest constructor name, source, and static constants', () => {
     const win = makeWindow();
     win.XMLHttpRequest = class XMLHttpRequest { open() {} send() {} };
+    win.XMLHttpRequest.UNSENT = 0;
+    win.XMLHttpRequest.OPENED = 1;
+    win.XMLHttpRequest.HEADERS_RECEIVED = 2;
+    win.XMLHttpRequest.LOADING = 3;
+    win.XMLHttpRequest.DONE = 4;
     const origSource = win.XMLHttpRequest.toString();
 
     const sandbox = runScriptlet('preventXhr', ['analytics.example.com'], win);
 
     assert.strictEqual(vm.runInContext('window.XMLHttpRequest.name', sandbox), 'XMLHttpRequest');
     assert.strictEqual(vm.runInContext('window.XMLHttpRequest.toString()', sandbox), origSource);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.UNSENT', sandbox), 0);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.OPENED', sandbox), 1);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.HEADERS_RECEIVED', sandbox), 2);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.LOADING', sandbox), 3);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.DONE', sandbox), 4);
     assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().open.name', sandbox), 'open');
     assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().send.name', sandbox), 'send');
   });
 
-  await t.test('preserves m3u-prune patched fetch and XHR names', () => {
+  await t.test('preserves m3u-prune patched fetch and XHR names and static constants', () => {
     const win = makeWindow();
     win.fetch = function fetch() {
       return Promise.resolve({ clone() {}, text() {} });
@@ -915,11 +947,18 @@ test('scriptlet native wrapper camouflage', async (t) => {
       send() {}
       addEventListener() {}
     };
+    win.XMLHttpRequest.UNSENT = 0;
+    win.XMLHttpRequest.OPENED = 1;
+    win.XMLHttpRequest.HEADERS_RECEIVED = 2;
+    win.XMLHttpRequest.LOADING = 3;
+    win.XMLHttpRequest.DONE = 4;
 
     const sandbox = runScriptlet('m3uPrune', ['ad-segment'], win);
 
     assert.strictEqual(vm.runInContext('window.fetch.name', sandbox), 'fetch');
     assert.strictEqual(vm.runInContext('window.XMLHttpRequest.name', sandbox), 'XMLHttpRequest');
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.UNSENT', sandbox), 0);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.DONE', sandbox), 4);
     assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().open.name', sandbox), 'open');
   });
 
@@ -2368,6 +2407,7 @@ test('scriptlet engine userScripts API availability', async (t) => {
 
     const unavailableResult = await unavailable.sandbox.syncUserScripts();
     assert.strictEqual(unavailableResult.ok, false);
+    assert.strictEqual(unavailableResult.unavailable, true);
     assert.match(unavailableResult.error, /unavailable/i);
 
     const partial = loadScriptletEngine({

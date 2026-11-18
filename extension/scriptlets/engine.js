@@ -447,7 +447,7 @@ async function _syncUserScriptsImpl(generation) {
         console.warn('[Chroma Scriptlets] userScripts API unavailable. Enable Allow User Scripts in Chrome extension details.');
       }
       return masterEnabled && storedRuleCount > 0
-        ? { ok: false, error: 'UserScripts API unavailable' }
+        ? { ok: false, unavailable: true, error: 'UserScripts API unavailable' }
         : { ok: true, registered: 0 };
     }
 
