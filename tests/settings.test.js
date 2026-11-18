@@ -299,6 +299,7 @@ function createSettingsHarness({
     MSG: {
       CONFIG_GET: 'CONFIG_GET',
       CONFIG_SET: 'CONFIG_SET',
+      CONFIG_EXPORT: 'CONFIG_EXPORT',
       UPDATE_CHECK: 'UPDATE_CHECK',
       UPDATE_PACKAGE_INSPECT: 'UPDATE_PACKAGE_INSPECT',
       STATS_GET: 'STATS_GET',
@@ -2656,6 +2657,61 @@ test('settings page proxy and zapper management safety', async (t) => {
     }
   });
 
+  await t.test('open settings syncs config toggles and local zapper rules on storage changes without invoking health diagnostics', async () => {
+    let localZapperRules = [];
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: { enabled: true, cosmetic: true, acceleration: false, accelerationSpeed: 8 },
+        ZAPPER_RULES_GET: () => ({ rules: localZapperRules })
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const healthBefore = countMessages(harness.messages, 'HEALTH_GET');
+    assert.strictEqual(doc.querySelector('#toggleEnabled').checked, true);
+    assert.strictEqual(doc.querySelector('#toggleCosmetic').checked, true);
+
+    await harness.emitStorageChange({
+      config: {
+        oldValue: { enabled: true, cosmetic: true, acceleration: false, accelerationSpeed: 8 },
+        newValue: { enabled: false, cosmetic: true, acceleration: true, accelerationSpeed: 12 }
+      }
+    }, 'local');
+
+    assert.strictEqual(doc.querySelector('#toggleEnabled').checked, false);
+    assert.strictEqual(doc.querySelector('#toggleCosmetic').checked, false);
+
+    await harness.emitStorageChange({
+      config: {
+        oldValue: { enabled: false, cosmetic: true, acceleration: true, accelerationSpeed: 12 },
+        newValue: { enabled: true, cosmetic: false, acceleration: true, accelerationSpeed: 12 }
+      }
+    }, 'local');
+
+    assert.strictEqual(doc.querySelector('#toggleEnabled').checked, true);
+    assert.strictEqual(doc.querySelector('#toggleCosmetic').checked, false);
+    assert.strictEqual(doc.querySelector('#toggleAcceleration').checked, true);
+    assert.ok(doc.querySelector('.speed-btn[data-speed="12"]').classList.contains('active'));
+
+    localZapperRules = [{
+      id: 'zap_live_1',
+      domain: 'example.com',
+      selector: '#banner-ad',
+      enabled: true,
+      createdAt: 1700000000000
+    }];
+    await harness.emitStorageChange({
+      localCosmeticRules: { oldValue: [], newValue: localZapperRules }
+    }, 'local');
+
+    assert.match(doc.querySelector('#localZapperRules').textContent, /#banner-ad/);
+    assert.strictEqual(doc.querySelector('#zapperRuleCount').textContent, '1');
+    assert.strictEqual(countMessages(harness.messages, 'HEALTH_GET'), healthBefore);
+  });
+
   await t.test('health panel surfaces Allow User Scripts diagnostic', async () => {
     const harness = createSettingsHarness({
       responses: {
@@ -2852,6 +2908,85 @@ test('settings page proxy and zapper management safety', async (t) => {
       !Object.prototype.hasOwnProperty.call(message.config, 'enabled')
     ));
     assert.strictEqual(master.checked, false);
+  });
+
+  await t.test('stale master CONFIG_GET refresh does not overwrite concurrent sub-toggle state', async () => {
+    let configGetCalls = 0;
+    const delayedRefreshGet = deferred();
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: () => {
+          configGetCalls++;
+          if (configGetCalls === 1) {
+            return { enabled: false, networkBlocking: true, cosmetic: true, quietConsole: true };
+          }
+          // Return pre-toggle snapshot out-of-order after concurrent quietConsole change
+          return delayedRefreshGet.promise;
+        },
+        CONFIG_SET: { ok: true }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const master = doc.querySelector('#toggleEnabled');
+    const quiet = doc.querySelector('#toggleQuietConsole');
+    const cosmetic = doc.querySelector('#toggleCosmetic');
+
+    // 1. User enables master switch; CONFIG_SET finishes, post-set CONFIG_GET stays in flight
+    master.checked = true;
+    master.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork(10);
+
+    // 2. Concurrent click turns Quiet Console off while master's CONFIG_GET is still pending
+    quiet.checked = false;
+    quiet.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork(10);
+
+    // 3. Stale CONFIG_GET (quietConsole: true, cosmetic: true) resolves after sub-toggle settled
+    delayedRefreshGet.resolve({ enabled: true, networkBlocking: true, cosmetic: true, quietConsole: true });
+    await settleDomAsyncWork(20);
+
+    assert.strictEqual(master.checked, true);
+    assert.strictEqual(cosmetic.checked, true);
+    assert.strictEqual(quiet.checked, false);
+  });
+
+  await t.test('settings import keeps acceleration speed controls disabled when imported config omits acceleration', async () => {
+    let importedConfig = { enabled: false, acceleration: true, accelerationSpeed: 12 };
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: () => ({ ...importedConfig }),
+        CONFIG_IMPORT: () => {
+          importedConfig = { enabled: true, accelerationSpeed: 8 };
+          return { ok: true, imported: { configKeys: 2 } };
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const fileInput = doc.querySelector('#importConfigFile');
+    const payload = JSON.stringify({
+      schema: 'chroma-settings',
+      version: 1,
+      config: { enabled: true }
+    });
+    Object.defineProperty(fileInput, 'files', {
+      value: [{ size: payload.length, text: async () => payload }],
+      configurable: true
+    });
+    fileInput.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork(40);
+
+    assert.strictEqual(doc.querySelector('#settingsBackupStatus').textContent, 'Settings imported.');
+    assert.strictEqual(doc.querySelector('#toggleAcceleration').checked, false);
+    assert.strictEqual(doc.querySelector('#speedSelectorRow').classList.contains('disabled'), true);
+    assert.strictEqual(doc.querySelector('.speed-btn').disabled, true);
   });
 
   await t.test('settings config null keeps controls disabled and shows an error', async () => {
@@ -3530,13 +3665,13 @@ test('settings page proxy and zapper management safety', async (t) => {
     );
   });
 
-  async function createProxyEditorHarness(initialProxies, onProxyConfigSet) {
+  async function createProxyEditorHarness(initialProxies, onProxyConfigSet, initialConfig = {}) {
     const dom = new JSDOM('<!doctype html><div id="proxyRouterContainer"></div><button id="addProxyServerBtn"></button><div id="proxyFeedback"></div>', {
       url: 'chrome-extension://test/ui/settings.html#proxy',
       runScripts: 'outside-only'
     });
     let proxyConfigs = initialProxies.map(p => ({ ...p, domains: [...(p.domains || [])] }));
-    const config = { globalProxyEnabled: false, globalProxyId: null };
+    const config = { globalProxyEnabled: false, globalProxyId: null, ...initialConfig };
     const messages = [];
     const sandbox = {
       window: dom.window,
@@ -3708,6 +3843,175 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(card.querySelector('.proxy-active-group').textContent, /proxy\.example\.com:8443/);
   });
 
+  await t.test('proxy delete and clear credentials roll back when background save fails', async () => {
+    const harness = await createProxyEditorHarness(
+      [{
+        id: 1,
+        name: 'Auth Proxy',
+        host: 'vpn.example.com',
+        port: '8080',
+        type: 'PROXY',
+        accepted: true,
+        enabled: true,
+        domains: [{ host: 'youtube.com', enabled: true }],
+        hasCredentials: true
+      }],
+      () => ({ ok: false, error: 'Storage busy' })
+    );
+
+    const card = harness.getCards()[0];
+    card.querySelector('.proxy-clear-credentials-btn').click();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(card.querySelector('.proxy-clear-credentials-btn').classList.contains('is-hidden'), false);
+    assert.strictEqual(card.querySelector('.proxy-pass').placeholder, 'Password saved');
+    assert.match(card.querySelector('.proxy-error').textContent, /Storage busy/);
+    assert.strictEqual(harness.getProxyConfigs().length, 1);
+
+    card.querySelector('.proxy-del-server-btn').click();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(harness.getCards().length, 1);
+    assert.strictEqual(harness.getProxyConfigs().length, 1);
+    assert.match(card.querySelector('.proxy-error').textContent, /Storage busy/);
+  });
+
+  await t.test('proxy domain add, toggle, and concurrent remove preserve valid state and indices', async () => {
+    let failNextSave = true;
+    let releaseFirstRemove = null;
+    let removeSaves = 0;
+    let holdConcurrentRemoves = false;
+
+    const harness = await createProxyEditorHarness(
+      [{
+        id: 1,
+        name: 'Main Proxy',
+        host: 'vpn.example.com',
+        port: '8080',
+        type: 'PROXY',
+        accepted: true,
+        enabled: true,
+        domains: [
+          { host: 'alpha.example', enabled: true },
+          { host: 'beta.example', enabled: true },
+          { host: 'gamma.example', enabled: true }
+        ],
+        hasCredentials: false
+      }],
+      async () => {
+        if (failNextSave) return { ok: false, error: 'Write rejected' };
+        if (holdConcurrentRemoves) {
+          removeSaves++;
+          if (removeSaves === 1) {
+            await new Promise(resolve => { releaseFirstRemove = resolve; });
+          }
+        }
+        return null;
+      }
+    );
+
+    const card = harness.getCards()[0];
+
+    // Invalid domain is rejected client-side without mutating state.
+    card.querySelector('.proxy-domain-input').value = 'bad host..example';
+    card.querySelector('.proxy-add-domain-btn').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(card.querySelectorAll('.proxy-domain-row').length, 3);
+    assert.match(harness.dom.window.document.getElementById('proxyFeedback').textContent, /valid domain/);
+
+    // Failed add rolls back and keeps user input for retry.
+    card.querySelector('.proxy-domain-input').value = 'delta.example';
+    card.querySelector('.proxy-add-domain-btn').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(card.querySelectorAll('.proxy-domain-row').length, 3);
+    assert.strictEqual(card.querySelector('.proxy-domain-input').value, 'delta.example');
+
+    // Failed domain toggle rolls back checkbox and state.
+    const firstToggle = card.querySelectorAll('.proxy-domain-row .d-toggle')[0];
+    firstToggle.checked = false;
+    firstToggle.dispatchEvent(new harness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork();
+    assert.strictEqual(firstToggle.checked, true);
+    assert.strictEqual(harness.getProxyConfigs()[0].domains[0].enabled, true);
+
+    // Concurrent remove clicks resolve by domain identity instead of stale array index closures.
+    failNextSave = false;
+    holdConcurrentRemoves = true;
+    const removeButtons = card.querySelectorAll('.proxy-domain-row .d-del-btn');
+    removeButtons[0].click(); // alpha.example
+    removeButtons[1].click(); // beta.example
+    await new Promise(resolve => setTimeout(resolve, 0));
+    releaseFirstRemove?.();
+    await settleDomAsyncWork();
+
+    assert.deepStrictEqual(
+      harness.getProxyConfigs()[0].domains.map(d => d.host),
+      ['gamma.example']
+    );
+    assert.strictEqual(card.querySelectorAll('.proxy-domain-row').length, 1);
+  });
+
+  await t.test('deleting a non-last proxy and adding a new one preserves unique card IDs, focus, Edit target, and global state', async () => {
+    const harness = await createProxyEditorHarness(
+      [
+        { id: 1, name: 'Proxy A', host: 'a.example.com', port: '8080', type: 'PROXY', accepted: true, enabled: true, domains: [], hasCredentials: false },
+        { id: 2, name: 'Proxy B', host: 'b.example.com', port: '8080', type: 'PROXY', accepted: true, enabled: true, domains: [], hasCredentials: false }
+      ],
+      null,
+      { globalProxyEnabled: true, globalProxyId: 1, chromeServiceProxyBypass: false }
+    );
+    const { document } = harness.dom.window;
+
+    assert.strictEqual(
+      document.querySelector('.proxy-chrome-service-bypass-warning')?.classList.contains('is-hidden'),
+      false
+    );
+
+    // Delete Proxy A (index 0, currently active global fallback).
+    harness.getCards()[0].querySelector('.proxy-del-server-btn').click();
+    await settleDomAsyncWork();
+
+    assert.strictEqual(harness.getCards().length, 1);
+    assert.strictEqual(harness.getCards()[0].dataset.index, '0');
+    assert.strictEqual(
+      document.querySelector('.proxy-chrome-service-bypass-warning')?.classList.contains('is-hidden'),
+      true
+    );
+
+    // Add Proxy C and verify focus lands on C's host input and all group IDs remain unique.
+    document.getElementById('addProxyServerBtn').click();
+    await settleDomAsyncWork();
+
+    let cards = harness.getCards();
+    assert.strictEqual(cards.length, 2);
+    const cardB = cards[0];
+    const cardC = cards[1];
+    assert.strictEqual(document.activeElement, cardC.querySelector('.proxy-host'));
+
+    const allInputGroupIds = [...document.querySelectorAll('.proxy-input-group')].map(el => el.id);
+    const allActiveGroupIds = [...document.querySelectorAll('.proxy-active-group')].map(el => el.id);
+    assert.strictEqual(new Set(allInputGroupIds).size, 2);
+    assert.strictEqual(new Set(allActiveGroupIds).size, 2);
+
+    // Save Proxy C and click Edit on Proxy C -> C opens while B stays in active view.
+    cardC.querySelector('.proxy-host').value = 'c.example.com';
+    cardC.querySelector('.proxy-port').value = '9090';
+    cardC.querySelector('.proxy-accept-btn').click();
+    await settleDomAsyncWork();
+
+    cards = harness.getCards();
+    const savedB = cards[0];
+    const savedC = cards[1];
+    assert.strictEqual(savedB.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+    assert.strictEqual(savedC.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+
+    savedC.querySelector('.proxy-edit-btn').click();
+    assert.strictEqual(savedC.querySelector('.proxy-input-group').classList.contains('is-hidden'), false);
+    assert.strictEqual(savedC.querySelector('.proxy-active-group').classList.contains('is-hidden'), true);
+    assert.strictEqual(savedB.querySelector('.proxy-input-group').classList.contains('is-hidden'), true);
+    assert.strictEqual(savedB.querySelector('.proxy-active-group').classList.contains('is-hidden'), false);
+  });
+
   await t.test('blocked request badge toggle renders in Appearance and persists independently of master state', async () => {
     const harness = createSettingsHarness({
       config: { enabled: false }
@@ -3728,5 +4032,59 @@ test('settings page proxy and zapper management safety', async (t) => {
     const configSet = harness.messages.find(msg => msg.type === 'CONFIG_SET');
     assert.ok(configSet);
     assert.deepStrictEqual(JSON.parse(JSON.stringify(configSet.config)), { showBlockedBadge: false });
+  });
+
+  await t.test('settings UI treats router handler_error responses as unavailable without crashing or exporting error JSON', async () => {
+    const handlerError = { ok: false, code: 'handler_error', error: 'Message handler failed' };
+    const consoleErrors = [];
+    const origError = console.error;
+    console.error = (...args) => consoleErrors.push(args.map(String).join(' '));
+    try {
+      const harness = createSettingsHarness({
+        responses: {
+          PROXY_CONFIG_GET: handlerError,
+          SUBSCRIPTION_GET: handlerError,
+          USER_SCRIPTLETS_GET: handlerError,
+          LOG_GET: handlerError,
+          STATS_GET: handlerError,
+          CONFIG_EXPORT: handlerError,
+          STATS_EXPORT: handlerError
+        }
+      });
+
+      let blobCalls = 0;
+      harness.sandbox.Blob = class MockBlob {
+        constructor() { blobCalls += 1; }
+      };
+      harness.sandbox.URL = {
+        createObjectURL: () => 'blob:mock',
+        revokeObjectURL: () => {}
+      };
+
+      await harness.sandbox.ChromaApp.initSharedUI();
+      await harness.sandbox.ChromaProxyUI.loadProxyRouterUI();
+      await settleDomAsyncWork();
+
+      const doc = harness.dom.window.document;
+      assert.match(doc.getElementById('proxyRouterContainer')?.textContent || '', /Proxy router unavailable/);
+      assert.match(doc.getElementById('subscriptionList')?.textContent || '', /unavailable/i);
+      assert.match(doc.getElementById('userScriptletSourceList')?.textContent || '', /User scriptlets unavailable/);
+      assert.strictEqual(doc.getElementById('logStreamState')?.textContent, 'Unavailable');
+
+      const logToggle = doc.getElementById('requestLogSummary');
+      logToggle?.click();
+      await settleDomAsyncWork();
+      assert.strictEqual(doc.getElementById('logStreamState')?.textContent, 'Unavailable');
+
+      doc.getElementById('exportStatsJson')?.click();
+      doc.getElementById('exportConfigJson')?.click();
+      await settleDomAsyncWork();
+
+      assert.strictEqual(blobCalls, 0);
+      assert.strictEqual(doc.getElementById('settingsBackupStatus')?.textContent, 'Message handler failed');
+      assert.strictEqual(consoleErrors.some(line => line.includes('TypeError')), false, consoleErrors.join('\n'));
+    } finally {
+      console.error = origError;
+    }
   });
 });

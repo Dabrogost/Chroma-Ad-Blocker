@@ -519,4 +519,32 @@ test('browser privacy hardening', async (t) => {
     }
     assert.strictEqual(harness.contentSettings.location.calls.some(call => call.method === 'clear'), false);
   });
+
+  await t.test('prior external release does not block clearing if Chroma still controls settings while disabled', async () => {
+    const external = { value: false, levelOfControl: 'controlled_by_other_extensions' };
+    const harness = loadSandbox({
+      thirdPartyCookiesAllowed: external,
+      doNotTrackEnabled: external,
+      adMeasurementEnabled: external,
+      topicsEnabled: external,
+      fledgeEnabled: external
+    });
+
+    await harness.sandbox.syncBrowserPrivacyHardening({ enabled: false, browserPrivacyHardening: false });
+    const initialClears = Object.values(harness.settings).map(s => s.calls.filter(c => c.method === 'clear').length);
+    assert.deepStrictEqual(initialClears, [1, 1, 1, 1, 1]);
+
+    // Simulate Chrome reporting this extension owns a setting again while disabled.
+    for (const setting of Object.values(harness.settings)) {
+      setting.emitChange({ value: false, levelOfControl: 'controlled_by_this_extension' });
+    }
+    await flushAsyncWork();
+
+    const result = await harness.sandbox.syncBrowserPrivacyHardening({ enabled: false, browserPrivacyHardening: false });
+    assert.strictEqual(result.ok, true);
+    for (const setting of Object.values(harness.settings)) {
+      assert.strictEqual(setting.readLevel(), 'controllable_by_this_extension');
+      assert.ok(setting.calls.filter(c => c.method === 'clear').length >= 2);
+    }
+  });
 });

@@ -991,6 +991,70 @@ test('Ad field stripping', async (t) => {
     assert.strictEqual(thirdParsed.videoDetails.title, 'https://www.youtube.com/youtubei/v1/player?a=2');
   });
 
+  await t.test('pre-send readystatechange listeners observe stripped text and json responses without defining responseText on json XHRs', () => {
+    const sandbox = createStrippingSandbox(
+      { enabled: true, stripping: true },
+      undefined,
+      'www.youtube.com',
+      (s) => {
+        s.XMLHttpRequest = class {
+          constructor() {
+            this._listeners = {};
+            this._rawResponseText = '';
+            this._rawJson = null;
+            this.readyState = 0;
+            this.responseType = '';
+          }
+          get responseText() {
+            if (this.responseType === 'json') throw new Error('InvalidStateError');
+            return this._rawResponseText;
+          }
+          get response() {
+            return this.responseType === 'json' ? this._rawJson : this._rawResponseText;
+          }
+          open(method, url) {
+            this._testUrl = url;
+            this.readyState = 1;
+          }
+          addEventListener(type, fn) {
+            (this._listeners[type] = this._listeners[type] || []).push(fn);
+          }
+          send() {
+            this.readyState = 4;
+            const payload = { adPlacements: [{ id: 1 }], videoDetails: { title: 'Clean Video' } };
+            this._rawResponseText = JSON.stringify(payload);
+            this._rawJson = payload;
+            for (const fn of this._listeners.readystatechange || []) {
+              fn.call(this);
+            }
+          }
+        };
+      }
+    );
+
+    const textXhr = new sandbox.XMLHttpRequest();
+    textXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    let observedText = null;
+    textXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) observedText = sandbox._nativeJSONParse(this.responseText);
+    });
+    textXhr.send();
+    assert.strictEqual('adPlacements' in observedText, false);
+    assert.strictEqual(observedText.videoDetails.title, 'Clean Video');
+
+    const jsonXhr = new sandbox.XMLHttpRequest();
+    jsonXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    jsonXhr.responseType = 'json';
+    let observedJson = null;
+    jsonXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) observedJson = this.response;
+    });
+    jsonXhr.send();
+    assert.strictEqual('adPlacements' in observedJson, false);
+    assert.strictEqual(observedJson.videoDetails.title, 'Clean Video');
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(jsonXhr, 'responseText'), false);
+  });
+
   await t.test('Function.prototype.toString spoofing cloaks self-inspection without own .toString property', () => {
     const sandbox = createStrippingSandbox({ enabled: true, stripping: true });
 
@@ -1017,6 +1081,87 @@ test('Ad field stripping', async (t) => {
     assert.strictEqual(sandbox.window.fetch, sandbox._nativeFetch);
     assert.ok('adPlacements' in result, 'non-YouTube pages should not get YouTube payload pruning');
     assert.strictEqual(sandbox.CONFIG, undefined, 'test-only exports should not be installed after scope guard exit');
+  });
+
+  await t.test('Bug 8 yt_handler stealth and pre-open readystatechange regressions', () => {
+    const sandbox = createStrippingSandbox(
+      { enabled: true, stripping: true },
+      undefined,
+      'www.youtube.com',
+      (s) => {
+        s.XMLHttpRequest = class {
+          constructor() {
+            this._listeners = {};
+            this._rawResponseText = '';
+            this._rawJson = null;
+            this.readyState = 0;
+            this.responseType = '';
+          }
+          get responseText() {
+            if (this.responseType === 'json') throw new Error('InvalidStateError');
+            return this._rawResponseText;
+          }
+          get response() {
+            return this.responseType === 'json' ? this._rawJson : this._rawResponseText;
+          }
+          open(method, url) {
+            this._testUrl = url;
+            this.readyState = 1;
+          }
+          addEventListener(type, fn) {
+            (this._listeners[type] = this._listeners[type] || []).push(fn);
+          }
+          send() {
+            this.readyState = 4;
+            const payload = { adPlacements: [{ id: 1 }], videoDetails: { title: 'PreOpen' } };
+            this._rawResponseText = JSON.stringify(payload);
+            this._rawJson = payload;
+            for (const fn of this._listeners.readystatechange || []) {
+              fn.call(this);
+            }
+          }
+        };
+      }
+    );
+
+    const fetchMeta = vm.runInContext(`({
+      tag: Object.prototype.toString.call(window.fetch),
+      name: window.fetch.name,
+      hasPrototypeOnToString: 'prototype' in Function.prototype.toString
+    })`, sandbox);
+    assert.strictEqual(fetchMeta.tag, '[object Function]');
+    assert.strictEqual(fetchMeta.name, 'fetch');
+    assert.strictEqual(fetchMeta.hasPrototypeOnToString, false);
+
+    let thrownStack = '';
+    try {
+      vm.runInContext('Function.prototype.toString.call(null)', sandbox);
+    } catch (err) {
+      thrownStack = String(err.stack || '');
+    }
+    assert.doesNotMatch(thrownStack, /yt_handler\.js/);
+
+    const textXhr = new sandbox.XMLHttpRequest();
+    let preOpenText = null;
+    textXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) preOpenText = sandbox._nativeJSONParse(this.responseText);
+    });
+    textXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    textXhr.send();
+    assert.strictEqual('adPlacements' in preOpenText, false);
+    assert.strictEqual(preOpenText.videoDetails.title, 'PreOpen');
+
+    const jsonXhr = new sandbox.XMLHttpRequest();
+    jsonXhr.responseType = 'json';
+    let preOpenJson = null;
+    jsonXhr.addEventListener('readystatechange', function() {
+      if (this.readyState === 4) preOpenJson = this.response;
+    });
+    jsonXhr.open('POST', 'https://www.youtube.com/youtubei/v1/player');
+    jsonXhr.send();
+    assert.strictEqual('adPlacements' in preOpenJson, false);
+    assert.strictEqual(preOpenJson.videoDetails.title, 'PreOpen');
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(jsonXhr, 'responseText'), false);
   });
 });
 
@@ -1338,6 +1483,48 @@ test('YouTube ad acceleration', async (t) => {
     sandbox.document.dispatchEvent({ type: 'yt-page-data-updated' });
 
     assert.strictEqual(intervalsStarted, 0, 'Navigation should not start the accelerator timer while acceleration is disabled');
+  });
+
+  await t.test('YouTube navigation mid-ad clears active overlay and session stylesheet without a destination video', () => {
+    const mockPlayer = createMockElement('div');
+    mockPlayer.className = 'html5-video-player ad-showing';
+    const mockVideo = createMockElement('video');
+    mockVideo.closest = (sel) => (sel === '.html5-video-player' ? mockPlayer : null);
+    let hasVideo = true;
+    const createdElements = [];
+
+    const sandbox = createSandbox((doc) => {
+      const origCreate = doc.createElement;
+      doc.createElement = (tag) => {
+        const el = origCreate(tag);
+        createdElements.push(el);
+        return el;
+      };
+      doc.querySelector = (sel) => {
+        if (!hasVideo && (sel.includes('video') || sel.includes('ad-showing'))) return null;
+        if (sel.includes('.ad-showing') || sel.includes('.html5-video-player')) return mockPlayer;
+        if (sel.includes('video')) return hasVideo ? mockVideo : null;
+        return null;
+      };
+      doc.getElementsByClassName = (cls) => (cls === 'ad-showing' && hasVideo ? [mockPlayer] : []);
+    });
+
+    sandbox.handleAdAcceleration();
+    const overlayHost = createdElements.find(el => el.tagName === 'DIV' && el.shadowRoot);
+    assert.ok(overlayHost, 'adOverlayHost should exist during active ad');
+    assert.strictEqual(overlayHost.classList.contains('active'), true);
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 1);
+    assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, true);
+
+    hasVideo = false;
+    sandbox.document.dispatchEvent({ type: 'yt-navigate-finish' });
+    assert.strictEqual(sandbox.__CHROMA_STATE_BRIDGE__.chromaAdSessionActive, false);
+    assert.strictEqual(overlayHost.classList.contains('active'), false);
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
+
+    sandbox.handleAdAcceleration();
+    assert.strictEqual(overlayHost.classList.contains('active'), false);
+    assert.strictEqual(sandbox.document.adoptedStyleSheets.length, 0);
   });
 
   await t.test('initial load does not start handshake polling when acceleration is already known off', async () => {

@@ -82,7 +82,7 @@ function resourceAliases(name) {
 }
 
 function parseHeaderLine(line) {
-  const match = line.match(/^([a-z0-9][a-z0-9._-]{0,127})\s+([a-z]+\/[a-z0-9.+-]+)(?:\s+(.*))?$/i);
+  const match = line.match(/^([a-z0-9][a-z0-9._-]{0,127})\s+((?:application|text|image|audio|video|font|model|multipart)\/[a-z0-9.+-]+(?:;[a-z0-9.=+-]+)*)(?:\s+(.*))?$/i);
   if (!match) return null;
   return {
     name: match[1],
@@ -163,14 +163,15 @@ export function parseUserScriptletResourceText(text, options = {}) {
         skipped.malformed++;
         continue;
       }
-      if (!JS_MIME_RE.test(header.mime)) {
+      const baseMime = header.mime.split(';')[0];
+      if (!JS_MIME_RE.test(baseMime)) {
         skipped.unsupportedMime++;
         skippingUnsupported = true;
         continue;
       }
       current = {
         name: header.name,
-        mime: header.mime,
+        mime: baseMime,
         lines: header.rest ? [header.rest] : []
       };
       continue;
@@ -317,7 +318,10 @@ async function fetchUserScriptletSource(source) {
   try {
     const res = await fetch(source.url, { signal: controller.signal, cache: 'no-cache', headers });
     const finalUrl = validateUserScriptletSourceUrl(res.url || source.url);
-    if (!finalUrl.ok) throw new Error(`Unsafe resource redirect: ${finalUrl.error}`);
+    if (!finalUrl.ok) {
+      if (typeof res.body?.cancel === 'function') await res.body.cancel().catch(() => {});
+      throw new Error(`Unsafe resource redirect: ${finalUrl.error}`);
+    }
     const etag = getHeader(res, 'etag');
     const lastModified = getHeader(res, 'last-modified');
     if (res.status === 304) {
@@ -327,7 +331,10 @@ async function fetchUserScriptletSource(source) {
         lastModified: lastModified || source.lastModified || null
       };
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      if (typeof res.body?.cancel === 'function') await res.body.cancel().catch(() => {});
+      throw new Error(`HTTP ${res.status}`);
+    }
     return {
       text: await readResponseTextWithLimit(res, MAX_RESOURCE_RESPONSE_BYTES),
       etag: etag || null,
@@ -578,11 +585,17 @@ export async function addUserScriptletSource(input) {
 
 export async function refreshUserScriptletSource(id) {
   const source = await serializeUserScriptletStorage(async () => {
-    const { userScriptletSources = [] } = await chrome.storage.local.get([
-      USER_SCRIPTLET_STORAGE_KEYS.sources
+    const {
+      userScriptletSources = [],
+      userScriptletResources = {}
+    } = await chrome.storage.local.get([
+      USER_SCRIPTLET_STORAGE_KEYS.sources,
+      USER_SCRIPTLET_STORAGE_KEYS.resources
     ]);
     const found = asArray(userScriptletSources).find(item => item?.id === id);
-    return found ? { ...found } : null;
+    if (!found) return null;
+    const hasCached = Object.values(asObject(userScriptletResources)).some(r => r?.sourceId === id);
+    return hasCached ? { ...found } : { ...found, etag: null, lastModified: null };
   });
   if (!source) return { ok: false, error: 'User scriptlet resource not found' };
 
@@ -601,6 +614,10 @@ export async function refreshUserScriptletSource(id) {
       }
 
       if (prepared.notModified) {
+        const hasCached = Object.values(asObject(userScriptletResources)).some(r => r?.sourceId === id);
+        if (!hasCached) {
+          throw new Error('Resource cache is missing on 304 Not Modified response');
+        }
         const nextSources = latestSources.map(item =>
           item?.id === id ? buildUpdatedSourceRecord(item, prepared) : item
         );

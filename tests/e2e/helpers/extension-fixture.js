@@ -301,19 +301,33 @@ async function startChrome() {
     stderr: () => stderr,
     cleanup: async () => {
       try {
+        await Promise.race([
+          cdp.send('Browser.close').catch(() => {}),
+          new Promise(resolve => setTimeout(resolve, 1000))
+        ]);
+      } catch {}
+      try {
         cdp.close();
       } catch {}
       if (chrome.exitCode === null && !chrome.killed) {
-        chrome.kill();
         await new Promise(resolve => {
-          const timeout = setTimeout(resolve, 2000);
+          const timeout = setTimeout(() => {
+            try {
+              if (chrome.exitCode === null && !chrome.killed) chrome.kill();
+            } catch {}
+            resolve();
+          }, 1500);
           chrome.once('exit', () => {
             clearTimeout(timeout);
             resolve();
           });
         });
       }
-      fs.rmSync(profileRoot, { recursive: true, force: true });
+      try {
+        fs.rmSync(profileRoot, { recursive: true, force: true, maxRetries: 15, retryDelay: 100 });
+      } catch (err) {
+        if (err?.code !== 'EPERM' && err?.code !== 'EBUSY') throw err;
+      }
     }
   };
 }

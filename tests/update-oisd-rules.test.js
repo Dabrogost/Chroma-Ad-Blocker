@@ -2,8 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 const {
+  collectProtectedFilters,
   compareStableDomains,
   countEligibleDomains,
+  domainFromLine,
   parseOisd,
   requireFullCapacity,
   selectDomainsForBudget,
@@ -16,6 +18,8 @@ test('OISD parser normalizes supported domain formats and rejects exceptions', (
     '[Adblock Plus]',
     '! comment',
     '||Ads.Example^',
+    '||constrained.example^$third-party',
+    '||path-only.example^/ads.js',
     '0.0.0.0 tracker.example',
     'plain.example',
     '@@||allowed.example^',
@@ -27,7 +31,9 @@ test('OISD parser normalizes supported domain formats and rejects exceptions', (
     'tracker.example',
     'plain.example'
   ]);
-  assert.strictEqual(parsed.skipped, 1);
+  assert.strictEqual(parsed.skipped, 3);
+  assert.strictEqual(domainFromLine('||example.com^$third-party'), null);
+  assert.strictEqual(domainFromLine('||example.com^/ads.js'), null);
 });
 
 test('OISD overflow ordering is deterministic and distributed by a stable hash', () => {
@@ -101,4 +107,31 @@ test('OISD generation rejects underfill and preserves exact count while skipping
   );
   assert.deepStrictEqual(rules.map(rule => rule.id), [2, 4, 5]);
   assert.strictEqual(rules.length, 3);
+});
+
+test('protected static dedupe ignores resource-constrained and allow rules', () => {
+  const protectedFilters = collectProtectedFilters([
+    {
+      id: 47,
+      priority: 1,
+      action: { type: 'block' },
+      condition: { urlFilter: '||onesignal.com^', resourceTypes: ['script', 'xmlhttprequest'] }
+    },
+    {
+      id: 48,
+      priority: 2,
+      action: { type: 'allow' },
+      condition: { urlFilter: '||allowed.example^' }
+    },
+    {
+      id: 49,
+      priority: 1,
+      action: { type: 'block' },
+      condition: { urlFilter: '||FullDomain.Example^' }
+    }
+  ]);
+
+  assert.strictEqual(protectedFilters.has('||onesignal.com^'), false);
+  assert.strictEqual(protectedFilters.has('||allowed.example^'), false);
+  assert.strictEqual(protectedFilters.has('||fulldomain.example^'), true);
 });

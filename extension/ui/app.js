@@ -575,6 +575,7 @@ const ChromaApp = (() => {
         ? { type: MSG.STATS_GET }
         : { type: MSG.STATS_GET, options: { summaryOnly: true } };
       stats = await notifyBackground(message) || null;
+      if (stats?.ok === false) stats = null;
       available = !!stats;
     } catch (error) {
       console.error('Chroma stats failed to load:', error);
@@ -599,14 +600,37 @@ const ChromaApp = (() => {
     }, true);
     safeHydrateSection('motion preference', initMotionPreference);
 
-    const refreshStatsOnStorageChange = (changes, area) => {
-      if (area === 'local' && changes.statsV2) {
+    let config = {};
+    let configReady = false;
+    const refreshOnStorageChange = (changes, area) => {
+      if (area !== 'local') return;
+      if (changes.statsV2) {
         safeHydrateSection('stats', loadStatsUI);
+      }
+      if (settingsMode && changes.localCosmeticRules) {
+        safeHydrateSection('local zapper rules', loadLocalZapperRulesUI);
+      }
+      if (
+        configReady &&
+        changes.config?.newValue &&
+        typeof changes.config.newValue === 'object' &&
+        !Array.isArray(changes.config.newValue) &&
+        Object.keys(changes.config.newValue).length > 0 &&
+        !document.querySelector('.control-pending')
+      ) {
+        config = { ...config, ...changes.config.newValue };
+        const enabled = config.enabled !== false;
+        if ($('toggleEnabled')) {
+          $('toggleEnabled').checked = enabled;
+          updateStatusDot(enabled);
+        }
+        syncUI(config, enabled);
+        syncSpeedUI(config.accelerationSpeed ?? 8, enabled && !!config.acceleration);
       }
     };
 
     if (!settingsMode) {
-      chrome.storage.onChanged.addListener(refreshStatsOnStorageChange);
+      chrome.storage.onChanged.addListener(refreshOnStorageChange);
       safeHydrateSection('stats', loadStatsUI);
     }
 
@@ -662,8 +686,12 @@ const ChromaApp = (() => {
       dismissBtn.addEventListener('click', () => banner.remove());
     }).catch(error => console.error('Chroma update check failed:', error));
 
-    const syncUI = (cfg, masterOn) => {
+    let protectionMutationSeq = 0;
+    const lastControlMutationSeq = new Map();
+
+    const syncUI = (cfg, masterOn, minSeq = Infinity) => {
       for (const [elId, key, def, options = {}] of CONFIG_TOGGLES) {
+        if ((lastControlMutationSeq.get(key) || 0) > minSeq) continue;
         if ($(elId)) {
           $(elId).checked = options.masterLinked === false
             ? (cfg[key] ?? config[key] ?? def)
@@ -762,7 +790,6 @@ const ChromaApp = (() => {
       setControlPending(id, pending, { disable: settingsMode, visual: settingsMode });
     }
 
-    let config = {};
     try {
       const configResponse = await notifyBackground({ type: MSG.CONFIG_GET });
       if (!configResponse && settingsMode) {
@@ -787,6 +814,7 @@ const ChromaApp = (() => {
     }
     syncUI(config, isEnabled);
     setControlsPending(false);
+    configReady = true;
     syncSpeedUI(config.accelerationSpeed ?? 8, isEnabled && !!config.acceleration);
     CONFIG_TOGGLES.forEach(([id]) => controlFeedback(id));
     setControlPending('toggleWhitelist', true);
@@ -795,6 +823,8 @@ const ChromaApp = (() => {
     document.querySelectorAll('.speed-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (btn.disabled || !$('toggleAcceleration')?.checked || !$('toggleEnabled')?.checked) return;
+        const seq = ++protectionMutationSeq;
+        lastControlMutationSeq.set('accelerationSpeed', seq);
         const previous = captureProtectionState();
         const speed = parseInt(btn.dataset.speed);
         syncSpeedUI(speed, $('toggleAcceleration')?.checked);
@@ -805,7 +835,7 @@ const ChromaApp = (() => {
         const result = await sendMutation({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } }, controlFeedback('toggleAcceleration'));
         if (result) {
           config.accelerationSpeed = speed;
-        } else {
+        } else if ((lastControlMutationSeq.get('accelerationSpeed') || 0) === seq) {
           restoreProtectionState(previous);
         }
         document.querySelectorAll('.speed-btn').forEach(speedBtn => {
@@ -817,6 +847,8 @@ const ChromaApp = (() => {
 
     for (const [elId, key, _def, options = {}] of CONFIG_TOGGLES) {
       $(elId)?.addEventListener('change', async (e) => {
+        const seq = ++protectionMutationSeq;
+        lastControlMutationSeq.set(key, seq);
         const isChecked = e.target.checked;
         const previous = captureProtectionState();
         previous.toggles[elId] = !isChecked;
@@ -825,6 +857,7 @@ const ChromaApp = (() => {
         let nextEnabled = $('toggleEnabled')?.checked;
         const masterReenabled = options.masterLinked !== false && isChecked && !$('toggleEnabled')?.checked;
         if (masterReenabled) {
+          lastControlMutationSeq.set('enabled', seq);
           nextEnabled = true;
           nextConfig.enabled = true;
           $('toggleEnabled').checked = true;
@@ -834,6 +867,7 @@ const ChromaApp = (() => {
             toggleOptions.masterLinked !== false && $(id)?.checked
           );
           if (!anyOn && $('toggleEnabled')) {
+            lastControlMutationSeq.set('enabled', seq);
             nextEnabled = false;
             nextConfig.enabled = false;
             $('toggleEnabled').checked = false;
@@ -843,14 +877,18 @@ const ChromaApp = (() => {
 
         const result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig }, controlFeedback(elId));
         if (!result) {
-          restoreProtectionState(previous);
+          if ((lastControlMutationSeq.get(key) || 0) === seq) {
+            restoreProtectionState(previous);
+          }
           setProtectionTogglePending(elId, false);
           syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
           return;
         }
         config[key] = isChecked;
-        if (typeof nextEnabled === 'boolean') config.enabled = nextEnabled;
-        if (masterReenabled) syncUI(config, true);
+        if (typeof nextEnabled === 'boolean' && (lastControlMutationSeq.get('enabled') || 0) <= seq) {
+          config.enabled = nextEnabled;
+        }
+        if (masterReenabled) syncUI(config, true, seq);
         setProtectionTogglePending(elId, false);
         syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
       });
@@ -862,39 +900,59 @@ const ChromaApp = (() => {
     });
 
     $('toggleEnabled')?.addEventListener('change', async (e) => {
+      const seq = ++protectionMutationSeq;
+      lastControlMutationSeq.set('enabled', seq);
       const active = e.target.checked;
       const previous = captureProtectionState();
       previous.enabled = !active;
       updateStatusDot(active);
-      if (!settingsMode) syncUI(config, active);
+      if (!settingsMode) syncUI(config, active, seq);
       setProtectionTogglePending('toggleEnabled', true);
       syncSpeedUI(getActiveSpeed(), false);
       const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } }, 'protectionFeedback');
       if (!result) {
-        restoreProtectionState(previous);
+        if ((lastControlMutationSeq.get('enabled') || 0) === seq) {
+          restoreProtectionState(previous);
+        }
         setProtectionTogglePending('toggleEnabled', false);
+        syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
         return;
       }
-      config.enabled = active;
+
+      if ((lastControlMutationSeq.get('enabled') || 0) <= seq) {
+        config.enabled = active;
+      }
 
       if (!active) {
-        syncUI(config, false);
+        if ((lastControlMutationSeq.get('enabled') || 0) <= seq) {
+          syncUI(config, false, seq);
+        }
       } else {
         const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
         if (activeConfig) {
-          config = activeConfig;
-          syncUI(activeConfig, true);
-        } else {
-          syncUI(config, true);
+          const mergedConfig = { ...config };
+          for (const [k, v] of Object.entries(activeConfig)) {
+            if ((lastControlMutationSeq.get(k) || 0) <= seq) {
+              mergedConfig[k] = v;
+            }
+          }
+          config = mergedConfig;
         }
+        const effectiveEnabled = (lastControlMutationSeq.get('enabled') || 0) <= seq
+          ? (config.enabled !== false)
+          : !!$('toggleEnabled')?.checked;
+        syncUI(config, effectiveEnabled, seq);
       }
       setProtectionTogglePending('toggleEnabled', false);
-      syncSpeedUI(config.accelerationSpeed ?? 8, active && !!config.acceleration);
+      const effectiveMaster = (lastControlMutationSeq.get('enabled') || 0) <= seq
+        ? (config.enabled !== false)
+        : !!$('toggleEnabled')?.checked;
+      syncSpeedUI(config.accelerationSpeed ?? 8, effectiveMaster && !!config.acceleration);
     });
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
     if (settingsMode) {
-      chrome.storage.onChanged.addListener(refreshStatsOnStorageChange);
+      chrome.storage.onChanged.addListener(refreshOnStorageChange);
     }
 
     wireStatsControls();
@@ -948,7 +1006,7 @@ const ChromaApp = (() => {
       });
       $('exportStatsJson')?.addEventListener('click', async () => {
         const exported = await notifyBackground({ type: MSG.STATS_EXPORT });
-        if (!exported) return;
+        if (!exported || exported.ok === false) return;
         const text = JSON.stringify(exported, null, 2);
         try {
           const blob = new Blob([text], { type: 'application/json' });
@@ -963,7 +1021,10 @@ const ChromaApp = (() => {
 
       $('exportConfigJson')?.addEventListener('click', async () => {
         const exported = await notifyBackground({ type: MSG.CONFIG_EXPORT });
-        if (!exported) return;
+        if (!exported || exported.ok === false || exported.schema !== 'chroma-settings') {
+          setText('settingsBackupStatus', exported?.error || 'Settings export failed.');
+          return;
+        }
         const text = JSON.stringify(exported, null, 2);
         try {
           const blob = new Blob([text], { type: 'application/json' });
@@ -1009,7 +1070,7 @@ const ChromaApp = (() => {
             if (masterToggle) masterToggle.checked = enabled;
             updateStatusDot(enabled);
             syncUI(config, enabled);
-            syncSpeedUI(config.accelerationSpeed ?? 8, enabled && (config.acceleration !== false));
+            syncSpeedUI(config.accelerationSpeed ?? 8, enabled && !!config.acceleration);
           }
           await Promise.all([
             loadSubscriptionUI(),
@@ -1068,7 +1129,9 @@ const ChromaApp = (() => {
         } catch (_) {}
       }
 
-      if (!currentDomain) {
+      const baseDomain = currentDomain ? getRegistrableDomain(currentDomain) : '';
+
+      if (!currentDomain || !baseDomain) {
         $('toggleWhitelist')?.closest?.('.toggle-row')?.classList.add('disabled');
         const whitelist = $('toggleWhitelist');
         if (whitelist) {
@@ -1077,13 +1140,16 @@ const ChromaApp = (() => {
         }
         const rowFpr = $('rowFprWhitelist');
         if (rowFpr) rowFpr.classList.remove('is-visible');
+        const fprSiteToggle = $('toggleFprWhitelist');
+        if (fprSiteToggle) {
+          fprSiteToggle.disabled = true;
+          fprSiteToggle.classList.remove('control-pending');
+        }
         const zapBtn = $('zapElementBtn');
         if (zapBtn) zapBtn.disabled = true;
         if ($('zapperStatus')) $('zapperStatus').textContent = 'Unavailable on this page';
         return;
       }
-
-      const baseDomain = getRegistrableDomain(currentDomain);
       const { whitelist = [] } = await notifyBackground({ type: MSG.WHITELIST_GET }) || { whitelist: [] };
       if ($('toggleWhitelist')) {
         $('toggleWhitelist').checked = whitelist.includes(baseDomain);
@@ -1161,7 +1227,11 @@ const ChromaApp = (() => {
 
       let subscriptions = [];
       try {
-        subscriptions = await notifyBackground({ type: MSG.SUBSCRIPTION_GET }) || [];
+        const response = await notifyBackground({ type: MSG.SUBSCRIPTION_GET });
+        if (!Array.isArray(response)) {
+          throw new Error(response?.error || 'Subscriptions unavailable');
+        }
+        subscriptions = response;
 
         const {
           appliedNetworkStateVersion = 0,
@@ -1573,9 +1643,9 @@ const ChromaApp = (() => {
         console.error('Chroma user scriptlets failed to load:', error);
       }
 
-      if (!settings) {
+      if (!settings || settings.ok === false) {
         setSectionError('userScriptletSourceList', 'User scriptlets unavailable.');
-        setUserScriptletRulesStatus('User scriptlets unavailable.', true);
+        setUserScriptletRulesStatus(settings?.error || 'User scriptlets unavailable.', true);
         setSectionReady('userScriptletPanel');
         return;
       }
@@ -2000,7 +2070,10 @@ const ChromaApp = (() => {
 
       async function getLogEntries() {
         try {
-          return await notifyBackground({ type: MSG.LOG_GET }) || [];
+          const response = await notifyBackground({ type: MSG.LOG_GET });
+          if (!response) return [];
+          if (!Array.isArray(response)) return null;
+          return response;
         } catch (error) {
           console.error('Chroma request log failed to load:', error);
           return null;

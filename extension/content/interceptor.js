@@ -734,7 +734,7 @@
     // delivery before this synchronous document_start listener consumes it.
     pristineAddEventListener('__CHROMA_CONFIG_DELIVERY__', handleConfigDelivery, true);
     const pingRate = isBridgeDomain ? 5 : 50; // 5ms on bridge domains; 50ms relaxed for general web
-    
+    emitMainReady();
     pingInterval = pristineSetInterval(() => {
       // SECURITY: Secure Handshake Initiation
       emitMainReady();

@@ -5,7 +5,9 @@
   const log = (...a) => { if (DEBUG) console.log('[Chroma Recipes]', ...a); };
 
   const nativeCreateElement = Document.prototype.createElement;
-  const nativeQuerySelectorAll = Document.prototype.querySelectorAll;
+  const nativeDocQuerySelectorAll = Document.prototype.querySelectorAll;
+  const nativeElemQuerySelectorAll = typeof Element !== 'undefined' ? Element.prototype?.querySelectorAll : null;
+  const nativeElemMatches = typeof Element !== 'undefined' ? Element.prototype?.matches : null;
   const nativeAddDocEventListener = document.addEventListener.bind(document);
   const nativeRemoveDocEventListener = document.removeEventListener.bind(document);
 
@@ -402,35 +404,13 @@ ${HIDE_SELECTORS.join(',\n')} {
       return PAYLOAD_MARKERS.some(m => s.includes(m));
     } catch (_) { return false; }
   }
-  // ─── NATIVE INTEGRITY CHECK ─────
-  // Verify that setAttribute/getAttribute are still native before capturing.
-  // If a page script has already monkey-patched these prototypes, skip
-  // patching to avoid operating on untrusted code (dead-man's-switch).
-  const _fnToString = Function.prototype.toString;
-  function _isNative(fn) {
-    try {
-      return typeof fn === 'function' && _fnToString.call(fn).includes('[native code]');
-    } catch (_) { return false; }
-  }
 
-  const initialSetAttribute = Element.prototype.setAttribute;
   const initialGetAttribute = Element.prototype.getAttribute;
-  const initialAttributePrimitivesTrusted =
-    _isNative(initialSetAttribute) && _isNative(initialGetAttribute);
-  let attributePatchesEstablished = false;
 
   function installElementAttributePatches() {
-    const currentSetAttribute = Element.prototype.setAttribute;
-    const currentGetAttribute = Element.prototype.getAttribute;
-    if (!initialAttributePrimitivesTrusted) return;
-    // Before the first trusted installation, refuse a page replacement made
-    // while configuration was still loading. After a prior Chroma lifecycle,
-    // a preserved page wrapper is expected and receives a fresh active layer.
-    if (!attributePatchesEstablished &&
-        (currentSetAttribute !== initialSetAttribute || currentGetAttribute !== initialGetAttribute)) return;
 
     // Patch setAttribute so `el.setAttribute('src', url)` is caught too.
-    const setWrapper = patchMethod(Element.prototype, 'setAttribute', (original, lifecycle) => function (name, value) {
+    patchMethod(Element.prototype, 'setAttribute', (original, lifecycle) => function (name, value) {
       if (!lifecycle.active) return Reflect.apply(original, this, arguments);
       const lowerName = String(name).toLowerCase();
       if (this.tagName === 'SCRIPT' && lowerName === 'src' && isBadUrl(value)) {
@@ -441,6 +421,7 @@ ${HIDE_SELECTORS.join(',\n')} {
       if (this.tagName === 'SCRIPT' &&
           (lowerName === 'onerror' || lowerName === 'onload') &&
           (looksLikeInjectorPayload(value) || (isYahooHomepage &&
+            typeof initialGetAttribute === 'function' &&
             Reflect.apply(initialGetAttribute, this, ['data-chroma-neutered']) === '1'))) {
         log('blocked setAttribute', lowerName, 'on injector', this.id || '(no id)');
         return;
@@ -454,27 +435,26 @@ ${HIDE_SELECTORS.join(',\n')} {
 
     // The HTML parser sets `onerror`/`onload` directly (not via setAttribute),
     // so a sibling inline script can eval the payload before an observer fires.
-    const getWrapper = patchMethod(Element.prototype, 'getAttribute', (original, lifecycle) => function (name) {
+    patchMethod(Element.prototype, 'getAttribute', (original, lifecycle) => function (name) {
       const value = Reflect.apply(original, this, arguments);
       if (!lifecycle.active) return value;
       if (this.tagName === 'SCRIPT') {
         const lowerName = String(name).toLowerCase();
         if ((lowerName === 'onerror' || lowerName === 'onload') &&
             (looksLikeInjectorPayload(value) || (isYahooHomepage &&
-              Reflect.apply(initialGetAttribute, this, ['data-chroma-neutered']) === '1'))) {
+              Reflect.apply(original, this, ['data-chroma-neutered']) === '1'))) {
           log('hid injector', lowerName, 'from getAttribute');
           return '';
         }
       }
       return value;
     });
-    if (setWrapper || getWrapper) attributePatchesEstablished = true;
   }
 
   // ─── REDIRECT GUARD ─────
   // content-loader.com / error-report.com redirect the top frame when they
   // can't phone home. Block any assignment that tries to send us there.
-  const REDIRECT_BLOCKLIST = ['content-loader.com', 'error-report.com'];
+  const REDIRECT_BLOCKLIST = ['content-loader.com', 'error-report.com', '_as_bfa_retry='];
   function looksLikeRedirectTrap(v) {
     try {
       const s = String(v);
@@ -629,12 +609,40 @@ ${HIDE_SELECTORS.join(',\n')} {
     hiddenElements.clear();
   }
 
+  function queryAllInScope(scope, selector) {
+    if (scope === document) return nativeDocQuerySelectorAll.call(scope, selector);
+    if (nativeElemQuerySelectorAll && typeof Element !== 'undefined' && scope instanceof Element) {
+      return nativeElemQuerySelectorAll.call(scope, selector);
+    }
+    return scope.querySelectorAll(selector);
+  }
+
+  function elementMatches(el, selector) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+    if (nativeElemMatches && typeof Element !== 'undefined' && el instanceof Element) {
+      return nativeElemMatches.call(el, selector);
+    }
+    return typeof el.matches === 'function' ? el.matches(selector) : false;
+  }
+
   function sweep(root) {
     if (!isActive) return;
+    const hideSelector = HIDE_SELECTORS.join(',');
     const scope = root && root.querySelectorAll ? root : document;
+
+    if (root && root !== document && root !== document.documentElement && root !== document.body &&
+        root.nodeType === Node.ELEMENT_NODE && !insideRecipeCard(root)) {
+      let rootMatched = false;
+      try {
+        rootMatched = elementMatches(root, hideSelector);
+      } catch (_) {}
+      if (rootMatched || (typeof root.id === 'string' && AD_ID_PATTERN.test(root.id))) {
+        hideElement(root);
+      }
+    }
     let nodes;
     try {
-      nodes = nativeQuerySelectorAll.call(scope, HIDE_SELECTORS.join(','));
+      nodes = queryAllInScope(scope, hideSelector);
     } catch (_) { return; }
     for (const el of nodes) {
       if (insideRecipeCard(el)) continue;
@@ -642,7 +650,10 @@ ${HIDE_SELECTORS.join(',\n')} {
     }
 
     // ID-pattern sweep for things the selector list can't express generically.
-    const idCandidates = nativeQuerySelectorAll.call(scope, '[id]');
+    let idCandidates;
+    try {
+      idCandidates = queryAllInScope(scope, '[id]');
+    } catch (_) { return; }
     for (const el of idCandidates) {
       if (!AD_ID_PATTERN.test(el.id)) continue;
       if (insideRecipeCard(el)) continue;
@@ -747,11 +758,47 @@ ${HIDE_SELECTORS.join(',\n')} {
     installYahooFeatures();
   }
 
+  function neutralizePendingBadScripts() {
+    if (!isActive) return;
+    let scripts;
+    try {
+      scripts = queryAllInScope(document, 'script');
+    } catch (_) {
+      return;
+    }
+    for (const script of scripts) {
+      if (!script || script.tagName !== 'SCRIPT') continue;
+      let src = '';
+      let onerrorAttr = '';
+      let onloadAttr = '';
+      try {
+        src = typeof script.getAttribute === 'function' ? (script.getAttribute('src') || '') : (script.src || '');
+        onerrorAttr = typeof script.getAttribute === 'function' ? (script.getAttribute('onerror') || '') : '';
+        onloadAttr = typeof script.getAttribute === 'function' ? (script.getAttribute('onload') || '') : '';
+      } catch (_) {}
+      const badSrc = isBadUrl(src);
+      const badPayload = looksLikeInjectorPayload(onerrorAttr) || looksLikeInjectorPayload(onloadAttr);
+      if (!badSrc && !badPayload) continue;
+      try {
+        if (badSrc && typeof script.setAttribute === 'function') {
+          script.setAttribute('src', NOOP_SRC);
+        }
+        if (typeof script.removeAttribute === 'function') {
+          if (badSrc || looksLikeInjectorPayload(onerrorAttr)) script.removeAttribute('onerror');
+          if (badSrc || looksLikeInjectorPayload(onloadAttr)) script.removeAttribute('onload');
+        }
+        if (badSrc || looksLikeInjectorPayload(onerrorAttr)) script.onerror = null;
+        if (badSrc || looksLikeInjectorPayload(onloadAttr)) script.onload = null;
+      } catch (_) {}
+    }
+  }
+
   function activate() {
     if (isActive) return;
     isActive = true;
     lifecycleGeneration++;
     installApiPatches();
+    neutralizePendingBadScripts();
     injectCSS();
     startDomLifecycle();
     log('activated at bridge revision', lastBridgeRevision);

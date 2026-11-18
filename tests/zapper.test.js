@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { JSDOM } = require('jsdom');
 
 function handlerModuleForVm(file) {
   let source = fs.readFileSync(
@@ -58,15 +59,48 @@ function plain(value) {
 
 function loadHandlers(options = {}) {
   const storage = options.storage || {};
+  const sessionStorage = options.sessionStorage !== undefined ? options.sessionStorage : {};
+  const storageDelayMs = options.storageDelayMs || 0;
   let capturedToken = null;
   const scriptingCalls = [];
+  const tick = () => (storageDelayMs > 0 ? new Promise(resolve => setTimeout(resolve, storageDelayMs)) : Promise.resolve());
+
+  const makeStorageArea = (backing) => ({
+    get: async (key) => {
+      await tick();
+      if (Array.isArray(key)) {
+        const out = {};
+        key.forEach(k => {
+          out[k] = backing[k] === undefined ? undefined : plain(backing[k]);
+        });
+        return out;
+      }
+      if (typeof key === 'string') {
+        return { [key]: backing[key] === undefined ? undefined : plain(backing[key]) };
+      }
+      return {};
+    },
+    set: async (values) => {
+      await tick();
+      for (const [k, v] of Object.entries(values)) {
+        backing[k] = v === undefined ? undefined : plain(v);
+      }
+    }
+  });
+
+  const chromeStorage = {
+    local: makeStorageArea(storage)
+  };
+  if (sessionStorage !== null) {
+    chromeStorage.session = makeStorageArea(sessionStorage);
+  }
 
   const sandbox = {
     MSG,
     URL,
     Number,
     Math,
-    Date,
+    Date: options.Date || Date,
     Uint8Array,
     Map,
     Set,
@@ -95,20 +129,7 @@ function loadHandlers(options = {}) {
     getMergedLog: async () => [],
     runProxyTest: async () => ({ ok: true }),
     chrome: {
-      storage: {
-        local: {
-          get: async (key) => {
-            if (Array.isArray(key)) {
-              const out = {};
-              key.forEach(k => { out[k] = storage[k]; });
-              return out;
-            }
-            if (typeof key === 'string') return { [key]: storage[key] };
-            return {};
-          },
-          set: async (values) => Object.assign(storage, values)
-        }
-      },
+      storage: chromeStorage,
       tabs: {
         get: async id => ({ id, url: 'https://example.com/page' }),
         query: async () => [{ id: 7, url: 'https://example.com/page' }],
@@ -408,6 +429,76 @@ test('zapper background handlers', async (t) => {
     await sandbox.handleZapperRuleRemove({ id: 'zapper_1' });
     assert.deepStrictEqual(storage.localCosmeticRules, []);
   });
+
+  await t.test('active zapper session survives service worker restart via session storage and still enforces TTL', async () => {
+    const sharedLocal = { localCosmeticRules: [] };
+    const sharedSession = {};
+    let fakeNow = 10_000;
+    const FakeDate = Object.assign(function (...args) { return new Date(...args); }, {
+      now: () => fakeNow
+    });
+
+    const worker1 = loadHandlers({ storage: sharedLocal, sessionStorage: sharedSession, Date: FakeDate });
+    const started = await worker1.sandbox.handleZapperStart({ tabId: 7 });
+    assert.strictEqual(started.ok, true);
+    const token = worker1.getToken();
+    assert.ok(token);
+
+    // Simulate MV3 service worker termination and recreation within the 2-minute TTL.
+    fakeNow += 45_000;
+    const worker2 = loadHandlers({ storage: sharedLocal, sessionStorage: sharedSession, Date: FakeDate });
+    const saved = await worker2.sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'https://example.com/page' } }
+    );
+    assert.strictEqual(saved.ok, true);
+    assert.strictEqual(sharedLocal.localCosmeticRules.length, 1);
+
+    // Expired sessions across a restart must still be rejected without relying on in-memory timers.
+    const started2 = await worker2.sandbox.handleZapperStart({ tabId: 7 });
+    assert.strictEqual(started2.ok, true);
+    const token2 = worker2.getToken();
+    fakeNow += 2 * 60 * 1000 + 1;
+    const worker3 = loadHandlers({ storage: sharedLocal, sessionStorage: sharedSession, Date: FakeDate });
+    const expired = await worker3.sandbox.handleZapperSaveRule(
+      { action: 'save', token: token2, domain: 'example.com', selector: '.annoying2' },
+      { tab: { id: 7, url: 'https://example.com/page' } }
+    );
+    assert.strictEqual(expired.ok, false);
+    assert.strictEqual(expired.error, 'Invalid zapper session');
+    assert.strictEqual(sharedLocal.localCosmeticRules.length, 1);
+  });
+
+  await t.test('concurrent rule mutations serialize cleanly and reject duplicate save tokens', async () => {
+    const storage = {
+      localCosmeticRules: [
+        { id: 'zapper_1', domain: 'example.com', selector: '.a', enabled: true, createdAt: 1, source: 'zapper' },
+        { id: 'zapper_2', domain: 'example.com', selector: '.b', enabled: true, createdAt: 2, source: 'zapper' },
+        { id: 'zapper_3', domain: 'example.com', selector: '.c', enabled: true, createdAt: 3, source: 'zapper' }
+      ]
+    };
+    const { sandbox, getToken } = loadHandlers({ storage, storageDelayMs: 5 });
+    await sandbox.handleZapperStart({ tabId: 7 });
+    const token = getToken();
+    const sender = { tab: { id: 7, url: 'https://example.com/page' } };
+
+    const [toggle1, toggle2, removed3, saveA, saveB] = await Promise.all([
+      sandbox.handleZapperRuleSet({ id: 'zapper_1', enabled: false }),
+      sandbox.handleZapperRuleSet({ id: 'zapper_2', enabled: false }),
+      sandbox.handleZapperRuleRemove({ id: 'zapper_3' }),
+      sandbox.handleZapperSaveRule({ action: 'save', token, domain: 'example.com', selector: '.d' }, sender),
+      sandbox.handleZapperSaveRule({ action: 'save', token, domain: 'example.com', selector: '.d' }, sender)
+    ]);
+
+    assert.strictEqual(toggle1.ok, true);
+    assert.strictEqual(toggle2.ok, true);
+    assert.strictEqual(removed3.ok, true);
+    assert.strictEqual([saveA.ok, saveB.ok].filter(Boolean).length, 1);
+    assert.strictEqual(storage.localCosmeticRules.find(r => r.id === 'zapper_1')?.enabled, false);
+    assert.strictEqual(storage.localCosmeticRules.find(r => r.id === 'zapper_2')?.enabled, false);
+    assert.strictEqual(storage.localCosmeticRules.find(r => r.id === 'zapper_3'), undefined);
+    assert.strictEqual(storage.localCosmeticRules.filter(r => r.selector === '.d').length, 1);
+  });
 });
 
 test('content local zapper rules', async (t) => {
@@ -448,5 +539,238 @@ test('content local zapper rules', async (t) => {
     });
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.strictEqual(sandbox.document.adoptedStyleSheets.some(sheet => sheet.content.includes('.annoying')), false);
+  });
+});
+
+test('re-injecting content zapper cleans up prior session overlays, listeners, and stale tokens', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="ad-box">Ad</div></body></html>', {
+    url: 'https://example.com/article'
+  });
+  const { window } = dom;
+  const { document } = window;
+  const sentMessages = [];
+
+  const sandbox = vm.createContext({
+    window,
+    document,
+    Node: window.Node,
+    Element: window.Element,
+    CSS: { escape: value => String(value).replace(/([^\w-])/g, '\\$1') },
+    chrome: {
+      runtime: {
+        sendMessage: async (msg) => {
+          sentMessages.push(msg);
+          if (msg?.type === 'ZAPPER_SAVE_RULE') {
+            return msg.token === 'token-2'
+              ? { ok: true }
+              : { ok: false, error: 'Invalid zapper session' };
+          }
+          return { ok: true };
+        }
+      }
+    },
+    console,
+    Map,
+    Set
+  });
+  sandbox.globalThis = sandbox;
+
+  // Simulate two ZAPPER_START executions on the same tab without clearing first.
+  vm.runInContext(zapperJsCode, sandbox);
+  sandbox.__CHROMA_START_ZAPPER__('token-1');
+  assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 2);
+
+  vm.runInContext(zapperJsCode, sandbox);
+  sandbox.__CHROMA_START_ZAPPER__('token-2');
+  assert.strictEqual(
+    document.querySelectorAll('[data-chroma-zapper]').length,
+    2,
+    'expected prior overlay nodes to be removed on re-injection'
+  );
+
+  // Click the target element -> save -> confirmSave; only active token-2 should fire.
+  const target = document.getElementById('ad-box');
+  target.getBoundingClientRect = () => ({ left: 10, top: 10, width: 100, height: 40 });
+  target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+
+  const saveBtn = document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]');
+  assert.ok(saveBtn, 'expected zapper action menu to open');
+  saveBtn.click();
+
+  const confirmBtn = document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]');
+  assert.ok(confirmBtn, 'expected save confirmation button to open');
+  confirmBtn.click();
+
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  const saveMessages = sentMessages.filter(m => m?.type === 'ZAPPER_SAVE_RULE');
+  assert.strictEqual(saveMessages.length, 1);
+  assert.strictEqual(saveMessages[0].token, 'token-2');
+  assert.strictEqual(target.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
+});
+
+test('failed zapper save removes confirmation menu and unlocks hover selection for retry', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="ad-box">Ad</div><div id="retry-box">Retry</div></body></html>', {
+    url: 'https://example.com/article'
+  });
+  const { window } = dom;
+  const { document } = window;
+  let shouldSucceed = false;
+
+  const sandbox = vm.createContext({
+    window,
+    document,
+    Node: window.Node,
+    Element: window.Element,
+    CSS: { escape: value => String(value).replace(/([^\w-])/g, '\\$1') },
+    chrome: {
+      runtime: {
+        sendMessage: async (msg) => {
+          if (msg?.type === 'ZAPPER_SAVE_RULE' && msg.action === 'save') {
+            return shouldSucceed
+              ? { ok: true }
+              : { ok: false, error: 'Could not validate selector on this tab' };
+          }
+          return { ok: true };
+        }
+      }
+    },
+    console,
+    Map,
+    Set
+  });
+  sandbox.globalThis = sandbox;
+  vm.runInContext(zapperJsCode, sandbox);
+
+  const firstTarget = document.getElementById('ad-box');
+  const secondTarget = document.getElementById('retry-box');
+  firstTarget.getBoundingClientRect = () => ({ left: 10, top: 20, width: 100, height: 40 });
+  secondTarget.getBoundingClientRect = () => ({ left: 50, top: 80, width: 120, height: 30 });
+
+  sandbox.__CHROMA_START_ZAPPER__('token-retry');
+  firstTarget.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 15, clientY: 25 }));
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]').click();
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.strictEqual(document.querySelector('[data-chroma-zapper-menu]'), null);
+  const [outlineEl, tooltipEl] = document.querySelectorAll('[data-chroma-zapper="true"]');
+  assert.strictEqual(tooltipEl.textContent, 'Could not validate selector on this tab');
+
+  secondTarget.dispatchEvent(new window.MouseEvent('mousemove', { bubbles: true, clientX: 60, clientY: 90 }));
+  assert.strictEqual(outlineEl.style.left, '50px');
+  assert.strictEqual(outlineEl.style.top, '80px');
+
+  shouldSucceed = true;
+  secondTarget.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 60, clientY: 90 }));
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+  document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]').click();
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.strictEqual(secondTarget.style.getPropertyValue('display'), 'none');
+  assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
+});
+
+test('Bug 12 zapper and zapperHandlers alignment regressions', async (t) => {
+  await t.test('rejects invalid action, malformed sender URL, and deduplicates existing rules cleanly', async () => {
+    const existingRule = {
+      id: 'zapper_old',
+      domain: 'example.com',
+      selector: '.annoying',
+      enabled: false,
+      createdAt: 1,
+      source: 'zapper'
+    };
+    const { sandbox, storage, getToken } = loadHandlers({
+      storage: { localCosmeticRules: [existingRule] }
+    });
+    await sandbox.handleZapperStart({ tabId: 7 });
+    const token = getToken();
+
+    const badAction = await sandbox.handleZapperSaveRule(
+      { action: 'bogus', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'https://example.com/page' } }
+    );
+    assert.strictEqual(badAction.ok, false);
+    assert.match(badAction.error, /Invalid zapper action/);
+
+    const badSenderUrl = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'not-a-valid-url' } }
+    );
+    assert.strictEqual(badSenderUrl.ok, false);
+    assert.strictEqual(badSenderUrl.error, 'Invalid domain');
+
+    const trailingDot = await sandbox.handleZapperSaveRule(
+      { action: 'save', token, domain: 'example.com', selector: '.annoying' },
+      { tab: { id: 7, url: 'https://example.com./page' } }
+    );
+    assert.strictEqual(trailingDot.ok, true);
+    assert.strictEqual(storage.localCosmeticRules.length, 1);
+    assert.strictEqual(storage.localCosmeticRules[0].enabled, true);
+  });
+
+  await t.test('zapper ignores duplicate confirmSave clicks, stale saves after Escape, and cleans up on expired session', async () => {
+    const dom = new JSDOM('<!doctype html><html><body><div id="ad-box">Ad</div></body></html>', {
+      url: 'https://example.com/article'
+    });
+    const { window } = dom;
+    const { document } = window;
+    let resolveSave;
+    const saveCalls = [];
+
+    const sandbox = vm.createContext({
+      __CHROMA_INTERNAL_TEST_STRICT__: true,
+      window,
+      document,
+      Node: window.Node,
+      Element: window.Element,
+      CSS: { escape: value => String(value).replace(/([^\w-])/g, '\\$1') },
+      chrome: {
+        runtime: {
+          sendMessage: async (msg) => {
+            if (msg?.type === 'ZAPPER_SAVE_RULE' && msg.action === 'save') {
+              saveCalls.push(msg);
+              return new Promise(resolve => { resolveSave = resolve; });
+            }
+            return { ok: true };
+          }
+        }
+      },
+      console,
+      Map,
+      Set
+    });
+    sandbox.globalThis = sandbox;
+    vm.runInContext(zapperJsCode, sandbox);
+
+    const api = sandbox.__CHROMA_ZAPPER_TEST__;
+    const target = document.getElementById('ad-box');
+    target.getBoundingClientRect = () => ({ left: 10, top: 10, width: 100, height: 40 });
+    assert.strictEqual(api.isValidSelector('[data-x="javascript:alert(1)"]', target), false);
+
+    // 1. In-flight save ignores double clicks and ignores late success after Esc cancel.
+    sandbox.__CHROMA_START_ZAPPER__('token-inflight');
+    target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 15, clientY: 15 }));
+    document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+    const confirmBtn = document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]');
+    confirmBtn.click();
+    confirmBtn.click();
+    assert.strictEqual(saveCalls.length, 1, 'duplicate confirmSave while in flight must be ignored');
+
+    document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    resolveSave({ ok: true });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.notStrictEqual(target.style.getPropertyValue('display'), 'none', 'canceled save must not hide element');
+
+    // 2. Expired session error cleans up zapper overlay cleanly.
+    sandbox.__CHROMA_START_ZAPPER__('token-expired');
+    target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true, clientX: 15, clientY: 15 }));
+    document.querySelector('[data-chroma-zapper-menu] button[data-action="save"]').click();
+    document.querySelector('[data-chroma-zapper-menu] button[data-action="confirmSave"]').click();
+    resolveSave({ ok: false, error: 'Invalid zapper session' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.strictEqual(document.querySelectorAll('[data-chroma-zapper]').length, 0);
   });
 });

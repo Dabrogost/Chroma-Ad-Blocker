@@ -100,6 +100,21 @@ test('update check release ZIP metadata', async (t) => {
     assert.strictEqual(api.selectReleaseAsset(makeRelease({
       assetUrl: 'https://example.com/chroma-ad-blocker-v1.0.2.zip'
     }), '1.0.2'), null);
+    assert.strictEqual(api.selectReleaseAsset(makeRelease({
+      assetUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2/../../../../../attacker/evil/releases/download/v1.0.2/chroma-ad-blocker-v1.0.2.zip'
+    }), '1.0.2'), null);
+    assert.strictEqual(api.selectReleaseAsset(makeRelease({
+      assetUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2/other.zip?x=/chroma-ad-blocker-v1.0.2.zip'
+    }), '1.0.2'), null);
+    assert.strictEqual(api.selectReleaseAsset(makeRelease({
+      assetUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2%2F..%2Fevil/chroma-ad-blocker-v1.0.2.zip'
+    }), '1.0.2'), null);
+    assert.strictEqual(api.selectUpdateManifestAsset({
+      assets: [{
+        name: 'updates.json',
+        browser_download_url: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2/../../../../../attacker/evil/releases/download/v1.0.2/updates.json'
+      }]
+    }), null);
     assert.strictEqual(api.selectUpdateManifestAsset(makeRelease({ includeUpdateManifest: false })), null);
   });
 
@@ -146,5 +161,48 @@ test('update check release ZIP metadata', async (t) => {
     assert.strictEqual(result.latestVersion, '1.0.2');
     assert.strictEqual(result.assetStatus, 'missing');
     assert.strictEqual(result.asset, null);
+  });
+
+  await t.test('compares 2-part and 4-part versions and rejects prerelease downgrades cleanly', async () => {
+    const fourPart = createSandbox({
+      manifestVersion: '1.10.2',
+      releaseResponse: {
+        ok: true,
+        json: async () => makeRelease({ tag: 'v1.10.2.1', assetName: 'chroma-ad-blocker-v1.10.2.1.zip' })
+      }
+    });
+    const resFour = await fourPart.api.checkForUpdate({ force: true });
+    assert.strictEqual(resFour.updateAvailable, true);
+    assert.strictEqual(resFour.latestVersion, '1.10.2.1');
+
+    const twoPart = createSandbox({
+      manifestVersion: '1.0',
+      releaseResponse: {
+        ok: true,
+        json: async () => makeRelease({ tag: 'v1.0.1', assetName: 'chroma-ad-blocker-v1.0.1.zip' })
+      }
+    });
+    const resTwo = await twoPart.api.checkForUpdate({ force: true });
+    assert.strictEqual(resTwo.updateAvailable, true);
+
+    const equalFour = createSandbox({
+      manifestVersion: '1.10.2.0',
+      releaseResponse: {
+        ok: true,
+        json: async () => makeRelease({ tag: 'v1.10.2', assetName: 'chroma-ad-blocker-v1.10.2.zip' })
+      }
+    });
+    const resEq = await equalFour.api.checkForUpdate({ force: true });
+    assert.strictEqual(resEq.updateAvailable, false);
+
+    const pre = createSandbox({
+      manifestVersion: '1.10.2',
+      releaseResponse: {
+        ok: true,
+        json: async () => makeRelease({ tag: 'v1.10.2-beta.1', assetName: 'chroma-ad-blocker-v1.10.2-beta.1.zip' })
+      }
+    });
+    const resPre = await pre.api.checkForUpdate({ force: true });
+    assert.strictEqual(resPre.updateAvailable, false);
   });
 });

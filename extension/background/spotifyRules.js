@@ -4,7 +4,7 @@
  * Only browser-classified media requests are redirected; player JSON is untouched.
  */
 export function getSpotifyRules(config, whitelist = []) {
-  if (config?.enabled !== true || config?.spotifyAdBlocking !== true) return [];
+  if (!config || config.enabled === false || config.spotifyAdBlocking !== true) return [];
   if (whitelist.some(domain => typeof domain === 'string' &&
     (domain === 'open.spotify.com' || 'open.spotify.com'.endsWith('.' + domain)))) return [];
 

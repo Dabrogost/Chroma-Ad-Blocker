@@ -311,3 +311,227 @@ test('handleConfigSet + syncProxyState + configCoordinator settles and cleans in
     }
   }]);
 });
+
+test('handleProxyConfigSet serializes through configCoordinator so concurrent saves preserve credentials', async () => {
+  const storage = {
+    proxyConfigs: [{
+      id: 1,
+      name: 'P1',
+      host: '1.2.3.4',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      enabled: true,
+      domains: []
+    }]
+  };
+
+  let notifyEncryptStarted;
+  const encryptStarted = new Promise(resolve => { notifyEncryptStarted = resolve; });
+  let releaseEncrypt;
+  const encryptGate = new Promise(resolve => { releaseEncrypt = resolve; });
+
+  const chrome = {
+    storage: {
+      local: {
+        get: async key => {
+          if (typeof key === 'string') return { [key]: JSON.parse(JSON.stringify(storage[key])) };
+          if (Array.isArray(key)) {
+            return Object.fromEntries(key.map(k => [k, JSON.parse(JSON.stringify(storage[k]))]));
+          }
+          return JSON.parse(JSON.stringify(storage));
+        },
+        set: async values => Object.assign(storage, JSON.parse(JSON.stringify(values)))
+      }
+    }
+  };
+
+  const sandbox = {
+    chrome,
+    console,
+    Promise,
+    Set,
+    Map,
+    Math,
+    Number,
+    Object,
+    Array,
+    URL,
+    setTimeout,
+    clearTimeout,
+    runProxyTest: async () => ({ ok: true }),
+    encryptAuth: async (username, password) => {
+      notifyEncryptStarted();
+      await encryptGate;
+      return { iv: `iv:${username}`, ciphertext: `ct:${password}` };
+    }
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+
+  const wrapModule = (relPath, exportsList) => {
+    const src = fs.readFileSync(path.join(__dirname, '..', ...relPath), 'utf8')
+      .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\r?\n/gm, '')
+      .replace(/^export\s+/gm, '');
+    return `(() => {\n${src}\nObject.assign(globalThis, { ${exportsList.join(', ')} });\n})();`;
+  };
+
+  vm.runInContext(
+    [
+      wrapModule(['extension', 'background', 'configCoordinator.js'], ['serializeConfigMutation']),
+      wrapModule(['extension', 'background', 'handlers', 'domainValidation.js'], ['isValidHostname', 'normalizeDomain']),
+      wrapModule(['extension', 'background', 'handlers', 'proxyHandlers.js'], ['handleProxyConfigSet'])
+    ].join('\n'),
+    sandbox
+  );
+
+  const credentialSave = sandbox.handleProxyConfigSet({
+    proxyConfigs: [{
+      id: 1,
+      name: 'P1',
+      host: '1.2.3.4',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      enabled: true,
+      domains: [],
+      credentialAction: 'replace',
+      username: 'alice',
+      password: 'secret'
+    }]
+  });
+
+  await encryptStarted;
+
+  const domainSave = sandbox.handleProxyConfigSet({
+    proxyConfigs: [{
+      id: 1,
+      name: 'P1',
+      host: '1.2.3.4',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      enabled: true,
+      domains: [{ host: 'youtube.com', enabled: true }],
+      credentialAction: 'preserve'
+    }]
+  });
+
+  releaseEncrypt();
+  const [res1, res2] = await Promise.all([credentialSave, domainSave]);
+
+  assert.strictEqual(res1.ok, true);
+  assert.strictEqual(res2.ok, true);
+  assert.strictEqual(storage.proxyConfigs[0].authIv, 'iv:alice');
+  assert.strictEqual(storage.proxyConfigs[0].authCipher, 'ct:secret');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(storage.proxyConfigs[0].domains)), [
+    { host: 'youtube.com', enabled: true }
+  ]);
+});
+
+test('handleProxyConfigSet rejects invalid entries without overwriting storage or wiping credentials', async () => {
+  const storage = {
+    proxyConfigs: [{
+      id: 1,
+      name: 'Work',
+      host: 'proxy.example.com',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      enabled: true,
+      authIv: 'iv:saved',
+      authCipher: 'ct:saved',
+      domains: [{ host: 'youtube.com', enabled: true }]
+    }]
+  };
+
+  let setCalls = 0;
+  const chrome = {
+    storage: {
+      local: {
+        get: async key => {
+          if (typeof key === 'string') return { [key]: JSON.parse(JSON.stringify(storage[key])) };
+          return JSON.parse(JSON.stringify(storage));
+        },
+        set: async values => {
+          setCalls += 1;
+          Object.assign(storage, JSON.parse(JSON.stringify(values)));
+        }
+      }
+    }
+  };
+
+  const sandbox = {
+    chrome,
+    console,
+    Promise,
+    Set,
+    Map,
+    Math,
+    Number,
+    Object,
+    Array,
+    URL,
+    setTimeout,
+    clearTimeout,
+    runProxyTest: async () => ({ ok: true }),
+    encryptAuth: async (username, password) => ({ iv: `iv:${username}`, ciphertext: `ct:${password}` })
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+
+  const wrapModule = (relPath, exportsList) => {
+    const src = fs.readFileSync(path.join(__dirname, '..', ...relPath), 'utf8')
+      .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\r?\n/gm, '')
+      .replace(/^export\s+/gm, '');
+    return `(() => {\n${src}\nObject.assign(globalThis, { ${exportsList.join(', ')} });\n})();`;
+  };
+
+  vm.runInContext(
+    [
+      wrapModule(['extension', 'background', 'configCoordinator.js'], ['serializeConfigMutation']),
+      wrapModule(['extension', 'background', 'handlers', 'domainValidation.js'], ['isValidHostname', 'normalizeDomain']),
+      wrapModule(['extension', 'background', 'handlers', 'proxyHandlers.js'], ['handleProxyConfigSet'])
+    ].join('\n'),
+    sandbox
+  );
+
+  const invalidRes = await sandbox.handleProxyConfigSet({
+    proxyConfigs: [{
+      id: 1,
+      name: 'Work',
+      host: 'bad host!!',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      enabled: true,
+      domains: [{ host: 'youtube.com', enabled: true }]
+    }]
+  });
+
+  assert.strictEqual(invalidRes.ok, false);
+  assert.strictEqual(invalidRes.droppedCount, 1);
+  assert.match(invalidRes.error, /invalid host/i);
+  assert.strictEqual(setCalls, 0);
+  assert.strictEqual(storage.proxyConfigs.length, 1);
+  assert.strictEqual(storage.proxyConfigs[0].authIv, 'iv:saved');
+  assert.strictEqual(storage.proxyConfigs[0].authCipher, 'ct:saved');
+
+  const fixedRes = await sandbox.handleProxyConfigSet({
+    proxyConfigs: [{
+      id: 1,
+      name: 'Work',
+      host: 'proxy.example.com',
+      port: 8080,
+      type: 'PROXY',
+      accepted: true,
+      enabled: true,
+      domains: [{ host: 'youtube.com', enabled: true }]
+    }]
+  });
+
+  assert.strictEqual(fixedRes.ok, true);
+  assert.strictEqual(setCalls, 1);
+  assert.strictEqual(storage.proxyConfigs[0].authIv, 'iv:saved');
+  assert.strictEqual(storage.proxyConfigs[0].authCipher, 'ct:saved');
+});

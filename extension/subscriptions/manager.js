@@ -69,9 +69,13 @@ function subscriptionUrlKey(value) {
 
 function networkRuleDedupeKey(rule) {
   const condition = rule?.condition || {};
+  const rawUrlFilter = typeof condition.urlFilter === 'string' ? condition.urlFilter : '';
+  const urlFilter = condition.isUrlFilterCaseSensitive === true
+    ? rawUrlFilter
+    : rawUrlFilter.toLowerCase();
   return JSON.stringify({
     actionType: rule?.action?.type || '',
-    urlFilter: condition.urlFilter || '',
+    urlFilter,
     regexFilter: condition.regexFilter || '',
     resourceTypes: sortedArray(condition.resourceTypes),
     domainType: condition.domainType || '',
@@ -376,6 +380,7 @@ function simpleDomainBlockDomain(rule) {
     rule?.action?.type !== 'block' ||
     (Number(rule?.priority) || 0) !== 1 ||
     !match ||
+    condition.isUrlFilterCaseSensitive === true ||
     (condition.regexFilter || '') !== '' ||
     sortedArray(condition.resourceTypes).length !== 0 ||
     (condition.domainType || '') !== '' ||
@@ -384,7 +389,7 @@ function simpleDomainBlockDomain(rule) {
   ) {
     return null;
   }
-  return match[1];
+  return match[1].toLowerCase();
 }
 
 function staticRuleLookupHasRule(lookup, rule) {
@@ -695,23 +700,25 @@ export function reconcileSubscriptionRuntimeState() {
  * @returns {Promise<void>}
  */
 export async function initSubscriptions() {
-  const { subscriptions } = await chrome.storage.local.get('subscriptions');
-  const merged = mergeDefaultSubscriptions(subscriptions);
-  // onInstalled also runs on extension updates/reloads. Bundled rules ship
-  // with that package; their long remote-refresh interval must not retain an
-  // older package's scriptlets. Keep enablement and cached rules until the
-  // normal refresh succeeds, including for currently disabled lists.
-  for (const sub of merged) {
-    const bundled = DEFAULT_SUBSCRIPTIONS.find(item => item.id === sub.id);
-    if (sub.isCustom === true || !bundled?.url?.startsWith(chrome.runtime.getURL(''))) continue;
-    sub.lastUpdated = 0;
-    sub.networkCompilerAttemptAt = 0;
-    delete sub.etag;
-    delete sub.lastModified;
-  }
-  if (JSON.stringify(merged) !== JSON.stringify(subscriptions)) {
-    await chrome.storage.local.set({ subscriptions: merged });
-  }
+  await serializeSubscriptionState(async () => {
+    const { subscriptions } = await chrome.storage.local.get('subscriptions');
+    const merged = mergeDefaultSubscriptions(subscriptions);
+    // onInstalled also runs on extension updates/reloads. Bundled rules ship
+    // with that package; their long remote-refresh interval must not retain an
+    // older package's scriptlets. Keep enablement and cached rules until the
+    // normal refresh succeeds, including for currently disabled lists.
+    for (const sub of merged) {
+      const bundled = DEFAULT_SUBSCRIPTIONS.find(item => item.id === sub.id);
+      if (sub.isCustom === true || !bundled?.url?.startsWith(chrome.runtime.getURL(''))) continue;
+      sub.lastUpdated = 0;
+      sub.networkCompilerAttemptAt = 0;
+      delete sub.etag;
+      delete sub.lastModified;
+    }
+    if (JSON.stringify(merged) !== JSON.stringify(subscriptions)) {
+      await chrome.storage.local.set({ subscriptions: merged });
+    }
+  });
   await reconcileSubscriptionRuntimeState();
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: 60 });
   if (DEBUG) console.log('[Chroma Subscriptions] Initialized.');
@@ -772,7 +779,7 @@ export async function refreshSubscription(id) {
       const metadataCommitted = await serializeSubscriptionState(async () => {
         const { subscriptions: latestSubscriptions = [] } = await chrome.storage.local.get('subscriptions');
         const currentSub = latestSubscriptions.find(item => item.id === id);
-        if (!currentSub || currentSub.url !== sub.url) return false;
+        if (!currentSub || currentSub.url !== sub.url || currentSub.pendingRemoval === true) return false;
         const nextSubscriptions = latestSubscriptions.map(item => item.id === id
           ? {
               ...item,
@@ -829,7 +836,7 @@ export async function refreshSubscription(id) {
         'config'
       ]);
       const currentSub = latestSubscriptions.find(item => item.id === id);
-      if (!currentSub || currentSub.url !== sub.url) return false;
+      if (!currentSub || currentSub.url !== sub.url || currentSub.pendingRemoval === true) return false;
 
       const netPerSub = { ...storedNetworkRules };
       const cosPerSub = { ...storedCosmeticRules };
@@ -896,7 +903,8 @@ export async function refreshSubscription(id) {
     // Record error without clobbering other subscription metadata
     await serializeSubscriptionState(async () => {
       const { subscriptions: subs = [] } = await chrome.storage.local.get('subscriptions');
-      if (!subs.some(item => item.id === id)) return;
+      const currentSub = subs.find(item => item.id === id);
+      if (!currentSub || currentSub.pendingRemoval === true) return;
       await chrome.storage.local.set({
         subscriptions: subs.map(item => item.id === id
           ? {

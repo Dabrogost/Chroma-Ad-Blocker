@@ -10,6 +10,36 @@ const ChromaProxyUI = (() => {
   const { appendElement, clearElement, setHidden } = globalThis.ChromaDom;
   const SMART_LINK_HOSTS = ['youtube.com', 'youtu.be', 'twitch.tv', 'netflix.com', 'amazon.com', 'primevideo.com', 'disneyplus.com', 'hulu.com', 'max.com', 'spotify.com'];
 
+  const DOMAIN_HOST_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i;
+
+  function normalizeProxyDomainInput(input) {
+    if (typeof input !== 'string') return null;
+    let domain = input.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    if (domain.startsWith('*.')) domain = domain.slice(2);
+    if (
+      !domain ||
+      domain.length > 253 ||
+      domain.includes(':') ||
+      domain.includes(' ') ||
+      domain.includes('?') ||
+      domain.includes('#') ||
+      domain.startsWith('.') ||
+      domain.endsWith('.') ||
+      !DOMAIN_HOST_RE.test(domain)
+    ) {
+      return null;
+    }
+    const labels = domain.split('.');
+    const valid = labels.every(label =>
+      label.length >= 1 &&
+      label.length <= 63 &&
+      /^[a-z0-9-]+$/i.test(label) &&
+      !label.startsWith('-') &&
+      !label.endsWith('-')
+    );
+    return valid ? domain : null;
+  }
+
   function routeSummary(activeDomainCount, isGlobal, isEnabled = true) {
     if (!isEnabled) return 'routing paused';
     return isGlobal ? 'global fallback' : `${activeDomainCount} routed`;
@@ -571,14 +601,36 @@ const ChromaProxyUI = (() => {
       updateChromeServiceBypassWarning(proxyConfigState.globalProxyEnabled === true);
     };
 
+    const nextProxyId = () => {
+      const maxId = proxyConfigs.reduce((max, item) => (
+        Number.isSafeInteger(item?.id) ? Math.max(max, item.id) : max
+      ), 0);
+      return Math.max(Date.now(), maxId + 1);
+    };
+
+    const reindexProxyCards = () => {
+      container.querySelectorAll('.proxy-card').forEach((cardEl, idx) => {
+        cardEl.dataset.index = String(idx);
+      });
+    };
+
+    const clearGlobalSelectionIfRemoved = (proxyId) => {
+      if (proxyConfigState.globalProxyEnabled && proxyConfigState.globalProxyId === proxyId) {
+        proxyConfigState.globalProxyEnabled = false;
+        proxyConfigState.globalProxyId = null;
+        applyGlobalButtonState();
+      }
+    };
+
     const renderProxyCard = (pc, index) => {
       const card = document.createElement('div');
       card.className = 'protection-list proxy-card';
       card.dataset.index = index;
       card.dataset.proxyId = pc.id;
 
-      const inputGroupId = `proxyInputGroup_${index}`;
-      const activeGroupId = `proxyActiveGroup_${index}`;
+      const cardKey = pc.id ?? index;
+      const inputGroupId = `proxyInputGroup_${cardKey}`;
+      const activeGroupId = `proxyActiveGroup_${cardKey}`;
 
       appendEditorCard(card, pc, index, inputGroupId, activeGroupId);
 
@@ -677,13 +729,28 @@ const ChromaProxyUI = (() => {
       const enabledToggle = card.querySelector('.proxy-enabled-toggle');
 
       clearCredentialsBtn?.addEventListener('click', async () => {
+        showProxyError('');
+        const previousState = {
+          credentialAction: pc.credentialAction,
+          hasCredentials: pc.hasCredentials
+        };
+        const previousPendingAction = pendingCredentialAction;
+        const previousDisplayedHasCredentials = displayedHasCredentials;
         clearCredentialInputs();
         pc.credentialAction = 'clear';
         pc.hasCredentials = false;
         pendingCredentialAction = 'clear';
         displayedHasCredentials = false;
         updateCredentialHelp();
-        await saveAllConfigs(new Map([[pc.id, { action: 'clear' }]]));
+        const result = await saveAllConfigs(new Map([[pc.id, { action: 'clear' }]]));
+        if (!result || result.ok === false || result.errors?.length) {
+          Object.assign(pc, previousState);
+          pendingCredentialAction = previousPendingAction;
+          displayedHasCredentials = previousDisplayedHasCredentials;
+          updateCredentialHelp();
+          showProxyError(result?.error || result?.errors?.[0] || 'Unable to clear saved credentials.');
+          return;
+        }
         resetCredentialStateAfterSave();
         replaceThisCard();
       });
@@ -739,16 +806,40 @@ const ChromaProxyUI = (() => {
           return;
         }
 
-        pc.domains.forEach((d, dIdx) => {
+        pc.domains.forEach((d) => {
           const dRow = renderDomainRow(d, {
             onToggle: async (e) => {
-              pc.domains[dIdx].enabled = e.target.checked;
-              await saveAllConfigs();
+              showProxyError('');
+              const wasEnabled = d.enabled;
+              const nextEnabled = e.target.checked;
+              d.enabled = nextEnabled;
+              if (pc.accepted) {
+                const result = await saveAllConfigs();
+                if (!result || result.ok === false || result.errors?.length) {
+                  d.enabled = wasEnabled;
+                  e.target.checked = wasEnabled;
+                  showProxyError(result?.error || result?.errors?.[0] || 'Unable to update domain setting.');
+                  return;
+                }
+              }
               updateStatusLine();
             },
             onRemove: async () => {
-              pc.domains.splice(dIdx, 1);
-              await saveAllConfigs();
+              showProxyError('');
+              const currentIdx = pc.domains.indexOf(d);
+              if (currentIdx === -1) return;
+              pc.domains.splice(currentIdx, 1);
+              if (pc.accepted) {
+                const result = await saveAllConfigs();
+                if (!result || result.ok === false || result.errors?.length) {
+                  if (!pc.domains.includes(d)) {
+                    pc.domains.splice(Math.min(currentIdx, pc.domains.length), 0, d);
+                  }
+                  renderDomains();
+                  showProxyError(result?.error || result?.errors?.[0] || 'Unable to remove domain.');
+                  return;
+                }
+              }
               renderDomains();
               updateStatusLine();
             }
@@ -892,41 +983,75 @@ const ChromaProxyUI = (() => {
         clearCredentialInputs();
         resetCredentialStateAfterSave();
         replaceThisCard();
+        clearGlobalSelectionIfRemoved(pc.id);
       });
 
       editBtn?.addEventListener('click', () => {
-        const inputGroup = document.getElementById(inputGroupId);
-        const activeGroup = document.getElementById(activeGroupId);
+        const inputGroup = card.querySelector('.proxy-input-group');
+        const activeGroup = card.querySelector('.proxy-active-group');
         setHidden(inputGroup, false);
         setHidden(activeGroup, true);
         hostInput.focus?.();
       });
 
       delServerBtn.addEventListener('click', async () => {
+        showProxyError('');
         const idx = proxyConfigs.findIndex(p => p.id === pc.id);
-        if (idx > -1) proxyConfigs.splice(idx, 1);
-        await saveAllConfigs();
+        if (idx === -1) return;
+        const [removed] = proxyConfigs.splice(idx, 1);
+        if (removed.accepted === true) {
+          const result = await saveAllConfigs();
+          if (!result || result.ok === false || result.errors?.length) {
+            proxyConfigs.splice(Math.min(idx, proxyConfigs.length), 0, removed);
+            showProxyError(result?.error || result?.errors?.[0] || 'Unable to delete proxy.');
+            return;
+          }
+        }
+        clearGlobalSelectionIfRemoved(removed.id);
         if (proxyConfigs.length === 0) {
           await renderAll();
         } else {
           card.remove();
+          reindexProxyCards();
         }
       });
 
       refreshBtn?.addEventListener('click', testConnection);
 
       addDomainBtn.addEventListener('click', async () => {
-        let d = domainInput.value.trim().toLowerCase();
-        d = d.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
-        if (d) {
-          if (!pc.domains) pc.domains = [];
-          if (!pc.domains.find(x => x.host === d)) {
-            pc.domains.push({ host: d, enabled: true });
-            domainInput.value = '';
-            if (pc.accepted) await saveAllConfigs();
-            renderDomains();
+        showProxyError('');
+        const rawInput = domainInput.value;
+        if (!rawInput.trim()) return;
+        const d = normalizeProxyDomainInput(rawInput);
+        if (!d) {
+          const msg = 'Enter a valid domain name (for example, youtube.com).';
+          showProxyError(msg);
+          const feedback = $('proxyFeedback');
+          if (feedback) feedback.textContent = msg;
+          return;
+        }
+        const feedback = $('proxyFeedback');
+        if (feedback) feedback.textContent = '';
+        if (!pc.domains) pc.domains = [];
+        if (pc.domains.find(x => x.host === d)) {
+          domainInput.value = '';
+          return;
+        }
+        const entry = { host: d, enabled: true };
+        pc.domains.push(entry);
+        domainInput.value = '';
+        if (pc.accepted) {
+          const result = await saveAllConfigs();
+          if (!result || result.ok === false || result.errors?.length) {
+            const addedIdx = pc.domains.indexOf(entry);
+            if (addedIdx > -1) pc.domains.splice(addedIdx, 1);
+            domainInput.value = rawInput;
+            showProxyError(result?.error || result?.errors?.[0] || 'Unable to save routed domain.');
+            return;
           }
         }
+        renderDomains();
+        updateStatusLine();
       });
 
       domainInput.addEventListener('keypress', (e) => {
@@ -953,7 +1078,7 @@ const ChromaProxyUI = (() => {
 
     addBtn.onclick = async () => {
       const newPc = {
-        id: Date.now(),
+        id: nextProxyId(),
         type: 'PROXY',
         host: '',
         port: '',
@@ -965,9 +1090,8 @@ const ChromaProxyUI = (() => {
       };
       proxyConfigs.push(newPc);
       container.querySelector('.proxy-empty')?.remove();
-      container.insertBefore(renderProxyCard(newPc, proxyConfigs.length - 1), container.querySelector('.proxy-chrome-service-bypass-control'));
-      const newCard = container.querySelector(`[data-index="${proxyConfigs.length - 1}"]`);
-      newCard?.scrollIntoView({ behavior: scrollBehavior() });
+      const newCard = container.insertBefore(renderProxyCard(newPc, proxyConfigs.length - 1), container.querySelector('.proxy-chrome-service-bypass-control'));
+      newCard?.scrollIntoView?.({ behavior: scrollBehavior() });
       newCard?.querySelector('.proxy-host')?.focus({ preventScroll: true });
     };
 
@@ -983,7 +1107,11 @@ const ChromaProxyUI = (() => {
     if (settingsMode && !addBtn) return;
     let proxyConfigs = [];
     try {
-      proxyConfigs = await notifyBackground({ type: MSG.PROXY_CONFIG_GET }) || [];
+      const response = await notifyBackground({ type: MSG.PROXY_CONFIG_GET });
+      if (!Array.isArray(response)) {
+        throw new Error(response?.error || 'Proxy configuration unavailable');
+      }
+      proxyConfigs = response;
     } catch (error) {
       console.error('Chroma proxy config failed to load:', error);
       clearElement(container);

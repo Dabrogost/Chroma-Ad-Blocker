@@ -500,6 +500,28 @@ test('abort-on-property-read', async (t) => {
     assert.throws(() => vm.runInContext('_sp_.nested.detect', sandbox), /ReferenceError/);
   });
 
+  await t.test('does not eagerly evaluate configurable intermediate getters at install time', () => {
+    const sandbox = runScriptlet('abortOnPropertyRead', ['unused']);
+    vm.runInContext(`
+      var getterCalls = 0;
+      var ready = false;
+      Object.defineProperty(window, 'lazyNs', {
+        configurable: true,
+        get() {
+          getterCalls++;
+          if (!ready) throw new Error('not ready yet');
+          return { detect: 'blocked', safe: 'ok' };
+        }
+      });
+      abortOnPropertyRead(['lazyNs.detect']);
+    `, sandbox);
+
+    assert.strictEqual(vm.runInContext('getterCalls', sandbox), 0);
+    vm.runInContext('ready = true', sandbox);
+    assert.strictEqual(vm.runInContext('lazyNs.safe', sandbox), 'ok');
+    assert.throws(() => vm.runInContext('lazyNs.detect', sandbox), /ReferenceError/);
+  });
+
   await t.test('leaves non-configurable properties usable', () => {
     const root = {};
     Object.defineProperty(root, 'locked', { value: 7, configurable: false });
@@ -803,6 +825,30 @@ test('prevent-fetch', async (t) => {
     await vm.runInContext('window.fetch("https://cdn.other.com/asset.js")', sandbox);
     assert.strictEqual(fetchCalled, true, 'Non-matching fetch should pass through');
   });
+
+  await t.test('treats multi-slash paths like /ads/img as literal substrings instead of RegExp("ads", "img")', async () => {
+    const fetchUrls = [];
+    const win = makeWindow();
+    win.fetch = (url) => { fetchUrls.push(url); return Promise.resolve({}); };
+    const sandbox = runScriptlet('preventFetch', ['/ads/img'], win);
+    await vm.runInContext('window.fetch("https://example.com/ads/img/logo.png")', sandbox);
+    await vm.runInContext('window.fetch("https://example.com/uploads/photo.png")', sandbox);
+    assert.deepStrictEqual(fetchUrls, ['https://example.com/uploads/photo.png']);
+  });
+});
+
+test('replace-node-text handles slash paths and malformed regex literals safely', () => {
+  const scriptNode = { textContent: 'load("/ads/sdk.js"); keep();' };
+  const win = makeWindow();
+  win.document = {
+    documentElement: null,
+    querySelectorAll: () => [],
+    getElementsByTagName: (tag) => (tag === 'script' ? [scriptNode] : [])
+  };
+  runScriptlet('replaceNodeText', ['script', '/ads/sdk.js', '"/safe.js"'], win);
+  assert.strictEqual(scriptNode.textContent, 'load(""/safe.js""); keep();');
+
+  assert.doesNotThrow(() => runScriptlet('replaceNodeText', ['script', '/invalid[/', ''], win));
 });
 
 // ─── NO-EVAL-IF ─────
@@ -892,20 +938,30 @@ test('scriptlet native wrapper camouflage', async (t) => {
     }
   });
 
-  await t.test('preserves XMLHttpRequest constructor name and source', () => {
+  await t.test('preserves XMLHttpRequest constructor name, source, and static constants', () => {
     const win = makeWindow();
     win.XMLHttpRequest = class XMLHttpRequest { open() {} send() {} };
+    win.XMLHttpRequest.UNSENT = 0;
+    win.XMLHttpRequest.OPENED = 1;
+    win.XMLHttpRequest.HEADERS_RECEIVED = 2;
+    win.XMLHttpRequest.LOADING = 3;
+    win.XMLHttpRequest.DONE = 4;
     const origSource = win.XMLHttpRequest.toString();
 
     const sandbox = runScriptlet('preventXhr', ['analytics.example.com'], win);
 
     assert.strictEqual(vm.runInContext('window.XMLHttpRequest.name', sandbox), 'XMLHttpRequest');
     assert.strictEqual(vm.runInContext('window.XMLHttpRequest.toString()', sandbox), origSource);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.UNSENT', sandbox), 0);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.OPENED', sandbox), 1);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.HEADERS_RECEIVED', sandbox), 2);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.LOADING', sandbox), 3);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.DONE', sandbox), 4);
     assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().open.name', sandbox), 'open');
     assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().send.name', sandbox), 'send');
   });
 
-  await t.test('preserves m3u-prune patched fetch and XHR names', () => {
+  await t.test('preserves m3u-prune patched fetch and XHR names and static constants', () => {
     const win = makeWindow();
     win.fetch = function fetch() {
       return Promise.resolve({ clone() {}, text() {} });
@@ -915,11 +971,18 @@ test('scriptlet native wrapper camouflage', async (t) => {
       send() {}
       addEventListener() {}
     };
+    win.XMLHttpRequest.UNSENT = 0;
+    win.XMLHttpRequest.OPENED = 1;
+    win.XMLHttpRequest.HEADERS_RECEIVED = 2;
+    win.XMLHttpRequest.LOADING = 3;
+    win.XMLHttpRequest.DONE = 4;
 
     const sandbox = runScriptlet('m3uPrune', ['ad-segment'], win);
 
     assert.strictEqual(vm.runInContext('window.fetch.name', sandbox), 'fetch');
     assert.strictEqual(vm.runInContext('window.XMLHttpRequest.name', sandbox), 'XMLHttpRequest');
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.UNSENT', sandbox), 0);
+    assert.strictEqual(vm.runInContext('window.XMLHttpRequest.DONE', sandbox), 4);
     assert.strictEqual(vm.runInContext('new window.XMLHttpRequest().open.name', sandbox), 'open');
   });
 
@@ -930,6 +993,110 @@ test('scriptlet native wrapper camouflage', async (t) => {
     const sandbox = runScriptlet('m3uPrune', ['ad-segment', '/playlist[/'], win);
 
     assert.strictEqual(sandbox.window.fetch, originalFetch);
+  });
+
+  await t.test('m3u-prune strips /g and /y flags so consecutive ad segments and playlists match reliably', async () => {
+    const playlistBody = '#EXTM3U\n#EXTINF:5,\nad1.ts\n#EXTINF:5,\nad2.ts\n#EXTINF:5,\nAD3.ts\n#EXTINF:5,\ncontent.ts\n';
+    class FakeResponse {
+      constructor(body, init = {}) {
+        this._body = body;
+        this.status = init.status || 200;
+        this.statusText = init.statusText || 'OK';
+        this.headers = init.headers || {};
+      }
+      clone() { return new FakeResponse(this._body, this); }
+      async text() { return this._body; }
+    }
+
+    const win = makeWindow();
+    win.Response = FakeResponse;
+    win.fetch = async () => new FakeResponse(playlistBody);
+    win.XMLHttpRequest = class {
+      constructor() { this._listeners = {}; this.readyState = 0; this.responseText = ''; }
+      open() {}
+      addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); }
+      send() {
+        this.readyState = 4;
+        this.responseText = playlistBody;
+        for (const fn of this._listeners.readystatechange || []) fn();
+      }
+    };
+
+    const sandbox = runScriptlet('m3uPrune', ['/ad\\d+\\.ts/gi', '/playlist\\.m3u8/gy'], win);
+
+    const expected = '#EXTM3U\n#EXTINF:5,\ncontent.ts\n';
+    const r1 = await vm.runInContext('window.fetch("playlist.m3u8").then(r => r.text())', sandbox);
+    const r2 = await vm.runInContext('window.fetch("playlist.m3u8").then(r => r.text())', sandbox);
+    assert.strictEqual(r1, expected);
+    assert.strictEqual(r2, expected);
+
+    const xhrText = vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      xhr.open('GET', 'playlist.m3u8');
+      xhr.send();
+      return xhr.responseText;
+    })()`, sandbox);
+    assert.strictEqual(xhrText, expected);
+  });
+
+  await t.test('prevent-xhr and m3u-prune reset per-request state when an XHR instance is reused', () => {
+    const sentUrls = [];
+    class ReusedProtoXHR {
+      constructor() {
+        this.readyState = 0;
+        this._rawText = '';
+        this._listeners = {};
+      }
+      get responseText() { return this._rawText; }
+      get response() { return this._rawText; }
+      open(method, url) {
+        this._url = url;
+        this.readyState = 1;
+      }
+      addEventListener(type, fn) {
+        (this._listeners[type] = this._listeners[type] || []).push(fn);
+      }
+      send() {
+        sentUrls.push(this._url);
+        this.readyState = 4;
+        for (const fn of this._listeners.readystatechange || []) fn.call(this);
+      }
+    }
+
+    const xhrSandbox = runScriptlet('preventXhr', ['/ads/'], { XMLHttpRequest: ReusedProtoXHR });
+    vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      xhr.open('GET', 'https://example.com/ads/pixel');
+      xhr.send();
+      xhr.open('GET', 'https://example.com/api/legit');
+      xhr.send();
+    })()`, xhrSandbox);
+    assert.deepStrictEqual(sentUrls, ['https://example.com/api/legit']);
+
+    const m3uSandbox = runScriptlet('m3uPrune', ['/ad-seg/'], { XMLHttpRequest: ReusedProtoXHR });
+    const responses = vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      xhr._rawText = '#EXTM3U\\n#EXTINF:5,\\nhttps://cdn.example/ad-seg/1.ts\\n#EXTINF:5,\\nhttps://cdn.example/live/1.ts';
+      xhr.open('GET', 'https://example.com/live.m3u8?seq=1');
+      xhr.send();
+      const first = xhr.responseText;
+
+      xhr._rawText = '#EXTM3U\\n#EXTINF:5,\\nhttps://cdn.example/live/2.ts';
+      xhr.open('GET', 'https://example.com/live.m3u8?seq=2');
+      xhr.send();
+      const second = xhr.responseText;
+
+      xhr._rawText = '{"ok":true}';
+      xhr.open('GET', 'https://example.com/api/status');
+      xhr.send();
+      const third = xhr.responseText;
+      return { first, second, third };
+    })()`, m3uSandbox);
+    assert.deepStrictEqual(plain(responses), {
+      first: '#EXTM3U\n#EXTINF:5,\nhttps://cdn.example/live/1.ts',
+      second: '#EXTM3U\n#EXTINF:5,\nhttps://cdn.example/live/2.ts',
+      third: '{"ok":true}'
+    });
   });
 
   await t.test('preserves patched prototype method names', () => {
@@ -2157,6 +2324,57 @@ test('scriptlet engine master lifecycle', async (t) => {
       ['chroma_fpr', 'chroma_quiet_console', 'chroma_yahoo_recipe']
     );
   });
+
+  await t.test('syncFpr and syncQuietConsole drain queued changes before resolving callers', async () => {
+    const storageState = lifecycleStorage(true);
+    storageState.config = { enabled: true, fingerprintRandomization: true, quietConsole: true };
+    const harness = loadScriptletEngine(storageState);
+
+    let releaseFpr;
+    let releaseQuiet;
+    let blockFpr = true;
+    let blockQuiet = true;
+    let fprStarted;
+    let quietStarted;
+    const fprBlocked = new Promise(resolve => { releaseFpr = resolve; });
+    const quietBlocked = new Promise(resolve => { releaseQuiet = resolve; });
+    const fprAtRegister = new Promise(resolve => { fprStarted = resolve; });
+    const quietAtRegister = new Promise(resolve => { quietStarted = resolve; });
+
+    const origRegister = harness.sandbox.chrome.scripting.registerContentScripts;
+    harness.sandbox.chrome.scripting.registerContentScripts = async (scripts) => {
+      for (const script of scripts) {
+        if (script.id === 'chroma_fpr' && blockFpr) {
+          blockFpr = false;
+          fprStarted();
+          await fprBlocked;
+        }
+        if (script.id === 'chroma_quiet_console' && blockQuiet) {
+          blockQuiet = false;
+          quietStarted();
+          await quietBlocked;
+        }
+      }
+      return origRegister(scripts);
+    };
+
+    const initialSync = harness.sandbox.initScriptletEngine();
+    await Promise.all([fprAtRegister, quietAtRegister]);
+
+    const oldConfig = storageState.config;
+    storageState.config = { enabled: true, fingerprintRandomization: false, quietConsole: false };
+    harness.getChangeListener()({ config: { oldValue: oldConfig, newValue: storageState.config } }, 'local');
+    const secondSync = harness.sandbox.initScriptletEngine();
+
+    releaseFpr();
+    releaseQuiet();
+    await Promise.all([initialSync, secondSync]);
+
+    assert.deepStrictEqual(
+      harness.registeredContentScripts.map(script => script.id),
+      ['chroma_yahoo_recipe']
+    );
+  });
 });
 
 test('Yahoo recipe registration follows master and whitelist state without enabling Yahoo subdomains', async () => {
@@ -2273,6 +2491,7 @@ test('scriptlet engine userScripts API availability', async (t) => {
 
     const unavailableResult = await unavailable.sandbox.syncUserScripts();
     assert.strictEqual(unavailableResult.ok, false);
+    assert.strictEqual(unavailableResult.unavailable, true);
     assert.match(unavailableResult.error, /unavailable/i);
 
     const partial = loadScriptletEngine({
@@ -2398,5 +2617,220 @@ test('fingerprint randomization language normalization', async (t) => {
 
     assert.strictEqual(vm.runInContext('navigator.language', sandbox), 'fr');
     assert.deepStrictEqual(plain(vm.runInContext('navigator.languages', sandbox)), ['fr']);
+  });
+});
+
+test('protectStylesheets preserves real stylesheets while allowing removal of empty probe elements', () => {
+  const { JSDOM } = require('jsdom');
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+    url: 'https://www.allrecipes.com/'
+  });
+  const { window } = dom;
+  const { document } = window;
+
+  const sandbox = {
+    window,
+    document,
+    Node: window.Node,
+    Element: window.Element,
+    console,
+    Array
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(libCode, sandbox);
+  vm.runInContext('protectStylesheets()', sandbox);
+
+  const probeLink = document.createElement('link');
+  probeLink.setAttribute('rel', 'stylesheet');
+  probeLink.setAttribute('type', 'text/css');
+  document.head.appendChild(probeLink);
+  probeLink.remove();
+  assert.strictEqual(document.head.contains(probeLink), false, 'empty probe <link rel="stylesheet"> without href should be removable');
+
+  const emptyStyle = document.createElement('style');
+  document.head.appendChild(emptyStyle);
+  document.head.removeChild(emptyStyle);
+  assert.strictEqual(document.head.contains(emptyStyle), false, 'empty probe <style> should be removable');
+
+  const realLink = document.createElement('link');
+  realLink.setAttribute('rel', 'stylesheet');
+  realLink.setAttribute('href', 'https://www.allrecipes.com/static/site.css');
+  document.head.appendChild(realLink);
+  realLink.remove();
+  assert.strictEqual(document.head.contains(realLink), true, 'real <link rel="stylesheet" href="..."> must stay protected');
+  document.head.removeChild(realLink);
+  assert.strictEqual(document.head.contains(realLink), true, 'removeChild must also preserve real stylesheet links');
+
+  const realStyle = document.createElement('style');
+  realStyle.textContent = 'body { color: #111; }';
+  document.head.appendChild(realStyle);
+  realStyle.remove();
+  assert.strictEqual(document.head.contains(realStyle), true, 'non-empty <style> must stay protected');
+  document.head.replaceChildren();
+  assert.strictEqual(document.head.contains(realLink), true);
+  assert.strictEqual(document.head.contains(realStyle), true);
+});
+
+test('Bug 8 scriptlet stealth and determinism regressions', async (t) => {
+  await t.test('abort-on-property-read does not leave enumerable properties for absent parents', () => {
+    const sandbox = runScriptlet('abortOnPropertyRead', ['absentNs.detect']);
+    assert.strictEqual(Object.keys(sandbox).includes('absentNs'), false);
+    assert.strictEqual(vm.runInContext('Object.getOwnPropertyDescriptor(window, "absentNs").enumerable', sandbox), false);
+    vm.runInContext('window.absentNs = {}', sandbox);
+    assert.throws(() => vm.runInContext('window.absentNs.detect', sandbox), /ReferenceError/);
+  });
+
+  await t.test('set-constant keeps empty string values as empty string instead of 0', () => {
+    const sandbox = runScriptlet('setConstant', ['emptyFlag', '']);
+    assert.strictEqual(vm.runInContext('window.emptyFlag', sandbox), '');
+  });
+
+  await t.test('prevent-fetch matches URL objects and cloaks Function.prototype.toString without own .toString', async () => {
+    let called = false;
+    const win = makeWindow();
+    win.URL = URL;
+    win.fetch = function fetch() { called = true; return Promise.resolve({ ok: true }); };
+    const sandbox = runScriptlet('preventFetch', ['blocked.example'], win);
+    const res = await vm.runInContext('window.fetch(new URL("https://blocked.example/beacon"))', sandbox);
+    assert.strictEqual(called, false);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(vm.runInContext('Object.prototype.hasOwnProperty.call(window.fetch, "toString")', sandbox), false);
+    assert.match(vm.runInContext('Function.prototype.toString.call(window.fetch)', sandbox), /function fetch/);
+  });
+
+  await t.test('prevent-xhr preserves constructor/prototype identity, cloaks methods, and suppresses blocked setRequestHeader', () => {
+    const opened = [];
+    const sent = [];
+    const headers = [];
+    class BaseXHR {
+      constructor() {
+        this.readyState = 0;
+      }
+      open(_m, u) {
+        this.readyState = 1;
+        opened.push(u);
+      }
+      setRequestHeader(k, v) {
+        if (this.readyState !== 1) throw new Error('InvalidStateError');
+        headers.push([k, v]);
+      }
+      send() {
+        sent.push(true);
+      }
+    }
+    const sandbox = runScriptlet('preventXhr', ['/ads/'], { XMLHttpRequest: BaseXHR });
+    const checks = vm.runInContext(`(() => {
+      const xhr = new window.XMLHttpRequest();
+      const ctorOk = xhr.constructor === window.XMLHttpRequest;
+      const instOk = xhr instanceof window.XMLHttpRequest;
+      const hasOwnOpen = Object.prototype.hasOwnProperty.call(xhr, 'open');
+      const hasOwnSend = Object.prototype.hasOwnProperty.call(xhr, 'send');
+      const protoOpenStr = Function.prototype.toString.call(window.XMLHttpRequest.prototype.open);
+      xhr.open('GET', 'https://example.com/ads/px');
+      xhr.setRequestHeader('X-Ad', '1');
+      xhr.send();
+      xhr.open('GET', 'https://example.com/api/ok');
+      xhr.setRequestHeader('X-Ok', '2');
+      xhr.send();
+      return { ctorOk, instOk, hasOwnOpen, hasOwnSend, protoOpenStr };
+    })()`, sandbox);
+    assert.strictEqual(checks.ctorOk, true);
+    assert.strictEqual(checks.instOk, true);
+    assert.strictEqual(checks.hasOwnOpen, false);
+    assert.strictEqual(checks.hasOwnSend, false);
+    assert.match(checks.protoOpenStr, /open\(/);
+    assert.deepStrictEqual(opened, ['https://example.com/api/ok']);
+    assert.deepStrictEqual(headers, [['X-Ok', '2']]);
+    assert.deepStrictEqual(sent, [true]);
+  });
+
+  await t.test('protectStylesheets keeps prototype descriptors configurable and writable', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+      url: 'https://www.allrecipes.com/'
+    });
+    const { window } = dom;
+    const sandbox = {
+      window,
+      document: window.document,
+      Node: window.Node,
+      Element: window.Element,
+      console,
+      Array
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(libCode, sandbox);
+    vm.runInContext('protectStylesheets()', sandbox);
+
+    for (const [proto, prop] of [
+      [window.Node.prototype, 'removeChild'],
+      [window.Element.prototype, 'remove'],
+      [window.Element.prototype, 'replaceChildren']
+    ]) {
+      const desc = Object.getOwnPropertyDescriptor(proto, prop);
+      assert.strictEqual(desc.configurable, true);
+      assert.strictEqual(desc.writable, true);
+    }
+  });
+
+  await t.test('replace-node-text with wildcard updates text nodes without wiping DOM elements', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html><head><title>ad_title</title></head><body><div id="wrap"><span>ad_banner</span><button id="keep">OK</button></div></body></html>');
+    const { window } = dom;
+    const sandbox = {
+      window,
+      document: window.document,
+      NodeFilter: window.NodeFilter,
+      MutationObserver: window.MutationObserver,
+      console,
+      setTimeout: (fn) => { fn(); return 1; }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(libCode, sandbox);
+    vm.runInContext('replaceNodeText(["*", "ad_banner", "clean"])', sandbox);
+
+    assert.ok(window.document.head);
+    assert.ok(window.document.body);
+    assert.ok(window.document.getElementById('keep'));
+    assert.strictEqual(window.document.querySelector('#wrap span').textContent, 'clean');
+  });
+
+  await t.test('fingerprintRandomization does not drift AudioBuffer channel data across repeated reads', () => {
+    const sandbox = {
+      console,
+      location: { hostname: 'audio.example.com' },
+      crypto: {
+        getRandomValues: buf => {
+          for (let i = 0; i < buf.length; i++) buf[i] = (i + 3) & 0xff;
+          return buf;
+        }
+      },
+      Uint8Array,
+      Uint8ClampedArray
+    };
+    sandbox.self = sandbox;
+    sandbox.window = sandbox;
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(`
+      class AudioBuffer {
+        constructor() { this._ch = new Float32Array(2048); }
+        getChannelData() { return this._ch; }
+        copyFromChannel(dest) { dest.set(this._ch.subarray(0, dest.length)); }
+      }
+      self.AudioBuffer = AudioBuffer;
+    `, sandbox);
+    vm.runInContext(fingerprintRandomizationCode, sandbox);
+
+    const drift = vm.runInContext(`(() => {
+      const ab = new AudioBuffer();
+      const first = Array.from(ab.getChannelData(0));
+      const second = Array.from(ab.getChannelData(0));
+      return first.some((v, i) => v !== second[i]);
+    })()`, sandbox);
+    assert.strictEqual(drift, false);
   });
 });

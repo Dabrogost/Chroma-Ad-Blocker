@@ -92,10 +92,93 @@
     if (typeof source.quietConsole === 'boolean') CONFIG.quietConsole = source.quietConsole;
   }
 
-  document.addEventListener(CONFIG_EVENT, event => {
-    applyConfig(event && event.detail);
-    installQuietConsoleHooks();
-  }, true);
+  const nativeFetch = typeof window.fetch === 'function' ? window.fetch : null;
+  const nativeXHROpen = window.XMLHttpRequest && XMLHttpRequest.prototype.open;
+  const nativeXHRSend = window.XMLHttpRequest && XMLHttpRequest.prototype.send;
+  const nativeXHRAbort = window.XMLHttpRequest && XMLHttpRequest.prototype.abort;
+  const nativeSendBeacon = window.navigator && typeof navigator.sendBeacon === 'function'
+    ? navigator.sendBeacon
+    : null;
+
+  const nativeWindowAddListener = typeof window.addEventListener === 'function'
+    ? window.addEventListener.bind(window)
+    : null;
+  const nativeWindowRemoveListener = typeof window.removeEventListener === 'function'
+    ? window.removeEventListener.bind(window)
+    : null;
+  const nativeWindowDispatchEvent = typeof window.dispatchEvent === 'function'
+    ? window.dispatchEvent.bind(window)
+    : null;
+  const NativeCustomEvent = typeof CustomEvent === 'function' ? CustomEvent : null;
+  const supportsSecurePort = Boolean(
+    typeof MessageChannel === 'function' &&
+    nativeWindowAddListener &&
+    nativeWindowDispatchEvent &&
+    NativeCustomEvent &&
+    typeof crypto === 'object' && crypto && typeof crypto.getRandomValues === 'function'
+  );
+  let authenticatedPort = null;
+
+  if (supportsSecurePort) {
+    const tokenBytes = new Uint32Array(4);
+    crypto.getRandomValues(tokenBytes);
+    const readyToken = '__CHROMA_QC_' + Array.from(tokenBytes, n => n.toString(16).padStart(8, '0')).join('') + '__';
+    let armedNonce = null;
+    let handleNonce = null;
+
+    const handleIsoReady = () => {
+      if (authenticatedPort) return;
+      try {
+        nativeWindowDispatchEvent(new NativeCustomEvent('__CHROMA_QC_MAIN_READY__', {
+          detail: { readyToken }
+        }));
+      } catch (_) {}
+    };
+
+    const handleDelivery = (event) => {
+      if (authenticatedPort) return;
+      const detail = event && event.detail;
+      if (!detail || detail.readyToken !== readyToken || typeof detail.portNonce !== 'string' || !detail.portNonce) {
+        return;
+      }
+      if (typeof event.preventDefault === 'function') event.preventDefault();
+      if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+
+      if (armedNonce && handleNonce && nativeWindowRemoveListener) {
+        try { nativeWindowRemoveListener(armedNonce, handleNonce, true); } catch (_) {}
+      }
+
+      armedNonce = detail.portNonce;
+      handleNonce = (portEvent) => {
+        if (typeof portEvent.stopImmediatePropagation === 'function') portEvent.stopImmediatePropagation();
+        const port = (portEvent.ports && portEvent.ports[0]) || (portEvent.detail && portEvent.detail.port);
+        if (!port || typeof port.postMessage !== 'function') return;
+        authenticatedPort = port;
+        if (nativeWindowRemoveListener) {
+          try { nativeWindowRemoveListener(armedNonce, handleNonce, true); } catch (_) {}
+          try { nativeWindowRemoveListener('__CHROMA_QC_DELIVERY__', handleDelivery, true); } catch (_) {}
+          try { nativeWindowRemoveListener('__CHROMA_QC_ISO_READY__', handleIsoReady, true); } catch (_) {}
+        }
+        port.onmessage = (msgEvent) => {
+          applyConfig(msgEvent && msgEvent.data);
+          installQuietConsoleHooks();
+        };
+        try {
+          port.postMessage({ type: 'CHROMA_QC_PORT_READY' });
+        } catch (_) {}
+      };
+      nativeWindowAddListener(armedNonce, handleNonce, true);
+    };
+
+    nativeWindowAddListener('__CHROMA_QC_DELIVERY__', handleDelivery, true);
+    nativeWindowAddListener('__CHROMA_QC_ISO_READY__', handleIsoReady, true);
+    handleIsoReady();
+  } else {
+    document.addEventListener(CONFIG_EVENT, event => {
+      applyConfig(event && event.detail);
+      installQuietConsoleHooks();
+    }, true);
+  }
 
   function getRequestUrl(input) {
     if (typeof input === 'string') return input;
@@ -160,9 +243,46 @@
     return CONFIG.enabled === true && CONFIG.quietConsole === true && isQuietableUrl(url);
   }
 
+  const QUIET_XHR_PROPS = ['readyState', 'status', 'statusText', 'responseText', 'response'];
+  const quietXhrState = new WeakMap();
+
+  function getQuietXhrState(xhr) {
+    let state = quietXhrState.get(xhr);
+    if (!state) {
+      state = { generation: 0, suppressed: false, timerId: null, savedDescriptors: null };
+      quietXhrState.set(xhr, state);
+    }
+    return state;
+  }
+
+  function restoreQuietXhr(xhr) {
+    const state = quietXhrState.get(xhr);
+    if (!state) return;
+    if (state.timerId !== null) {
+      try {
+        clearTimeout(state.timerId);
+      } catch (_) {}
+      state.timerId = null;
+    }
+    if (!state.savedDescriptors) return;
+    const saved = state.savedDescriptors;
+    state.savedDescriptors = null;
+    for (const key of QUIET_XHR_PROPS) {
+      if (Object.prototype.hasOwnProperty.call(saved, key)) {
+        try {
+          Object.defineProperty(xhr, key, saved[key]);
+        } catch (_) {}
+      } else {
+        try {
+          delete xhr[key];
+        } catch (_) {}
+      }
+    }
+  }
+
   function defineValue(target, key, value) {
     try {
-      Object.defineProperty(target, key, { value, configurable: true });
+      Object.defineProperty(target, key, { value, writable: true, configurable: true });
       return;
     } catch (_) {}
     try {
@@ -188,32 +308,53 @@
     });
   }
 
-  function completeQuietXhr(xhr) {
+  function fireQuietXhrEvent(target, type, handlerProp) {
+    const hasOwnHandler = Object.prototype.hasOwnProperty.call(target, handlerProp);
+    let handledByDom = false;
+    const EventCtor = (type === 'load' || type === 'loadend') && typeof ProgressEvent === 'function'
+      ? ProgressEvent
+      : (typeof Event === 'function' ? Event : (typeof CustomEvent === 'function' ? CustomEvent : null));
+    if (EventCtor && typeof target.dispatchEvent === 'function') {
+      try {
+        target.dispatchEvent(new EventCtor(type));
+        handledByDom = !hasOwnHandler;
+      } catch (_) {}
+    }
+    if (!handledByDom && typeof target[handlerProp] === 'function') {
+      try {
+        target[handlerProp].call(target, { type, target });
+      } catch (_) {}
+    }
+  }
+
+  function completeQuietXhr(xhr, state) {
+    const expectedGeneration = state.generation;
+    let completed = false;
     const finish = () => {
+      completed = true;
+      state.timerId = null;
+      if (state.generation !== expectedGeneration || state.suppressed !== true) return;
+      if (!state.savedDescriptors) {
+        const saved = Object.create(null);
+        for (const key of QUIET_XHR_PROPS) {
+          const desc = Object.getOwnPropertyDescriptor(xhr, key);
+          if (desc) saved[key] = desc;
+        }
+        state.savedDescriptors = saved;
+      }
       defineValue(xhr, 'readyState', 4);
       defineValue(xhr, 'status', 200);
       defineValue(xhr, 'statusText', 'OK');
       defineValue(xhr, 'responseText', '{}');
       defineValue(xhr, 'response', '{}');
-      try {
-        if (typeof xhr.onreadystatechange === 'function') {
-          xhr.onreadystatechange({ type: 'readystatechange', target: xhr });
-        }
-      } catch (_) {}
-      try {
-        if (typeof xhr.onload === 'function') {
-          xhr.onload({ type: 'load', target: xhr });
-        }
-      } catch (_) {}
-      try {
-        if (typeof xhr.onloadend === 'function') {
-          xhr.onloadend({ type: 'loadend', target: xhr });
-        }
-      } catch (_) {}
+      fireQuietXhrEvent(xhr, 'readystatechange', 'onreadystatechange');
+      fireQuietXhrEvent(xhr, 'load', 'onload');
+      fireQuietXhrEvent(xhr, 'loadend', 'onloadend');
     };
 
     try {
-      setTimeout(finish, 0);
+      const id = setTimeout(finish, 0);
+      if (!completed) state.timerId = id;
     } catch (_) {
       finish();
     }
@@ -258,12 +399,6 @@
     hooksInstalled = true;
 
     const toStringInstalled = installToStringSpoof();
-    const nativeFetch = typeof window.fetch === 'function' ? window.fetch : null;
-    const nativeXHROpen = window.XMLHttpRequest && XMLHttpRequest.prototype.open;
-    const nativeXHRSend = window.XMLHttpRequest && XMLHttpRequest.prototype.send;
-    const nativeSendBeacon = window.navigator && typeof navigator.sendBeacon === 'function'
-      ? navigator.sendBeacon
-      : null;
 
     if (nativeFetch) {
       window.fetch = function fetch(input, ...args) {
@@ -279,24 +414,44 @@
     if (typeof nativeXHROpen === 'function' && typeof nativeXHRSend === 'function') {
       XMLHttpRequest.prototype.open = function open(method, url, ...rest) {
         const requestUrl = getRequestUrl(url);
-        this.__chromaQuietConsoleUrl = requestUrl;
-        this.__chromaQuietConsoleSuppressed = false;
+        const state = getQuietXhrState(this);
+        state.generation += 1;
+        state.suppressed = false;
+        restoreQuietXhr(this);
         if (shouldQuiet(requestUrl)) {
-          this.__chromaQuietConsoleSuppressed = true;
+          state.suppressed = true;
           log('quiet xhr', requestUrl);
           return;
         }
         return nativeXHROpen.apply(this, arguments);
       };
       XMLHttpRequest.prototype.send = function send(...args) {
-        if (this.__chromaQuietConsoleSuppressed === true) {
-          completeQuietXhr(this);
+        const state = quietXhrState.get(this);
+        if (state && state.suppressed === true) {
+          completeQuietXhr(this, state);
           return;
         }
         return nativeXHRSend.apply(this, arguments);
       };
       markNativeLike(XMLHttpRequest.prototype.open, 'function open() { [native code] }', toStringInstalled);
       markNativeLike(XMLHttpRequest.prototype.send, 'function send() { [native code] }', toStringInstalled);
+      if (typeof nativeXHRAbort === 'function') {
+        XMLHttpRequest.prototype.abort = function abort() {
+          const state = quietXhrState.get(this);
+          if (state && state.suppressed === true) {
+            state.generation += 1;
+            state.suppressed = false;
+            restoreQuietXhr(this);
+            return;
+          }
+          if (state) {
+            state.generation += 1;
+            restoreQuietXhr(this);
+          }
+          return nativeXHRAbort.apply(this, arguments);
+        };
+        markNativeLike(XMLHttpRequest.prototype.abort, 'function abort() { [native code] }', toStringInstalled);
+      }
     }
 
     if (nativeSendBeacon) {
@@ -315,10 +470,19 @@
     const previousToString = Function.prototype.toString;
     if (typeof previousToString !== 'function') return false;
     const nativeLabel = getNativeToStringLabel(previousToString);
-    const spoofedToString = function toString() {
-      if (toStringTargets.has(this)) return toStringTargets.get(this);
-      return previousToString.call(this);
-    };
+    const spoofedToString = {
+      toString() {
+        if (toStringTargets.has(this)) return toStringTargets.get(this);
+        try {
+          return previousToString.call(this);
+        } catch (err) {
+          if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+            try { Error.captureStackTrace(err, spoofedToString); } catch (_) {}
+          }
+          throw err;
+        }
+      }
+    }.toString;
     toStringTargets.set(spoofedToString, nativeLabel);
     try {
       Object.defineProperty(Function.prototype, 'toString', {

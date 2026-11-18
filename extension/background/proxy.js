@@ -20,6 +20,9 @@ let _proxyTestLock = Promise.resolve();
 // Serializes PAC writes so back-to-back storage events can't race and let an
 // older PAC win at chrome.proxy.settings.set().
 let _syncQueue = Promise.resolve();
+let _startupReady = Promise.resolve();
+let _activeSyncCount = 0;
+const _pendingStorageSyncs = new Set();
 let _pendingProxyAuthChallenges = 0;
 let _proxyAuthStatsTimer = null;
 const PROXY_TEST_ENDPOINTS = Object.freeze([
@@ -525,8 +528,25 @@ async function inspectProxyControl(generation = _routeGeneration) {
   }
 }
 
+async function waitForSettledProxyRouting() {
+  while (true) {
+    const startup = _startupReady;
+    const sync = _syncQueue;
+    const storageSyncs = [..._pendingStorageSyncs];
+    const generation = _routeGeneration;
+    await Promise.allSettled([startup, sync, ...storageSyncs]);
+    if (_activeSyncCount === 0 && _pendingStorageSyncs.size === 0 &&
+        _syncQueue === sync && _routeGeneration === generation) {
+      break;
+    }
+  }
+}
+
 export async function getProxyRoutingStatus({ refresh = false } = {}) {
-  if (refresh) await inspectProxyControl();
+  if (refresh) {
+    await waitForSettledProxyRouting();
+    await inspectProxyControl();
+  }
   return getProxyRuntimeStatusSnapshot();
 }
 
@@ -545,6 +565,7 @@ function invalidateProxyRouteAuthority() {
 }
 
 export function syncProxyState(proxyConfigs) {
+  _activeSyncCount++;
   const generation = invalidateProxyRouteAuthority();
   const operation = _syncQueue.then(() => _syncProxyStateImpl(proxyConfigs, generation));
   const next = operation.catch(async error => {
@@ -557,6 +578,8 @@ export function syncProxyState(proxyConfigs) {
       error: error?.message || error
     });
     return getProxyRuntimeStatusSnapshot();
+  }).finally(() => {
+    _activeSyncCount = Math.max(0, _activeSyncCount - 1);
   });
   _syncQueue = next.then(() => {}, () => {}); // never let a failure stall the queue
   return next;
@@ -891,30 +914,38 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     _proxyConfigRevision++;
     _proxyTestCache.clear();
   }
-  const listenerGeneration = invalidateProxyRouteAuthority();
-  let desiredProxyConfigs = proxyConfigsChanged
-    ? (Array.isArray(changes.proxyConfigs.newValue) ? changes.proxyConfigs.newValue : [])
-    : null;
+  const task = (async () => {
+    const listenerGeneration = invalidateProxyRouteAuthority();
+    let desiredProxyConfigs = proxyConfigsChanged
+      ? (Array.isArray(changes.proxyConfigs.newValue) ? changes.proxyConfigs.newValue : [])
+      : null;
 
-  if (proxyConfigsChanged) {
-    const oldConfigs = Array.isArray(changes.proxyConfigs.oldValue) ? changes.proxyConfigs.oldValue : [];
-    if (oldConfigs.length > desiredProxyConfigs.length) {
-      await mutateStoredConfig(config => {
-        if (listenerGeneration !== _routeGeneration || !config?.globalProxyId) return null;
-        const stillExists = desiredProxyConfigs.some(pc => pc.id === config.globalProxyId);
-        return stillExists
-          ? null
-          : { ...config, globalProxyEnabled: false, globalProxyId: null };
-      });
+    if (proxyConfigsChanged) {
+      const oldConfigs = Array.isArray(changes.proxyConfigs.oldValue) ? changes.proxyConfigs.oldValue : [];
+      if (oldConfigs.length > desiredProxyConfigs.length) {
+        await mutateStoredConfig(config => {
+          if (listenerGeneration !== _routeGeneration || !config?.globalProxyId) return null;
+          const stillExists = desiredProxyConfigs.some(pc => pc.id === config.globalProxyId);
+          return stillExists
+            ? null
+            : { ...config, globalProxyEnabled: false, globalProxyId: null };
+        });
+      }
     }
-  }
 
-  if (!desiredProxyConfigs) {
-    const stored = await chrome.storage.local.get('proxyConfigs');
-    if (listenerGeneration !== _routeGeneration) return;
-    desiredProxyConfigs = Array.isArray(stored.proxyConfigs) ? stored.proxyConfigs : [];
+    if (!desiredProxyConfigs) {
+      const stored = await chrome.storage.local.get('proxyConfigs');
+      if (listenerGeneration !== _routeGeneration) return;
+      desiredProxyConfigs = Array.isArray(stored.proxyConfigs) ? stored.proxyConfigs : [];
+    }
+    if (listenerGeneration === _routeGeneration) syncProxyState(desiredProxyConfigs);
+  })();
+  _pendingStorageSyncs.add(task);
+  try {
+    await task;
+  } finally {
+    _pendingStorageSyncs.delete(task);
   }
-  if (listenerGeneration === _routeGeneration) syncProxyState(desiredProxyConfigs);
 });
 
 function scheduleProxyControlRecovery() {
@@ -957,7 +988,7 @@ if (chrome.proxy?.settings?.onChange?.addListener) {
 }
 
 // Initialize proxy state on startup and drop legacy single-config storage.
-chrome.storage.local.get(['proxyConfig', 'proxyConfigs']).then(async ({ proxyConfig, proxyConfigs }) => {
+_startupReady = chrome.storage.local.get(['proxyConfig', 'proxyConfigs']).then(async ({ proxyConfig, proxyConfigs }) => {
   if (proxyConfig && !Array.isArray(proxyConfigs)) {
     await chrome.storage.local.remove('proxyConfig');
   }
@@ -986,6 +1017,22 @@ function reserveProxyAuthAttempt(requestId) {
   return true;
 }
 
+function releaseProxyAuthAttempt(requestId) {
+  if (typeof requestId === 'string' && requestId) {
+    _authAttempts.delete(requestId);
+  }
+}
+
+chrome.webRequest.onCompleted?.addListener(
+  details => releaseProxyAuthAttempt(details?.requestId),
+  { urls: ["<all_urls>"] }
+);
+
+chrome.webRequest.onErrorOccurred?.addListener(
+  details => releaseProxyAuthAttempt(details?.requestId),
+  { urls: ["<all_urls>"] }
+);
+
 chrome.webRequest.onAuthRequired.addListener(
   function(details, callback) {
     if (!details.isProxy) {
@@ -1003,22 +1050,29 @@ chrome.webRequest.onAuthRequired.addListener(
     }
 
     Promise.resolve().then(async () => {
-      const status = await inspectProxyControl();
-      if (!status.effective.active || _effectiveRouteGeneration === 0) return { cancel: true };
-      const effectiveGeneration = _effectiveRouteGeneration;
-      const pc = findAuthProxyConfig(
-        _effectiveRouteModel,
-        details.url,
-        details.challenger?.host,
-        details.challenger?.port
-      );
-      if (!pc) return { cancel: true };
-      const auth = await decryptAuth(pc.authIv, pc.authCipher);
-      if (_effectiveRouteGeneration !== effectiveGeneration) return { cancel: true };
-      const username = auth?.username;
-      const password = auth?.password;
-      if (!username || !password) return { cancel: true };
-      return { authCredentials: { username, password } };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await waitForSettledProxyRouting();
+        const status = await inspectProxyControl();
+        if (_activeSyncCount > 0 || _pendingStorageSyncs.size > 0) {
+          continue;
+        }
+        if (!status.effective.active || _effectiveRouteGeneration === 0) return { cancel: true };
+        const effectiveGeneration = _effectiveRouteGeneration;
+        const pc = findAuthProxyConfig(
+          _effectiveRouteModel,
+          details.url,
+          details.challenger?.host,
+          details.challenger?.port
+        );
+        if (!pc) return { cancel: true };
+        const auth = await decryptAuth(pc.authIv, pc.authCipher);
+        if (_effectiveRouteGeneration !== effectiveGeneration) return { cancel: true };
+        const username = auth?.username;
+        const password = auth?.password;
+        if (!username || !password) return { cancel: true };
+        return { authCredentials: { username, password } };
+      }
+      return { cancel: true };
     }).then(callback).catch(err => {
       if (DEBUG) console.error('[Chroma Ad-Blocker] Error in proxy auth:', err);
       callback({ cancel: true });

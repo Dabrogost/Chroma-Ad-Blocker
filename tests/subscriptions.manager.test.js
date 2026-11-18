@@ -953,6 +953,7 @@ test('Subscription lifecycle manager', async (t) => {
       parseList: () => ({
         networkRules: [
           networkRule('||already-static.example^'),
+          networkRule('||Already-Static.Example^'),
           networkRule('||fresh.example^')
         ],
         cosmeticRules: [],
@@ -1709,6 +1710,61 @@ test('Subscription lifecycle manager', async (t) => {
         assert.strictEqual(requests.length, 1, 'fresh bundled rules are not repeatedly fetched');
       }
     }
+  });
+
+  await t.test('refreshSubscription aborts commit when removal marks pendingRemoval in flight and initSubscriptions serializes with addSubscription', async () => {
+    let releaseFetch;
+    const storage = {
+      subscriptions: [{
+        id: 'custom-race',
+        name: 'Custom Race',
+        url: 'https://lists.example/race.txt',
+        enabled: true,
+        isCustom: true,
+        lastUpdated: 0,
+        ruleCount: { network: 0, cosmetic: 0, scriptlet: 0 }
+      }]
+    };
+    const manager = loadManager({
+      storage,
+      defaultSubscriptions: [{ id: 'default-sub', name: 'Default', url: 'https://defaults.example/list.txt', enabled: true }],
+      fetch: async () => new Promise(resolve => {
+        releaseFetch = () => resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: async () => '||ad.example^'
+        });
+      }),
+      parseList: () => ({
+        networkRules: [networkRule('||ad.example^')],
+        cosmeticRules: [{ domains: ['example.com'], selector: '.ad', isException: false }],
+        scriptletRules: [{ domains: ['example.com'], scriptlet: 'set-constant', args: ['a', '1'], runAt: 'document_start' }],
+        skipped: {}
+      }),
+      reconcileNetworkDnr: async () => ({ ok: false, error: 'DNR busy' })
+    });
+
+    const refreshPromise = manager.refreshSubscription('custom-race');
+    await new Promise(resolve => setImmediate(resolve));
+    const removeResult = await manager.removeSubscription('custom-race');
+    assert.strictEqual(removeResult.pendingRemoval, true);
+
+    releaseFetch();
+    const refreshResult = await refreshPromise;
+    assert.deepStrictEqual(plain(refreshResult), { ok: false, error: 'Subscription changed during refresh' });
+    assert.strictEqual(storage.sub_network_rules, undefined);
+    assert.strictEqual(storage.sub_cosmetic_rules, undefined);
+    assert.strictEqual(storage.sub_scriptlet_rules, undefined);
+
+    const initPromise = manager.initSubscriptions();
+    const addPromise = manager.addSubscription({
+      id: 'custom-added',
+      name: 'Custom Added',
+      url: 'https://lists.example/added.txt'
+    });
+    await Promise.all([initPromise, addPromise]);
+    assert.deepStrictEqual(plain(storage.subscriptions.map(sub => sub.id)), ['custom-race', 'default-sub', 'custom-added']);
   });
 });
 

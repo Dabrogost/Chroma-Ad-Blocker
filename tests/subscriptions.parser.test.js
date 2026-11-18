@@ -193,4 +193,95 @@ test('Subscription parser trust boundary', async (t) => {
     assert.throws(() => parseList('! one\n! two\n! three', { maxLines: 2 }), /too many lines/);
     assert.throws(() => parseList('! one\n! two\n! three\n', { maxLines: 2 }), /too many lines/);
   });
+
+  await t.test('preserves leading single-pipe URL-start anchor rules while rejecting bare or mid-pattern pipes', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      '|https://ads.example.com/banner.js$script',
+      '@@|https://good.example.com/sdk.js$script',
+      '|https://exact.example/pixel.gif|$image',
+      '|$script',
+      '|*$script',
+      'http://bad|pipe.example/ad.js$script'
+    ].join('\n'));
+
+    assert.deepStrictEqual(
+      plain(parsed.networkRules.map(rule => ({
+        action: rule.action.type,
+        urlFilter: rule.condition.urlFilter
+      }))),
+      [
+        { action: 'block', urlFilter: '|https://ads.example.com/banner.js' },
+        { action: 'allow', urlFilter: '|https://good.example.com/sdk.js' },
+        { action: 'block', urlFilter: '|https://exact.example/pixel.gif|' }
+      ]
+    );
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 3);
+    assert.strictEqual(parsed.skipped.malformed, 0);
+  });
+
+  await t.test('parses slash-prefixed literal path arguments and regex character-class slashes cleanly', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      'example.com##+js(remove-node-text, script, /ads, stay, 1)',
+      'example.com##+js(prevent-fetch, /ads/banner.js)',
+      'example.com##+js(prevent-fetch, /ads/img)',
+      "example.com##+js(replace-node-text, script, /ads/sdk.js, '')",
+      "example.com##+js(replace-node-text, script, /https?:\\/\\/[^/]{1,2}\\/ads/, '')",
+      'example.com##+js(prevent-fetch, /https?:\\/\\/[^/]+\\/ads\\/{1,2}/i)'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.skipped.malformed, 0);
+    assert.strictEqual(parsed.scriptletRules.length, 6);
+    assert.deepStrictEqual(plain(parsed.scriptletRules[0].args), ['script', '/ads', 'stay', '1']);
+    assert.deepStrictEqual(plain(parsed.scriptletRules[1].args), ['/ads/banner.js']);
+    assert.deepStrictEqual(plain(parsed.scriptletRules[2].args), ['/ads/img']);
+    assert.deepStrictEqual(plain(parsed.scriptletRules[3].args), ['script', '/ads/sdk.js', '']);
+    assert.deepStrictEqual(plain(parsed.scriptletRules[4].args), ['script', '/https?:\\/\\/[^/]{1,2}\\/ads/', '']);
+    assert.deepStrictEqual(plain(parsed.scriptletRules[5].args), ['/https?:\\/\\/[^/]+\\/ads\\/{1,2}/i']);
+  });
+
+  await t.test('translates ABP scriptlet patterns, character classes, escaped commas, scriptlet exceptions, and bare separator filters cleanly', () => {
+    const { parseList } = loadParser();
+    const parsed = parseList([
+      'example.com##+js(prevent-fetch, ||ads.example.com^)',
+      'example.com##+js(prevent-fetch, ||ads.example.com/v1/*)',
+      'example.com##+js(prevent-fetch, *ads.js)',
+      'example.com##+js(prevent-fetch, /ads/*.js)',
+      'example.com##+js(set, /a[^/,]b/, 1)',
+      'example.com##+js(script, a\\,b, /foo\\,bar/, c)',
+      'example.com#@#+js(abort-on-property-read, ads)',
+      '^$script',
+      '||^$script',
+      '*^$script'
+    ].join('\n'));
+
+    assert.strictEqual(parsed.cosmeticRules.length, 0);
+    assert.strictEqual(parsed.networkRules.length, 0);
+    assert.strictEqual(parsed.skipped.scriptletException, 1);
+    assert.strictEqual(parsed.skipped.unsupportedUrlFilter, 3);
+    assert.strictEqual(parsed.skipped.malformed, 0);
+    assert.strictEqual(parsed.scriptletRules.length, 6);
+
+    const toRegExp = literal => {
+      assert.match(literal, /^\/.*\/$/);
+      return new RegExp(literal.slice(1, -1));
+    };
+
+    const reDomain = toRegExp(parsed.scriptletRules[0].args[0]);
+    assert.strictEqual(reDomain.test('https://ads.example.com/ad.js'), true);
+    assert.strictEqual(reDomain.test('https://ads.example.com.evil.test/ad.js'), false);
+
+    const rePath = toRegExp(parsed.scriptletRules[1].args[0]);
+    assert.strictEqual(rePath.test('https://sub.ads.example.com/v1/loader.js'), true);
+
+    const reWildcard = toRegExp(parsed.scriptletRules[2].args[0]);
+    assert.strictEqual(reWildcard.test('https://cdn.example/banner_ads.js'), true);
+
+    const reSlashWildcard = toRegExp(parsed.scriptletRules[3].args[0]);
+    assert.strictEqual(reSlashWildcard.test('https://cdn.example/ads/banner.js'), true);
+
+    assert.deepStrictEqual(plain(parsed.scriptletRules[4].args), ['/a[^/,]b/', '1']);
+    assert.deepStrictEqual(plain(parsed.scriptletRules[5].args), ['a,b', '/foo\\,bar/', 'c']);
+  });
 });

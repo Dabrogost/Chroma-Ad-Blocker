@@ -448,11 +448,13 @@ function computeOverall({
     ));
   }
 
-  if (!webrtc?.enabled && webrtc?.controlledByThisExtension) {
+  if (!webrtc?.enabled && (webrtc?.controlledByThisExtension || webrtc?.reconciliationError)) {
     issues.push(makeIssue(
       'warning',
       'webrtc',
-      'WebRTC leak protection remains controlled by Chroma while its effective request is off.',
+      webrtc?.controlledByThisExtension
+        ? 'WebRTC leak protection remains controlled by Chroma while its effective request is off.'
+        : 'WebRTC leak protection could not release its Chrome privacy setting.',
       'Reload the extension, then turn WebRTC Leak Protection off and on.'
     ));
   } else if ((webrtc?.enabled || effectiveGlobalProxy) && !webrtc?.available) {
@@ -485,11 +487,13 @@ function computeOverall({
     ));
   }
 
-  if (!browserPrivacy?.enabled && browserPrivacy?.controlledCount > 0) {
+  if (!browserPrivacy?.enabled && (browserPrivacy?.controlledCount > 0 || browserPrivacy?.reconciliationError)) {
     issues.push(makeIssue(
       'warning',
       'browserPrivacy',
-      'Browser privacy settings remain controlled by Chroma while protection is paused.',
+      browserPrivacy?.controlledCount > 0
+        ? 'Browser privacy settings remain controlled by Chroma while protection is paused.'
+        : 'Browser privacy hardening could not verify release of Chrome privacy settings.',
       'Reload the extension, then turn Browser Privacy Hardening off and on.'
     ));
   } else if (browserPrivacy?.enabled && !browserPrivacy.available) {
@@ -691,8 +695,8 @@ export async function getHealthStatus(consistencyAttempt = 0) {
   const diagnostics = normalizeHealthDiagnostics(storage.healthDiagnostics)
     .filter(diagnostic => diagnostic.id !== 'proxyControl');
   const requestLogAvailable = !!chrome.declarativeNetRequest?.onRuleMatchedDebug;
-  await syncWebRtcLeakProtection(config, proxyConfigs);
-  await syncBrowserPrivacyHardening(config);
+  const webrtcReconciliation = await syncWebRtcLeakProtection(config, proxyConfigs);
+  const browserPrivacyReconciliation = await syncBrowserPrivacyHardening(config);
   const geolocationReconciliation = await syncGeolocationProtection(config);
   const latestPrivacyState = await chrome.storage.local.get(['config', 'proxyConfigs']);
   const latestConfig = latestPrivacyState.config || {};
@@ -704,16 +708,37 @@ export async function getHealthStatus(consistencyAttempt = 0) {
   ) {
     return getHealthStatus(consistencyAttempt + 1);
   }
-  const webrtc = summarizeWebRtcStatus(
+  const webrtcSummary = summarizeWebRtcStatus(
     await getWebRtcLeakProtectionStatus(config, proxyConfigs, { authoritative: false }),
     config
   );
-  const browserPrivacy = await getBrowserPrivacyHardeningStatus(config, { authoritative: false });
+  const webrtc = {
+    ...webrtcSummary,
+    ...(webrtcReconciliation?.ok === false &&
+      webrtcReconciliation?.stale !== true &&
+      webrtcReconciliation?.available !== false &&
+      !webrtcSummary.enabled
+      ? { reconciliationError: 'WebRTC reconciliation failed' }
+      : {})
+  };
+  const browserPrivacyStatus = await getBrowserPrivacyHardeningStatus(config, { authoritative: false });
+  const browserPrivacy = {
+    ...browserPrivacyStatus,
+    ...(browserPrivacyReconciliation?.ok === false &&
+      browserPrivacyReconciliation?.stale !== true &&
+      !browserPrivacyStatus.enabled &&
+      (!Array.isArray(browserPrivacyReconciliation.results) ||
+        browserPrivacyReconciliation.results.some(r => r && !r.ok && r.error !== 'Chrome privacy setting unavailable'))
+      ? { reconciliationError: 'Browser privacy reconciliation failed' }
+      : {})
+  };
   const geolocationStatus = await getGeolocationProtectionStatus(config, { authoritative: false });
   const geolocation = {
     ...geolocationStatus,
     released: !geolocationStatus.enabled && geolocationReconciliation?.ok === true,
-    reconciliationError: geolocationReconciliation?.ok === false && geolocationReconciliation?.stale !== true
+    reconciliationError: geolocationReconciliation?.ok === false &&
+      geolocationReconciliation?.stale !== true &&
+      geolocationReconciliation?.available !== false
       ? 'Geolocation reconciliation failed'
       : null
   };

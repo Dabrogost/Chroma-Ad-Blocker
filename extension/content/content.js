@@ -194,14 +194,91 @@
     } catch (_) {}
   }
 
-  function publishQuietConsoleConfig() {
-    try {
-      document.dispatchEvent(new CustomEvent(QUIET_CONSOLE_CONFIG_EVENT, {
-        detail: {
-          enabled: CONFIG.enabled !== false && !IS_WHITELISTED,
-          quietConsole: CONFIG.quietConsole === true
+  const supportsQuietConsolePort = Boolean(
+    typeof MessageChannel === 'function' &&
+    typeof window !== 'undefined' &&
+    window &&
+    typeof window.addEventListener === 'function' &&
+    typeof window.dispatchEvent === 'function' &&
+    typeof crypto === 'object' && crypto && typeof crypto.getRandomValues === 'function'
+  );
+  let quietConsolePort = null;
+  let quietConsoleCandidate = null;
+  let latestQuietConsoleDetail = null;
+
+  if (supportsQuietConsolePort) {
+    const releaseCandidate = (target, keepPort = false) => {
+      if (!target) return;
+      if (!keepPort) {
+        try { target.port.close(); } catch (_) {}
+      }
+      try { target.peer.close(); } catch (_) {}
+      if (quietConsoleCandidate === target) quietConsoleCandidate = null;
+    };
+
+    const handleQcMainReady = (event) => {
+      if (typeof event?.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+      if (quietConsolePort) return;
+      const readyToken = event?.detail?.readyToken;
+      if (typeof readyToken !== 'string' || readyToken.length < 8 || readyToken.length > 160) return;
+
+      let current = null;
+      try {
+        const bytes = new Uint32Array(4);
+        crypto.getRandomValues(bytes);
+        const portNonce = '__CHROMA_QC_PT_' + Array.from(bytes, n => n.toString(16).padStart(8, '0')).join('') + '__';
+        const rejected = window.dispatchEvent(new CustomEvent('__CHROMA_QC_DELIVERY__', {
+          cancelable: true,
+          detail: { portNonce, readyToken }
+        }));
+        if (rejected) return;
+
+        if (quietConsoleCandidate) releaseCandidate(quietConsoleCandidate);
+        const channel = new MessageChannel();
+        current = { port: channel.port1, peer: channel.port2 };
+        quietConsoleCandidate = current;
+        current.port.onmessage = (msgEvent) => {
+          if (quietConsoleCandidate !== current || msgEvent?.data?.type !== 'CHROMA_QC_PORT_READY') return;
+          quietConsolePort = current.port;
+          window.removeEventListener('__CHROMA_QC_MAIN_READY__', handleQcMainReady, true);
+          releaseCandidate(current, true);
+          if (latestQuietConsoleDetail) {
+            try { quietConsolePort.postMessage(latestQuietConsoleDetail); } catch (_) {}
+          }
+        };
+        try {
+          window.dispatchEvent(new MessageEvent(portNonce, { ports: [channel.port2] }));
+        } catch (_) {
+          window.dispatchEvent(new CustomEvent(portNonce, { detail: { port: channel.port2 } }));
         }
-      }));
+        if (latestQuietConsoleDetail) {
+          current.port.postMessage(latestQuietConsoleDetail);
+        }
+      } catch (_) {
+        if (current) releaseCandidate(current);
+      }
+    };
+
+    window.addEventListener('__CHROMA_QC_MAIN_READY__', handleQcMainReady, true);
+    try { window.dispatchEvent(new CustomEvent('__CHROMA_QC_ISO_READY__')); } catch (_) {}
+  }
+
+  function publishQuietConsoleConfig() {
+    const detail = {
+      enabled: CONFIG.enabled !== false && !IS_WHITELISTED,
+      quietConsole: CONFIG.quietConsole === true
+    };
+    latestQuietConsoleDetail = detail;
+    if (supportsQuietConsolePort) {
+      if (quietConsolePort) {
+        try { quietConsolePort.postMessage(detail); } catch (_) {}
+      } else if (quietConsoleCandidate) {
+        try { quietConsoleCandidate.port.postMessage(detail); } catch (_) {}
+      }
+      return;
+    }
+    try {
+      document.dispatchEvent(new CustomEvent(QUIET_CONSOLE_CONFIG_EVENT, { detail }));
     } catch (_) {}
   }
 
@@ -328,7 +405,7 @@
     if (!target || target.includes('\\')) return null;
     const slashIndex = target.indexOf('/');
     const hostname = (slashIndex === -1 ? target : target.slice(0, slashIndex)).toLowerCase();
-    if (!isValidHostname(hostname)) return null;
+    if (!isValidHostname(hostname) || !hostname.includes('.')) return null;
     const path = slashIndex === -1 ? '/' : '/' + target.slice(slashIndex + 1);
     try {
       return new URL(`${protocol}//${hostname}${path}`).href;
@@ -348,24 +425,20 @@
     const hostname = url.hostname.toLowerCase();
     const path = url.pathname;
 
-    if (isGoogleAmpViewerHost(hostname)) {
-      const httpsMatch = path.match(/^\/amp\/s\/(.+)$/);
-      if (httpsMatch) return buildAmpTargetUrl(httpsMatch[1], 'https:');
+    const matchAmpViewerPath = (prefix) => {
+      if (!path.startsWith(prefix)) return null;
+      const rest = path.slice(prefix.length);
+      if (!rest || rest === 's') return null;
+      if (rest.startsWith('s/')) return buildAmpTargetUrl(rest.slice(2), 'https:');
+      return buildAmpTargetUrl(rest, 'http:');
+    };
 
-      const httpMatch = path.match(/^\/amp\/(.+)$/);
-      if (httpMatch && !httpMatch[1].startsWith('s/')) {
-        return buildAmpTargetUrl(httpMatch[1], 'http:');
-      }
+    if (isGoogleAmpViewerHost(hostname)) {
+      return matchAmpViewerPath('/amp/');
     }
 
     if (hostname.endsWith('.cdn.ampproject.org')) {
-      const httpsCacheMatch = path.match(/^\/c\/s\/(.+)$/);
-      if (httpsCacheMatch) return buildAmpTargetUrl(httpsCacheMatch[1], 'https:');
-
-      const httpCacheMatch = path.match(/^\/c\/(.+)$/);
-      if (httpCacheMatch && !httpCacheMatch[1].startsWith('s/')) {
-        return buildAmpTargetUrl(httpCacheMatch[1], 'http:');
-      }
+      return matchAmpViewerPath('/c/');
     }
 
     return null;

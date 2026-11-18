@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "metadata": {"sourceDigest":"c9a368a95e5dd3c756e9195e95a5f7091d440aa6eae44e1ec2475ffb39018ed9","sourceResourceCount":12,"sourceRuleCount":300000,"indexedRuleCount":300000,"uniqueKeyCount":299999,"domainBlockDomainCount":299921,"otherRuleKeyCount":78},
+  "metadata": {"sourceDigest":"417b1798c4037da6e02df801ce0761e47737c4f742bf214e9b5178d0f2200cbf","sourceResourceCount":12,"sourceRuleCount":300000,"indexedRuleCount":300000,"uniqueKeyCount":299999,"domainBlockDomainCount":299921,"otherRuleKeyCount":78},
   "domainBlockDomains": [
 "0--4.com",
 "0--foodwarez.da.ru",
@@ -299943,7 +299943,7 @@
 "{\"actionType\":\"block\",\"urlFilter\":\"googleads.g.doubleclick.net\",\"regexFilter\":\"\",\"resourceTypes\":[\"image\",\"media\",\"script\",\"sub_frame\",\"xmlhttprequest\"],\"domainType\":\"\",\"initiatorDomains\":[],\"excludedInitiatorDomains\":[],\"priority\":1}",
 "{\"actionType\":\"block\",\"urlFilter\":\"googleads.g.doubleclick.net*\",\"regexFilter\":\"\",\"resourceTypes\":[\"script\"],\"domainType\":\"\",\"initiatorDomains\":[],\"excludedInitiatorDomains\":[],\"priority\":2}",
 "{\"actionType\":\"block\",\"urlFilter\":\"googlesyndication.com*\",\"regexFilter\":\"\",\"resourceTypes\":[\"script\"],\"domainType\":\"\",\"initiatorDomains\":[],\"excludedInitiatorDomains\":[],\"priority\":2}",
-"{\"actionType\":\"block\",\"urlFilter\":\"googlevideo.com/initplayback?source=youtube&*c=TVHTML5&*oad=\",\"regexFilter\":\"\",\"resourceTypes\":[\"xmlhttprequest\"],\"domainType\":\"\",\"initiatorDomains\":[\"youtube.com\"],\"excludedInitiatorDomains\":[],\"priority\":1}",
+"{\"actionType\":\"block\",\"urlFilter\":\"googlevideo.com/initplayback?source=youtube&*c=tvhtml5&*oad=\",\"regexFilter\":\"\",\"resourceTypes\":[\"xmlhttprequest\"],\"domainType\":\"\",\"initiatorDomains\":[\"youtube.com\"],\"excludedInitiatorDomains\":[],\"priority\":1}",
 "{\"actionType\":\"block\",\"urlFilter\":\"imasdk.googleapis.com/js/sdkloader/ima3.js\",\"regexFilter\":\"\",\"resourceTypes\":[\"script\"],\"domainType\":\"\",\"initiatorDomains\":[],\"excludedInitiatorDomains\":[],\"priority\":1}",
 "{\"actionType\":\"block\",\"urlFilter\":\"imasdk.googleapis.com/js/sdkloader/ima3_dai.js\",\"regexFilter\":\"\",\"resourceTypes\":[\"script\"],\"domainType\":\"\",\"initiatorDomains\":[],\"excludedInitiatorDomains\":[],\"priority\":1}",
 "{\"actionType\":\"block\",\"urlFilter\":\"jsdelivr.net/gh/ad-shield\",\"regexFilter\":\"\",\"resourceTypes\":[\"other\",\"script\",\"sub_frame\",\"xmlhttprequest\"],\"domainType\":\"\",\"initiatorDomains\":[],\"excludedInitiatorDomains\":[],\"priority\":1}",

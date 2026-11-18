@@ -447,7 +447,7 @@ async function _syncUserScriptsImpl(generation) {
         console.warn('[Chroma Scriptlets] userScripts API unavailable. Enable Allow User Scripts in Chrome extension details.');
       }
       return masterEnabled && storedRuleCount > 0
-        ? { ok: false, error: 'UserScripts API unavailable' }
+        ? { ok: false, unavailable: true, error: 'UserScripts API unavailable' }
         : { ok: true, registered: 0 };
     }
 
@@ -566,31 +566,38 @@ async function _syncUserScriptsImpl(generation) {
   }
 }
 
+// ─── Coalesced chrome.scripting sync helper ─────
+// Serializes registration passes and loops inside one shared promise so rapid
+// config/whitelist changes cannot race register/unregister calls or resolve
+// callers before the newest requested state is applied.
+function createCoalescedSync(runSync) {
+  let generation = 0;
+  let inFlight = null;
+
+  return function coalescedSync() {
+    generation++;
+    if (inFlight) return inFlight;
+
+    inFlight = (async () => {
+      try {
+        let currentGeneration;
+        do {
+          currentGeneration = generation;
+          await runSync();
+        } while (currentGeneration !== generation);
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
+  };
+}
+
 // ─── FPR registration via chrome.scripting ─────
 // Serialized like the userScripts sync — config + whitelist changes can fire
 // in rapid succession and a register/unregister race throws "id already
 // registered" errors.
-let _fprInFlight = null;
-let _fprPending = false;
-
-function syncFpr() {
-  if (_fprInFlight) {
-    _fprPending = true;
-    return _fprInFlight;
-  }
-  _fprInFlight = (async () => {
-    try {
-      await _syncFprImpl();
-    } finally {
-      _fprInFlight = null;
-      if (_fprPending) {
-        _fprPending = false;
-        syncFpr();
-      }
-    }
-  })();
-  return _fprInFlight;
-}
+const syncFpr = createCoalescedSync(_syncFprImpl);
 
 async function _syncFprImpl() {
   try {
@@ -683,27 +690,7 @@ async function _syncFprImpl() {
   }
 }
 
-let _quietConsoleInFlight = null;
-let _quietConsolePending = false;
-
-function syncQuietConsole() {
-  if (_quietConsoleInFlight) {
-    _quietConsolePending = true;
-    return _quietConsoleInFlight;
-  }
-  _quietConsoleInFlight = (async () => {
-    try {
-      await _syncQuietConsoleImpl();
-    } finally {
-      _quietConsoleInFlight = null;
-      if (_quietConsolePending) {
-        _quietConsolePending = false;
-        syncQuietConsole();
-      }
-    }
-  })();
-  return _quietConsoleInFlight;
-}
+const syncQuietConsole = createCoalescedSync(_syncQuietConsoleImpl);
 
 async function _syncQuietConsoleImpl() {
   try {

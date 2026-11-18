@@ -1,6 +1,12 @@
 (function() {
   'use strict';
 
+  if (typeof globalThis.__CHROMA_CLEANUP_ZAPPER__ === 'function') {
+    try {
+      globalThis.__CHROMA_CLEANUP_ZAPPER__();
+    } catch (_) {}
+  }
+
   const ROOT_ATTR = 'data-chroma-zapper';
   const MENU_ATTR = 'data-chroma-zapper-menu';
   const MAX_SELECTOR_LEN = 512;
@@ -76,6 +82,7 @@
 
   let token = null;
   let active = false;
+  let isSaving = false;
   let current = null;
   let outline = null;
   let tooltip = null;
@@ -105,7 +112,8 @@
   }
 
   function selectorPart(el, forceNth) {
-    const tag = el.localName;
+    const rawTag = el.localName || String(el.tagName || '').toLowerCase();
+    const tag = cssEscape(rawTag);
     if (!forceNth && isStableIdent(el.id)) return `#${cssEscape(el.id)}`;
 
     const classes = stableClasses(el);
@@ -118,7 +126,8 @@
       let index = 1;
       let sibling = el;
       while ((sibling = sibling.previousElementSibling)) {
-        if (sibling.localName === el.localName) index++;
+        const siblingTag = sibling.localName || String(sibling.tagName || '').toLowerCase();
+        if (siblingTag === rawTag) index++;
       }
       part += `:nth-of-type(${index})`;
     }
@@ -126,17 +135,20 @@
   }
 
   function analyzeSelector(selector, target) {
-    if (typeof selector !== 'string') return false;
+    if (typeof selector !== 'string') return { ok: false, error: 'Selector is invalid' };
     const value = selector.trim();
     if (!value || value.length > MAX_SELECTOR_LEN) return { ok: false, error: 'Selector is too long' };
     if (/[\x00-\x1f\x7f]/.test(value)) return { ok: false, error: 'Selector contains unsupported characters' };
     if (/^\s*(\/|xpath\s*:)/i.test(value)) return { ok: false, error: 'XPath selectors are not supported' };
     if (/(^|[^\\]):has\s*\(/i.test(value)) return { ok: false, error: ':has() selectors are not supported' };
     if (/[{};]/.test(value)) return { ok: false, error: 'Selector contains unsupported CSS syntax' };
+    if (/\b(?:script|javascript)\s*:/i.test(value)) return { ok: false, error: 'Selector contains unsupported syntax' };
 
     let matches;
     try {
-      matches = document.querySelectorAll(value);
+      matches = Array.from(document.querySelectorAll(value)).filter(
+        el => !(typeof el?.closest === 'function' && el.closest(`[${ROOT_ATTR}]`))
+      );
     } catch {
       return { ok: false, error: 'Selector is invalid' };
     }
@@ -144,7 +156,7 @@
     if (matches.length > MAX_SELECTOR_MATCHES) {
       return { ok: false, error: `Selector matches ${matches.length} elements` };
     }
-    if (!Array.from(matches).includes(target)) {
+    if (!matches.includes(target)) {
       return { ok: false, error: 'Selector does not match the selected element' };
     }
     return { ok: true, selector: value, count: matches.length };
@@ -339,6 +351,7 @@
 
   function cleanup() {
     active = false;
+    isSaving = false;
     current = null;
     pendingSelector = null;
     removeMenu();
@@ -372,6 +385,7 @@
     if (action === 'save') {
       const selectorInfo = generateSelectorInfo(current);
       if (!selectorInfo) {
+        removeMenu();
         showMessage('Could not create a safe selector.');
         return;
       }
@@ -381,23 +395,36 @@
     }
 
     if (action === 'confirmSave') {
+      if (isSaving) return;
       const selectorInfo = pendingSelector;
       if (!selectorInfo) {
+        removeMenu();
         showMessage('No selector is ready to save.');
         return;
       }
 
+      isSaving = true;
       const target = current;
+      const activeToken = token;
+      const normalizedHost = String(window.location.hostname || '').replace(/\.$/, '');
       sendFinish('save', {
-        domain: window.location.hostname,
+        domain: normalizedHost,
         selector: selectorInfo.selector
       }).then((res) => {
+        if (!active || token !== activeToken) return;
+        isSaving = false;
         if (res?.ok) {
           target.style.setProperty('display', 'none', 'important');
           sendStats('save');
           cleanup();
           return;
         }
+        if (res?.error === 'Invalid zapper session') {
+          cleanup();
+          return;
+        }
+        pendingSelector = null;
+        removeMenu();
         showMessage(res?.error || 'Could not save this rule.');
       });
     }
@@ -435,6 +462,8 @@
     event.stopImmediatePropagation();
     finish('cancel');
   }
+
+  globalThis.__CHROMA_CLEANUP_ZAPPER__ = cleanup;
 
   globalThis.__CHROMA_START_ZAPPER__ = function(sessionToken) {
     if (active) cleanup();

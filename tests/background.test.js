@@ -862,6 +862,8 @@ test('network lifecycle paths preserve an inactive desired state', async () => {
 
   await listeners.installed({ reason: 'update' });
   assert.deepStrictEqual(runtimeRules, [], 'onInstalled refresh');
+  assert.strictEqual(storage.config.spotifyAdBlocking, true, 'update backfills newly added default-on config keys');
+  assert.strictEqual(storage.config.networkBlocking, false, 'update preserves existing disabled user settings');
   assert.strictEqual(webRtcLifecycleStates.length, 2);
   assert.strictEqual(browserPrivacyLifecycleStates.length, 2);
   assert.strictEqual(geolocationLifecycleStates.length, 2);

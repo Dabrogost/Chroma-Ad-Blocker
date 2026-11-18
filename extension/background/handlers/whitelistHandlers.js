@@ -15,11 +15,11 @@ export async function handleWhitelistGet() {
 
 export function handleWhitelistAdd(msg) {
   return serializeConfigMutation(async () => {
-    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
     const domain = normalizeDomain(msg.domain);
-    const valid = domain && !whitelist.includes(domain);
+    if (!domain) return { ok: false, error: 'Invalid domain' };
 
-    if (valid) {
+    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
+    if (!whitelist.includes(domain)) {
       await chrome.storage.local.set({ whitelist: [...whitelist, domain] });
       await syncWhitelistRules();
     }
@@ -42,9 +42,11 @@ export function sanitizeDomainList(value) {
 
 export function handleWhitelistRemove(msg) {
   return serializeConfigMutation(async () => {
-    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
     const domain = normalizeDomain(msg.domain);
-    const next = domain ? whitelist.filter(d => d !== domain) : whitelist;
+    if (!domain) return { ok: false, error: 'Invalid domain' };
+
+    const { whitelist = [] } = await chrome.storage.local.get('whitelist');
+    const next = whitelist.filter(d => d !== domain);
     if (next.length !== whitelist.length) {
       await chrome.storage.local.set({ whitelist: next });
       await syncWhitelistRules();
@@ -63,11 +65,11 @@ export async function handleFprWhitelistGet() {
 
 export function handleFprWhitelistAdd(msg) {
   return serializeConfigMutation(async () => {
-    const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
     const domain = normalizeDomain(msg.domain);
-    const valid = domain && !fprWhitelist.includes(domain);
+    if (!domain) return { ok: false, error: 'Invalid domain' };
 
-    if (valid) {
+    const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
+    if (!fprWhitelist.includes(domain)) {
       await chrome.storage.local.set({ fprWhitelist: [...fprWhitelist, domain] });
     }
     return { ok: true };
@@ -76,9 +78,11 @@ export function handleFprWhitelistAdd(msg) {
 
 export function handleFprWhitelistRemove(msg) {
   return serializeConfigMutation(async () => {
-    const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
     const domain = normalizeDomain(msg.domain);
-    const next = domain ? fprWhitelist.filter(d => d !== domain) : fprWhitelist;
+    if (!domain) return { ok: false, error: 'Invalid domain' };
+
+    const { fprWhitelist = [] } = await chrome.storage.local.get('fprWhitelist');
+    const next = fprWhitelist.filter(d => d !== domain);
     if (next.length !== fprWhitelist.length) {
       await chrome.storage.local.set({ fprWhitelist: next });
     }

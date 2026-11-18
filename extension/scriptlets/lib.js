@@ -35,7 +35,7 @@ export function abortOnPropertyRead(args) {
         Object.defineProperty(obj, key, {
           get: abort,
           set() {},
-          enumerable: desc ? desc.enumerable : true,
+          enumerable: desc ? desc.enumerable : false,
           configurable: true
         });
         return;
@@ -43,22 +43,37 @@ export function abortOnPropertyRead(args) {
       // Keep absent parents absent. A fabricated object can itself change the
       // page's initialization branch. Follow assignments and lazy getters so
       // the leaf remains protected when a publisher replaces its namespace.
-      let value = obj[key];
-      trap(value, index + 1);
-      if (desc && !desc.configurable) return;
-      const accessor = desc && !('value' in desc);
+      let ownOrProtoDesc = desc;
+      if (!ownOrProtoDesc) {
+        let proto = Object.getPrototypeOf(obj);
+        while (proto) {
+          const candidate = Object.getOwnPropertyDescriptor(proto, key);
+          if (candidate) {
+            ownOrProtoDesc = candidate;
+            break;
+          }
+          proto = Object.getPrototypeOf(proto);
+        }
+      }
+      const accessor = Boolean(ownOrProtoDesc && !('value' in ownOrProtoDesc));
+      if (desc && !desc.configurable) {
+        trap(accessor ? obj[key] : desc.value, index + 1);
+        return;
+      }
+      let value = ownOrProtoDesc && 'value' in ownOrProtoDesc ? ownOrProtoDesc.value : undefined;
+      if (!accessor) trap(value, index + 1);
       Object.defineProperty(obj, key, {
         configurable: true,
-        enumerable: desc ? desc.enumerable : true,
+        enumerable: desc ? desc.enumerable : false,
         get() {
-          const current = accessor ? desc.get?.call(this) : value;
+          const current = accessor ? ownOrProtoDesc.get?.call(this) : value;
           trap(current, index + 1);
           return current;
         },
-        set: accessor ? (desc.set && function(next) {
-          desc.set.call(this, next);
-          trap(desc.get?.call(this), index + 1);
-        }) : (desc?.writable === false ? undefined : function(next) {
+        set: accessor ? (ownOrProtoDesc.set && function(next) {
+          ownOrProtoDesc.set.call(this, next);
+          trap(ownOrProtoDesc.get?.call(this), index + 1);
+        }) : (ownOrProtoDesc?.writable === false ? undefined : function(next) {
           value = next;
           trap(next, index + 1);
         })
@@ -115,7 +130,7 @@ export function setConstant(args) {
   else if (raw === 'falseFunc') value = function() { return false; };
   else if (raw === 'emptyArray') value = [];
   else if (raw === 'emptyObj')   value = {};
-  else if (!isNaN(raw))     value = Number(raw);
+  else if (typeof raw === 'string' && raw.trim() !== '' && !isNaN(raw)) value = Number(raw);
   else                      value = raw;
 
   const parts = prop.split('.');
@@ -147,11 +162,43 @@ export function noSetTimeoutIf(args) {
   const delay   = args[1];
   if (!pattern) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
@@ -176,11 +223,43 @@ export function noSetIntervalIf(args) {
   const delay   = args[1];
   if (!pattern) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);
@@ -203,11 +282,43 @@ export function noSetIntervalIf(args) {
 export function preventFetch(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -217,15 +328,48 @@ export function preventFetch(args) {
   };
 
   const orig = window.fetch;
-  window.fetch = function(input) {
-    const url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+  const wrappedFetch = function(input) {
+    const url = typeof input === 'string'
+      ? input
+      : (input && typeof input.url === 'string'
+          ? input.url
+          : (input && typeof input.href === 'string' ? input.href : ''));
     if (matches(url)) {
       return Promise.resolve(new Response(new Blob([''], { type: 'text/plain' }), { status: 200 }));
     }
     return orig.apply(this, arguments);
   };
-  try { Object.defineProperty(window.fetch, 'name', { value: orig.name || 'fetch', configurable: true }); } catch (e) {}
-  window.fetch.toString = () => orig.toString();
+  try { Object.defineProperty(wrappedFetch, 'name', { value: orig.name || 'fetch', configurable: true }); } catch (e) {}
+  try { Object.defineProperty(wrappedFetch, 'length', { value: typeof orig.length === 'number' ? orig.length : 1, configurable: true }); } catch (e) {}
+  try {
+    const prevToString = Function.prototype.toString;
+    const origLabel = prevToString.call(orig);
+    const spoofLabel = prevToString.call(prevToString);
+    const targets = new WeakMap();
+    targets.set(wrappedFetch, origLabel);
+    const spoof = {
+      toString() {
+        if (targets.has(this)) return targets.get(this);
+        try {
+          return prevToString.call(this);
+        } catch (err) {
+          if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+            try { Error.captureStackTrace(err, spoof); } catch (_) {}
+          }
+          throw err;
+        }
+      }
+    }.toString;
+    targets.set(spoof, spoofLabel);
+    Object.defineProperty(Function.prototype, 'toString', {
+      value: spoof,
+      writable: true,
+      configurable: true
+    });
+  } catch (e) {
+    try { Object.defineProperty(wrappedFetch, 'toString', { value: () => orig.toString(), configurable: true }); } catch (_) {}
+  }
+  window.fetch = wrappedFetch;
 }
 
 /**
@@ -236,11 +380,43 @@ export function preventFetch(args) {
 export function preventXhr(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -250,37 +426,94 @@ export function preventXhr(args) {
   };
 
   const OrigXHR = window.XMLHttpRequest;
+  const proto = OrigXHR && OrigXHR.prototype;
+  if (!proto || typeof proto.open !== 'function' || typeof proto.send !== 'function') return;
 
-  function PatchedXHR() {
-    const instance = new OrigXHR();
-    let _blocked = false;
+  const blockedInstances = new WeakSet();
+  const targets = new WeakMap();
 
-    const nativeOpen = instance.open;
-    const origOpen = nativeOpen.bind(instance);
-    instance.open = function(method, url) {
-      if (matches(String(url))) { _blocked = true; return; }
-      return origOpen.apply(instance, arguments);
+  const nativeOpen = proto.open;
+  const wrappedOpen = function(method, url) {
+    blockedInstances.delete(this);
+    if (matches(String(url))) {
+      blockedInstances.add(this);
+      return;
+    }
+    return nativeOpen.apply(this, arguments);
+  };
+  try { Object.defineProperty(wrappedOpen, 'name', { value: nativeOpen.name || 'open', configurable: true }); } catch (e) {}
+  try { Object.defineProperty(wrappedOpen, 'length', { value: typeof nativeOpen.length === 'number' ? nativeOpen.length : 2, configurable: true }); } catch (e) {}
+
+  const nativeSend = proto.send;
+  const wrappedSend = function() {
+    if (blockedInstances.has(this)) return;
+    return nativeSend.apply(this, arguments);
+  };
+  try { Object.defineProperty(wrappedSend, 'name', { value: nativeSend.name || 'send', configurable: true }); } catch (e) {}
+  try { Object.defineProperty(wrappedSend, 'length', { value: typeof nativeSend.length === 'number' ? nativeSend.length : 0, configurable: true }); } catch (e) {}
+
+  const nativeSetRequestHeader = typeof proto.setRequestHeader === 'function' ? proto.setRequestHeader : null;
+  let wrappedSetRequestHeader = null;
+  if (nativeSetRequestHeader) {
+    wrappedSetRequestHeader = function() {
+      if (blockedInstances.has(this)) return;
+      return nativeSetRequestHeader.apply(this, arguments);
     };
-    try { Object.defineProperty(instance.open, 'name', { value: nativeOpen.name || 'open', configurable: true }); } catch (e) {}
-    instance.open.toString = () => nativeOpen.toString();
-
-    const nativeSend = instance.send;
-    const origSend = nativeSend.bind(instance);
-    instance.send = function() {
-      if (_blocked) return;
-      return origSend.apply(instance, arguments);
-    };
-    try { Object.defineProperty(instance.send, 'name', { value: nativeSend.name || 'send', configurable: true }); } catch (e) {}
-    instance.send.toString = () => nativeSend.toString();
-
-    return instance;
+    try { Object.defineProperty(wrappedSetRequestHeader, 'name', { value: nativeSetRequestHeader.name || 'setRequestHeader', configurable: true }); } catch (e) {}
+    try { Object.defineProperty(wrappedSetRequestHeader, 'length', { value: typeof nativeSetRequestHeader.length === 'number' ? nativeSetRequestHeader.length : 2, configurable: true }); } catch (e) {}
   }
 
-  // Preserve prototype chain so instanceof checks pass
-  PatchedXHR.prototype = OrigXHR.prototype;
-  try { Object.defineProperty(PatchedXHR, 'name', { value: OrigXHR.name || 'XMLHttpRequest', configurable: true }); } catch (e) {}
-  PatchedXHR.toString = () => OrigXHR.toString();
-  Object.defineProperty(window, 'XMLHttpRequest', { value: PatchedXHR, writable: true, configurable: true });
+  let spoofInstalled = false;
+  try {
+    const prevToString = Function.prototype.toString;
+    targets.set(wrappedOpen, prevToString.call(nativeOpen));
+    targets.set(wrappedSend, prevToString.call(nativeSend));
+    if (wrappedSetRequestHeader) targets.set(wrappedSetRequestHeader, prevToString.call(nativeSetRequestHeader));
+    const spoofLabel = prevToString.call(prevToString);
+    const spoof = {
+      toString() {
+        if (targets.has(this)) return targets.get(this);
+        try {
+          return prevToString.call(this);
+        } catch (err) {
+          if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+            try { Error.captureStackTrace(err, spoof); } catch (_) {}
+          }
+          throw err;
+        }
+      }
+    }.toString;
+    targets.set(spoof, spoofLabel);
+    Object.defineProperty(Function.prototype, 'toString', {
+      value: spoof,
+      writable: true,
+      configurable: true
+    });
+    spoofInstalled = true;
+  } catch (e) {}
+
+  const installProtoMethod = (key, wrapped, nativeFn) => {
+    const desc = Object.getOwnPropertyDescriptor(proto, key);
+    if (!spoofInstalled) {
+      try { Object.defineProperty(wrapped, 'toString', { value: () => nativeFn.toString(), configurable: true }); } catch (e) {}
+    }
+    try {
+      Object.defineProperty(proto, key, {
+        value: wrapped,
+        writable: desc ? desc.writable !== false : true,
+        enumerable: desc ? desc.enumerable : false,
+        configurable: desc ? desc.configurable !== false : true
+      });
+    } catch (e) {
+      proto[key] = wrapped;
+    }
+  };
+
+  installProtoMethod('open', wrappedOpen, nativeOpen);
+  installProtoMethod('send', wrappedSend, nativeSend);
+  if (wrappedSetRequestHeader) {
+    installProtoMethod('setRequestHeader', wrappedSetRequestHeader, nativeSetRequestHeader);
+  }
 }
 
 /**
@@ -374,55 +607,97 @@ export function releaseScrollLock() {
  * Some sites (Raptive/CafeMedia) delete their own CSS when they detect adblockers.
  */
 export function protectStylesheets() {
+  const isNonEmptyStyleElement = (el) => {
+    if (el.textContent && el.textContent.trim()) return true;
+    if (el.childElementCount > 0) return true;
+    try {
+      return !!(el.sheet && el.sheet.cssRules && el.sheet.cssRules.length > 0);
+    } catch (_) {
+      return false;
+    }
+  };
+
   const isStyle = (el) => {
     if (!el || el.nodeType !== 1) return false;
     const tag = el.tagName;
-    if (tag === 'STYLE') return true;
+    if (tag === 'STYLE') return isNonEmptyStyleElement(el);
     if (tag === 'LINK') {
       const rel = el.getAttribute('rel');
-      return rel && rel.toLowerCase().includes('stylesheet');
+      if (!rel || !rel.toLowerCase().includes('stylesheet')) return false;
+      // Ignore empty probe <link rel="stylesheet"> nodes (no href) used by anti-adblock checks.
+      const href = el.getAttribute('href');
+      return !!(href && href.trim());
     }
     return false;
   };
 
+  const installMethod = (proto, name, makeWrapper) => {
+    if (!proto) return;
+    const desc = Object.getOwnPropertyDescriptor(proto, name);
+    const orig = desc && typeof desc.value === 'function' ? desc.value : proto[name];
+    if (typeof orig !== 'function' || (desc && desc.configurable === false && desc.writable === false)) return;
+    const wrapped = makeWrapper(orig);
+    try { Object.defineProperty(wrapped, 'name', { value: orig.name || name, configurable: true }); } catch (e) {}
+    try { Object.defineProperty(wrapped, 'length', { value: orig.length, configurable: true }); } catch (e) {}
+    try {
+      const prevToString = Function.prototype.toString;
+      const origLabel = prevToString.call(orig);
+      const spoofLabel = prevToString.call(prevToString);
+      const targets = new WeakMap();
+      targets.set(wrapped, origLabel);
+      const spoof = {
+        toString() {
+          if (targets.has(this)) return targets.get(this);
+          try {
+            return prevToString.call(this);
+          } catch (err) {
+            if (typeof Error === 'function' && typeof Error.captureStackTrace === 'function') {
+              try { Error.captureStackTrace(err, spoof); } catch (_) {}
+            }
+            throw err;
+          }
+        }
+      }.toString;
+      targets.set(spoof, spoofLabel);
+      Object.defineProperty(Function.prototype, 'toString', {
+        value: spoof,
+        writable: true,
+        configurable: true
+      });
+    } catch (e) {}
+    try {
+      Object.defineProperty(proto, name, {
+        value: wrapped,
+        configurable: desc ? desc.configurable : true,
+        writable: desc ? desc.writable : true,
+        enumerable: desc ? desc.enumerable : true
+      });
+    } catch (e) {}
+  };
+
   // Wrap Node.prototype.removeChild
-  const origRemoveChild = Node.prototype.removeChild;
-  Object.defineProperty(Node.prototype, 'removeChild', {
-    value: function(child) {
-      if (isStyle(child)) return child;
-      return origRemoveChild.call(this, child);
-    },
-    configurable: false,
-    writable: false
+  installMethod(Node.prototype, 'removeChild', (origRemoveChild) => function(child) {
+    if (isStyle(child) && (!('parentNode' in child) || child.parentNode === this)) return child;
+    return origRemoveChild.call(this, child);
   });
 
   // Wrap Element.prototype.remove
-  const origRemove = Element.prototype.remove;
-  Object.defineProperty(Element.prototype, 'remove', {
-    value: function() {
-      if (isStyle(this)) return;
-      return origRemove.call(this);
-    },
-    configurable: false,
-    writable: false
+  installMethod(Element.prototype, 'remove', (origRemove) => function() {
+    if (isStyle(this)) return;
+    return origRemove.call(this);
   });
 
   // Wrap Element.prototype.replaceChildren
-  const origReplaceChildren = Element.prototype.replaceChildren;
-  Object.defineProperty(Element.prototype, 'replaceChildren', {
-    value: function(...newChildren) {
-      if (this === document.head || this === document.documentElement) {
-        const existing = Array.from(this.children).filter(isStyle);
-        origReplaceChildren.call(this, ...newChildren);
-        for (const s of existing) {
-          if (!this.contains(s)) this.appendChild(s);
-        }
-        return;
+  installMethod(Element.prototype, 'replaceChildren', (origReplaceChildren) => function(...newChildren) {
+    if (this === document.head || this === document.documentElement) {
+      const existing = Array.from(this.children).filter(isStyle);
+      origReplaceChildren.call(this, ...newChildren);
+      for (const s of existing) {
+        if (!this.contains(s)) this.appendChild(s);
       }
-      return origReplaceChildren.call(this, ...newChildren);
-    },
-    configurable: false,
-    writable: false
+      return;
+    }
+    return origReplaceChildren.call(this, ...newChildren);
   });
 }
 
@@ -670,9 +945,40 @@ export function removeAttr(args) {
 export function removeNodeText(args) {
   const tag = (args[0] || '*').toLowerCase();
   const pattern = args[1] || '';
-  const regexParts = /^\/(.*)\/([a-z]*)$/.exec(pattern);
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+  const regexParts = parseRegexLiteral(pattern);
   let re;
-  try { re = regexParts ? new RegExp(regexParts[1], regexParts[2]) : null; }
+  try { re = regexParts ? new RegExp(regexParts[0], regexParts[1]) : null; }
   catch { return; }
   const matches = text => {
     if (!re) return text.includes(pattern);
@@ -736,14 +1042,41 @@ export function preventAddEventListener(args) {
   let invalidRegex = false;
   const compile = (p) => {
     if (!p || p === '*') return null;
-    if (p.startsWith('/') && p.lastIndexOf('/') > 0) {
-      const lastSlash = p.lastIndexOf('/');
-      try {
-        const re = new RegExp(p.slice(1, lastSlash), p.slice(lastSlash + 1).replace(/[gy]/g, ''));
-        return (s) => re.test(String(s));
-      } catch (e) {
-        invalidRegex = true;
-        return null;
+    if (typeof p === 'string' && p.length >= 2 && p[0] === '/') {
+      let esc = false;
+      let inClass = false;
+      let unclosedBracket = false;
+      let closeIdx = -1;
+      for (let i = 1; i < p.length; i++) {
+        const ch = p[i];
+        if (esc) { esc = false; continue; }
+        if (ch === '\\') { esc = true; continue; }
+        if (inClass) { if (ch === ']') inClass = false; continue; }
+        if (ch === '[' && !unclosedBracket) {
+          let e2 = false;
+          let hasClose = false;
+          for (let j = i + 1; j < p.length; j++) {
+            if (e2) { e2 = false; continue; }
+            if (p[j] === '\\') { e2 = true; continue; }
+            if (p[j] === ']') { hasClose = true; break; }
+          }
+          if (hasClose) { inClass = true; continue; }
+          unclosedBracket = true;
+        }
+        if (ch === '/') { closeIdx = i; break; }
+      }
+      if (closeIdx > 1 && closeIdx === p.lastIndexOf('/')) {
+        const body = p.slice(1, closeIdx);
+        const rawFlags = p.slice(closeIdx + 1);
+        if (/^[dgimsuvy]*$/.test(rawFlags) && !(rawFlags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(rawFlags))) {
+          try {
+            const re = new RegExp(body, rawFlags.replace(/[gy]/g, ''));
+            return (s) => re.test(String(s));
+          } catch (e) {
+            invalidRegex = true;
+            return null;
+          }
+        }
       }
     }
     return (s) => String(s).includes(p);
@@ -811,11 +1144,43 @@ export function setCookie(args) {
 export function preventWindowOpen(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -920,21 +1285,84 @@ export function replaceNodeText(args) {
   const replacement = args[2] !== undefined ? args[2] : '';
   if (!pattern) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (isRegex) {
-    const lastSlash = pattern.lastIndexOf('/');
-    const flags = pattern.slice(lastSlash + 1);
-    re = new RegExp(pattern.slice(1, lastSlash), flags.includes('g') ? flags : flags + 'g');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
+    try {
+      const flags = regexParts[1];
+      re = new RegExp(regexParts[0], flags.includes('g') ? flags : flags + 'g');
+    } catch (e) { return; }
   }
 
   const replaceIn = (str) => re ? str.replace(re, replacement) : str.split(pattern).join(replacement);
 
   const sweep = () => {
     try {
-      const nodes = tag === '*'
-        ? document.querySelectorAll('*')
-        : document.getElementsByTagName(tag);
+      if (tag === '*') {
+        if (typeof document.createTreeWalker === 'function' && typeof NodeFilter === 'object' && NodeFilter) {
+          const walker = document.createTreeWalker(document.documentElement || document, NodeFilter.SHOW_TEXT);
+          let textNode;
+          while ((textNode = walker.nextNode())) {
+            const before = textNode.nodeValue;
+            if (!before) continue;
+            const after = replaceIn(before);
+            if (after !== before) textNode.nodeValue = after;
+          }
+        } else if (document.documentElement) {
+          const walkText = (node) => {
+            if (!node) return;
+            if (node.nodeType === 3) {
+              const before = node.nodeValue ?? node.textContent;
+              if (!before) return;
+              const after = replaceIn(before);
+              if (after !== before) {
+                if ('nodeValue' in node) node.nodeValue = after;
+                else node.textContent = after;
+              }
+              return;
+            }
+            const children = node.childNodes;
+            if (children && children.length) {
+              for (let i = 0; i < children.length; i++) walkText(children[i]);
+            }
+          };
+          walkText(document.documentElement);
+        }
+        return;
+      }
+      const nodes = document.getElementsByTagName(tag);
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
         if (!n || !n.textContent) continue;
@@ -979,11 +1407,43 @@ export function replaceNodeText(args) {
 export function preventRequestAnimationFrame(args) {
   const pattern = args[0] || '*';
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => {
@@ -1017,11 +1477,43 @@ export function abortCurrentScript(args) {
   const needle = args[1];
   if (!prop) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (needle && needle.startsWith('/') && needle.lastIndexOf('/') > 0) {
-    const lastSlash = needle.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(needle);
+  if (regexParts) {
     try {
-      re = new RegExp(needle.slice(1, lastSlash), needle.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const needleMatches = (str) => {
@@ -1184,11 +1676,43 @@ export function preventElementSrcLoading(args) {
   const ctorName = tagToProto[tag];
   if (!ctorName || !window[ctorName]) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (url) => {
@@ -1243,11 +1767,43 @@ export function m3uPrune(args) {
   const urlPattern = args[1];
   if (!needle) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   const compile = (p) => {
     if (!p) return null;
-    if (p.startsWith('/') && p.lastIndexOf('/') > 0) {
-      const last = p.lastIndexOf('/');
-      try { return new RegExp(p.slice(1, last), p.slice(last + 1)); } catch (e) { return null; }
+    const regexParts = parseRegexLiteral(p);
+    if (regexParts) {
+      try { return new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, '')); } catch (e) { return null; }
     }
     return new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   };
@@ -1314,9 +1870,15 @@ export function m3uPrune(args) {
   function PatchedXHR() {
     const xhr = new OrigXHR();
     let watchedUrl = '';
+    let responseOverridden = false;
     const nativeOpen = xhr.open;
     const origOpen = nativeOpen.bind(xhr);
     xhr.open = function(method, url) {
+      if (responseOverridden) {
+        delete xhr.responseText;
+        delete xhr.response;
+        responseOverridden = false;
+      }
       watchedUrl = String(url || '');
       return origOpen.apply(xhr, arguments);
     };
@@ -1328,6 +1890,7 @@ export function m3uPrune(args) {
         const text = xhr.responseText;
         const pruned = prune(text);
         if (pruned === text) return;
+        responseOverridden = true;
         Object.defineProperty(xhr, 'responseText', { value: pruned, configurable: true });
         Object.defineProperty(xhr, 'response',     { value: pruned, configurable: true });
       } catch (e) {}
@@ -1335,6 +1898,19 @@ export function m3uPrune(args) {
     return xhr;
   }
   PatchedXHR.prototype = OrigXHR.prototype;
+  try { Object.setPrototypeOf(PatchedXHR, OrigXHR); } catch (e) {}
+  for (const key of ['UNSENT', 'OPENED', 'HEADERS_RECEIVED', 'LOADING', 'DONE']) {
+    if (key in OrigXHR) {
+      try {
+        Object.defineProperty(PatchedXHR, key, {
+          value: OrigXHR[key],
+          writable: false,
+          enumerable: true,
+          configurable: true
+        });
+      } catch (e) {}
+    }
+  }
   try { Object.defineProperty(PatchedXHR, 'name', { value: OrigXHR.name || 'XMLHttpRequest', configurable: true }); } catch (e) {}
   PatchedXHR.toString = () => OrigXHR.toString();
   Object.defineProperty(window, 'XMLHttpRequest', { value: PatchedXHR, writable: true, configurable: true });
@@ -1393,12 +1969,43 @@ export function cookieRemover(args) {
   const pattern = args[0];
   if (!pattern) return;
 
-  const isRegex = pattern.startsWith('/') && pattern.lastIndexOf('/') > 0;
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (isRegex) {
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      const last = pattern.lastIndexOf('/');
-      re = new RegExp(pattern.slice(1, last), pattern.slice(last + 1));
+      re = new RegExp(regexParts[0], regexParts[1]);
     } catch (e) { return; }
   }
   const matches = (name) => re ? re.test(name) : name === pattern || name.includes(pattern);
@@ -1521,11 +2128,43 @@ export function noEvalIf(args) {
   const pattern = args[0];
   if (!pattern) return;
 
+  const parseRegexLiteral = (p) => {
+    if (typeof p !== 'string' || p.length < 2 || p[0] !== '/') return null;
+    let esc = false;
+    let inClass = false;
+    let unclosedBracket = false;
+    let closeIdx = -1;
+    for (let i = 1; i < p.length; i++) {
+      const ch = p[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (inClass) { if (ch === ']') inClass = false; continue; }
+      if (ch === '[' && !unclosedBracket) {
+        let e2 = false;
+        let hasClose = false;
+        for (let j = i + 1; j < p.length; j++) {
+          if (e2) { e2 = false; continue; }
+          if (p[j] === '\\') { e2 = true; continue; }
+          if (p[j] === ']') { hasClose = true; break; }
+        }
+        if (hasClose) { inClass = true; continue; }
+        unclosedBracket = true;
+      }
+      if (ch === '/') { closeIdx = i; break; }
+    }
+    if (closeIdx <= 1 || closeIdx !== p.lastIndexOf('/')) return null;
+    const body = p.slice(1, closeIdx);
+    const flags = p.slice(closeIdx + 1);
+    if (!/^[dgimsuvy]*$/.test(flags)) return null;
+    if (flags && /^[A-Za-z0-9_-]+$/.test(body) && !/^(?:i|g|gi|ig)$/.test(flags)) return null;
+    return [body, flags];
+  };
+
   let re = null;
-  if (pattern.startsWith('/') && pattern.lastIndexOf('/') > 0) {
-    const lastSlash = pattern.lastIndexOf('/');
+  const regexParts = parseRegexLiteral(pattern);
+  if (regexParts) {
     try {
-      re = new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1).replace(/[gy]/g, ''));
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (str) => re ? re.test(str) : String(str).includes(pattern);

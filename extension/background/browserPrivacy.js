@@ -318,14 +318,12 @@ async function syncBrowserPrivacyHardeningImpl(config, generation) {
             result.error = sanitizeError(inspectionError);
           }
         }
-        const shouldClear = !_releasedBrowserPrivacySettings.has(definition.key) && (
+        const shouldClear =
           !beforeClear ||
           result.controlledByThisExtension ||
-          BLOCKED_LEVELS.has(result.levelOfControl)
-        );
+          (BLOCKED_LEVELS.has(result.levelOfControl) && !_releasedBrowserPrivacySettings.has(definition.key));
         if (shouldClear) {
           await chromeSettingCall(setting, 'clear', PRIVACY_SCOPE);
-          _releasedBrowserPrivacySettings.add(definition.key);
         }
         if (generation !== _browserPrivacyGeneration) break;
         result.ok = true;
@@ -339,12 +337,19 @@ async function syncBrowserPrivacyHardeningImpl(config, generation) {
             if (!result.ok) {
               _releasedBrowserPrivacySettings.delete(definition.key);
               result.error = 'Chrome privacy setting could not be released';
+            } else if (BLOCKED_LEVELS.has(result.levelOfControl)) {
+              _releasedBrowserPrivacySettings.add(definition.key);
+            } else {
+              _releasedBrowserPrivacySettings.delete(definition.key);
             }
           } catch (inspectionError) {
+            _releasedBrowserPrivacySettings.delete(definition.key);
             result.available = false;
             result.ok = false;
             result.error = `Release applied but could not be verified: ${sanitizeError(inspectionError)}`;
           }
+        } else {
+          _releasedBrowserPrivacySettings.add(definition.key);
         }
       } catch (err) {
         result.error = sanitizeError(err);

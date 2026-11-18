@@ -664,10 +664,14 @@ test('Security Hardening - background handlers', async (t) => {
       }
     });
 
-    await sandbox.handleWhitelistAdd({ domain: 'HTTPS://Example.COM/path' });
-    await sandbox.handleWhitelistAdd({ domain: 'bad..example.com' });
-    await sandbox.handleFprWhitelistAdd({ domain: '*.Login.Example.COM' });
-    await sandbox.handleFprWhitelistAdd({ domain: '-bad.example.com' });
+    assert.deepStrictEqual(plain(await sandbox.handleWhitelistAdd({ domain: 'HTTPS://Example.COM/path' })), { ok: true });
+    assert.deepStrictEqual(plain(await sandbox.handleWhitelistAdd({ domain: 'bad..example.com' })), { ok: false, error: 'Invalid domain' });
+    assert.deepStrictEqual(plain(await sandbox.handleWhitelistAdd({ domain: '' })), { ok: false, error: 'Invalid domain' });
+    assert.deepStrictEqual(plain(await sandbox.handleWhitelistRemove({ domain: '' })), { ok: false, error: 'Invalid domain' });
+    assert.deepStrictEqual(plain(await sandbox.handleFprWhitelistAdd({ domain: '*.Login.Example.COM' })), { ok: true });
+    assert.deepStrictEqual(plain(await sandbox.handleFprWhitelistAdd({ domain: '-bad.example.com' })), { ok: false, error: 'Invalid domain' });
+    assert.deepStrictEqual(plain(await sandbox.handleFprWhitelistAdd({ domain: '' })), { ok: false, error: 'Invalid domain' });
+    assert.deepStrictEqual(plain(await sandbox.handleFprWhitelistRemove({ domain: '' })), { ok: false, error: 'Invalid domain' });
 
     assert.deepStrictEqual(plain(sandbox._storage.whitelist), ['example.com']);
     assert.deepStrictEqual(plain(sandbox._storage.fprWhitelist), ['login.example.com']);
@@ -1581,6 +1585,172 @@ test('Security Hardening - background handlers', async (t) => {
     assert.strictEqual(runtimeResult.rollback?.errors.some(error => /userScripts rollback failure/i.test(
       typeof error === 'string' ? error : (error?.error || error?.message || '')
     )), true);
+  });
+
+  await t.test('settings import succeeds and finishes downstream runtime steps when userScripts API is unavailable', async () => {
+    const storage = {
+      config: { enabled: true, networkBlocking: true },
+      whitelist: [],
+      fprWhitelist: [],
+      proxyConfigs: []
+    };
+    const stepsCompleted = [];
+    const sandbox = loadHandlers({
+      storage,
+      updateDNRState: async () => { stepsCompleted.push('dnr'); return { ok: true }; },
+      reconcileSubscriptionRuntimeState: async () => { stepsCompleted.push('subscription-runtime'); return { ok: true }; },
+      syncUserScripts: async () => {
+        stepsCompleted.push('user-scripts');
+        return { ok: false, unavailable: true, error: 'UserScripts API unavailable' };
+      },
+      syncProxyState: async () => { stepsCompleted.push('proxy'); return { ok: true }; },
+      syncWebRtcLeakProtection: async () => { stepsCompleted.push('webrtc'); return { ok: true }; },
+      syncBrowserPrivacyHardening: async () => { stepsCompleted.push('browser-privacy'); return { ok: true }; },
+      syncGeolocationProtection: async () => { stepsCompleted.push('geolocation'); return { ok: true }; }
+    });
+
+    const result = await sandbox.handleConfigImport({
+      settings: makeSettingsImportPayload({
+        config: { enabled: true, networkBlocking: true },
+        whitelist: ['imported.example']
+      })
+    });
+
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(plain(storage.whitelist), ['imported.example']);
+    assert.deepStrictEqual(stepsCompleted, [
+      'dnr',
+      'subscription-runtime',
+      'user-scripts',
+      'proxy',
+      'webrtc',
+      'browser-privacy',
+      'geolocation'
+    ]);
+    assert.deepStrictEqual(plain(result.warnings), [{
+      step: 'user-scripts',
+      error: 'UserScripts API unavailable'
+    }]);
+
+    // Rollback of an unrelated failure should also treat unavailable userScripts as non-fatal
+    storage.whitelist = ['before-failure.example'];
+    const rollbackSandbox = loadHandlers({
+      storage,
+      updateDNRState: async () => ({ ok: true }),
+      reconcileSubscriptionRuntimeState: async () => ({ ok: true }),
+      syncUserScripts: async () => ({ ok: false, unavailable: true, error: 'UserScripts API unavailable' }),
+      syncProxyState: async () => {
+        if (storage.whitelist.includes('rolled-fail.example')) throw new Error('proxy failure');
+        return { ok: true };
+      },
+      syncWebRtcLeakProtection: async () => ({ ok: true }),
+      syncBrowserPrivacyHardening: async () => ({ ok: true }),
+      syncGeolocationProtection: async () => ({ ok: true })
+    });
+
+    const failedResult = await rollbackSandbox.handleConfigImport({
+      settings: makeSettingsImportPayload({
+        config: { enabled: true, networkBlocking: true },
+        whitelist: ['rolled-fail.example']
+      })
+    });
+
+    assert.strictEqual(failedResult.ok, false);
+    assert.strictEqual(failedResult.phase, 'reconciliation');
+    assert.strictEqual(failedResult.step, 'proxy');
+    assert.strictEqual(failedResult.rollback?.succeeded, true);
+    assert.strictEqual(failedResult.rollback?.runtimeRestored, true);
+    assert.deepStrictEqual(plain(storage.whitelist), ['before-failure.example']);
+  });
+
+  await t.test('settings import fails closed on proxy runtime conflict snapshots and syncs pruned post-proxy config', async () => {
+    const conflictStorage = makeSettingsImportStorage();
+    conflictStorage.config = { enabled: true, globalProxyEnabled: false, globalProxyId: null };
+    conflictStorage.whitelist = ['prior.example'];
+    let rollbackProxy = false;
+    const conflictSandbox = loadHandlers({
+      storage: conflictStorage,
+      validateConfig: realValidateConfig,
+      updateDNRState: async () => ({ ok: true }),
+      reconcileSubscriptionRuntimeState: async () => ({ ok: true }),
+      syncUserScripts: async () => ({ ok: true }),
+      syncProxyState: async () => {
+        if (!rollbackProxy) {
+          rollbackProxy = true;
+          return {
+            available: false,
+            conflict: true,
+            requested: { active: true, routeCount: 1, global: true, test: false },
+            effective: { active: false, routeCount: 0, global: false },
+            error: 'Controlled by another extension'
+          };
+        }
+        return {
+          available: true,
+          conflict: false,
+          requested: { active: false, routeCount: 0, global: false, test: false },
+          effective: { active: false, routeCount: 0, global: false },
+          error: null
+        };
+      },
+      syncWebRtcLeakProtection: async () => ({ ok: true }),
+      syncBrowserPrivacyHardening: async () => ({ ok: true }),
+      syncGeolocationProtection: async () => ({ ok: true })
+    });
+
+    const conflictResult = await conflictSandbox.handleConfigImport({
+      settings: makeSettingsImportPayload({
+        whitelist: ['new.example'],
+        config: { enabled: true, networkBlocking: true, globalProxyEnabled: true, globalProxyId: 999 }
+      })
+    });
+    assert.strictEqual(conflictResult.ok, false);
+    assert.strictEqual(conflictResult.phase, 'reconciliation');
+    assert.strictEqual(conflictResult.step, 'proxy');
+    assert.strictEqual(conflictResult.rollback?.succeeded, true);
+    assert.deepStrictEqual(plain(conflictStorage.whitelist), ['prior.example']);
+
+    const pruneStorage = makeSettingsImportStorage();
+    const seenWebRtcConfigs = [];
+    const seenPrivacyConfigs = [];
+    const pruneSandbox = loadHandlers({
+      storage: pruneStorage,
+      validateConfig: realValidateConfig,
+      updateDNRState: async () => ({ ok: true }),
+      reconcileSubscriptionRuntimeState: async () => ({ ok: true }),
+      syncUserScripts: async () => ({ ok: true }),
+      syncProxyState: async () => {
+        pruneStorage.config = { ...pruneStorage.config, globalProxyEnabled: false, globalProxyId: null };
+        return {
+          available: true,
+          conflict: false,
+          requested: { active: false, routeCount: 0, global: false, test: false },
+          effective: { active: false, routeCount: 0, global: false },
+          error: null
+        };
+      },
+      syncWebRtcLeakProtection: async (cfg) => {
+        seenWebRtcConfigs.push(plain(cfg));
+        return { ok: true };
+      },
+      syncBrowserPrivacyHardening: async (cfg) => {
+        seenPrivacyConfigs.push(plain(cfg));
+        return { ok: true };
+      },
+      syncGeolocationProtection: async () => ({ ok: true })
+    });
+
+    const pruneResult = await pruneSandbox.handleConfigImport({
+      settings: makeSettingsImportPayload({
+        config: { enabled: true, globalProxyEnabled: true, globalProxyId: 999 }
+      })
+    });
+    assert.strictEqual(pruneResult.ok, true);
+    assert.strictEqual(seenWebRtcConfigs.length, 1);
+    assert.strictEqual(seenWebRtcConfigs[0].globalProxyEnabled, false);
+    assert.strictEqual(seenWebRtcConfigs[0].globalProxyId, null);
+    assert.strictEqual(seenPrivacyConfigs[0].globalProxyEnabled, false);
+    assert.strictEqual(seenPrivacyConfigs[0].globalProxyId, null);
   });
 
   await t.test('advanced user scriptlet mutations sync registered scripts after successful changes', async () => {

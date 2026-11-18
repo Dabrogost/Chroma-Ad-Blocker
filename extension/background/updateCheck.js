@@ -19,22 +19,71 @@ function buildReleaseZipName(version) {
   return normalized ? `${ASSET_BASENAME}-v${normalized}.zip` : '';
 }
 
+const RELEASE_DOWNLOAD_PREFIX_PATH = '/Dabrogost/Chroma-Ad-Blocker/releases/download/';
+
 function isReleaseDownloadUrl(downloadUrl, assetName) {
-  return (
-    typeof downloadUrl === 'string'
-    && typeof assetName === 'string'
-    && downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)
-    && downloadUrl.endsWith(`/${assetName}`)
-  );
+  if (typeof downloadUrl !== 'string' || typeof assetName !== 'string' || !assetName) return false;
+  if (assetName.includes('/') || assetName.includes('\\') || assetName === '.' || assetName === '..') return false;
+  if (!downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) return false;
+  if (downloadUrl.includes('?') || downloadUrl.includes('#') || downloadUrl.includes('\\') || /\s/.test(downloadUrl)) {
+    return false;
+  }
+
+  const remainder = downloadUrl.slice(RELEASE_DOWNLOAD_PREFIX.length);
+  const segments = remainder.split('/');
+  if (segments.length !== 2) return false;
+  for (const segment of segments) {
+    if (!segment || segment === '.' || segment === '..') return false;
+    let decoded;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      return false;
+    }
+    if (!decoded || decoded === '.' || decoded === '..' || decoded.includes('/') || decoded.includes('\\')) {
+      return false;
+    }
+  }
+  if (segments[1] !== assetName) return false;
+
+  if (typeof URL === 'function') {
+    try {
+      const url = new URL(downloadUrl);
+      if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password) {
+        return false;
+      }
+      if (url.search || url.hash || url.pathname !== `${RELEASE_DOWNLOAD_PREFIX_PATH}${remainder}`) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+function parseVersionParts(version) {
+  const normalized = normalizeVersion(version);
+  if (!normalized) return null;
+  const [coreWithPre] = normalized.split('+');
+  const dashIdx = coreWithPre.indexOf('-');
+  const core = dashIdx === -1 ? coreWithPre : coreWithPre.slice(0, dashIdx);
+  const prerelease = dashIdx === -1 ? '' : coreWithPre.slice(dashIdx + 1);
+  if (!/^\d+(?:\.\d+){0,3}$/.test(core)) return null;
+  const parts = core.split('.').map(Number);
+  while (parts.length < 4) parts.push(0);
+  return { parts, prerelease };
 }
 
 function isNewerVersion(local, remote) {
-  const parse = v => normalizeVersion(v).split('.').map(Number);
-  const [lMaj, lMin, lPat] = parse(local);
-  const [rMaj, rMin, rPat] = parse(remote);
-  if (rMaj !== lMaj) return rMaj > lMaj;
-  if (rMin !== lMin) return rMin > lMin;
-  return rPat > lPat;
+  const l = parseVersionParts(local);
+  const r = parseVersionParts(remote);
+  if (!l || !r) return false;
+  for (let i = 0; i < 4; i++) {
+    if (r.parts[i] !== l.parts[i]) return r.parts[i] > l.parts[i];
+  }
+  if (l.prerelease && !r.prerelease) return true;
+  return false;
 }
 
 function normalizeAsset(asset) {

@@ -683,4 +683,60 @@ test('user scriptlet resource storage manager', async (t) => {
     assert.strictEqual(storage.userScriptletRules.length, 1);
     assert.strictEqual(storage.userScriptletRules[0].scriptlet, 'keep-helper');
   });
+
+  await t.test('resource parser preserves JS division lines and skips base64 non-JS resources', () => {
+    const { api } = loadUserResources();
+    const bundle = [
+      'calc.js text/javascript;charset=utf-8',
+      'function ratio(total, count) {',
+      '  return total/count',
+      '}',
+      '',
+      'pixel.png image/png;base64 iVBORw0KGgoAAAANSUhEUg==',
+      '',
+      'other.js application/javascript (function() { window.__other = true; })();'
+    ].join('\n');
+
+    const parsed = api.parseUserScriptletResourceText(bundle);
+    assert.strictEqual(parsed.resources.length, 2);
+    assert.strictEqual(parsed.skipped.unsupportedMime, 1);
+    assert.strictEqual(parsed.resources[0].name, 'calc');
+    assert.match(parsed.resources[0].code, /return total\/count/);
+    assert.doesNotMatch(parsed.resources[0].code, /pixel\.png|iVBOR/);
+    assert.strictEqual(parsed.resources[1].name, 'other');
+  });
+
+  await t.test('refresh avoids conditional headers and rejects 304 when cached resources for the source are missing', async () => {
+    const seenHeaders = [];
+    const storage = {
+      userScriptletSources: [{
+        id: 'missing-cache',
+        name: 'Missing Cache',
+        url: 'https://cdn.example.com/missing.js',
+        etag: '"v9"',
+        lastModified: 'Fri, 19 Jun 2026 12:00:00 GMT',
+        lastError: null,
+        resourceCount: 1,
+        resourceNames: ['alpha.js']
+      }],
+      userScriptletResources: {}
+    };
+    const { api } = loadUserResources({
+      storage,
+      fetch: async (_url, init) => {
+        seenHeaders.push(init?.headers || {});
+        return {
+          ok: false,
+          status: 304,
+          headers: makeHeaders({ etag: '"v9"' }),
+          text: async () => ''
+        };
+      }
+    });
+
+    const res = await api.refreshUserScriptletSource('missing-cache');
+    assert.strictEqual(res.ok, false);
+    assert.match(res.error, /cache.*missing.*304/i);
+    assert.deepStrictEqual(plain(seenHeaders), [{}]);
+  });
 });

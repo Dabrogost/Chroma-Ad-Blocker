@@ -300,6 +300,103 @@ test('update package ZIP inspection', async (t) => {
     assert.strictEqual(result.code, 'unsafe_zip_path');
   });
 
+  await t.test('rejects unsafe manifest-referenced paths and missing string default_icon', async () => {
+    const api = loadUpdatePackage();
+    const unsafeManifest = makeManifest();
+    unsafeManifest.background.service_worker = '../outside/evil.js';
+    const unsafeZip = makePackageZip({ manifest: unsafeManifest });
+
+    const unsafeResult = await api.inspectUpdateZip(exactArrayBuffer(unsafeZip), {
+      expectedVersion: '1.0.2',
+      currentManifest: { version: '1.0.1' }
+    });
+    assert.strictEqual(unsafeResult.ok, false);
+    assert.strictEqual(unsafeResult.code, 'unsafe_manifest_path');
+
+    const stringIconManifest = makeManifest();
+    stringIconManifest.action.default_icon = 'icons/missing.png';
+    const missingIconZip = makePackageZip({ manifest: stringIconManifest });
+
+    const missingIconResult = await api.inspectUpdateZip(exactArrayBuffer(missingIconZip), {
+      expectedVersion: '1.0.2',
+      currentManifest: { version: '1.0.1' }
+    });
+    assert.strictEqual(missingIconResult.ok, false);
+    assert.strictEqual(missingIconResult.code, 'missing_manifest_files');
+    assert.match(missingIconResult.reason, /icons\/missing\.png/);
+  });
+
+  await t.test('rejects corrupt non-manifest ZIP entries during inspection', async () => {
+    const api = loadUpdatePackage();
+    const zip = makePackageZip();
+    // Corrupt one compressed byte inside the second entry (background/background.js) while leaving manifest.json intact.
+    const secondLocalOffset = zip.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]), 1);
+    assert.ok(secondLocalOffset > 0);
+    const dataOffset = secondLocalOffset + 30 + 'background/background.js'.length;
+    zip[dataOffset] ^= 0xff;
+
+    const result = await api.inspectUpdateZip(exactArrayBuffer(zip), {
+      expectedVersion: '1.0.2',
+      currentManifest: { version: '1.0.1' }
+    });
+
+    assert.strictEqual(result.ok, false);
+    assert.strictEqual(result.code, 'invalid_zip');
+  });
+
+  await t.test('rejects GitHub release asset URLs containing path traversal or query strings', async () => {
+    const zip = makePackageZip();
+    const updateManifestBytes = makeUpdateManifestBuffer(zip);
+    const traversalManifestAsset = {
+      name: 'updates.json',
+      downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2/../../../../../attacker/evil/releases/download/v1.0.2/updates.json',
+      size: updateManifestBytes.byteLength
+    };
+    const apiManifestTrav = loadUpdatePackage({
+      checkForUpdate: async () => ({
+        updateAvailable: true,
+        latestVersion: '1.0.2',
+        asset: {
+          name: 'chroma-ad-blocker-v1.0.2.zip',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2/chroma-ad-blocker-v1.0.2.zip',
+          size: zip.byteLength
+        },
+        assetStatus: 'found',
+        updateManifestAsset: traversalManifestAsset,
+        updateManifestStatus: 'found'
+      })
+    });
+
+    const manifestRes = await apiManifestTrav.inspectLatestUpdatePackage({ force: true });
+    assert.strictEqual(manifestRes.ok, false);
+    assert.strictEqual(manifestRes.code, 'invalid_update_manifest_url');
+
+    const validManifestAsset = makeUpdateManifestAsset(updateManifestBytes);
+    const apiZipQuery = loadUpdatePackage({
+      checkForUpdate: async () => ({
+        updateAvailable: true,
+        latestVersion: '1.0.2',
+        asset: {
+          name: 'chroma-ad-blocker-v1.0.2.zip',
+          downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2/other.zip?x=/chroma-ad-blocker-v1.0.2.zip',
+          size: zip.byteLength
+        },
+        assetStatus: 'found',
+        updateManifestAsset: validManifestAsset,
+        updateManifestStatus: 'found'
+      }),
+      fetch: async () => ({
+        ok: true,
+        headers: { get: () => String(updateManifestBytes.byteLength) },
+        arrayBuffer: async () => exactArrayBuffer(updateManifestBytes)
+      })
+    });
+
+    const zipRes = await apiZipQuery.inspectLatestUpdatePackage({ force: true });
+    assert.strictEqual(zipRes.ok, false);
+    assert.strictEqual(zipRes.code, 'invalid_asset_url');
+  });
+
   await t.test('downloads the exact release asset and inspects its package shape', async () => {
     const zip = makePackageZip();
     const updateManifestBytes = makeUpdateManifestBuffer(zip);
@@ -537,6 +634,18 @@ test('update package ZIP inspection', async (t) => {
 
     assert.strictEqual(result.ok, false);
     assert.strictEqual(result.code, 'download_hash_mismatch');
+    assert.strictEqual(result.updateAvailable, true);
+    assert.strictEqual(result.latestVersion, '1.0.2');
+  });
+
+  await t.test('accepts 4-part newer ZIP manifest version over 3-part installed version', async () => {
+    const zip = makePackageZip({ manifest: makeManifest('1.10.2.1') });
+    const inspected = await loadUpdatePackage({ manifestVersion: '1.10.2' }).inspectUpdateZip(exactArrayBuffer(zip), {
+      expectedVersion: '1.10.2.1',
+      currentManifest: { name: 'Chroma Ad-Blocker', version: '1.10.2' }
+    });
+    assert.strictEqual(inspected.ok, true);
+    assert.strictEqual(inspected.package.version, '1.10.2.1');
   });
 
   await t.test('reports unavailable release metadata as an inspection failure', async () => {

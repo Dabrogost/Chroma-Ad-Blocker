@@ -34,6 +34,11 @@ test('static dedupe index compacts only the exact canonical domain-block shape',
   };
 
   assert.strictEqual(canonicalDomainBlockDomain(canonical), 'ads.example');
+  assert.strictEqual(canonicalDomainBlockDomain(domainBlockRule('Ads.Example')), 'ads.example');
+  assert.strictEqual(
+    networkRuleDedupeKey(domainBlockRule('Ads.Example')),
+    networkRuleDedupeKey(canonical)
+  );
   assert.deepStrictEqual(classifyStaticRule(canonical), {
     type: 'domainBlockDomain',
     value: 'ads.example'

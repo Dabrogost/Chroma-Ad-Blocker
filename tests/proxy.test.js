@@ -20,6 +20,7 @@ function createProxySandbox({
   proxyConfig,
   readStartupStorage = false,
   startupProxyConfigs,
+  startupStoragePromise = null,
   fetchImpl,
   decryptImpl,
   random = () => 0,
@@ -31,6 +32,8 @@ function createProxySandbox({
   proxyClearTakesEffect = true
 } = {}) {
   let authListener = null;
+  let completedListener = null;
+  let errorListener = null;
   let storageChangeListener = null;
   let proxySettingsChangeListener = null;
   const proxySetCalls = [];
@@ -66,6 +69,9 @@ function createProxySandbox({
               result[key] = readStartupStorage
                 ? (key === 'proxyConfigs' ? startupProxyConfigs : storage[key])
                 : undefined;
+            }
+            if (startupStoragePromise) {
+              return startupStoragePromise.then(() => result);
             }
             // Run module bootstrap deterministically before the harness is
             // returned; later string-key reads still use ordinary promises.
@@ -120,6 +126,8 @@ function createProxySandbox({
       }
     },
     webRequest: {
+      onCompleted: { addListener: (listener) => { completedListener = listener; } },
+      onErrorOccurred: { addListener: (listener) => { errorListener = listener; } },
       onAuthRequired: {
         addListener: (listener) => {
           authListener = listener;
@@ -192,6 +200,8 @@ function createProxySandbox({
     get authListener() {
       return authListener;
     },
+    get completedListener() { return completedListener; },
+    get errorListener() { return errorListener; },
     get storageChangeListener() {
       return storageChangeListener;
     },
@@ -1229,6 +1239,42 @@ test('Proxy auth matching hardening', async (t) => {
     assert.strictEqual(harness.getProxyAuthAttemptCount(), 1024);
   });
 
+  await t.test('completed and errored requests release auth tracking so busy sessions exceed 1024 challenges cleanly', async () => {
+    const unique = createProxySandbox({
+      proxyConfigs: [baseProxy({ id: 1, authIv: 'iv1', authCipher: 'cipher1' })]
+    });
+    await activateStoredRoutes(unique);
+
+    for (let index = 0; index < 1030; index++) {
+      const requestId = `completed-${index}`;
+      const res = await invokeAuth(unique, {
+        isProxy: true,
+        requestId,
+        url: 'https://example.com/video',
+        challenger: { host: 'proxy.example.com', port: 8080 }
+      });
+      assert.deepStrictEqual(plain(res), {
+        authCredentials: { username: 'user:iv1', password: 'pass:cipher1' }
+      });
+      if (index % 2 === 0) {
+        unique.completedListener({ requestId });
+      } else {
+        unique.errorListener({ requestId });
+      }
+    }
+
+    assert.strictEqual(unique.getProxyAuthAttemptCount(), 0);
+    const overCapRes = await invokeAuth(unique, {
+      isProxy: true,
+      requestId: 'completed-1030',
+      url: 'https://example.com/video',
+      challenger: { host: 'proxy.example.com', port: 8080 }
+    });
+    assert.deepStrictEqual(plain(overCapRes), {
+      authCredentials: { username: 'user:iv1', password: 'pass:cipher1' }
+    });
+  });
+
   await t.test('SOCKS routes never release credentials by exact or port-only matching', async () => {
     const unique = createProxySandbox({
       proxyConfigs: [
@@ -1637,5 +1683,121 @@ test('Proxy ownership and effective routing', async t => {
     assert.strictEqual(status.requested.active, false);
     assert.strictEqual(status.effective.active, false);
     assert.strictEqual(status.levelOfControl, 'controllable_by_this_extension');
+  });
+});
+
+test('Proxy wake and in-flight sync auth coordination', async t => {
+  async function invokeAuth(harness, details) {
+    return new Promise(resolve => harness.authListener(details, resolve));
+  }
+
+  await t.test('service worker wake waits for startup route recovery before evaluating onAuthRequired', async () => {
+    const proxy = baseProxy({ authIv: 'wake-iv', authCipher: 'wake-cipher' });
+    const preloaded = createProxySandbox({ proxyConfigs: [proxy] });
+    await preloaded.syncProxyState([proxy]);
+    const existingPac = pacData(preloaded);
+
+    let resolveStartupRead;
+    const startupGate = new Promise(resolve => { resolveStartupRead = resolve; });
+    const wakeHarness = createProxySandbox({
+      proxyConfigs: [proxy],
+      readStartupStorage: true,
+      startupProxyConfigs: [proxy],
+      startupStoragePromise: startupGate,
+      proxyLevelOfControl: 'controlled_by_this_extension',
+      proxySettingValue: { mode: 'pac_script', pacScript: { data: existingPac } }
+    });
+
+    const authPromise = invokeAuth(wakeHarness, {
+      isProxy: true,
+      requestId: 'wake-auth-1',
+      url: 'https://example.com/video',
+      challenger: { host: 'proxy.example.com', port: 8080 }
+    });
+
+    // Ensure auth handler has entered its async path before storage read completes.
+    await new Promise(resolve => setTimeout(resolve, 15));
+    resolveStartupRead();
+
+    assert.deepStrictEqual(plain(await authPromise), {
+      authCredentials: { username: 'user:wake-iv', password: 'pass:wake-cipher' }
+    });
+    assert.strictEqual(
+      wakeHarness.healthDiagnostics.some(entry => entry.id === 'proxyControl'),
+      false
+    );
+  });
+
+  await t.test('onAuthRequired and getProxyRoutingStatus wait for in-flight syncProxyState and storage changes', async () => {
+    const proxy = baseProxy({ authIv: 'sync-iv', authCipher: 'sync-cipher' });
+    const harness = createProxySandbox({ proxyConfigs: [proxy] });
+    await harness.syncProxyState([proxy]);
+    harness.healthDiagnostics.length = 0;
+
+    const originalGet = harness.chrome.storage.local.get;
+    let releaseConfigRead;
+    let signalConfigRead;
+    const configReadStarted = new Promise(resolve => { signalConfigRead = resolve; });
+    const configReadGate = new Promise(resolve => { releaseConfigRead = resolve; });
+    harness.chrome.storage.local.get = async keys => {
+      if (keys === 'config') {
+        signalConfigRead();
+        await configReadGate;
+      }
+      return originalGet(keys);
+    };
+
+    const inflightSync = harness.syncProxyState([proxy]);
+    await configReadStarted;
+
+    const authPromise = invokeAuth(harness, {
+      isProxy: true,
+      requestId: 'inflight-auth-1',
+      url: 'https://example.com/video',
+      challenger: { host: 'proxy.example.com', port: 8080 }
+    });
+    const statusPromise = harness.getProxyRoutingStatus({ refresh: true });
+
+    await new Promise(resolve => setTimeout(resolve, 15));
+    releaseConfigRead();
+    await inflightSync;
+
+    assert.deepStrictEqual(plain(await authPromise), {
+      authCredentials: { username: 'user:sync-iv', password: 'pass:sync-cipher' }
+    });
+    const status = await statusPromise;
+    assert.strictEqual(status.effective.active, true);
+    assert.strictEqual(
+      harness.healthDiagnostics.some(entry => entry.id === 'proxyControl'),
+      false
+    );
+
+    // Also verify releasing routes mid-flight still fails closed on auth.
+    let releaseSecondConfigRead;
+    const secondConfigGate = new Promise(resolve => { releaseSecondConfigRead = resolve; });
+    let signalSecondConfigRead;
+    const secondConfigStarted = new Promise(resolve => { signalSecondConfigRead = resolve; });
+    harness.chrome.storage.local.get = async keys => {
+      if (keys === 'config') {
+        signalSecondConfigRead();
+        await secondConfigGate;
+      }
+      return originalGet(keys);
+    };
+    const decryptCountBefore = harness.decryptCalls.length;
+    const disableSync = harness.syncProxyState([]);
+    await secondConfigStarted;
+    const cancelAuthPromise = invokeAuth(harness, {
+      isProxy: true,
+      requestId: 'inflight-cancel-1',
+      url: 'https://example.com/video',
+      challenger: { host: 'proxy.example.com', port: 8080 }
+    });
+    await new Promise(resolve => setTimeout(resolve, 15));
+    releaseSecondConfigRead();
+    await disableSync;
+
+    assert.deepStrictEqual(plain(await cancelAuthPromise), { cancel: true });
+    assert.strictEqual(harness.decryptCalls.length, decryptCountBefore);
   });
 });
