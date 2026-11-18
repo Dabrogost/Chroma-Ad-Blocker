@@ -688,3 +688,115 @@ test('MutationObserver sweep hides dynamically inserted elements and descendants
   assert.strictEqual(idDescendant.style.getPropertyValue('display'), '');
   assert.strictEqual(directSelectorNode.style.getPropertyValue('display'), '');
 });
+
+test('recipe protection blocks _as_bfa_retry redirects, wraps pre-patched setAttribute, and neutralizes pending bad scripts', async () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+    url: 'https://bellyfull.net/hash-brown-egg-casserole/'
+  });
+  const { window } = dom;
+  const { document } = window;
+
+  const priorCalls = [];
+  const baseSetAttribute = window.Element.prototype.setAttribute;
+  const prePatchedSetAttribute = function setAttribute(name, value) {
+    priorCalls.push([String(name), String(value)]);
+    return baseSetAttribute.call(this, name, value);
+  };
+  window.Element.prototype.setAttribute = prePatchedSetAttribute;
+
+  const pendingBadScript = document.createElement('script');
+  baseSetAttribute.call(pendingBadScript, 'src', 'https://html-load.com/bundle.js');
+  baseSetAttribute.call(pendingBadScript, 'onerror', 'console.log("html-load.com");' + 'x'.repeat(220));
+  pendingBadScript.onerror = () => {};
+  document.head.appendChild(pendingBadScript);
+
+  const assignCalls = [];
+  const replaceCalls = [];
+  const locationProxy = {
+    hostname: 'bellyfull.net',
+    assign(url) { assignCalls.push(url); },
+    replace(url) { replaceCalls.push(url); },
+    reload() {}
+  };
+  class FakeLocation {}
+  FakeLocation.prototype.assign = locationProxy.assign;
+  FakeLocation.prototype.replace = locationProxy.replace;
+  FakeLocation.prototype.reload = locationProxy.reload;
+
+  const bridgeState = { enabled: true, revision: 1 };
+  const api = Object.freeze({
+    createCssStyleSheet: () => ({ replaceSync() {} }),
+    getAdoptedStyleSheets: () => document.adoptedStyleSheets || [],
+    setAdoptedStyleSheets: sheets => { document.adoptedStyleSheets = sheets; },
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+    addEventListener: window.addEventListener.bind(window),
+    removeEventListener: window.removeEventListener.bind(window)
+  });
+  const internalBridge = {};
+  Object.defineProperties(internalBridge, {
+    config: { enumerable: true, get: () => Object.freeze({ enabled: bridgeState.enabled }) },
+    revision: { enumerable: true, get: () => bridgeState.revision },
+    api: { enumerable: true, value: api }
+  });
+  Object.freeze(internalBridge);
+  Object.defineProperty(window, '__CHROMA_INTERNAL__', {
+    value: internalBridge,
+    writable: false,
+    configurable: false
+  });
+
+  const sandbox = vm.createContext({
+    window,
+    document,
+    location: locationProxy,
+    history: window.history,
+    Document: window.Document,
+    Element: window.Element,
+    HTMLScriptElement: window.HTMLScriptElement,
+    Location: FakeLocation,
+    History: window.History,
+    MutationObserver: class { observe() {} disconnect() {} },
+    CSSStyleSheet: class { replaceSync() {} },
+    Node: window.Node,
+    CustomEvent: window.CustomEvent,
+    console,
+    Map,
+    Set,
+    WeakMap,
+    Reflect,
+    Object,
+    Array,
+    Number,
+    String
+  });
+  sandbox.globalThis = sandbox;
+  vm.runInContext(recipesCode, sandbox);
+
+  assert.strictEqual(pendingBadScript.getAttribute('src'), 'data:text/javascript,void%200');
+  assert.strictEqual(pendingBadScript.getAttribute('onerror'), null);
+  assert.strictEqual(pendingBadScript.onerror, null);
+
+  const lateScript = document.createElement('script');
+  lateScript.setAttribute('src', 'https://html-load.com/bundle.js');
+  lateScript.setAttribute('onerror', 'fetch("https://error-report.com/");' + 'x'.repeat(220));
+  assert.strictEqual(lateScript.getAttribute('src'), 'data:text/javascript,void%200');
+  assert.strictEqual(lateScript.getAttribute('onerror'), null);
+
+  FakeLocation.prototype.replace('https://www.allrecipes.com/?_as_bfa_retry=1');
+  FakeLocation.prototype.assign('https://www.allrecipes.com/?_as_bfa_retry=1');
+  assert.deepStrictEqual(replaceCalls, []);
+  assert.deepStrictEqual(assignCalls, []);
+
+  FakeLocation.prototype.replace('https://www.allrecipes.com/recipe/123');
+  assert.deepStrictEqual(replaceCalls, ['https://www.allrecipes.com/recipe/123']);
+
+  bridgeState.enabled = false;
+  bridgeState.revision = 2;
+  document.dispatchEvent(new window.CustomEvent('__CHROMA_CONFIG_UPDATE__', {
+    detail: { enabled: false }
+  }));
+  assert.strictEqual(window.Element.prototype.setAttribute, prePatchedSetAttribute);
+  FakeLocation.prototype.assign('https://www.allrecipes.com/?_as_bfa_retry=1');
+  assert.deepStrictEqual(assignCalls, ['https://www.allrecipes.com/?_as_bfa_retry=1']);
+});

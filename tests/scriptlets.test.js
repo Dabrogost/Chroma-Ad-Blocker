@@ -2535,3 +2535,55 @@ test('fingerprint randomization language normalization', async (t) => {
     assert.deepStrictEqual(plain(vm.runInContext('navigator.languages', sandbox)), ['fr']);
   });
 });
+
+test('protectStylesheets preserves real stylesheets while allowing removal of empty probe elements', () => {
+  const { JSDOM } = require('jsdom');
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+    url: 'https://www.allrecipes.com/'
+  });
+  const { window } = dom;
+  const { document } = window;
+
+  const sandbox = {
+    window,
+    document,
+    Node: window.Node,
+    Element: window.Element,
+    console,
+    Array
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(libCode, sandbox);
+  vm.runInContext('protectStylesheets()', sandbox);
+
+  const probeLink = document.createElement('link');
+  probeLink.setAttribute('rel', 'stylesheet');
+  probeLink.setAttribute('type', 'text/css');
+  document.head.appendChild(probeLink);
+  probeLink.remove();
+  assert.strictEqual(document.head.contains(probeLink), false, 'empty probe <link rel="stylesheet"> without href should be removable');
+
+  const emptyStyle = document.createElement('style');
+  document.head.appendChild(emptyStyle);
+  document.head.removeChild(emptyStyle);
+  assert.strictEqual(document.head.contains(emptyStyle), false, 'empty probe <style> should be removable');
+
+  const realLink = document.createElement('link');
+  realLink.setAttribute('rel', 'stylesheet');
+  realLink.setAttribute('href', 'https://www.allrecipes.com/static/site.css');
+  document.head.appendChild(realLink);
+  realLink.remove();
+  assert.strictEqual(document.head.contains(realLink), true, 'real <link rel="stylesheet" href="..."> must stay protected');
+  document.head.removeChild(realLink);
+  assert.strictEqual(document.head.contains(realLink), true, 'removeChild must also preserve real stylesheet links');
+
+  const realStyle = document.createElement('style');
+  realStyle.textContent = 'body { color: #111; }';
+  document.head.appendChild(realStyle);
+  realStyle.remove();
+  assert.strictEqual(document.head.contains(realStyle), true, 'non-empty <style> must stay protected');
+  document.head.replaceChildren();
+  assert.strictEqual(document.head.contains(realLink), true);
+  assert.strictEqual(document.head.contains(realStyle), true);
+});

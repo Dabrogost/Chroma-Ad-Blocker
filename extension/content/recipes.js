@@ -404,35 +404,13 @@ ${HIDE_SELECTORS.join(',\n')} {
       return PAYLOAD_MARKERS.some(m => s.includes(m));
     } catch (_) { return false; }
   }
-  // ─── NATIVE INTEGRITY CHECK ─────
-  // Verify that setAttribute/getAttribute are still native before capturing.
-  // If a page script has already monkey-patched these prototypes, skip
-  // patching to avoid operating on untrusted code (dead-man's-switch).
-  const _fnToString = Function.prototype.toString;
-  function _isNative(fn) {
-    try {
-      return typeof fn === 'function' && _fnToString.call(fn).includes('[native code]');
-    } catch (_) { return false; }
-  }
 
-  const initialSetAttribute = Element.prototype.setAttribute;
   const initialGetAttribute = Element.prototype.getAttribute;
-  const initialAttributePrimitivesTrusted =
-    _isNative(initialSetAttribute) && _isNative(initialGetAttribute);
-  let attributePatchesEstablished = false;
 
   function installElementAttributePatches() {
-    const currentSetAttribute = Element.prototype.setAttribute;
-    const currentGetAttribute = Element.prototype.getAttribute;
-    if (!initialAttributePrimitivesTrusted) return;
-    // Before the first trusted installation, refuse a page replacement made
-    // while configuration was still loading. After a prior Chroma lifecycle,
-    // a preserved page wrapper is expected and receives a fresh active layer.
-    if (!attributePatchesEstablished &&
-        (currentSetAttribute !== initialSetAttribute || currentGetAttribute !== initialGetAttribute)) return;
 
     // Patch setAttribute so `el.setAttribute('src', url)` is caught too.
-    const setWrapper = patchMethod(Element.prototype, 'setAttribute', (original, lifecycle) => function (name, value) {
+    patchMethod(Element.prototype, 'setAttribute', (original, lifecycle) => function (name, value) {
       if (!lifecycle.active) return Reflect.apply(original, this, arguments);
       const lowerName = String(name).toLowerCase();
       if (this.tagName === 'SCRIPT' && lowerName === 'src' && isBadUrl(value)) {
@@ -443,6 +421,7 @@ ${HIDE_SELECTORS.join(',\n')} {
       if (this.tagName === 'SCRIPT' &&
           (lowerName === 'onerror' || lowerName === 'onload') &&
           (looksLikeInjectorPayload(value) || (isYahooHomepage &&
+            typeof initialGetAttribute === 'function' &&
             Reflect.apply(initialGetAttribute, this, ['data-chroma-neutered']) === '1'))) {
         log('blocked setAttribute', lowerName, 'on injector', this.id || '(no id)');
         return;
@@ -456,27 +435,26 @@ ${HIDE_SELECTORS.join(',\n')} {
 
     // The HTML parser sets `onerror`/`onload` directly (not via setAttribute),
     // so a sibling inline script can eval the payload before an observer fires.
-    const getWrapper = patchMethod(Element.prototype, 'getAttribute', (original, lifecycle) => function (name) {
+    patchMethod(Element.prototype, 'getAttribute', (original, lifecycle) => function (name) {
       const value = Reflect.apply(original, this, arguments);
       if (!lifecycle.active) return value;
       if (this.tagName === 'SCRIPT') {
         const lowerName = String(name).toLowerCase();
         if ((lowerName === 'onerror' || lowerName === 'onload') &&
             (looksLikeInjectorPayload(value) || (isYahooHomepage &&
-              Reflect.apply(initialGetAttribute, this, ['data-chroma-neutered']) === '1'))) {
+              Reflect.apply(original, this, ['data-chroma-neutered']) === '1'))) {
           log('hid injector', lowerName, 'from getAttribute');
           return '';
         }
       }
       return value;
     });
-    if (setWrapper || getWrapper) attributePatchesEstablished = true;
   }
 
   // ─── REDIRECT GUARD ─────
   // content-loader.com / error-report.com redirect the top frame when they
   // can't phone home. Block any assignment that tries to send us there.
-  const REDIRECT_BLOCKLIST = ['content-loader.com', 'error-report.com'];
+  const REDIRECT_BLOCKLIST = ['content-loader.com', 'error-report.com', '_as_bfa_retry='];
   function looksLikeRedirectTrap(v) {
     try {
       const s = String(v);
@@ -780,11 +758,47 @@ ${HIDE_SELECTORS.join(',\n')} {
     installYahooFeatures();
   }
 
+  function neutralizePendingBadScripts() {
+    if (!isActive) return;
+    let scripts;
+    try {
+      scripts = queryAllInScope(document, 'script');
+    } catch (_) {
+      return;
+    }
+    for (const script of scripts) {
+      if (!script || script.tagName !== 'SCRIPT') continue;
+      let src = '';
+      let onerrorAttr = '';
+      let onloadAttr = '';
+      try {
+        src = typeof script.getAttribute === 'function' ? (script.getAttribute('src') || '') : (script.src || '');
+        onerrorAttr = typeof script.getAttribute === 'function' ? (script.getAttribute('onerror') || '') : '';
+        onloadAttr = typeof script.getAttribute === 'function' ? (script.getAttribute('onload') || '') : '';
+      } catch (_) {}
+      const badSrc = isBadUrl(src);
+      const badPayload = looksLikeInjectorPayload(onerrorAttr) || looksLikeInjectorPayload(onloadAttr);
+      if (!badSrc && !badPayload) continue;
+      try {
+        if (badSrc && typeof script.setAttribute === 'function') {
+          script.setAttribute('src', NOOP_SRC);
+        }
+        if (typeof script.removeAttribute === 'function') {
+          if (badSrc || looksLikeInjectorPayload(onerrorAttr)) script.removeAttribute('onerror');
+          if (badSrc || looksLikeInjectorPayload(onloadAttr)) script.removeAttribute('onload');
+        }
+        if (badSrc || looksLikeInjectorPayload(onerrorAttr)) script.onerror = null;
+        if (badSrc || looksLikeInjectorPayload(onloadAttr)) script.onload = null;
+      } catch (_) {}
+    }
+  }
+
   function activate() {
     if (isActive) return;
     isActive = true;
     lifecycleGeneration++;
     installApiPatches();
+    neutralizePendingBadScripts();
     injectCSS();
     startDomLifecycle();
     log('activated at bridge revision', lastBridgeRevision);

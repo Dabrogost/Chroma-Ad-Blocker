@@ -402,13 +402,26 @@ export function releaseScrollLock() {
  * Some sites (Raptive/CafeMedia) delete their own CSS when they detect adblockers.
  */
 export function protectStylesheets() {
+  const isNonEmptyStyleElement = (el) => {
+    if (el.textContent && el.textContent.trim()) return true;
+    if (el.childElementCount > 0) return true;
+    try {
+      return !!(el.sheet && el.sheet.cssRules && el.sheet.cssRules.length > 0);
+    } catch (_) {
+      return false;
+    }
+  };
+
   const isStyle = (el) => {
     if (!el || el.nodeType !== 1) return false;
     const tag = el.tagName;
-    if (tag === 'STYLE') return true;
+    if (tag === 'STYLE') return isNonEmptyStyleElement(el);
     if (tag === 'LINK') {
       const rel = el.getAttribute('rel');
-      return rel && rel.toLowerCase().includes('stylesheet');
+      if (!rel || !rel.toLowerCase().includes('stylesheet')) return false;
+      // Ignore empty probe <link rel="stylesheet"> nodes (no href) used by anti-adblock checks.
+      const href = el.getAttribute('href');
+      return !!(href && href.trim());
     }
     return false;
   };
