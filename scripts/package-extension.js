@@ -32,6 +32,7 @@ const REQUIRED_RELEASE_FILES = [
   'README.md',
   'LICENSE.md',
   'content/quiet_console.js',
+  'content/twitch_handler.js',
   'rules/static_dedupe_index.json',
   ...RELEASE_DOC_FILES,
   ...GUIDE_REQUIRED_RELEASE_FILES

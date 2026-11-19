@@ -137,7 +137,7 @@ Supported services include:
 - **YouTube**: `googlevideo.com`, `ytimg.com`, `ggpht.com`, `youtube-nocookie.com`, `youtu.be`, `youtubei.googleapis.com`, `youtube.googleapis.com`
 - **Netflix**: `netflix.net`, `nflxvideo.net`, `nflxext.com`, `nflximg.com`, `nflximg.net`, `nflxso.net`, `nflxsearch.net`
 - **Amazon Prime Video**: `amazonvideo.com`, `primevideo.com`, `aiv-cdn.net`, `pv-cdn.net`, `aiv-delivery.net`, `media-amazon.com`, and `ssl-images-amazon.com`. Regional `amazon.*` domains such as `amazon.de` or `amazon.co.jp` trigger this same CDN expansion when the user adds them; Chroma does not automatically add every regional Amazon hostname.
-- **Twitch**: `ttvnw.net`, `jtvnw.net`, `twitchcdn.net`
+- **Twitch**: When `twitch.tv` or `www.twitch.tv` is enabled on a proxy route, Chroma routes only the playback token and HLS manifest endpoints (`gql.twitch.tv`, `usher.ttvnw.net`, `video-weaver.*.hls.ttvnw.net`, `*.playlist.ttvnw.net`, and `*.playlist.live-video.net`), keeps `www.twitch.tv`, static CDNs (`*.twitchcdn.net`, `*.jtvnw.net`), and `video-edge-*` video segments direct, and conditionally strips the `Authorization` header on `PlaybackAccessToken` GraphQL requests while the Twitch proxy route is active so logged-in sessions receive anonymous regional tokens without disrupting chat, channel points, or subscriptions.
 - **Disney+**: `disney-plus.net`, `dssott.com`, `dssedge.com`, `bamgrid.com`, `disney-plus.com`
 - **Hulu**: `hulumail.com`, `huluim.com`, `hulu.hbomax.com`
 - **Max (HBO)**: `hbomax.com`, `hbo.com`, `hbonow.com`, `hbogo.com`
