@@ -713,6 +713,80 @@ test('Proxy PAC hardening', async (t) => {
     assert.strictEqual(pacDiagnostic.entry.area, 'proxy');
     assert.match(pacDiagnostic.entry.message, /PAC settings/i);
   });
+
+  await t.test('narrows Twitch smart-link routing to playback and manifest endpoints', async () => {
+    for (const sourceHost of ['twitch.tv', 'www.twitch.tv']) {
+      const harness = createProxySandbox({ config: { chromeServiceProxyBypass: false } });
+      await harness.syncProxyState([
+        baseProxy({ id: 4, type: 'HTTPS', host: 'albania.proxy.example', port: 8443, domains: [{ host: sourceHost, enabled: true }] })
+      ]);
+      const pac = pacData(harness);
+      for (const proxied of [
+        'gql.twitch.tv', 'usher.ttvnw.net', 'video-weaver.fra05.hls.ttvnw.net',
+        'video-weaver.us-east-1.abs.hls.ttvnw.net', 'edge.playlist.ttvnw.net', 'foo.playlist.live-video.net'
+      ]) {
+        assert.strictEqual(evaluatePac(pac, proxied), 'HTTPS albania.proxy.example:8443', `${sourceHost} -> ${proxied}`);
+      }
+      for (const direct of [
+        'twitch.tv', 'www.twitch.tv', 'passport.twitch.tv', 'static.twitchcdn.net', 'static-cdn.jtvnw.net',
+        'video-edge-123.ttvnw.net', 'video-edge-123.fra05.abs.hls.ttvnw.net', 'video-weaver.hls.ttvnw.net', 'd2nvs31859zcd8.cloudfront.net'
+      ]) {
+        assert.strictEqual(evaluatePac(pac, direct), 'DIRECT', `${sourceHost} -> ${direct}`);
+      }
+    }
+
+    const harness = createProxySandbox({
+      config: { chromeServiceProxyBypass: false, globalProxyEnabled: true, globalProxyId: 9 }
+    });
+    const twProxy = baseProxy({ id: 4, type: 'HTTPS', host: 'albania.proxy.example', port: 8443, domains: [{ host: 'twitch.tv', enabled: true }] });
+    const globalProxy = baseProxy({ id: 9, host: 'global.proxy.example', port: 8080, domains: [] });
+    await harness.syncProxyState([twProxy, globalProxy]);
+    let pac = pacData(harness);
+    assert.strictEqual(evaluatePac(pac, 'gql.twitch.tv'), 'HTTPS albania.proxy.example:8443');
+    assert.strictEqual(evaluatePac(pac, 'foo.playlist.live-video.net'), 'HTTPS albania.proxy.example:8443');
+    assert.strictEqual(evaluatePac(pac, 'video-edge-123.fra05.abs.hls.ttvnw.net'), 'PROXY global.proxy.example:8080');
+
+    twProxy.domains[0].enabled = false;
+    await harness.syncProxyState([twProxy, globalProxy]);
+    pac = pacData(harness);
+    assert.strictEqual(evaluatePac(pac, 'gql.twitch.tv'), 'PROXY global.proxy.example:8080');
+    assert.strictEqual(evaluatePac(pac, 'usher.ttvnw.net'), 'PROXY global.proxy.example:8080');
+  });
+
+  await t.test('dynamically registers Twitch handler and notifies open tabs only when active', async () => {
+    const harness = createProxySandbox({ config: { enabled: true } });
+    let registered = [];
+    const executed = [];
+    harness.chrome.scripting = {
+      getRegisteredContentScripts: async ({ ids } = {}) => registered.filter(s => !ids || ids.includes(s.id)),
+      registerContentScripts: async (scripts) => { registered.push(...scripts); },
+      unregisterContentScripts: async ({ ids } = {}) => { registered = registered.filter(s => !ids || !ids.includes(s.id)); },
+      executeScript: async (call) => { executed.push(call); }
+    };
+    harness.chrome.tabs = { query: async () => [{ id: 42 }, { id: 99 }] };
+
+    // Global-only or non-Twitch route must not register Twitch handler
+    await harness.syncProxyState([baseProxy({ id: 1, domains: [{ host: 'youtube.com', enabled: true }] })]);
+    assert.strictEqual(registered.length, 0);
+    assert.strictEqual(executed.length, 0);
+
+    // Enabling twitch.tv registers handler and injects into open Twitch tabs
+    const twProxy = baseProxy({ id: 2, type: 'HTTPS', host: 'albania.proxy.example', port: 8443, domains: [{ host: 'twitch.tv', enabled: true }] });
+    await harness.syncProxyState([twProxy]);
+    assert.strictEqual(registered.length, 1);
+    assert.strictEqual(registered[0].id, 'chroma_twitch_proxy');
+    assert.deepStrictEqual(plain(registered[0].js), ['content/twitch_handler.js']);
+    assert.strictEqual(registered[0].world, 'MAIN');
+    assert.strictEqual(executed.filter(c => c.files?.[0] === 'content/twitch_handler.js').length, 2);
+
+    // Disabling twitch.tv unregisters and notifies open Twitch tabs with active: false
+    twProxy.domains[0].enabled = false;
+    harness.storage.config = { enabled: false };
+    await harness.syncProxyState([twProxy]);
+    assert.strictEqual(registered.length, 0);
+    const disableCalls = executed.filter(c => typeof c.func === 'function' && c.args?.[0] === '__CHROMA_TWITCH_PROXY_STATE__');
+    assert.strictEqual(disableCalls.length, 2);
+  });
 });
 
 test('Proxy test runner hardening', async (t) => {
@@ -1327,6 +1401,43 @@ test('Proxy auth matching hardening', async (t) => {
       url: 'https://example.com/video',
       challenger: { host: 'proxy.example.com', port: 8080 }
     })), { cancel: true });
+  });
+
+  await t.test('releases credentials only for narrowed Smart Twitch hosts', async () => {
+    const harness = createProxySandbox({
+      proxyConfigs: [
+        baseProxy({
+          id: 7, type: 'HTTPS', host: 'albania.proxy.example', port: 8443,
+          authIv: 'tw-iv', authCipher: 'tw-cipher',
+          domains: [{ host: 'twitch.tv', enabled: true }]
+        })
+      ]
+    });
+    await activateStoredRoutes(harness);
+
+    for (const [idx, url] of [
+      'https://gql.twitch.tv/gql',
+      'https://usher.ttvnw.net/api/channel/hls/streamer.m3u8',
+      'https://video-weaver.fra05.hls.ttvnw.net/v1/playlist/abc.m3u8',
+      'https://edge.playlist.ttvnw.net/v1/playlist/abc.m3u8',
+      'https://foo.playlist.live-video.net/v1/playlist/abc.m3u8'
+    ].entries()) {
+      assert.deepStrictEqual(plain(await invokeAuth(harness, {
+        isProxy: true, requestId: `tw-allow-${idx}`, url,
+        challenger: { host: 'albania.proxy.example', port: 8443 }
+      })), { authCredentials: { username: 'user:tw-iv', password: 'pass:tw-cipher' } }, url);
+    }
+
+    for (const [idx, url] of [
+      'https://www.twitch.tv/streamer',
+      'https://video-edge-123.ttvnw.net/seg.ts',
+      'https://static.twitchcdn.net/assets/app.js'
+    ].entries()) {
+      assert.deepStrictEqual(plain(await invokeAuth(harness, {
+        isProxy: true, requestId: `tw-deny-${idx}`, url,
+        challenger: { host: 'albania.proxy.example', port: 8443 }
+      })), { cancel: true }, url);
+    }
   });
 });
 

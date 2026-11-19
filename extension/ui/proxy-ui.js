@@ -333,7 +333,10 @@ const ChromaProxyUI = (() => {
     const name = appendElement(info, 'div', 'name proxy-domain-name', domain.host);
     if (isSmartLinkedDomain(domain.host)) {
       const badge = appendElement(name, 'span', 'badge purple smart-link-badge', 'Smart-Link');
-      badge.title = 'Automatically routed proxy domain';
+      const isSmartTwitch = domain.host === 'twitch.tv' || domain.host === 'www.twitch.tv';
+      badge.title = isSmartTwitch
+        ? 'Smart Twitch routing: proxies playback token and HLS manifest endpoints only'
+        : 'Automatically routed proxy domain';
     }
 
     const actions = appendElement(row, 'div', 'proxy-domain-actions');

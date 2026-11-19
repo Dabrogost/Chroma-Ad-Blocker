@@ -81,6 +81,9 @@ let _effectiveRouteGeneration = 0;
 let _requestedRouteModel = EMPTY_ROUTE_MODEL;
 let _effectiveRouteModel = EMPTY_ROUTE_MODEL;
 let _desiredPacData = null;
+let _desiredTwitchHandlerActive = false;
+let _twitchHandlerSyncQueue = Promise.resolve();
+let _lastSyncedTwitchHandlerActive = null;
 let _controlRecoveryQueued = false;
 let _controlRecoveryDirty = false;
 let _lastControlDiagnosticKey = null;
@@ -136,10 +139,15 @@ const YOUTUBE_SMART_LINK_DOMAINS = [
   'youtubei.googleapis.com',
   'youtube.googleapis.com'
 ];
+const SMART_TWITCH_SOURCE_DOMAINS = Object.freeze(['twitch.tv', 'www.twitch.tv']);
+const SMART_TWITCH_EXACT_HOSTS = Object.freeze(['gql.twitch.tv', 'usher.ttvnw.net']);
+const SMART_TWITCH_SUFFIX_DOMAINS = Object.freeze(['playlist.ttvnw.net', 'playlist.live-video.net']);
+const SMART_TWITCH_WEAVER_HOST_RE = /^video-weaver\.[a-z0-9-]+(?:\.[a-z0-9-]+)*\.hls\.ttvnw\.net$/;
+const TWITCH_PROXY_SCRIPT_ID = 'chroma_twitch_proxy';
+const TWITCH_PROXY_STATE_EVENT = '__CHROMA_TWITCH_PROXY_STATE__';
 const PROXY_DOMAIN_EXPANSION = {
   'youtube.com':   YOUTUBE_SMART_LINK_DOMAINS,
   'youtu.be':      ['youtube.com', ...YOUTUBE_SMART_LINK_DOMAINS.filter(domain => domain !== 'youtu.be')],
-  'twitch.tv':     ['ttvnw.net', 'jtvnw.net', 'twitchcdn.net'],
   'netflix.com':   ['netflix.net', 'nflxvideo.net', 'nflxext.com', 'nflximg.com', 'nflximg.net', 'nflxso.net', 'nflxsearch.net'],
   'amazon.com':    ['amazonvideo.com', 'primevideo.com', 'aiv-cdn.net', 'pv-cdn.net', 'aiv-delivery.net', 'media-amazon.com', 'ssl-images-amazon.com'],
   'primevideo.com':['amazon.com', 'amazonvideo.com', 'aiv-cdn.net', 'pv-cdn.net', 'aiv-delivery.net', 'media-amazon.com', 'ssl-images-amazon.com'],
@@ -148,6 +156,10 @@ const PROXY_DOMAIN_EXPANSION = {
   'max.com':       ['hbomax.com', 'hbo.com', 'hbonow.com', 'hbogo.com'],
   'spotify.com':   ['scdn.co', 'spotify.net', 'audio-ak-spotify-com.akamaized.net']
 };
+
+function isSmartTwitchDomain(domain) {
+  return SMART_TWITCH_SOURCE_DOMAINS.includes(domain);
+}
 
 function expandDomains(domains) {
   const expanded = new Set(domains);
@@ -176,6 +188,40 @@ function buildPacDomainConditions(domains) {
   return domains
     .map(d => `host === ${JSON.stringify(d)} || dnsDomainIs(host, ${JSON.stringify('.' + d)})`)
     .join(' || ');
+}
+
+function buildRouteMatchers(rawDomains) {
+  const smartTwitch = rawDomains.some(isSmartTwitchDomain);
+  const otherDomains = rawDomains.filter(d => !isSmartTwitchDomain(d));
+  const domains = [...new Set([
+    ...expandDomains(otherDomains),
+    ...(smartTwitch ? SMART_TWITCH_SUFFIX_DOMAINS : [])
+  ])];
+  const exactHosts = smartTwitch
+    ? SMART_TWITCH_EXACT_HOSTS.filter(host => !domains.some(domain => domainMatches(host, domain)))
+    : [];
+  const hostPatterns = smartTwitch && !domains.some(domain => domainMatches('video-weaver.x.hls.ttvnw.net', domain))
+    ? [SMART_TWITCH_WEAVER_HOST_RE]
+    : [];
+  return {
+    domains,
+    exactHosts,
+    hostPatterns,
+    smartTwitch,
+    hasMatchers: domains.length > 0 || exactHosts.length > 0 || hostPatterns.length > 0
+  };
+}
+
+function buildPacRouteConditions({ domains = [], exactHosts = [], hostPatterns = [] }) {
+  const parts = [];
+  if (domains.length > 0) parts.push(buildPacDomainConditions(domains));
+  for (const exactHost of exactHosts) {
+    parts.push(`host === ${JSON.stringify(exactHost)}`);
+  }
+  for (const pattern of hostPatterns) {
+    parts.push(`${pattern.toString()}.test(host)`);
+  }
+  return parts.join(' || ');
 }
 
 function shuffleEndpoints(endpoints) {
@@ -383,6 +429,27 @@ function getRequestHostname(requestUrl) {
   }
 }
 
+function routeMatchesHost(route, host) {
+  if (Array.isArray(route.domains) && route.domains.some(domain => domainMatches(host, domain))) {
+    return true;
+  }
+  if (Array.isArray(route.exactHosts) && route.exactHosts.includes(host)) {
+    return true;
+  }
+  if (Array.isArray(route.hostPatterns) && route.hostPatterns.some(pattern => pattern.test(host))) {
+    return true;
+  }
+  return false;
+}
+
+function hasSmartTwitchRoute(routeModel) {
+  return !!(
+    routeModel?.hasRoutes &&
+    Array.isArray(routeModel.specificRoutes) &&
+    routeModel.specificRoutes.some(route => route.smartTwitch === true)
+  );
+}
+
 function resolveRouteForRequest(routeModel, requestUrl) {
   if (!routeModel?.hasRoutes) return null;
   const requestHost = getRequestHostname(requestUrl);
@@ -394,7 +461,7 @@ function resolveRouteForRequest(routeModel, requestUrl) {
     return null;
   }
   for (const route of routeModel.specificRoutes) {
-    if (route.domains.some(domain => domainMatches(requestHost, domain))) return route.proxy;
+    if (routeMatchesHost(route, requestHost)) return route.proxy;
   }
   return routeModel.globalRoute?.proxy || null;
 }
@@ -478,6 +545,84 @@ async function syncProxyControlDiagnostic() {
   });
 }
 
+async function notifyOpenTwitchTabs(target) {
+  if (typeof chrome.tabs?.query !== 'function' || typeof chrome.scripting?.executeScript !== 'function') {
+    return;
+  }
+  const tabs = await chrome.tabs.query({ url: '*://*.twitch.tv/*' }).catch(() => []);
+  for (const tab of Array.isArray(tabs) ? tabs : []) {
+    if (!Number.isInteger(tab?.id)) continue;
+    const injection = target
+      ? {
+          target: { tabId: tab.id, allFrames: true },
+          world: 'MAIN',
+          files: ['content/twitch_handler.js']
+        }
+      : {
+          target: { tabId: tab.id, allFrames: true },
+          world: 'MAIN',
+          args: [TWITCH_PROXY_STATE_EVENT],
+          func: (eventName) => {
+            window.dispatchEvent(new CustomEvent(eventName, { detail: { active: false } }));
+          }
+        };
+    await chrome.scripting.executeScript(injection).catch(() => {});
+  }
+}
+
+function syncTwitchProxyHandler() {
+  const shouldBeActive = _proxyRuntimeStatus.effective.active === true &&
+    hasSmartTwitchRoute(_effectiveRouteModel);
+  _desiredTwitchHandlerActive = shouldBeActive;
+  if (
+    typeof chrome.scripting?.getRegisteredContentScripts !== 'function' ||
+    typeof chrome.scripting?.registerContentScripts !== 'function' ||
+    typeof chrome.scripting?.unregisterContentScripts !== 'function'
+  ) {
+    return _twitchHandlerSyncQueue;
+  }
+  const nextTask = _twitchHandlerSyncQueue.then(async () => {
+    try {
+      while (true) {
+        const target = _desiredTwitchHandlerActive;
+        let existing = [];
+        try {
+          existing = await chrome.scripting.getRegisteredContentScripts({ ids: [TWITCH_PROXY_SCRIPT_ID] });
+        } catch (_) {
+          existing = [];
+        }
+        if (target) {
+          if (existing.length === 0) {
+            await chrome.scripting.registerContentScripts([{
+              id: TWITCH_PROXY_SCRIPT_ID,
+              js: ['content/twitch_handler.js'],
+              matches: ['*://*.twitch.tv/*'],
+              runAt: 'document_start',
+              world: 'MAIN',
+              allFrames: true,
+              persistAcrossSessions: true
+            }]);
+          }
+          if (_lastSyncedTwitchHandlerActive !== true) {
+            await notifyOpenTwitchTabs(true);
+          }
+        } else {
+          if (existing.length > 0) {
+            await chrome.scripting.unregisterContentScripts({ ids: [TWITCH_PROXY_SCRIPT_ID] });
+          }
+          if (_lastSyncedTwitchHandlerActive === true || existing.length > 0) {
+            await notifyOpenTwitchTabs(false);
+          }
+        }
+        _lastSyncedTwitchHandlerActive = target;
+        if (_desiredTwitchHandlerActive === target) break;
+      }
+    } catch (_) {}
+  });
+  _twitchHandlerSyncQueue = nextTask.catch(() => {});
+  return nextTask;
+}
+
 async function applyObservedProxyControl(details, generation = _routeGeneration, error = null) {
   if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
   const levelOfControl = details?.levelOfControl || null;
@@ -513,6 +658,7 @@ async function applyObservedProxyControl(details, generation = _routeGeneration,
     error: statusError
   };
   await syncProxyControlDiagnostic();
+  await syncTwitchProxyHandler();
   return getProxyRuntimeStatusSnapshot();
 }
 
@@ -640,13 +786,20 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
     const { id } = pc;
 
     const proxyStr = getProxyString(pc);
-    const routeDomains = masterEnabled && pc.enabled ? expandDomains(getEnabledRouteDomains(pc)) : [];
-    const uniqueRouteDomains = [...new Set(routeDomains)];
+    const routeMatchers = masterEnabled && pc.enabled
+      ? buildRouteMatchers(getEnabledRouteDomains(pc))
+      : { domains: [], exactHosts: [], hostPatterns: [], smartTwitch: false, hasMatchers: false };
 
     // 1. Add Domain-Specific Rules
-    if (uniqueRouteDomains.length > 0) {
-      scriptData += `  if (${buildPacDomainConditions(uniqueRouteDomains)}) return ${proxyStr};\n`;
-      specificRoutes.push({ proxy: pc, domains: uniqueRouteDomains });
+    if (routeMatchers.hasMatchers) {
+      scriptData += `  if (${buildPacRouteConditions(routeMatchers)}) return ${proxyStr};\n`;
+      specificRoutes.push({
+        proxy: pc,
+        domains: routeMatchers.domains,
+        exactHosts: routeMatchers.exactHosts,
+        hostPatterns: routeMatchers.hostPatterns,
+        smartTwitch: routeMatchers.smartTwitch
+      });
     }
 
     // 2. Identify the Global Fallback
