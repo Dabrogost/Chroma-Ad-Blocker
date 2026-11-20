@@ -65,15 +65,13 @@
 
     function isPlaybackOp(op) {
       if (!op || typeof op !== 'object' || Array.isArray(op)) return false;
-      if (typeof op.operationName === 'string') {
-        var name = op.operationName.trim();
-        if (name === 'PlaybackAccessToken' || name === 'PlaybackAccessToken_Template' ||
-            name.indexOf('PlaybackAccessToken_') === 0) return true;
+      if (typeof op.operationName === 'string' && op.operationName.indexOf('PlaybackAccessToken') !== -1) {
+        return true;
       }
       return typeof op.query === 'string' && (
         op.query.indexOf('streamPlaybackAccessToken') !== -1 ||
         op.query.indexOf('videoPlaybackAccessToken') !== -1 ||
-        /\bPlaybackAccessToken(?:_Template)?\b/.test(op.query)
+        op.query.indexOf('PlaybackAccessToken') !== -1
       );
     }
 
