@@ -174,6 +174,23 @@ test('Smart Twitch handler', async (t) => {
       { op: 'PlaybackAccessToken_Template', hadAuth: false },
       { op: 'DropOp', hadAuth: true }
     ]);
+
+    const prefetchRes = await h.window.fetch('https://gql.twitch.tv/gql', {
+      method: 'POST',
+      headers: { Authorization: 'OAuth prefetch-tok', 'Client-Id': 'cid' },
+      body: JSON.stringify([
+        { operationName: 'GuestStarBatchCollaborationQuery' },
+        { operationName: 'PrefetchPlaybackAccessToken' },
+        { operationName: 'PrefetchPlaybackAccessToken' },
+        { operationName: 'Shelves' }
+      ])
+    });
+    assert.deepStrictEqual(await prefetchRes.json(), [
+      { op: 'GuestStarBatchCollaborationQuery', hadAuth: true },
+      { op: 'PrefetchPlaybackAccessToken', hadAuth: false },
+      { op: 'PrefetchPlaybackAccessToken', hadAuth: false },
+      { op: 'Shelves', hadAuth: true }
+    ]);
   });
 
   await t.test('wraps blob Workers across immediate revoke and tracks live enable/disable toggles', async () => {
