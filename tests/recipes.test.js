@@ -800,3 +800,85 @@ test('recipe protection blocks _as_bfa_retry redirects, wraps pre-patched setAtt
   FakeLocation.prototype.assign('https://www.allrecipes.com/?_as_bfa_retry=1');
   assert.deepStrictEqual(assignCalls, ['https://www.allrecipes.com/?_as_bfa_retry=1']);
 });
+
+test('neutralizePendingBadScripts strips pending injector onerror/onload payloads even with benign script src', () => {
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+    url: 'https://www.allrecipes.com/recipe/1/',
+    runScripts: 'dangerously'
+  });
+  const { window } = dom;
+  const { document } = window;
+
+  const onerrorScript = document.createElement('script');
+  onerrorScript.setAttribute('src', 'https://cdn.example.com/thirdparty.js');
+  onerrorScript.setAttribute(
+    'onerror',
+    `window.__ONERROR_PAYLOAD_RAN__ = true; /* loader_light html-load.com ${'x'.repeat(220)} */`
+  );
+
+  const onloadScript = document.createElement('script');
+  onloadScript.setAttribute('src', 'https://cdn.example.com/thirdparty-load.js');
+  onloadScript.setAttribute(
+    'onload',
+    `window.__ONLOAD_PAYLOAD_RAN__ = true; /* loader_light html-load.com ${'x'.repeat(220)} */`
+  );
+
+  const benignScript = document.createElement('script');
+  benignScript.setAttribute('src', 'https://cdn.example.com/benign.js');
+  benignScript.setAttribute('onerror', 'window.__BENIGN_ONERROR_RAN__ = true;');
+
+  document.head.append(onerrorScript, onloadScript, benignScript);
+
+  const bridgeState = { enabled: false, revision: 0 };
+  const api = Object.freeze({
+    createCssStyleSheet: () => ({ replaceSync() {} }),
+    getAdoptedStyleSheets: () => document.adoptedStyleSheets || [],
+    setAdoptedStyleSheets: sheets => { document.adoptedStyleSheets = sheets; },
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => {},
+    addEventListener: window.addEventListener.bind(window),
+    removeEventListener: window.removeEventListener.bind(window)
+  });
+  const internalBridge = {};
+  Object.defineProperties(internalBridge, {
+    config: { enumerable: true, get: () => Object.freeze({ enabled: bridgeState.enabled }) },
+    revision: { enumerable: true, get: () => bridgeState.revision },
+    api: { enumerable: true, value: api }
+  });
+  Object.freeze(internalBridge);
+  Object.defineProperty(window, '__CHROMA_INTERNAL__', {
+    value: internalBridge,
+    writable: false,
+    configurable: false
+  });
+
+  vm.runInContext(recipesCode, dom.getInternalVMContext());
+
+  // Remains untouched while bridge is inert.
+  assert.strictEqual(onerrorScript.hasAttribute('onerror'), true);
+  assert.strictEqual(onloadScript.hasAttribute('onload'), true);
+  assert.strictEqual(benignScript.hasAttribute('onerror'), true);
+
+  // Authenticate bridge activation.
+  bridgeState.enabled = true;
+  bridgeState.revision = 1;
+  document.dispatchEvent(new window.CustomEvent('__CHROMA_CONFIG_UPDATE__'));
+
+  assert.strictEqual(onerrorScript.hasAttribute('onerror'), false);
+  assert.strictEqual(onerrorScript.onerror, null);
+  assert.strictEqual(onerrorScript.getAttribute('src'), 'https://cdn.example.com/thirdparty.js');
+
+  assert.strictEqual(onloadScript.hasAttribute('onload'), false);
+  assert.strictEqual(onloadScript.onload, null);
+  assert.strictEqual(onloadScript.getAttribute('src'), 'https://cdn.example.com/thirdparty-load.js');
+
+  assert.strictEqual(benignScript.hasAttribute('onerror'), true);
+
+  onerrorScript.dispatchEvent(new window.Event('error'));
+  onloadScript.dispatchEvent(new window.Event('load'));
+  benignScript.dispatchEvent(new window.Event('error'));
+
+  assert.strictEqual(Boolean(window.__ONERROR_PAYLOAD_RAN__), false);
+  assert.strictEqual(Boolean(window.__ONLOAD_PAYLOAD_RAN__), false);
+  assert.strictEqual(window.__BENIGN_ONERROR_RAN__, true);
+});

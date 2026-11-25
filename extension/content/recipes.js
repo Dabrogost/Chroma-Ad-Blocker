@@ -771,24 +771,32 @@ ${HIDE_SELECTORS.join(',\n')} {
       let src = '';
       let onerrorAttr = '';
       let onloadAttr = '';
+      const readScriptAttr = (attrName) => {
+        if (typeof initialGetAttribute === 'function') {
+          return Reflect.apply(initialGetAttribute, script, [attrName]) || '';
+        }
+        return typeof script.getAttribute === 'function' ? (script.getAttribute(attrName) || '') : '';
+      };
       try {
-        src = typeof script.getAttribute === 'function' ? (script.getAttribute('src') || '') : (script.src || '');
-        onerrorAttr = typeof script.getAttribute === 'function' ? (script.getAttribute('onerror') || '') : '';
-        onloadAttr = typeof script.getAttribute === 'function' ? (script.getAttribute('onload') || '') : '';
+        src = readScriptAttr('src') || script.src || '';
+        onerrorAttr = readScriptAttr('onerror');
+        onloadAttr = readScriptAttr('onload');
       } catch (_) {}
       const badSrc = isBadUrl(src);
-      const badPayload = looksLikeInjectorPayload(onerrorAttr) || looksLikeInjectorPayload(onloadAttr);
+      const badOnError = looksLikeInjectorPayload(onerrorAttr);
+      const badOnLoad = looksLikeInjectorPayload(onloadAttr);
+      const badPayload = badOnError || badOnLoad;
       if (!badSrc && !badPayload) continue;
       try {
         if (badSrc && typeof script.setAttribute === 'function') {
           script.setAttribute('src', NOOP_SRC);
         }
         if (typeof script.removeAttribute === 'function') {
-          if (badSrc || looksLikeInjectorPayload(onerrorAttr)) script.removeAttribute('onerror');
-          if (badSrc || looksLikeInjectorPayload(onloadAttr)) script.removeAttribute('onload');
+          if (badSrc || badOnError) script.removeAttribute('onerror');
+          if (badSrc || badOnLoad) script.removeAttribute('onload');
         }
-        if (badSrc || looksLikeInjectorPayload(onerrorAttr)) script.onerror = null;
-        if (badSrc || looksLikeInjectorPayload(onloadAttr)) script.onload = null;
+        if (badSrc || badOnError) script.onerror = null;
+        if (badSrc || badOnLoad) script.onload = null;
       } catch (_) {}
     }
   }

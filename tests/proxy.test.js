@@ -29,7 +29,8 @@ function createProxySandbox({
   proxySetError = null,
   proxyClearError = null,
   proxySetTakesEffect = true,
-  proxyClearTakesEffect = true
+  proxyClearTakesEffect = true,
+  emitStorageChangeOnMutate = false
 } = {}) {
   let authListener = null;
   let completedListener = null;
@@ -167,10 +168,17 @@ function createProxySandbox({
     _mockRecordHealthDiagnostic: (id, entry) => { healthDiagnostics.push({ id, entry }); },
     _mockClearHealthDiagnostic: id => { clearedHealthDiagnostics.push(id); },
     _mockMutateStoredConfig: async mutator => {
+      const oldConfig = structuredClone(storage.config || {});
       const nextConfig = await mutator(storage.config || {});
       if (!nextConfig) return { changed: false, config: storage.config || {} };
       storage.config = nextConfig;
       storageSetCalls.push({ config: nextConfig });
+      if (emitStorageChangeOnMutate && typeof storageChangeListener === 'function') {
+        const newConfig = structuredClone(nextConfig);
+        Promise.resolve().then(() => {
+          storageChangeListener({ config: { oldValue: oldConfig, newValue: newConfig } }, 'local');
+        });
+      }
       return { changed: true, config: nextConfig };
     }
   };
@@ -2086,5 +2094,57 @@ test('Proxy wake and in-flight sync auth coordination', async t => {
     assert.strictEqual(status.conflict, true);
     assert.strictEqual(status.effective.active, false);
     assert.ok(harness.healthDiagnostics.some(entry => entry.id === 'proxyControl'));
+  });
+
+  await t.test('superseded syncProxyState resolves with stale: true while latest sync stays non-stale', async () => {
+    const proxy = baseProxy();
+    const harness = createProxySandbox({ config: { enabled: true }, proxyConfigs: [proxy] });
+    await flushAsyncWork();
+
+    const first = harness.syncProxyState([]);
+    const second = harness.syncProxyState([proxy]);
+    const [firstStatus, secondStatus] = await Promise.all([first, second]);
+
+    assert.strictEqual(firstStatus.stale, true);
+    assert.notStrictEqual(secondStatus.stale, true);
+    assert.strictEqual(secondStatus.requested.active, true);
+    assert.strictEqual(secondStatus.effective.active, true);
+  });
+
+  await t.test('syncProxyState cleaning invalid globalProxyId does not self-invalidate via storage.onChanged', async () => {
+    const proxy = baseProxy();
+
+    function createLiveCleanupSandbox(proxyLevelOfControl) {
+      return createProxySandbox({
+        config: { enabled: true, globalProxyEnabled: true, globalProxyId: 999 },
+        proxyConfigs: [proxy],
+        proxyLevelOfControl,
+        proxySettingValue: proxyLevelOfControl === 'controlled_by_other_extensions'
+          ? { mode: 'fixed_servers' }
+          : { mode: 'system' },
+        emitStorageChangeOnMutate: true
+      });
+    }
+
+    const controllable = createLiveCleanupSandbox('controllable_by_this_extension');
+    await flushAsyncWork();
+    const okStatus = await controllable.syncProxyState([proxy]);
+    await flushAsyncWork();
+
+    assert.notStrictEqual(okStatus.stale, true);
+    assert.strictEqual(okStatus.effective.active, true);
+    assert.strictEqual(controllable.storage.config.globalProxyEnabled, false);
+    assert.strictEqual(controllable.storage.config.globalProxyId, null);
+
+    const conflicted = createLiveCleanupSandbox('controlled_by_other_extensions');
+    await flushAsyncWork();
+    const conflictStatus = await conflicted.syncProxyState([proxy]);
+    await flushAsyncWork();
+
+    assert.notStrictEqual(conflictStatus.stale, true);
+    assert.strictEqual(conflictStatus.conflict, true);
+    assert.strictEqual(conflictStatus.effective.active, false);
+    assert.strictEqual(conflicted.storage.config.globalProxyEnabled, false);
+    assert.strictEqual(conflicted.storage.config.globalProxyId, null);
   });
 });

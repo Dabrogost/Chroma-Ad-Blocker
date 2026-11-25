@@ -88,7 +88,34 @@ let _controlRecoveryQueued = false;
 let _controlRecoveryDirty = false;
 let _deferredControlCheckQueued = false;
 let _lastControlDiagnosticKey = null;
+const _pendingSelfGlobalCleanups = [];
 const _authAttempts = new Map();
+
+function recordSelfGlobalCleanup(fromGlobalId) {
+  if (_pendingSelfGlobalCleanups.length >= 16) _pendingSelfGlobalCleanups.shift();
+  _pendingSelfGlobalCleanups.push(fromGlobalId);
+}
+
+function removeSelfGlobalCleanup(fromGlobalId) {
+  const index = _pendingSelfGlobalCleanups.lastIndexOf(fromGlobalId);
+  if (index !== -1) _pendingSelfGlobalCleanups.splice(index, 1);
+}
+
+function consumeSelfGlobalCleanup(oldC, newC) {
+  if (
+    oldC?.enabled !== newC?.enabled ||
+    oldC?.chromeServiceProxyBypass !== newC?.chromeServiceProxyBypass ||
+    oldC?.globalProxyEnabled !== true ||
+    newC?.globalProxyEnabled !== false ||
+    newC?.globalProxyId !== null
+  ) {
+    return false;
+  }
+  const index = _pendingSelfGlobalCleanups.indexOf(oldC?.globalProxyId);
+  if (index === -1) return false;
+  _pendingSelfGlobalCleanups.splice(index, 1);
+  return true;
+}
 let _proxyRuntimeStatus = {
   available: !!chrome.proxy?.settings,
   levelOfControl: null,
@@ -506,6 +533,13 @@ function getProxyRuntimeStatusSnapshot() {
   };
 }
 
+function getStaleProxyRuntimeStatusSnapshot() {
+  return {
+    ...getProxyRuntimeStatusSnapshot(),
+    stale: true
+  };
+}
+
 function isControllableProxyLevel(levelOfControl) {
   return CONTROLLABLE_PROXY_LEVELS.has(levelOfControl);
 }
@@ -625,7 +659,7 @@ function syncTwitchProxyHandler() {
 }
 
 async function applyObservedProxyControl(details, generation = _routeGeneration, error = null) {
-  if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+  if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
   const levelOfControl = details?.levelOfControl || null;
   const controlledByThisExtension = levelOfControl === 'controlled_by_this_extension';
   const effective = controlledByThisExtension && proxyValueMatchesDesired(details?.value);
@@ -660,7 +694,9 @@ async function applyObservedProxyControl(details, generation = _routeGeneration,
   };
   await syncProxyControlDiagnostic();
   await syncTwitchProxyHandler();
-  return getProxyRuntimeStatusSnapshot();
+  return generation !== _routeGeneration
+    ? getStaleProxyRuntimeStatusSnapshot()
+    : getProxyRuntimeStatusSnapshot();
 }
 
 async function inspectProxyControl(generation = _routeGeneration) {
@@ -724,7 +760,9 @@ export function syncProxyState(proxyConfigs) {
       action: 'Open proxy settings and save the desired route again.',
       error: error?.message || error
     });
-    return getProxyRuntimeStatusSnapshot();
+    return generation !== _routeGeneration
+      ? getStaleProxyRuntimeStatusSnapshot()
+      : getProxyRuntimeStatusSnapshot();
   }).finally(() => {
     _activeSyncCount = Math.max(0, _activeSyncCount - 1);
   });
@@ -735,7 +773,7 @@ export function syncProxyState(proxyConfigs) {
 async function _syncProxyStateImpl(proxyConfigs, generation) {
   const sourceConfigs = Array.isArray(proxyConfigs) ? proxyConfigs : [];
   const { config = {} } = await chrome.storage.local.get('config');
-  if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+  if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
   const masterEnabled = config?.enabled !== false;
   if (!masterEnabled) _currentTestSession = null;
   let globalEnabled = config?.globalProxyEnabled === true;
@@ -747,17 +785,29 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
     : null;
 
   if (globalEnabled && globalId != null && !selectedGlobalProxy) {
-    await mutateStoredConfig(latestConfig => {
-      if (generation !== _routeGeneration) return null;
-      const latestId = latestConfig?.globalProxyId;
-      const latestSelectionIsInvalid = latestConfig?.globalProxyEnabled === true &&
-        latestId != null &&
-        !canonicalConfigs.some(pc => pc.id === latestId);
-      return latestSelectionIsInvalid
-        ? { ...latestConfig, globalProxyEnabled: false, globalProxyId: null }
-        : null;
-    });
-    if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+    let cleanedGlobalId = null;
+    let hadCleanupId = false;
+    try {
+      const mutation = await mutateStoredConfig(latestConfig => {
+        if (generation !== _routeGeneration) return null;
+        const latestId = latestConfig?.globalProxyId;
+        const latestSelectionIsInvalid = latestConfig?.globalProxyEnabled === true &&
+          latestId != null &&
+          !canonicalConfigs.some(pc => pc.id === latestId);
+        if (!latestSelectionIsInvalid) return null;
+        cleanedGlobalId = latestId;
+        hadCleanupId = true;
+        recordSelfGlobalCleanup(latestId);
+        return { ...latestConfig, globalProxyEnabled: false, globalProxyId: null };
+      });
+      if (hadCleanupId && mutation?.changed !== true) {
+        removeSelfGlobalCleanup(cleanedGlobalId);
+      }
+    } catch (error) {
+      if (hadCleanupId) removeSelfGlobalCleanup(cleanedGlobalId);
+      throw error;
+    }
+    if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
     globalEnabled = false;
     globalId = null;
   }
@@ -823,7 +873,7 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
     chromeServiceBypassEnabled
   };
 
-  if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+  if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
   _requestedRouteModel = requestedRouteModel;
   _desiredPacData = requestedRouteModel.hasRoutes ? scriptData : null;
   _proxyRuntimeStatus = {
@@ -848,7 +898,7 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
     } catch (error) {
       return applyObservedProxyControl(null, generation, error);
     }
-    if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+    if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
 
     const beforeLevel = beforeDetails?.levelOfControl || null;
     const beforeMode = beforeDetails?.value?.mode || null;
@@ -857,9 +907,9 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
 
     if (requestedRouteModel.hasRoutes && beforeEffective) {
       const before = await applyObservedProxyControl(beforeDetails, generation);
-      if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+      if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
       await clearHealthDiagnostic('proxyPacSync');
-      return before;
+      return generation !== _routeGeneration ? getStaleProxyRuntimeStatusSnapshot() : before;
     }
 
     // When we have no routing to do, release chrome.proxy.settings so other
@@ -871,14 +921,15 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
         beforeMode !== 'pac_script';
       if (alreadyReleased && beforeLevel === 'controllable_by_this_extension') {
         const before = await applyObservedProxyControl(beforeDetails, generation);
-        if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+        if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
         await clearHealthDiagnostic('proxyPacSync');
-        return before;
+        return generation !== _routeGeneration ? getStaleProxyRuntimeStatusSnapshot() : before;
       }
       await chrome.proxy.settings.clear({ scope: 'regular' });
-      if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+      if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
       await inspectProxyControl(generation);
       await clearHealthDiagnostic('proxyPacSync');
+      if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
       if (DEBUG) console.log('[Chroma Ad-Blocker] No active proxies; released proxy settings.');
       return getProxyRuntimeStatusSnapshot();
     }
@@ -888,8 +939,9 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
       // otherwise Chrome could reactivate an obsolete PAC when that control
       // is later released.
       await chrome.proxy.settings.clear({ scope: 'regular' });
-      if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+      if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
       await inspectProxyControl(generation);
+      if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
       return getProxyRuntimeStatusSnapshot();
     }
 
@@ -897,9 +949,10 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
       value: { mode: 'pac_script', pacScript: { data: scriptData } },
       scope: 'regular'
     });
-    if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
+    if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
     await inspectProxyControl(generation);
     await clearHealthDiagnostic('proxyPacSync');
+    if (generation !== _routeGeneration) return getStaleProxyRuntimeStatusSnapshot();
     if (DEBUG) console.log('[Chroma Ad-Blocker] Proxy PAC script synced. Total configs:', sourceConfigs.length);
     return getProxyRuntimeStatusSnapshot();
   } catch (err) {
@@ -912,7 +965,9 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
       error: err?.message || err
     });
     if (DEBUG) console.error('[Chroma Ad-Blocker] Failed to update proxy settings:', err);
-    return getProxyRuntimeStatusSnapshot();
+    return generation !== _routeGeneration
+      ? getStaleProxyRuntimeStatusSnapshot()
+      : getProxyRuntimeStatusSnapshot();
   }
 }
 
@@ -1079,6 +1134,7 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
     oldC?.chromeServiceProxyBypass !== newC?.chromeServiceProxyBypass
   );
   if (!proxyConfigsChanged && !routingConfigChanged) return;
+  if (!proxyConfigsChanged && routingConfigChanged && consumeSelfGlobalCleanup(oldC, newC)) return;
 
   if (proxyConfigsChanged) {
     _proxyConfigRevision++;

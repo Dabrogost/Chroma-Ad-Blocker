@@ -535,3 +535,228 @@ test('handleProxyConfigSet rejects invalid entries without overwriting storage o
   assert.strictEqual(storage.proxyConfigs[0].authIv, 'iv:saved');
   assert.strictEqual(storage.proxyConfigs[0].authCipher, 'ct:saved');
 });
+
+test('handleConfigImport reconciles proxy routes and rolls back on conflict or set failure even when globalProxyId is pruned', async () => {
+  const wrapModule = (relPath, exportsList) => {
+    const src = fs.readFileSync(path.join(__dirname, '..', ...relPath), 'utf8')
+      .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\r?\n/gm, '')
+      .replace(/^export\s+/gm, '');
+    return `(() => {\n${src}\nObject.assign(globalThis, { ${exportsList.join(', ')} });\n})();`;
+  };
+
+  async function runImportScenario({ proxyLevelOfControl, proxySetThrows = false }) {
+    const storage = {
+      config: { enabled: true, globalProxyEnabled: false, globalProxyId: null, chromeServiceProxyBypass: true },
+      whitelist: ['prior.example'],
+      fprWhitelist: [],
+      proxyConfigs: [],
+      subscriptions: [],
+      sub_network_rules: {},
+      sub_cosmetic_rules: {},
+      sub_scriptlet_rules: {},
+      subscriptionCosmeticRules: [],
+      subscriptionScriptletRules: [],
+      userScriptletSources: [],
+      userScriptletResources: {},
+      userScriptletRuleText: '',
+      userScriptletRules: []
+    };
+    const onChangedListeners = [];
+    const seenWebRtcConfigs = [];
+    const proxySetCalls = [];
+    let proxyState = {
+      levelOfControl: proxyLevelOfControl,
+      value: proxyLevelOfControl === 'controlled_by_other_extensions'
+        ? { mode: 'fixed_servers' }
+        : { mode: 'system' }
+    };
+
+    const chrome = {
+      storage: {
+        local: {
+          get: async keys => {
+            if (typeof keys === 'string') return { [keys]: structuredClone(storage[keys]) };
+            if (Array.isArray(keys)) {
+              return Object.fromEntries(keys.map(k => [k, structuredClone(storage[k])]));
+            }
+            return structuredClone(storage);
+          },
+          set: async values => {
+            const changes = {};
+            for (const [k, v] of Object.entries(values)) {
+              changes[k] = { oldValue: structuredClone(storage[k]), newValue: structuredClone(v) };
+              storage[k] = structuredClone(v);
+            }
+            Promise.resolve().then(() => {
+              for (const fn of onChangedListeners) fn(changes, 'local');
+            });
+          },
+          remove: async keys => {
+            for (const k of (Array.isArray(keys) ? keys : [keys])) delete storage[k];
+          }
+        },
+        onChanged: { addListener: fn => onChangedListeners.push(fn) }
+      },
+      proxy: {
+        settings: {
+          get: async () => structuredClone(proxyState),
+          set: async args => {
+            if (proxySetThrows) throw new Error('Simulated PAC write failure');
+            proxySetCalls.push(args);
+            proxyState = { levelOfControl: 'controlled_by_this_extension', value: structuredClone(args.value) };
+          },
+          clear: async () => {
+            if (proxyState.levelOfControl === 'controlled_by_this_extension') {
+              proxyState = { levelOfControl: 'controllable_by_this_extension', value: { mode: 'system' } };
+            }
+          },
+          onChange: { addListener: () => {} }
+        }
+      },
+      webRequest: { onAuthRequired: { addListener: () => {} } },
+      tabs: { query: async () => [], sendMessage: async () => {} }
+    };
+
+    const sandbox = {
+      chrome,
+      console,
+      Promise,
+      Set,
+      Map,
+      Math,
+      Number,
+      Object,
+      Array,
+      URL,
+      String,
+      Boolean,
+      Error,
+      Date,
+      JSON,
+      setTimeout,
+      clearTimeout,
+      MSG: { CONFIG_UPDATE: 'CONFIG_UPDATE' },
+      decryptAuth: async () => null,
+      encryptAuth: async () => null,
+      recordStatsEvent: () => {},
+      clearHealthDiagnostic: async () => {},
+      recordHealthDiagnostic: async () => {},
+      getSubscriptions: async () => [],
+      stageCustomSubscriptions: () => ({
+        ok: true,
+        importedCount: 0,
+        storage: {
+          subscriptions: [],
+          sub_network_rules: {},
+          sub_cosmetic_rules: {},
+          sub_scriptlet_rules: {},
+          subscriptionCosmeticRules: [],
+          subscriptionScriptletRules: []
+        }
+      }),
+      reconcileSubscriptionRuntimeState: async () => ({ ok: true }),
+      exportUserScriptletSettings: async () => ({ sources: [], ruleText: '' }),
+      stageUserScriptletSettings: () => ({
+        ok: true,
+        importedSources: 0,
+        importedRules: 0,
+        storage: {
+          userScriptletSources: [],
+          userScriptletResources: {},
+          userScriptletRuleText: '',
+          userScriptletRules: []
+        }
+      }),
+      syncUserScripts: async () => ({ ok: true }),
+      updateDNRState: async () => ({ ok: true }),
+      syncWebRtcLeakProtection: async cfg => {
+        seenWebRtcConfigs.push(structuredClone(cfg));
+        return { ok: true };
+      },
+      syncBrowserPrivacyHardening: async () => ({ ok: true }),
+      syncGeolocationProtection: async () => ({ ok: true }),
+      isValidSubscriptionId: () => true,
+      validateCustomSubscriptionInput: () => ({ ok: true }),
+      notifyConfigChanged: async () => {},
+      runProxyTest: async () => ({ ok: true })
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+
+    vm.runInContext([
+      wrapModule(['extension', 'background', 'configCoordinator.js'], ['serializeConfigMutation', 'allowNestedConfigMutations', 'mutateStoredConfig']),
+      wrapModule(['extension', 'background', 'configState.js'], ['CONFIG_KEYS', 'validateConfig']),
+      wrapModule(['extension', 'background', 'handlers', 'domainValidation.js'], ['isValidHostname', 'normalizeDomain', 'domainMatches']),
+      wrapModule(['extension', 'background', 'handlers', 'whitelistHandlers.js'], ['sanitizeDomainList']),
+      wrapModule(['extension', 'background', 'handlers', 'proxyHandlers.js'], ['validateProxyConfigsForStorage']),
+      wrapModule(['extension', 'background', 'proxy.js'], ['syncProxyState']),
+      wrapModule(['extension', 'background', 'handlers', 'settingsTransferHandlers.js'], ['handleConfigImport'])
+    ].join('\n'), sandbox);
+
+    await new Promise(r => setTimeout(r, 20));
+
+    const result = await sandbox.handleConfigImport({
+      settings: {
+        schema: 'chroma-settings',
+        version: 1,
+        config: { enabled: true, globalProxyEnabled: true, globalProxyId: 2, chromeServiceProxyBypass: true },
+        whitelist: ['imported.example'],
+        fprWhitelist: [],
+        proxyConfigs: [
+          {
+            id: 1,
+            name: 'Domain Proxy',
+            host: 'proxy.example.com',
+            port: 8080,
+            type: 'PROXY',
+            accepted: true,
+            enabled: true,
+            domains: [{ host: 'example.com', enabled: true }]
+          },
+          {
+            id: 2,
+            name: 'Draft Proxy',
+            host: '',
+            port: '',
+            type: 'PROXY',
+            accepted: false,
+            enabled: true,
+            domains: []
+          }
+        ],
+        subscriptions: [],
+        userScriptlets: { sources: [], ruleText: '' }
+      }
+    });
+    await new Promise(r => setTimeout(r, 20));
+    return { result, storage, proxySetCalls, seenWebRtcConfigs };
+  }
+
+  // Case A: External proxy conflict fails import and rolls back storage
+  const conflict = await runImportScenario({ proxyLevelOfControl: 'controlled_by_other_extensions' });
+  assert.strictEqual(conflict.result.ok, false);
+  assert.strictEqual(conflict.result.phase, 'reconciliation');
+  assert.strictEqual(conflict.result.step, 'proxy');
+  assert.strictEqual(conflict.result.rollback?.succeeded, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(conflict.storage.whitelist)), ['prior.example']);
+  assert.strictEqual(conflict.storage.proxyConfigs.length, 0);
+
+  // Case B: Proxy settings.set failure fails import and rolls back storage
+  const setFailure = await runImportScenario({ proxyLevelOfControl: 'controllable_by_this_extension', proxySetThrows: true });
+  assert.strictEqual(setFailure.result.ok, false);
+  assert.strictEqual(setFailure.result.phase, 'reconciliation');
+  assert.strictEqual(setFailure.result.step, 'proxy');
+  assert.strictEqual(setFailure.result.rollback?.succeeded, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(setFailure.storage.whitelist)), ['prior.example']);
+  assert.strictEqual(setFailure.storage.proxyConfigs.length, 0);
+
+  // Case C: Controllable proxy succeeds, writes PAC immediately, cleans globalProxyId, and passes cleaned config
+  const success = await runImportScenario({ proxyLevelOfControl: 'controllable_by_this_extension' });
+  assert.strictEqual(success.result.ok, true);
+  assert.strictEqual(success.proxySetCalls.length, 1);
+  assert.strictEqual(success.storage.config.globalProxyEnabled, false);
+  assert.strictEqual(success.storage.config.globalProxyId, null);
+  assert.strictEqual(success.seenWebRtcConfigs.length, 1);
+  assert.strictEqual(success.seenWebRtcConfigs[0].globalProxyEnabled, false);
+  assert.strictEqual(success.seenWebRtcConfigs[0].globalProxyId, null);
+});
