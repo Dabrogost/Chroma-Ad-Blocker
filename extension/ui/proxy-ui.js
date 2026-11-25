@@ -367,6 +367,7 @@ const ChromaProxyUI = (() => {
       txt.textContent = 'DISABLED';
       if (meta) meta.textContent = `${type} - ${credentials} - routing paused`;
       setStatusDotState(dot, 'muted');
+      return;
     } else if (isGlobal) {
       txt.textContent = `GLOBAL PROXY ACTIVE${ipSuffix}`;
       if (meta) meta.textContent = `${type} - ${credentials} - global fallback`;

@@ -787,6 +787,54 @@ test('Proxy PAC hardening', async (t) => {
     const disableCalls = executed.filter(c => typeof c.func === 'function' && c.args?.[0] === '__CHROMA_TWITCH_PROXY_STATE__');
     assert.strictEqual(disableCalls.length, 2);
   });
+
+  await t.test('PAC updates and proxy tests keep Twitch handler active without teardown churn or transient proxyControl warnings', async () => {
+    const harness = createProxySandbox({ config: { enabled: true } });
+    let registered = [];
+    const registerCalls = [];
+    const unregisterCalls = [];
+    const executeCalls = [];
+    harness.chrome.scripting = {
+      getRegisteredContentScripts: async ({ ids } = {}) => registered.filter(s => !ids || ids.includes(s.id)),
+      registerContentScripts: async (scripts) => {
+        registerCalls.push(scripts);
+        registered.push(...scripts);
+      },
+      unregisterContentScripts: async ({ ids } = {}) => {
+        unregisterCalls.push(ids);
+        registered = registered.filter(s => !ids || !ids.includes(s.id));
+      },
+      executeScript: async (call) => { executeCalls.push(call); }
+    };
+    harness.chrome.tabs = { query: async () => [{ id: 42 }] };
+
+    const twProxy = baseProxy({ id: 1, type: 'HTTPS', host: 'albania.proxy.example', port: 8443, domains: [{ host: 'twitch.tv', enabled: true }] });
+    await harness.syncProxyState([twProxy]);
+    assert.strictEqual(registerCalls.length, 1);
+    assert.strictEqual(executeCalls.length, 1);
+
+    registerCalls.length = 0;
+    unregisterCalls.length = 0;
+    executeCalls.length = 0;
+    harness.healthDiagnostics.length = 0;
+
+    // Unrelated route edit must not tear down Twitch handler or record proxyControl warnings
+    const otherProxy = baseProxy({ id: 2, host: 'other.proxy.example', port: 8080, domains: [{ host: 'youtube.com', enabled: true }] });
+    await harness.syncProxyState([twProxy, otherProxy]);
+    assert.strictEqual(unregisterCalls.length, 0);
+    assert.strictEqual(registerCalls.length, 0);
+    assert.strictEqual(executeCalls.length, 0);
+    assert.strictEqual(harness.healthDiagnostics.some(entry => entry.id === 'proxyControl'), false);
+
+    // Running a proxy test while Twitch is active must also avoid teardown churn and proxyControl warnings
+    harness.storage.proxyConfigs = [twProxy, otherProxy];
+    const res = await harness.runProxyTest(twProxy.id);
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(unregisterCalls.length, 0);
+    assert.strictEqual(registerCalls.length, 0);
+    assert.strictEqual(executeCalls.length, 0);
+    assert.strictEqual(harness.healthDiagnostics.some(entry => entry.id === 'proxyControl'), false);
+  });
 });
 
 test('Proxy test runner hardening', async (t) => {
@@ -1910,5 +1958,133 @@ test('Proxy wake and in-flight sync auth coordination', async t => {
 
     assert.deepStrictEqual(plain(await cancelAuthPromise), { cancel: true });
     assert.strictEqual(harness.decryptCalls.length, decryptCountBefore);
+  });
+
+  await t.test('onChange from an in-flight set() does not abort a queued runProxyTest', async () => {
+    const proxy = baseProxy();
+    const harness = createProxySandbox({ config: { enabled: true }, proxyConfigs: [] });
+    await flushAsyncWork();
+    harness.healthDiagnostics.length = 0;
+
+    const originalSet = harness.chrome.proxy.settings.set;
+    let firstSet = true;
+    let signalFirstSet;
+    let releaseFirstSet;
+    const firstSetStarted = new Promise(resolve => { signalFirstSet = resolve; });
+    const firstSetGate = new Promise(resolve => { releaseFirstSet = resolve; });
+
+    harness.chrome.proxy.settings.set = async args => {
+      if (firstSet) {
+        firstSet = false;
+        signalFirstSet();
+        await firstSetGate;
+      }
+      await originalSet(args);
+      harness.proxySettingsChangeListener({
+        levelOfControl: harness.proxySetting.levelOfControl,
+        value: harness.proxySetting.value
+      });
+    };
+
+    harness.storage.proxyConfigs = [proxy];
+    const storageSync = harness.storageChangeListener({
+      proxyConfigs: { oldValue: [], newValue: [proxy] }
+    }, 'local');
+    await firstSetStarted;
+
+    const testPromise = harness.runProxyTest(proxy.id);
+    await new Promise(resolve => setTimeout(resolve, 15));
+    releaseFirstSet();
+
+    const [result] = await Promise.all([testPromise, storageSync]);
+    await flushAsyncWork();
+
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.proxyId, proxy.id);
+    assert.strictEqual(result.ip, '203.0.113.7');
+    assert.strictEqual(
+      harness.healthDiagnostics.some(entry =>
+        String(entry?.entry?.error || '').includes('Chrome still reports a Chroma-controlled PAC route after release')
+      ),
+      false
+    );
+  });
+
+  await t.test('onChange from a storage-triggered sync does not abort a queued syncProxyState', async () => {
+    const proxy = baseProxy();
+    const harness = createProxySandbox({ config: { enabled: true }, proxyConfigs: [] });
+    await flushAsyncWork();
+
+    const originalSet = harness.chrome.proxy.settings.set;
+    let firstSet = true;
+    let signalFirstSet;
+    let releaseFirstSet;
+    const firstSetStarted = new Promise(resolve => { signalFirstSet = resolve; });
+    const firstSetGate = new Promise(resolve => { releaseFirstSet = resolve; });
+
+    harness.chrome.proxy.settings.set = async args => {
+      if (firstSet) {
+        firstSet = false;
+        signalFirstSet();
+        await firstSetGate;
+      }
+      await originalSet(args);
+      harness.proxySettingsChangeListener({
+        levelOfControl: harness.proxySetting.levelOfControl,
+        value: harness.proxySetting.value
+      });
+    };
+
+    harness.storage.proxyConfigs = [proxy];
+    const storageSync = harness.storageChangeListener({
+      config: { oldValue: { enabled: false }, newValue: { enabled: true } },
+      proxyConfigs: { oldValue: [], newValue: [proxy] }
+    }, 'local');
+    await firstSetStarted;
+
+    const queuedSync = harness.syncProxyState([proxy]);
+    await new Promise(resolve => setTimeout(resolve, 15));
+    releaseFirstSet();
+
+    const [, status] = await Promise.all([storageSync, queuedSync]);
+    await flushAsyncWork();
+
+    assert.strictEqual(status.requested.active, true);
+    assert.strictEqual(status.effective.active, true);
+    assert.strictEqual(status.error, null);
+  });
+
+  await t.test('external takeover onChange arriving during an in-flight sync is detected once settled', async () => {
+    const proxy = baseProxy();
+    const harness = createProxySandbox({ config: { enabled: true }, proxyConfigs: [proxy] });
+    await flushAsyncWork();
+    harness.healthDiagnostics.length = 0;
+
+    const origGet = harness.chrome.proxy.settings.get;
+    let takeoverTriggered = false;
+    let getCallsDuringSync = 0;
+    harness.chrome.proxy.settings.get = async args => {
+      const res = await origGet(args);
+      getCallsDuringSync++;
+      if (!takeoverTriggered && getCallsDuringSync === 2) {
+        takeoverTriggered = true;
+        harness.proxySetting.levelOfControl = 'controlled_by_other_extensions';
+        harness.proxySetting.value = { mode: 'fixed_servers' };
+        harness.proxySettingsChangeListener({
+          levelOfControl: 'controlled_by_other_extensions',
+          value: { mode: 'fixed_servers' }
+        });
+      }
+      return res;
+    };
+
+    await harness.syncProxyState([proxy]);
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const status = await harness.getProxyRoutingStatus();
+    assert.strictEqual(status.conflict, true);
+    assert.strictEqual(status.effective.active, false);
+    assert.ok(harness.healthDiagnostics.some(entry => entry.id === 'proxyControl'));
   });
 });

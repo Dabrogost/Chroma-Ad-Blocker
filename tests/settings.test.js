@@ -4012,6 +4012,68 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(savedB.querySelector('.proxy-active-group').classList.contains('is-hidden'), false);
   });
 
+  await t.test('popup disabled proxy card keeps muted status dot when global toggle save fails', async () => {
+    const dom = new JSDOM('<!doctype html><div id="proxyRouterContainer"></div>', {
+      url: 'chrome-extension://test/ui/popup.html',
+      runScripts: 'outside-only'
+    });
+    const proxyConfigs = [{
+      id: 1,
+      name: 'Paused Proxy',
+      host: 'paused.example.com',
+      port: '8080',
+      type: 'PROXY',
+      accepted: true,
+      enabled: false,
+      domains: [{ host: 'example.com', enabled: true }],
+      hasCredentials: false
+    }];
+    const config = { globalProxyEnabled: false, globalProxyId: null };
+    const sandbox = {
+      window: dom.window,
+      document: dom.window.document,
+      console,
+      confirm: () => true,
+      setTimeout,
+      clearTimeout,
+      MSG: {
+        CONFIG_GET: 'CONFIG_GET',
+        CONFIG_SET: 'CONFIG_SET',
+        PROXY_CONFIG_GET: 'PROXY_CONFIG_GET',
+        PROXY_CONFIG_SET: 'PROXY_CONFIG_SET',
+        PROXY_TEST: 'PROXY_TEST'
+      },
+      ChromaApp: {
+        scrollBehavior: () => 'smooth',
+        sendMutation: message => sandbox.notifyBackground(message),
+        $: id => dom.window.document.getElementById(id),
+        isSettingsPage: () => false,
+        openProxySettings: () => {}
+      },
+      notifyBackground: async msg => {
+        if (msg.type === 'CONFIG_GET') return config;
+        if (msg.type === 'PROXY_CONFIG_GET') return proxyConfigs;
+        if (msg.type === 'PROXY_CONFIG_SET') return { ok: false, error: 'Storage busy' };
+        return {};
+      }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext([domUtilsJs, proxyUiJs].join('\n'), sandbox);
+    await sandbox.ChromaProxyUI.loadProxyRouterUI();
+    await settleDomAsyncWork();
+
+    const card = dom.window.document.querySelector('.proxy-card');
+    assert.ok(card);
+    card.querySelector('.proxy-global-btn').click();
+    await settleDomAsyncWork();
+
+    const dot = card.querySelector('.proxy-status-dot');
+    assert.strictEqual(card.querySelector('.proxy-status-text').textContent, 'DISABLED');
+    assert.strictEqual(dot.classList.contains('proxy-status-dot--muted'), true);
+    assert.strictEqual(dot.classList.contains('proxy-status-dot--online'), false);
+  });
+
   await t.test('blocked request badge toggle renders in Appearance and persists independently of master state', async () => {
     const harness = createSettingsHarness({
       config: { enabled: false }

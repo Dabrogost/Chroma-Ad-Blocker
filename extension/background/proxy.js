@@ -86,6 +86,7 @@ let _twitchHandlerSyncQueue = Promise.resolve();
 let _lastSyncedTwitchHandlerActive = null;
 let _controlRecoveryQueued = false;
 let _controlRecoveryDirty = false;
+let _deferredControlCheckQueued = false;
 let _lastControlDiagnosticKey = null;
 const _authAttempts = new Map();
 let _proxyRuntimeStatus = {
@@ -838,11 +839,25 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
   };
 
   try {
-    const before = await inspectProxyControl(generation);
+    if (!chrome.proxy?.settings || typeof chrome.proxy.settings.get !== 'function') {
+      return applyObservedProxyControl(null, generation, 'Chrome proxy settings inspection is unavailable');
+    }
+    let beforeDetails;
+    try {
+      beforeDetails = await chrome.proxy.settings.get({ incognito: false });
+    } catch (error) {
+      return applyObservedProxyControl(null, generation, error);
+    }
     if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
-    if (!before.available) return before;
 
-    if (requestedRouteModel.hasRoutes && before.effective.active) {
+    const beforeLevel = beforeDetails?.levelOfControl || null;
+    const beforeMode = beforeDetails?.value?.mode || null;
+    const beforeEffective = beforeLevel === 'controlled_by_this_extension' &&
+      proxyValueMatchesDesired(beforeDetails?.value);
+
+    if (requestedRouteModel.hasRoutes && beforeEffective) {
+      const before = await applyObservedProxyControl(beforeDetails, generation);
+      if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
       await clearHealthDiagnostic('proxyPacSync');
       return before;
     }
@@ -852,9 +867,11 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
     // own this setting at a time, and calling .set() — even with a no-op
     // DIRECT PAC — would bump them to "controlled_by_other_extensions".
     if (!requestedRouteModel.hasRoutes) {
-      const alreadyReleased = before.levelOfControl !== 'controlled_by_this_extension' ||
-        before.mode !== 'pac_script';
-      if (alreadyReleased && before.levelOfControl === 'controllable_by_this_extension') {
+      const alreadyReleased = beforeLevel !== 'controlled_by_this_extension' ||
+        beforeMode !== 'pac_script';
+      if (alreadyReleased && beforeLevel === 'controllable_by_this_extension') {
+        const before = await applyObservedProxyControl(beforeDetails, generation);
+        if (generation !== _routeGeneration) return getProxyRuntimeStatusSnapshot();
         await clearHealthDiagnostic('proxyPacSync');
         return before;
       }
@@ -866,7 +883,7 @@ async function _syncProxyStateImpl(proxyConfigs, generation) {
       return getProxyRuntimeStatusSnapshot();
     }
 
-    if (!isControllableProxyLevel(before.levelOfControl)) {
+    if (!isControllableProxyLevel(beforeLevel)) {
       // Remove any dormant Chroma preference while another controller wins;
       // otherwise Chrome could reactivate an obsolete PAC when that control
       // is later released.
@@ -1125,18 +1142,48 @@ function scheduleProxyControlRecovery() {
   });
 }
 
+function handleProxyControlObservation(details, generation = _routeGeneration) {
+  return applyObservedProxyControl(details, generation).then(status => {
+    const controllable = isControllableProxyLevel(details?.levelOfControl);
+    const needsRecovery =
+      (_requestedRouteModel.hasRoutes && !status.effective.active) ||
+      (!_requestedRouteModel.hasRoutes && !!status.error);
+    if (controllable && needsRecovery) {
+      scheduleProxyControlRecovery();
+    }
+  }).catch(() => {});
+}
+
+function scheduleDeferredProxyControlCheck() {
+  if (_deferredControlCheckQueued) return;
+  _deferredControlCheckQueued = true;
+  waitForSettledProxyRouting().then(async () => {
+    _deferredControlCheckQueued = false;
+    if (_activeSyncCount > 0 || _pendingStorageSyncs.size > 0) {
+      scheduleDeferredProxyControlCheck();
+      return;
+    }
+    const generation = _routeGeneration;
+    if (!chrome.proxy?.settings || typeof chrome.proxy.settings.get !== 'function') return;
+    const details = await chrome.proxy.settings.get({ incognito: false });
+    if (generation !== _routeGeneration || _activeSyncCount > 0 || _pendingStorageSyncs.size > 0) {
+      scheduleDeferredProxyControlCheck();
+      return;
+    }
+    await handleProxyControlObservation(details, generation);
+  }).catch(() => {
+    _deferredControlCheckQueued = false;
+  });
+}
+
 if (chrome.proxy?.settings?.onChange?.addListener) {
   chrome.proxy.settings.onChange.addListener(details => {
+    if (_activeSyncCount > 0 || _pendingStorageSyncs.size > 0) {
+      scheduleDeferredProxyControlCheck();
+      return;
+    }
     const generation = _routeGeneration;
-    applyObservedProxyControl(details, generation).then(status => {
-      const controllable = isControllableProxyLevel(details?.levelOfControl);
-      const needsRecovery =
-        (_requestedRouteModel.hasRoutes && !status.effective.active) ||
-        (!_requestedRouteModel.hasRoutes && !!status.error);
-      if (controllable && needsRecovery) {
-        scheduleProxyControlRecovery();
-      }
-    }).catch(() => {});
+    handleProxyControlObservation(details, generation);
   });
 }
 
