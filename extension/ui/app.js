@@ -225,12 +225,12 @@ const ChromaApp = (() => {
     return row;
   }
 
-  function setStatsControlsPending(pending) {
+  function setStatsControlsPending(pending, { disable = pending } = {}) {
     ['statsModeSelect', 'statsRetentionSelect'].forEach(id => {
       const el = $(id);
       if (!el) return;
-      el.disabled = pending;
-      el.classList.toggle('control-pending', pending);
+      el.disabled = !!disable;
+      el.classList.toggle('control-pending', !!pending);
     });
   }
 
@@ -583,7 +583,7 @@ const ChromaApp = (() => {
     }
     renderStatsHero(stats);
     renderStatsPanel(available ? stats : getEmptyStats(), { unavailable: !available });
-    setStatsControlsPending(!available);
+    setStatsControlsPending(false, { disable: !available });
     return stats;
   }
 
@@ -602,6 +602,16 @@ const ChromaApp = (() => {
 
     let config = {};
     let configReady = false;
+    let pendingProtectionMutations = 0;
+    let refreshRequestLogUI = null;
+
+    function hasPendingProtectionControls() {
+      if (pendingProtectionMutations > 0) return true;
+      if ($('toggleEnabled')?.classList?.contains?.('control-pending')) return true;
+      if (CONFIG_TOGGLES.some(([id]) => $(id)?.classList?.contains?.('control-pending'))) return true;
+      return !!document.querySelector('.speed-btn.control-pending');
+    }
+
     const refreshOnStorageChange = (changes, area) => {
       if (area !== 'local') return;
       if (changes.statsV2) {
@@ -610,13 +620,16 @@ const ChromaApp = (() => {
       if (settingsMode && changes.localCosmeticRules) {
         safeHydrateSection('local zapper rules', loadLocalZapperRulesUI);
       }
+      if (changes.requestLog && typeof refreshRequestLogUI === 'function') {
+        safeHydrateSection('request log', () => refreshRequestLogUI());
+      }
       if (
         configReady &&
         changes.config?.newValue &&
         typeof changes.config.newValue === 'object' &&
         !Array.isArray(changes.config.newValue) &&
         Object.keys(changes.config.newValue).length > 0 &&
-        !document.querySelector('.control-pending')
+        !hasPendingProtectionControls()
       ) {
         config = { ...config, ...changes.config.newValue };
         const enabled = config.enabled !== false;
@@ -832,7 +845,13 @@ const ChromaApp = (() => {
           speedBtn.disabled = true;
           speedBtn.classList.add('control-pending');
         });
-        const result = await sendMutation({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } }, controlFeedback('toggleAcceleration'));
+        let result = null;
+        pendingProtectionMutations++;
+        try {
+          result = await sendMutation({ type: MSG.CONFIG_SET, config: { accelerationSpeed: speed } }, controlFeedback('toggleAcceleration'));
+        } finally {
+          pendingProtectionMutations--;
+        }
         if (result) {
           config.accelerationSpeed = speed;
         } else if ((lastControlMutationSeq.get('accelerationSpeed') || 0) === seq) {
@@ -875,7 +894,13 @@ const ChromaApp = (() => {
           }
         }
 
-        const result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig }, controlFeedback(elId));
+        let result = null;
+        pendingProtectionMutations++;
+        try {
+          result = await sendMutation({ type: MSG.CONFIG_SET, config: nextConfig }, controlFeedback(elId));
+        } finally {
+          pendingProtectionMutations--;
+        }
         if (!result) {
           if ((lastControlMutationSeq.get(key) || 0) === seq) {
             restoreProtectionState(previous);
@@ -909,45 +934,50 @@ const ChromaApp = (() => {
       if (!settingsMode) syncUI(config, active, seq);
       setProtectionTogglePending('toggleEnabled', true);
       syncSpeedUI(getActiveSpeed(), false);
-      const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } }, 'protectionFeedback');
-      if (!result) {
-        if ((lastControlMutationSeq.get('enabled') || 0) === seq) {
-          restoreProtectionState(previous);
+      pendingProtectionMutations++;
+      try {
+        const result = await sendMutation({ type: MSG.CONFIG_SET, config: { enabled: active } }, 'protectionFeedback');
+        if (!result) {
+          if ((lastControlMutationSeq.get('enabled') || 0) === seq) {
+            restoreProtectionState(previous);
+          }
+          setProtectionTogglePending('toggleEnabled', false);
+          syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
+          return;
+        }
+
+        if ((lastControlMutationSeq.get('enabled') || 0) <= seq) {
+          config.enabled = active;
+        }
+
+        if (!active) {
+          if ((lastControlMutationSeq.get('enabled') || 0) <= seq) {
+            syncUI(config, false, seq);
+          }
+        } else {
+          const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
+          if (activeConfig) {
+            const mergedConfig = { ...config };
+            for (const [k, v] of Object.entries(activeConfig)) {
+              if ((lastControlMutationSeq.get(k) || 0) <= seq) {
+                mergedConfig[k] = v;
+              }
+            }
+            config = mergedConfig;
+          }
+          const effectiveEnabled = (lastControlMutationSeq.get('enabled') || 0) <= seq
+            ? (config.enabled !== false)
+            : !!$('toggleEnabled')?.checked;
+          syncUI(config, effectiveEnabled, seq);
         }
         setProtectionTogglePending('toggleEnabled', false);
-        syncSpeedUI(getActiveSpeed(), !!$('toggleAcceleration')?.checked && !!$('toggleEnabled')?.checked);
-        return;
-      }
-
-      if ((lastControlMutationSeq.get('enabled') || 0) <= seq) {
-        config.enabled = active;
-      }
-
-      if (!active) {
-        if ((lastControlMutationSeq.get('enabled') || 0) <= seq) {
-          syncUI(config, false, seq);
-        }
-      } else {
-        const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
-        if (activeConfig) {
-          const mergedConfig = { ...config };
-          for (const [k, v] of Object.entries(activeConfig)) {
-            if ((lastControlMutationSeq.get(k) || 0) <= seq) {
-              mergedConfig[k] = v;
-            }
-          }
-          config = mergedConfig;
-        }
-        const effectiveEnabled = (lastControlMutationSeq.get('enabled') || 0) <= seq
+        const effectiveMaster = (lastControlMutationSeq.get('enabled') || 0) <= seq
           ? (config.enabled !== false)
           : !!$('toggleEnabled')?.checked;
-        syncUI(config, effectiveEnabled, seq);
+        syncSpeedUI(config.accelerationSpeed ?? 8, effectiveMaster && !!config.acceleration);
+      } finally {
+        pendingProtectionMutations--;
       }
-      setProtectionTogglePending('toggleEnabled', false);
-      const effectiveMaster = (lastControlMutationSeq.get('enabled') || 0) <= seq
-        ? (config.enabled !== false)
-        : !!$('toggleEnabled')?.checked;
-      syncSpeedUI(config.accelerationSpeed ?? 8, effectiveMaster && !!config.acceleration);
     });
 
     $('refreshHealthBtn')?.addEventListener('click', loadHealthPanel);
@@ -1002,7 +1032,10 @@ const ChromaApp = (() => {
       });
       $('resetRequestLogOnly')?.addEventListener('click', async () => {
         if (!confirm('Clear the request log? This cannot be undone.')) return;
-        await sendMutation({ type: MSG.STATS_RESET, scope: 'debugLog' }, 'statsFeedback');
+        const result = await sendMutation({ type: MSG.STATS_RESET, scope: 'debugLog' }, 'statsFeedback');
+        if (result && typeof refreshRequestLogUI === 'function') {
+          await refreshRequestLogUI({ force: true });
+        }
       });
       $('exportStatsJson')?.addEventListener('click', async () => {
         const exported = await notifyBackground({ type: MSG.STATS_EXPORT });
@@ -1133,18 +1166,14 @@ const ChromaApp = (() => {
 
       if (!currentDomain || !baseDomain) {
         $('toggleWhitelist')?.closest?.('.toggle-row')?.classList.add('disabled');
+        setControlPending('toggleWhitelist', false);
         const whitelist = $('toggleWhitelist');
-        if (whitelist) {
-          whitelist.disabled = true;
-          whitelist.classList.remove('control-pending');
-        }
+        if (whitelist) whitelist.disabled = true;
         const rowFpr = $('rowFprWhitelist');
         if (rowFpr) rowFpr.classList.remove('is-visible');
+        setControlPending('toggleFprWhitelist', false);
         const fprSiteToggle = $('toggleFprWhitelist');
-        if (fprSiteToggle) {
-          fprSiteToggle.disabled = true;
-          fprSiteToggle.classList.remove('control-pending');
-        }
+        if (fprSiteToggle) fprSiteToggle.disabled = true;
         const zapBtn = $('zapElementBtn');
         if (zapBtn) zapBtn.disabled = true;
         if ($('zapperStatus')) $('zapperStatus').textContent = 'Unavailable on this page';
@@ -1518,16 +1547,16 @@ const ChromaApp = (() => {
       status.classList.toggle('form-error', !!isError);
     }
 
-    function setUserScriptletRulesPending(pending) {
+    function setUserScriptletRulesPending(pending, { disable = !!pending } = {}) {
       const textarea = $('userScriptletRulesText');
       const saveBtn = $('saveUserScriptletRulesBtn');
       if (textarea) {
-        textarea.readOnly = !!pending;
+        textarea.readOnly = !!disable;
         textarea.classList.toggle('control-pending', !!pending);
         textarea.setAttribute('aria-busy', pending ? 'true' : 'false');
       }
       if (saveBtn) {
-        saveBtn.disabled = !!pending;
+        saveBtn.disabled = !!disable;
         saveBtn.classList.toggle('control-pending', !!pending);
       }
     }
@@ -1646,6 +1675,7 @@ const ChromaApp = (() => {
       if (!settings || settings.ok === false) {
         setSectionError('userScriptletSourceList', 'User scriptlets unavailable.');
         setUserScriptletRulesStatus(settings?.error || 'User scriptlets unavailable.', true);
+        setUserScriptletRulesPending(false, { disable: true });
         setSectionReady('userScriptletPanel');
         return;
       }
@@ -1897,8 +1927,11 @@ const ChromaApp = (() => {
 
       let rules = [];
       try {
-        const res = await notifyBackground({ type: MSG.ZAPPER_RULES_GET }) || { rules: [] };
-        rules = Array.isArray(res.rules) ? res.rules : [];
+        const res = await notifyBackground({ type: MSG.ZAPPER_RULES_GET });
+        if (!res || typeof res !== 'object' || res.ok === false || !Array.isArray(res.rules)) {
+          throw new Error(res?.error || 'Local zapper rules unavailable');
+        }
+        rules = res.rules;
       } catch (error) {
         console.error('Chroma local zapper rules failed to load:', error);
         updateZapperOverview([]);
@@ -2044,6 +2077,7 @@ const ChromaApp = (() => {
 
       let isOpen = false;
       let isFrozen = false;
+      let logLoadSeq = 0;
 
       function updateLogState() {
         const summary = $('requestLogSummary');
@@ -2080,8 +2114,9 @@ const ChromaApp = (() => {
         }
       }
 
-      async function refreshLogSummary() {
+      async function refreshLogSummary(seq = ++logLoadSeq) {
         const log = await getLogEntries();
+        if (seq !== logLoadSeq) return null;
         if (!log) {
           setText('logHeaderDesc', 'Request log unavailable.');
           setText('logStreamState', 'Unavailable');
@@ -2091,9 +2126,11 @@ const ChromaApp = (() => {
         return log;
       }
 
-      async function renderLog() {
-        if (isFrozen) return;
-        const log = await refreshLogSummary();
+      async function renderLog({ force = false } = {}) {
+        if (isFrozen && !force) return;
+        const seq = ++logLoadSeq;
+        const log = await refreshLogSummary(seq);
+        if (!log || seq !== logLoadSeq || (isFrozen && !force)) return;
         clearElement(entries);
         if (log.length === 0) {
           appendElement(entries, 'div', 'log-empty', 'No entries yet.');
@@ -2121,6 +2158,17 @@ const ChromaApp = (() => {
         entries.classList.toggle('visible', isOpen);
         if (isOpen) await renderLog();
       }
+
+      async function refreshRequestLog({ force = false } = {}) {
+        if (isFrozen && !force) return;
+        if (isOpen) {
+          await renderLog({ force });
+        } else {
+          await refreshLogSummary();
+        }
+      }
+
+      refreshRequestLogUI = refreshRequestLog;
 
       refreshLogSummary();
 

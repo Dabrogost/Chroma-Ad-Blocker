@@ -409,6 +409,12 @@ function managedRegistriesMatch(actual, desired) {
   });
 }
 
+async function clearScriptletDiagnostics() {
+  if (typeof clearHealthDiagnostic !== 'function') return;
+  await clearHealthDiagnostic('scriptletRegistration');
+  await clearHealthDiagnostic('userScriptsRecovery');
+}
+
 async function _syncUserScriptsImpl(generation) {
   try {
     const {
@@ -440,8 +446,8 @@ async function _syncUserScriptsImpl(generation) {
             error: 'UserScripts API unavailable'
           });
         }
-      } else if (typeof clearHealthDiagnostic === 'function') {
-        await clearHealthDiagnostic('scriptletRegistration');
+      } else {
+        await clearScriptletDiagnostics();
       }
       if (DEBUG) {
         console.warn('[Chroma Scriptlets] userScripts API unavailable. Enable Allow User Scripts in Chrome extension details.');
@@ -463,9 +469,7 @@ async function _syncUserScriptsImpl(generation) {
     }
 
     if (!masterEnabled) {
-      if (typeof clearHealthDiagnostic === 'function') {
-        await clearHealthDiagnostic('scriptletRegistration');
-      }
+      await clearScriptletDiagnostics();
       return { ok: true, registered: 0 };
     }
 
@@ -474,9 +478,7 @@ async function _syncUserScriptsImpl(generation) {
       : {};
 
     if (subscriptionRules.length === 0 && userRules.length === 0) {
-      if (typeof clearHealthDiagnostic === 'function') {
-        await clearHealthDiagnostic('scriptletRegistration');
-      }
+      await clearScriptletDiagnostics();
       return { ok: true, registered: 0 };
     }
 
@@ -488,7 +490,10 @@ async function _syncUserScriptsImpl(generation) {
       quietConsole
     });
 
-    if (userScripts.length === 0) return { ok: true, registered: 0 };
+    if (userScripts.length === 0) {
+      await clearScriptletDiagnostics();
+      return { ok: true, registered: 0 };
+    }
 
     // Re-read master state immediately before registration. A storage change
     // can arrive while the registry is being inspected or scripts are built.
@@ -533,8 +538,8 @@ async function _syncUserScriptsImpl(generation) {
           error: `${userScripts.length - registered} scriptlet registration(s) failed`
         });
       }
-    } else if (typeof clearHealthDiagnostic === 'function') {
-      await clearHealthDiagnostic('scriptletRegistration');
+    } else {
+      await clearScriptletDiagnostics();
     }
 
     if (DEBUG) {

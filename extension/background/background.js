@@ -111,10 +111,12 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await syncBrowserPrivacyHardening(storedConfig || {});
   await syncGeolocationProtection(storedConfig || {});
+  await clearHealthDiagnostic('privacyWakeRecovery');
   await initSubscriptions();
   await updateDNRState();
   await refreshAllStale();
   await initScriptletEngine();
+  await clearHealthDiagnostic('userScriptsRecovery');
   
   // Force-sync all open tabs with the current config to prevent "ghost" states during install/update
   const tabs = await chrome.tabs.query({});
@@ -129,11 +131,13 @@ chrome.runtime.onStartup.addListener(async () => {
   await syncWebRtcLeakProtection(storedConfig || {}, storedProxyConfigs || []);
   await syncBrowserPrivacyHardening(storedConfig || {});
   await syncGeolocationProtection(storedConfig || {});
+  await clearHealthDiagnostic('privacyWakeRecovery');
   await updateDNRState();
   await reconcileSubscriptionRuntimeState();
   await resetRequestLog();
   await ensureAlarm();
   await initScriptletEngine();
+  await clearHealthDiagnostic('userScriptsRecovery');
 
   // Re-broadcast state to existing tabs to recover from service worker restarts
   const tabs = await chrome.tabs.query({});
@@ -175,16 +179,19 @@ router.attachListener();
 // MV3 service workers wake without firing runtime.onStartup. Restore the flat
 // subscription runtime image from per-list caches before checking the persisted
 // userScripts registry, including tabs and workers first opened while master-off.
-reconcileSubscriptionRuntimeState().then(() => recoverUserScriptsIfNeeded()).catch(err => {
-  recordHealthDiagnostic('userScriptsRecovery', {
-    area: 'scriptlets',
-    severity: 'warning',
-    message: 'Stored scriptlets could not be recovered after service-worker wake.',
-    action: 'Open Chrome extension details and confirm Allow User Scripts is enabled.',
-    error: err?.message || err
+reconcileSubscriptionRuntimeState()
+  .then(() => recoverUserScriptsIfNeeded())
+  .then(() => clearHealthDiagnostic('userScriptsRecovery'))
+  .catch(err => {
+    recordHealthDiagnostic('userScriptsRecovery', {
+      area: 'scriptlets',
+      severity: 'warning',
+      message: 'Stored scriptlets could not be recovered after service-worker wake.',
+      action: 'Open Chrome extension details and confirm Allow User Scripts is enabled.',
+      error: err?.message || err
+    });
+    if (DEBUG) console.error('[Chroma Scriptlets] Wake sync failed:', err);
   });
-  if (DEBUG) console.error('[Chroma Scriptlets] Wake sync failed:', err);
-});
 
 // runtime.onStartup does not fire for every MV3 service-worker recreation.
 // Reconcile on ordinary worker evaluation so cached subscription rules and all
@@ -209,7 +216,7 @@ chrome.storage.local.get(['config', 'proxyConfigs']).then(({ config, proxyConfig
     syncBrowserPrivacyHardening(config || {}),
     syncGeolocationProtection(config || {})
   ])
-).catch(err => {
+).then(() => clearHealthDiagnostic('privacyWakeRecovery')).catch(err => {
   recordHealthDiagnostic('privacyWakeRecovery', {
     area: 'browserPrivacy',
     severity: 'warning',

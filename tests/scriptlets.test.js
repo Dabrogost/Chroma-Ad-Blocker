@@ -2568,6 +2568,22 @@ test('scriptlet engine userScripts API availability', async (t) => {
     assert.strictEqual(harness.userScriptRegisterCalls.length, registerCallCount);
     assert.strictEqual(harness.userScriptUnregisterCalls.length, unregisterCallCount);
   });
+
+  await t.test('syncUserScripts clears both scriptletRegistration and userScriptsRecovery on success', async () => {
+    const harness = loadScriptletEngine({
+      subscriptionScriptletRules: [{ scriptlet: 'set-constant', args: ['foo', 'true'] }],
+      whitelist: [],
+      config: { enabled: true },
+      fprWhitelist: []
+    });
+    const cleared = [];
+    harness.sandbox.clearHealthDiagnostic = async id => { cleared.push(id); };
+
+    const result = await harness.sandbox.syncUserScripts();
+
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(cleared, ['scriptletRegistration', 'userScriptsRecovery']);
+  });
 });
 
 test('fingerprint randomization language normalization', async (t) => {

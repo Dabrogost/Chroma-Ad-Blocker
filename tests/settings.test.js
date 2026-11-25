@@ -2683,6 +2683,231 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.strictEqual(metricValue(effective.dom.window.document, 'Geolocation Protection').textContent, 'Blocked');
   });
 
+  await t.test('health panel keeps Chrome privacy summary chip and detail rows consistent across external control and incomplete release states', async () => {
+    const baseHealth = {
+      overall: { status: 'healthy', issues: [] },
+      manifest: { version: '1.0.1', minimumChromeVersion: '120' },
+      master: { enabled: true, networkBlocking: true },
+      dnr: { enabledStaticRulesets: ['a'], expectedStaticRulesets: ['a'], staticRulesetsOk: true },
+      subscriptions: { enabled: 0, total: 0, withErrors: 0 },
+      scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 0 },
+      fpr: { enabled: false, active: false },
+      cosmetic: {},
+      whitelist: {},
+      geolocation: { requested: false, enabled: false, available: true, effective: false },
+      webrtc: { available: false, requestedMode: 'auto', requested: false, enabled: false, controlledByThisExtension: false, effective: false },
+      proxy: {
+        configuredCount: 0, acceptedCount: 0, routedDomainCount: 0,
+        globalProxyEnabled: false, globalProxyConfigured: false, globalProxyRouteEnabled: false,
+        requestedRouting: false, effectiveRouting: false, effectiveGlobalProxy: false,
+        conflict: false, error: null
+      },
+      requestLog: { available: true, entryCount: 0, maxEntries: 200, note: '' }
+    };
+    const settingKeys = ['thirdPartyCookiesAllowed', 'doNotTrackEnabled', 'adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled'];
+    const summaryChip = (document, label) => {
+      const chip = [...document.querySelectorAll('.health-summary-chip')]
+        .find(candidate => candidate.querySelector('.health-summary-chip__label')?.textContent === label);
+      assert.ok(chip, label);
+      return chip;
+    };
+    const metricValue = (document, label) => {
+      const row = [...document.querySelectorAll('.health-metric')]
+        .find(candidate => candidate.querySelector('.health-metric__label')?.textContent === label);
+      assert.ok(row, label);
+      return row.querySelector('.health-metric__value');
+    };
+
+    const externalSettings = settingKeys.map(key => ({
+      key,
+      available: true,
+      levelOfControl: 'controlled_by_other_extensions',
+      controllable: false,
+      controlledByThisExtension: false,
+      effective: true,
+      hardened: true,
+      error: 'Chrome privacy setting is controlled elsewhere'
+    }));
+    const external = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          overall: { status: 'degraded', issues: [] },
+          browserPrivacy: {
+            requested: true, enabled: true, available: true, controlled: false,
+            active: true, effective: true, hardenedCount: 5, controlledCount: 0,
+            totalCount: 5, blockedCount: 5, settings: externalSettings
+          }
+        }
+      }
+    });
+    await external.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const externalChip = summaryChip(external.dom.window.document, 'Chrome privacy hardening');
+    assert.strictEqual(externalChip.querySelector('.health-summary-chip__value').textContent, 'Controlled elsewhere');
+    assert.ok(externalChip.classList.contains('health-summary-chip--warning'));
+    assert.strictEqual(metricValue(external.dom.window.document, 'Chrome Privacy Hardening').textContent, 'Controlled elsewhere');
+    assert.ok(metricValue(external.dom.window.document, 'Chrome Privacy Hardening').classList.contains('health-metric__value--warning'));
+
+    const notAppliedSettings = settingKeys.map(key => ({
+      key,
+      available: true,
+      levelOfControl: 'controllable_by_this_extension',
+      controllable: true,
+      controlledByThisExtension: false,
+      effective: true,
+      hardened: true,
+      error: null
+    }));
+    const notApplied = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          overall: { status: 'degraded', issues: [] },
+          browserPrivacy: {
+            requested: true, enabled: true, available: true, controlled: false,
+            active: true, effective: true, hardenedCount: 5, controlledCount: 0,
+            totalCount: 5, blockedCount: 0, settings: notAppliedSettings
+          }
+        }
+      }
+    });
+    await notApplied.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const notAppliedChip = summaryChip(notApplied.dom.window.document, 'Chrome privacy hardening');
+    assert.strictEqual(notAppliedChip.querySelector('.health-summary-chip__value').textContent, 'Not fully applied');
+    assert.ok(notAppliedChip.classList.contains('health-summary-chip--warning'));
+
+    const effectiveSettings = settingKeys.map(key => ({
+      key,
+      available: true,
+      controlledByThisExtension: true,
+      effective: true,
+      hardened: true,
+      error: null
+    }));
+    const effective = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          browserPrivacy: {
+            requested: true, enabled: true, available: true, controlled: true,
+            active: true, effective: true, hardenedCount: 5, controlledCount: 5,
+            totalCount: 5, blockedCount: 0, settings: effectiveSettings
+          }
+        }
+      }
+    });
+    await effective.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const effectiveChip = summaryChip(effective.dom.window.document, 'Chrome privacy hardening');
+    assert.strictEqual(effectiveChip.querySelector('.health-summary-chip__value').textContent, 'Hardened');
+    assert.ok(effectiveChip.classList.contains('health-summary-chip--ok'));
+
+    const lingeringSettings = settingKeys.map(key => ({
+      key,
+      available: true,
+      levelOfControl: 'controlled_by_this_extension',
+      controllable: true,
+      controlledByThisExtension: true,
+      effective: false,
+      hardened: true,
+      error: null
+    }));
+    const disabledReleaseIncomplete = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          overall: { status: 'degraded', issues: [] },
+          browserPrivacy: {
+            requested: false, enabled: false, available: true, controlled: false,
+            active: false, effective: false, hardenedCount: 5, controlledCount: 5,
+            totalCount: 5, blockedCount: 0, settings: lingeringSettings
+          }
+        }
+      }
+    });
+    await disabledReleaseIncomplete.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const disabledChip = summaryChip(disabledReleaseIncomplete.dom.window.document, 'Chrome privacy hardening');
+    assert.strictEqual(disabledChip.querySelector('.health-summary-chip__value').textContent, 'Release incomplete');
+    assert.ok(disabledChip.classList.contains('health-summary-chip--warning'));
+    for (const label of ['Chrome Privacy Hardening', 'Third-party cookies', 'Do Not Track', 'Privacy Sandbox ads']) {
+      const val = metricValue(disabledReleaseIncomplete.dom.window.document, label);
+      assert.strictEqual(val.textContent, 'Release incomplete', label);
+      assert.ok(val.classList.contains('health-metric__value--warning'), label);
+    }
+
+    const pausedReleaseIncomplete = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          master: { enabled: false, networkBlocking: true },
+          overall: { status: 'degraded', issues: [] },
+          browserPrivacy: {
+            requested: true, enabled: false, available: true, controlled: false,
+            active: false, effective: false, hardenedCount: 5, controlledCount: 5,
+            totalCount: 5, blockedCount: 0, settings: lingeringSettings
+          }
+        }
+      }
+    });
+    await pausedReleaseIncomplete.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const pausedLingeringChip = summaryChip(pausedReleaseIncomplete.dom.window.document, 'Chrome privacy hardening');
+    assert.strictEqual(pausedLingeringChip.querySelector('.health-summary-chip__value').textContent, 'Release incomplete');
+    assert.ok(pausedLingeringChip.classList.contains('health-summary-chip--warning'));
+    for (const label of ['Chrome Privacy Hardening', 'Third-party cookies', 'Do Not Track', 'Privacy Sandbox ads']) {
+      const val = metricValue(pausedReleaseIncomplete.dom.window.document, label);
+      assert.strictEqual(val.textContent, 'Release incomplete', label);
+      assert.ok(val.classList.contains('health-metric__value--warning'), label);
+    }
+
+    const pausedWithReconcileError = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          master: { enabled: false, networkBlocking: true },
+          overall: { status: 'degraded', issues: [] },
+          browserPrivacy: {
+            requested: true, enabled: false, available: true, controlled: false,
+            active: false, effective: false, hardenedCount: 0, controlledCount: 0,
+            totalCount: 5, blockedCount: 0,
+            reconciliationError: 'Browser privacy reconciliation failed',
+            settings: []
+          }
+        }
+      }
+    });
+    await pausedWithReconcileError.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const reconErrChip = summaryChip(pausedWithReconcileError.dom.window.document, 'Chrome privacy hardening');
+    assert.strictEqual(reconErrChip.querySelector('.health-summary-chip__value').textContent, 'Release incomplete');
+    assert.ok(reconErrChip.classList.contains('health-summary-chip--warning'));
+    const reconErrRow = metricValue(pausedWithReconcileError.dom.window.document, 'Chrome Privacy Hardening');
+    assert.strictEqual(reconErrRow.textContent, 'Release incomplete');
+    assert.ok(reconErrRow.classList.contains('health-metric__value--warning'));
+
+    const cleanlyPaused = createSettingsHarness({
+      responses: {
+        HEALTH_GET: {
+          ...baseHealth,
+          master: { enabled: false, networkBlocking: true },
+          browserPrivacy: {
+            requested: true, enabled: false, available: true, controlled: false,
+            active: false, effective: false, hardenedCount: 0, controlledCount: 0,
+            totalCount: 5, blockedCount: 0, reconciliationError: null, settings: []
+          }
+        }
+      }
+    });
+    await cleanlyPaused.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+    const pausedChip = summaryChip(cleanlyPaused.dom.window.document, 'Chrome privacy hardening');
+    assert.strictEqual(pausedChip.querySelector('.health-summary-chip__value').textContent, 'Paused');
+    assert.ok(pausedChip.classList.contains('health-summary-chip--disabled'));
+  });
+
   await t.test('health panel loads once on settings init and refresh button reloads it', async () => {
     const harness = createSettingsHarness();
 
@@ -3609,6 +3834,101 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.deepStrictEqual(harness.messages.filter(msg => msg.type === 'STATS_RESET').map(msg => msg.scope), ['all', 'sites', 'debugLog']);
   });
 
+  await t.test('clearing request log refreshes summary and expanded entries, respects freeze on passive updates, and preserves state on failed resets', async () => {
+    const initialEntries = [
+      { ts: Date.now() - 5000, url: 'https://ads.example.com/tracker.js', rt: 'script' },
+      { ts: Date.now() - 2000, url: 'https://pixel.example.org/beacon.png', rt: 'image' }
+    ];
+    let logEntries = initialEntries.slice();
+    let nextResetResponse = { ok: true };
+
+    const harness = createSettingsHarness({
+      confirm: () => true,
+      responses: {
+        LOG_GET: () => logEntries.slice(),
+        STATS_RESET: msg => {
+          if (msg.scope === 'debugLog' && nextResetResponse.ok !== false) {
+            logEntries = [];
+          }
+          return nextResetResponse;
+        }
+      }
+    });
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    assert.strictEqual(doc.getElementById('logEntryCount').textContent, '2');
+    assert.strictEqual(doc.getElementById('logTypeCount').textContent, '2');
+    assert.ok(doc.getElementById('requestLogSummary').classList.contains('has-entries'));
+
+    doc.getElementById('logToggleRow').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.querySelectorAll('#logEntries .log-entry').length, 2);
+
+    // Failed STATS_RESET must leave existing rendered entries untouched without extra LOG_GET.
+    const logGetsBeforeFailure = countMessages(harness.messages, 'LOG_GET');
+    nextResetResponse = { ok: false, error: 'Failed' };
+    doc.getElementById('resetRequestLogOnly').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(countMessages(harness.messages, 'LOG_GET'), logGetsBeforeFailure);
+    assert.strictEqual(doc.getElementById('logEntryCount').textContent, '2');
+    assert.strictEqual(doc.querySelectorAll('#logEntries .log-entry').length, 2);
+
+    // Successful STATS_RESET immediately refreshes both summary and expanded entries.
+    nextResetResponse = { ok: true };
+    doc.getElementById('resetRequestLogOnly').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.getElementById('logEntryCount').textContent, '0');
+    assert.strictEqual(doc.getElementById('logTypeCount').textContent, '0');
+    assert.strictEqual(doc.getElementById('logLatestTime').textContent, 'None');
+    assert.strictEqual(doc.getElementById('logHeaderDesc').textContent, 'No matched requests buffered');
+    assert.strictEqual(doc.getElementById('requestLogSummary').classList.contains('has-entries'), false);
+    assert.strictEqual(doc.querySelectorAll('#logEntries .log-entry').length, 0);
+    assert.strictEqual(doc.querySelector('#logEntries .log-empty')?.textContent, 'No entries yet.');
+
+    // Unfrozen storage.onChanged refreshes collapsed summary and expanded rows live.
+    logEntries = [{ ts: Date.now() - 1000, url: 'https://track.example.net/pixel.js', rt: 'script' }];
+    await harness.emitStorageChange({ requestLog: { newValue: logEntries } });
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.getElementById('logEntryCount').textContent, '1');
+    assert.strictEqual(doc.querySelectorAll('#logEntries .log-entry').length, 1);
+
+    doc.getElementById('logToggleRow').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.getElementById('logToggleRow').getAttribute('aria-expanded'), 'false');
+    logEntries = initialEntries.slice();
+    await harness.emitStorageChange({ requestLog: { newValue: logEntries } });
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.getElementById('logEntryCount').textContent, '2');
+
+    // Expand again and freeze: passive requestLog storage changes must not overwrite frozen view.
+    doc.getElementById('logToggleRow').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.querySelectorAll('#logEntries .log-entry').length, 2);
+    doc.getElementById('logFreezeBtn').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.getElementById('logStreamState').textContent, 'Frozen');
+
+    const logGetsWhileFrozen = countMessages(harness.messages, 'LOG_GET');
+    logEntries = [];
+    await harness.emitStorageChange({ requestLog: { newValue: [] } });
+    await settleDomAsyncWork();
+    assert.strictEqual(countMessages(harness.messages, 'LOG_GET'), logGetsWhileFrozen);
+    assert.strictEqual(doc.getElementById('logEntryCount').textContent, '2');
+    assert.strictEqual(doc.querySelectorAll('#logEntries .log-entry').length, 2);
+
+    // Explicit clear while frozen still force-refreshes to empty while staying Frozen.
+    logEntries = initialEntries.slice();
+    doc.getElementById('resetRequestLogOnly').click();
+    await settleDomAsyncWork();
+    assert.strictEqual(doc.getElementById('logEntryCount').textContent, '0');
+    assert.strictEqual(doc.querySelectorAll('#logEntries .log-entry').length, 0);
+    assert.strictEqual(doc.querySelector('#logEntries .log-empty')?.textContent, 'No entries yet.');
+    assert.strictEqual(doc.getElementById('logStreamState').textContent, 'Frozen');
+    assert.strictEqual(doc.getElementById('logFreezeBtn').classList.contains('is-active'), true);
+  });
+
   await t.test('motion preference persists, synchronizes, and rolls back failed saves', async () => {
     const harness = createSettingsHarness({ storage: { uiReduceMotion: true } });
     await harness.sandbox.ChromaApp.initSharedUI();
@@ -4228,6 +4548,137 @@ test('settings page proxy and zapper management safety', async (t) => {
       assert.strictEqual(blobCalls, 0);
       assert.strictEqual(doc.getElementById('settingsBackupStatus')?.textContent, 'Message handler failed');
       assert.strictEqual(consoleErrors.some(line => line.includes('TypeError')), false, consoleErrors.join('\n'));
+    } finally {
+      console.error = origError;
+    }
+  });
+
+  await t.test('failed user scriptlets and stats loads clear control-pending and keep live config sync working', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: { enabled: true, networkBlocking: true },
+        USER_SCRIPTLETS_GET: { ok: false, code: 'handler_error', error: 'Message handler failed' },
+        STATS_GET: null
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    const rulesText = doc.getElementById('userScriptletRulesText');
+    const saveRulesBtn = doc.getElementById('saveUserScriptletRulesBtn');
+    const statsMode = doc.getElementById('statsModeSelect');
+    const statsRetention = doc.getElementById('statsRetentionSelect');
+
+    assert.strictEqual(rulesText.readOnly, true);
+    assert.strictEqual(saveRulesBtn.disabled, true);
+    assert.strictEqual(rulesText.classList.contains('control-pending'), false);
+    assert.strictEqual(saveRulesBtn.classList.contains('control-pending'), false);
+    assert.strictEqual(rulesText.getAttribute('aria-busy'), 'false');
+
+    assert.strictEqual(statsMode.disabled, true);
+    assert.strictEqual(statsRetention.disabled, true);
+    assert.strictEqual(statsMode.classList.contains('control-pending'), false);
+    assert.strictEqual(statsRetention.classList.contains('control-pending'), false);
+
+    assert.strictEqual(doc.getElementById('toggleEnabled').checked, true);
+    await harness.emitStorageChange({
+      config: { oldValue: { enabled: true }, newValue: { enabled: false } }
+    }, 'local');
+
+    assert.strictEqual(doc.getElementById('toggleEnabled').checked, false);
+    assert.strictEqual(doc.getElementById('toggleNetwork').checked, false);
+  });
+
+  await t.test('concurrent statsV2 refresh does not suppress live config sync while in-flight master toggle does', async () => {
+    let holdStats = false;
+    let pendingStats = null;
+    const pendingConfigSet = deferred();
+    const harness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: { enabled: true, networkBlocking: true, cosmetic: true },
+        STATS_GET: () => {
+          if (holdStats) {
+            pendingStats = deferred();
+            return pendingStats.promise;
+          }
+          return { version: 1, settings: { mode: 'aggregated', retentionDays: 90 }, totals: {} };
+        },
+        CONFIG_SET: () => pendingConfigSet.promise
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    holdStats = true;
+    await harness.emitStorageChange({ statsV2: { oldValue: {}, newValue: {} } }, 'local');
+    assert.strictEqual(doc.getElementById('statsModeSelect').classList.contains('control-pending'), true);
+
+    await harness.emitStorageChange({
+      config: { oldValue: { enabled: true }, newValue: { enabled: false } }
+    }, 'local');
+    assert.strictEqual(doc.getElementById('toggleEnabled').checked, false);
+    assert.strictEqual(doc.getElementById('toggleNetwork').checked, false);
+
+    pendingStats.resolve({ version: 1, settings: { mode: 'aggregated', retentionDays: 90 }, totals: {} });
+    holdStats = false;
+    await settleDomAsyncWork();
+
+    // Now simulate an in-flight master toggle CONFIG_SET mutation from this page.
+    const master = doc.getElementById('toggleEnabled');
+    master.checked = true;
+    master.dispatchEvent(new harness.dom.window.Event('change'));
+    await settleDomAsyncWork(2);
+    assert.strictEqual(master.classList.contains('control-pending'), true);
+
+    // An older/stale storage config event arriving while our mutation is in flight must be ignored.
+    await harness.emitStorageChange({
+      config: { oldValue: { enabled: true }, newValue: { enabled: false } }
+    }, 'local');
+    assert.strictEqual(master.checked, true);
+
+    pendingConfigSet.resolve({ ok: true });
+    await settleDomAsyncWork();
+    assert.strictEqual(master.classList.contains('control-pending'), false);
+  });
+
+  await t.test('health panel and zapper rules UI show unavailable state on router error envelopes and null responses', async () => {
+    const handlerError = { ok: false, code: 'handler_error', error: 'Message handler failed' };
+    const origError = console.error;
+    console.error = () => {};
+    try {
+      for (const zapperResponse of [handlerError, null]) {
+        const harness = createSettingsHarness({
+          responses: {
+            HEALTH_GET: handlerError,
+            ZAPPER_RULES_GET: zapperResponse
+          }
+        });
+
+        await harness.sandbox.ChromaApp.initSharedUI();
+        await settleDomAsyncWork();
+
+        const doc = harness.dom.window.document;
+        const overallLabel = doc.getElementById('healthOverallLabel');
+        assert.strictEqual(overallLabel.textContent, 'Unavailable');
+        assert.ok(overallLabel.classList.contains('health-status--error'));
+        const chips = [...doc.querySelectorAll('.health-summary-chip')];
+        assert.strictEqual(chips.length, 1);
+        assert.match(chips[0].textContent, /Health.*Unavailable/);
+        assert.strictEqual(doc.querySelectorAll('.health-summary-chip--ok').length, 0);
+        assert.strictEqual(doc.getElementById('healthPanelBody').textContent, 'Could not load health diagnostics.');
+        assert.strictEqual(doc.getElementById('refreshHealthBtn').disabled, false);
+
+        const zapperList = doc.getElementById('localZapperRules');
+        assert.strictEqual(doc.getElementById('zapperEmptyState').hidden, true);
+        assert.strictEqual(zapperList.querySelector('.hydration-error')?.textContent, 'Local zapper rules unavailable.');
+        const details = zapperList.closest('details');
+        assert.strictEqual(details.hidden, false);
+        assert.strictEqual(details.open, true);
+      }
     } finally {
       console.error = origError;
     }

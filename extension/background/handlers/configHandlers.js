@@ -13,6 +13,7 @@ import { isNetworkProtectionActive, syncActionBadge, updateDNRState } from '../d
 import { syncProxyState } from '../proxy.js';
 import { syncWebRtcLeakProtection } from '../webrtc.js';
 import { syncBrowserPrivacyHardening, syncGeolocationProtection } from '../browserPrivacy.js';
+import { clearHealthDiagnostic } from '../diagnostics.js';
 
 export async function notifyConfigChanged(config) {
   const tabs = await chrome.tabs.query({});
@@ -72,6 +73,9 @@ export function handleConfigSet(msg) {
     await syncWebRtcLeakProtection(effectiveConfig, proxyConfigs);
     await syncBrowserPrivacyHardening(effectiveConfig);
     await syncGeolocationProtection(effectiveConfig);
+    if (typeof clearHealthDiagnostic === 'function') {
+      await clearHealthDiagnostic('privacyWakeRecovery');
+    }
 
     await notifyConfigChanged(effectiveConfig);
     return { ok: true };

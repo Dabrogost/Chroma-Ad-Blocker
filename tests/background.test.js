@@ -885,3 +885,75 @@ test('network lifecycle paths preserve an inactive desired state', async () => {
   assert.ok(reconcileCount >= 4);
   assert.strictEqual(refreshCount, 2);
 });
+
+test('background wake recovery clears userScriptsRecovery and privacyWakeRecovery after succeeding', async () => {
+  function runWake({ failUserScripts = false, failPrivacyRead = false } = {}) {
+    const recorded = [];
+    const cleared = [];
+    const listeners = {};
+    const chrome = {
+      runtime: {
+        onInstalled: { addListener: listener => { listeners.installed = listener; } },
+        onStartup: { addListener: listener => { listeners.startup = listener; } }
+      },
+      storage: {
+        local: {
+          get: async keys => {
+            if (failPrivacyRead && Array.isArray(keys) && keys.includes('config') && keys.includes('proxyConfigs')) {
+              throw new Error('transient storage error');
+            }
+            return { config: { enabled: true }, proxyConfigs: [] };
+          },
+          set: async () => {}
+        }
+      },
+      tabs: { query: async () => [], sendMessage: async () => {} },
+      alarms: { onAlarm: { addListener: () => {} } }
+    };
+    const sandbox = {
+      chrome,
+      console,
+      setTimeout,
+      clearTimeout,
+      updateDNRState: async () => {},
+      _mockInitSubscriptions: async () => {},
+      _mockEnsureAlarm: async () => {},
+      _mockRefreshAllStale: async () => {},
+      _mockReconcileSubscriptionRuntimeState: async () => ({ ok: true }),
+      _mockInitScriptletEngine: async () => {},
+      _mockRecoverUserScriptsIfNeeded: async () => {
+        if (failUserScripts) throw new Error('transient userScripts error');
+        return true;
+      },
+      _mockSyncWebRtcLeakProtection: async () => ({ ok: true }),
+      _mockSyncBrowserPrivacyHardening: async () => ({ ok: true }),
+      _mockSyncGeolocationProtection: async () => ({ ok: true }),
+      _mockInitRequestLogListener: () => {},
+      _mockResetRequestLog: async () => {},
+      _mockRecordHealthDiagnostic: async id => { recorded.push(id); },
+      _mockClearHealthDiagnostic: async id => { cleared.push(id); }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(backgroundJsCode, sandbox);
+    return { recorded, cleared, listeners };
+  }
+
+  const failedWake = runWake({ failUserScripts: true, failPrivacyRead: true });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepStrictEqual(failedWake.recorded.sort(), ['privacyWakeRecovery', 'userScriptsRecovery']);
+  assert.deepStrictEqual(failedWake.cleared, []);
+
+  const cleanWake = runWake({ failUserScripts: false, failPrivacyRead: false });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepStrictEqual(cleanWake.recorded, []);
+  assert.deepStrictEqual(cleanWake.cleared.sort(), ['privacyWakeRecovery', 'userScriptsRecovery']);
+
+  cleanWake.cleared.length = 0;
+  await cleanWake.listeners.startup();
+  assert.deepStrictEqual(cleanWake.cleared.sort(), ['privacyWakeRecovery', 'userScriptsRecovery']);
+
+  cleanWake.cleared.length = 0;
+  await cleanWake.listeners.installed({ reason: 'update' });
+  assert.deepStrictEqual(cleanWake.cleared.sort(), ['privacyWakeRecovery', 'userScriptsRecovery']);
+});

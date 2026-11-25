@@ -73,7 +73,7 @@ const ChromaHealthUI = (() => {
       summary.className = 'health-summary';
       clearElement(summary);
 
-      if (!health) {
+      if (!health || typeof health !== 'object' || Array.isArray(health) || health.ok === false) {
         addHealthSummaryChip(summary, 'Health', 'Unavailable', 'error');
         return;
       }
@@ -148,14 +148,33 @@ const ChromaHealthUI = (() => {
       addHealthSummaryChip(summary, 'Proxy', proxyValue, proxyState);
 
       const browserPrivacy = health.browserPrivacy || {};
-      addHealthSummaryChip(
-        summary,
-        'Chrome privacy hardening',
-        browserPrivacy.enabled
-          ? (browserPrivacy.active ? 'Hardened' : `${formatCount(browserPrivacy.hardenedCount)} / ${formatCount(browserPrivacy.totalCount)}`)
-          : 'Off',
-        browserPrivacy.enabled ? (browserPrivacy.active ? 'ok' : 'warning') : 'disabled'
-      );
+      let browserPrivacyValue = 'Off';
+      let browserPrivacyState = 'disabled';
+      if (!browserPrivacy.enabled) {
+        if (toCount(browserPrivacy.controlledCount) > 0 || browserPrivacy.reconciliationError) {
+          browserPrivacyValue = 'Release incomplete';
+          browserPrivacyState = 'warning';
+        } else if (browserPrivacy.requested) {
+          browserPrivacyValue = 'Paused';
+          browserPrivacyState = 'disabled';
+        }
+      } else if (browserPrivacy.available === false) {
+        browserPrivacyValue = 'Unavailable';
+        browserPrivacyState = 'warning';
+      } else if (browserPrivacy.controlled && browserPrivacy.effective) {
+        browserPrivacyValue = 'Hardened';
+        browserPrivacyState = 'ok';
+      } else if (toCount(browserPrivacy.blockedCount) > 0) {
+        browserPrivacyValue = 'Controlled elsewhere';
+        browserPrivacyState = 'warning';
+      } else if (browserPrivacy.controlled === false) {
+        browserPrivacyValue = 'Not fully applied';
+        browserPrivacyState = 'warning';
+      } else {
+        browserPrivacyValue = `${formatCount(browserPrivacy.hardenedCount)} / ${formatCount(browserPrivacy.totalCount)}`;
+        browserPrivacyState = 'warning';
+      }
+      addHealthSummaryChip(summary, 'Chrome privacy hardening', browserPrivacyValue, browserPrivacyState);
 
       const issues = Array.isArray(health.overall?.issues) ? health.overall.issues : [];
       const hasErrors = issues.some(issue => normalizeHealthIssueSeverity(issue.severity) === 'error');
@@ -221,8 +240,8 @@ const ChromaHealthUI = (() => {
 
     function getBrowserPrivacySettingLabel(health, key) {
       const setting = getBrowserPrivacySetting(health, key);
-      if (!health.browserPrivacy?.requested) return 'Disabled';
       if (!health.browserPrivacy?.enabled && setting?.controlledByThisExtension) return 'Release incomplete';
+      if (!health.browserPrivacy?.requested) return 'Disabled';
       if (!health.browserPrivacy?.enabled) return 'Paused';
       if (!setting?.available) return 'Unavailable';
       if (isBrowserPrivacySettingExternallyControlled(setting)) return 'Controlled elsewhere';
@@ -245,9 +264,12 @@ const ChromaHealthUI = (() => {
     }
 
     function getPrivacySandboxLabel(health) {
+      const settings = getPrivacySandboxSettings(health);
+      if (!health.browserPrivacy?.enabled && settings.some(setting => setting.controlledByThisExtension)) {
+        return 'Release incomplete';
+      }
       if (!health.browserPrivacy?.requested) return 'Disabled';
       if (!health.browserPrivacy?.enabled) return 'Paused';
-      const settings = getPrivacySandboxSettings(health);
       if (settings.length === 0) return 'Unavailable';
       if (settings.some(isBrowserPrivacySettingExternallyControlled)) return 'Controlled elsewhere';
       if (settings.some(setting => !setting.controlledByThisExtension || setting.error)) return 'Not applied';
@@ -256,8 +278,11 @@ const ChromaHealthUI = (() => {
     }
 
     function getPrivacySandboxStatus(health) {
-      if (!health.browserPrivacy?.requested || !health.browserPrivacy?.enabled) return 'disabled';
       const settings = getPrivacySandboxSettings(health);
+      if (!health.browserPrivacy?.enabled && settings.some(setting => setting.controlledByThisExtension)) {
+        return 'warning';
+      }
+      if (!health.browserPrivacy?.requested || !health.browserPrivacy?.enabled) return 'disabled';
       if (settings.length === 0) return 'warning';
       return settings.every(setting => setting.controlledByThisExtension && setting.effective) ? 'ok' : 'warning';
     }
@@ -316,15 +341,22 @@ const ChromaHealthUI = (() => {
 
     function getBrowserPrivacyHardeningLabel(health) {
       const privacy = health.browserPrivacy || {};
+      if (!privacy.enabled && (toCount(privacy.controlledCount) > 0 || privacy.reconciliationError)) {
+        return 'Release incomplete';
+      }
       if (!privacy.requested) return 'Disabled';
-      if (!privacy.enabled) return privacy.controlledCount > 0 ? 'Release incomplete' : 'Paused';
+      if (!privacy.enabled) return 'Paused';
+      if (privacy.available === false) return 'Unavailable';
       if (privacy.controlled && privacy.effective) return 'Active';
-      return privacy.blockedCount > 0 ? 'Controlled elsewhere' : 'Not fully applied';
+      return toCount(privacy.blockedCount) > 0 ? 'Controlled elsewhere' : 'Not fully applied';
     }
 
     function getBrowserPrivacyHardeningStatus(health) {
       const privacy = health.browserPrivacy || {};
-      if (!privacy.enabled) return privacy.controlledCount > 0 ? 'warning' : 'disabled';
+      if (!privacy.enabled) {
+        return (toCount(privacy.controlledCount) > 0 || privacy.reconciliationError) ? 'warning' : 'disabled';
+      }
+      if (privacy.available === false) return 'warning';
       return privacy.controlled && privacy.effective ? 'ok' : 'warning';
     }
 
@@ -407,7 +439,7 @@ const ChromaHealthUI = (() => {
       if (loadId !== healthLoadSerial) return;
       clearElement(body);
 
-      if (!health) {
+      if (!health || typeof health !== 'object' || Array.isArray(health) || health.ok === false) {
         if (overallLabel) {
           overallLabel.className = 'health-status health-status--error';
           overallLabel.textContent = 'Unavailable';

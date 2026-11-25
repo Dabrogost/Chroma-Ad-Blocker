@@ -3,6 +3,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { JSDOM } = require('jsdom');
 
 const domUtilsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'dom-utils.js'), 'utf8');
 const domainUtilsJsCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'ui', 'domain-utils.js'), 'utf8');
@@ -596,6 +597,67 @@ test('popup.js functionality', async (t) => {
     assert.strictEqual(elements['zapElementBtn'].disabled, true);
     assert.strictEqual(elements['zapperStatus'].textContent, 'Unavailable on this page');
     assert.strictEqual(messages.some(m => m.type === 'WHITELIST_ADD' || m.type === 'FPR_WHITELIST_ADD'), false);
+  });
+
+  await t.test('popup on non-HTTP tab clears row pending state and keeps live config sync working', async () => {
+    const dom = new JSDOM('<!doctype html><body><div id="appShell"></div></body>', {
+      url: 'chrome-extension://test/ui/popup.html',
+      runScripts: 'outside-only'
+    });
+    const storageListeners = [];
+    const sandbox = {
+      window: dom.window,
+      document: dom.window.document,
+      location: dom.window.location,
+      console,
+      setTimeout,
+      clearTimeout,
+      URL: dom.window.URL,
+      MSG: {
+        CONFIG_GET: 'CONFIG_GET',
+        CONFIG_SET: 'CONFIG_SET',
+        STATS_GET: 'STATS_GET',
+        UPDATE_CHECK: 'UPDATE_CHECK',
+        WHITELIST_GET: 'WHITELIST_GET',
+        FPR_WHITELIST_GET: 'FPR_WHITELIST_GET'
+      },
+      chrome: {
+        runtime: {
+          getManifest: () => ({ version: '1.11.2' }),
+          getURL: p => `chrome-extension://test/${p}`
+        },
+        storage: {
+          local: { get: async () => ({}) },
+          onChanged: { addListener: fn => storageListeners.push(fn) }
+        },
+        tabs: {
+          query: async () => [{ id: 1, url: 'chrome://newtab/' }]
+        }
+      },
+      notifyBackground: async (msg) => {
+        if (msg.type === 'CONFIG_GET') return { enabled: true };
+        if (msg.type === 'STATS_GET') return { version: 1, totals: { protectionEvents: 0 } };
+        if (msg.type === 'UPDATE_CHECK') return { updateAvailable: false };
+        return {};
+      }
+    };
+    sandbox.globalThis = sandbox;
+    vm.createContext(sandbox);
+    vm.runInContext(uiScriptsCode, sandbox);
+    await settlePopupAsyncWork(40);
+
+    const doc = dom.window.document;
+    assert.strictEqual(doc.getElementById('toggleWhitelist').disabled, true);
+    assert.strictEqual(doc.getElementById('toggleFprWhitelist').disabled, true);
+    assert.strictEqual(doc.querySelectorAll('.control-pending').length, 0);
+
+    storageListeners.forEach(fn => fn({
+      config: { oldValue: { enabled: true }, newValue: { enabled: false } }
+    }, 'local'));
+    await settlePopupAsyncWork(20);
+
+    assert.strictEqual(doc.getElementById('toggleEnabled').checked, false);
+    assert.ok(doc.getElementById('statusDot').classList.contains('off'));
   });
 });
 
