@@ -744,6 +744,30 @@ test('regex-accepting scriptlets honor regex flags cleanly', async (t) => {
     assert.strictEqual(vm.runInContext("eval('ADEVAL()')", evalSandbox), undefined);
     assert.strictEqual(vm.runInContext("eval('safeCall()')", evalSandbox), 'ran');
     assert.deepStrictEqual(evalCalls, ['safeCall()']);
+
+    // 11. cookieRemover (/gi and /y must not skip alternating matching cookies)
+    for (const pattern of ['/^_ga/gi', '/^_ga/y']) {
+      const expired = new Set();
+      const doc = {
+        get cookie() {
+          return pattern === '/^_ga/y'
+            ? '_ga=1; _ga_123=2; _ga_456=3; _ga_789=4; session=keep'
+            : '_ga=1; _GA_123=2; _ga_456=3; _ga_789=4; session=keep';
+        },
+        set cookie(v) {
+          expired.add(decodeURIComponent(v.split('=')[0]));
+        }
+      };
+      runScriptlet('cookieRemover', [pattern], {
+        document: doc,
+        location: { hostname: 'example.com', pathname: '/' }
+      });
+      const expected = pattern === '/^_ga/y'
+        ? ['_ga', '_ga_123', '_ga_456', '_ga_789']
+        : ['_ga', '_GA_123', '_ga_456', '_ga_789'];
+      assert.deepStrictEqual([...expired].sort(), expected.sort());
+      assert.strictEqual(expired.has('session'), false);
+    }
   });
 });
 
@@ -2817,20 +2841,123 @@ test('Bug 8 scriptlet stealth and determinism regressions', async (t) => {
     vm.createContext(sandbox);
     vm.runInContext(`
       class AudioBuffer {
-        constructor() { this._ch = new Float32Array(2048); }
-        getChannelData() { return this._ch; }
-        copyFromChannel(dest) { dest.set(this._ch.subarray(0, dest.length)); }
+        constructor() { this._channels = [new Float32Array(2048), new Float32Array(2048)]; }
+        getChannelData(ch = 0) { return this._channels[ch | 0]; }
+        copyFromChannel(dest, ch = 0) { dest.set(this._channels[ch | 0].subarray(0, dest.length)); }
       }
       self.AudioBuffer = AudioBuffer;
     `, sandbox);
     vm.runInContext(fingerprintRandomizationCode, sandbox);
 
-    const drift = vm.runInContext(`(() => {
+    const results = vm.runInContext(`(() => {
       const ab = new AudioBuffer();
       const first = Array.from(ab.getChannelData(0));
       const second = Array.from(ab.getChannelData(0));
-      return first.some((v, i) => v !== second[i]);
+      const copy0 = new Float32Array(2048);
+      ab.copyFromChannel(copy0, 0);
+      const copy1 = new Float32Array(2048);
+      ab.copyFromChannel(copy1, 1);
+
+      const fresh = new AudioBuffer();
+      const freshCopy = new Float32Array(2048);
+      fresh.copyFromChannel(freshCopy, 0);
+      const freshDirect = Array.from(fresh.getChannelData(0));
+
+      return {
+        nonZero: first.some(v => v !== 0),
+        drift: first.some((v, i) => v !== second[i]),
+        copy0Mismatch: first.some((v, i) => v !== copy0[i]),
+        copy1Farbled: Array.from(copy1).some(v => v !== 0),
+        copy1Matches: first.every((v, i) => v === copy1[i]),
+        freshFarbled: Array.from(freshCopy).some(v => v !== 0),
+        freshMatches: freshDirect.every((v, i) => v === freshCopy[i])
+      };
     })()`, sandbox);
-    assert.strictEqual(drift, false);
+    assert.strictEqual(results.nonZero, true);
+    assert.strictEqual(results.drift, false);
+    assert.strictEqual(results.copy0Mismatch, false);
+    assert.strictEqual(results.copy1Farbled, true);
+    assert.strictEqual(results.copy1Matches, true);
+    assert.strictEqual(results.freshFarbled, true);
+    assert.strictEqual(results.freshMatches, true);
+  });
+
+  await t.test('fingerprintRandomization farbles Canvas 2D pixels deterministically and restores after encoding', () => {
+    function makeCanvasSandbox(saltBytes) {
+      const backing = new Uint8ClampedArray(64 * 4);
+      for (let i = 0; i < backing.length; i++) backing[i] = (i * 17 + 5) & 255;
+      const original = new Uint8ClampedArray(backing);
+      const encodedSnapshots = [];
+
+      const sandbox = {
+        console,
+        location: { hostname: 'canvas.example.com' },
+        crypto: {
+          getRandomValues: buf => {
+            for (let i = 0; i < buf.length; i++) buf[i] = saltBytes[i % saltBytes.length];
+            return buf;
+          }
+        },
+        Uint8Array,
+        Uint8ClampedArray
+      };
+      sandbox.self = sandbox;
+      sandbox.window = sandbox;
+      sandbox.globalThis = sandbox;
+      vm.createContext(sandbox);
+      sandbox.__backing = backing;
+      sandbox.__encodedSnapshots = encodedSnapshots;
+      vm.runInContext(`
+        class CanvasRenderingContext2D {
+          getImageData(_x, _y, w, h) {
+            return { width: w, height: h, data: new Uint8ClampedArray(self.__backing) };
+          }
+          putImageData(img) {
+            self.__backing.set(img.data);
+          }
+        }
+        const sharedCtx = new CanvasRenderingContext2D();
+        class HTMLCanvasElement {
+          constructor() { this.width = 64; this.height = 1; }
+          getContext(type) { return type === '2d' ? sharedCtx : null; }
+          toDataURL() {
+            const snap = Array.from(self.__backing);
+            self.__encodedSnapshots.push(snap);
+            return snap.join(',');
+          }
+        }
+        self.CanvasRenderingContext2D = CanvasRenderingContext2D;
+        self.HTMLCanvasElement = HTMLCanvasElement;
+      `, sandbox);
+      vm.runInContext(fingerprintRandomizationCode, sandbox);
+      return { sandbox, backing, original, encodedSnapshots };
+    }
+
+    const first = makeCanvasSandbox([1, 2, 3, 4, 5, 6, 7, 8]);
+    const read1 = vm.runInContext('Array.from(new HTMLCanvasElement().getContext("2d").getImageData(0, 0, 64, 1).data)', first.sandbox);
+    const read2 = vm.runInContext('Array.from(new HTMLCanvasElement().getContext("2d").getImageData(0, 0, 64, 1).data)', first.sandbox);
+
+    assert.deepStrictEqual(read1, read2);
+    let rgbDiffs = 0;
+    for (let i = 0; i < first.original.length; i++) {
+      if ((i & 3) === 3) {
+        assert.strictEqual(read1[i], first.original[i], 'alpha channel must remain untouched');
+      } else {
+        const delta = read1[i] ^ first.original[i];
+        assert.ok(delta === 0 || delta === 1, 'RGB perturbation must be at most 1 LSB');
+        if (delta === 1) rgbDiffs++;
+      }
+    }
+    assert.ok(rgbDiffs > 0, 'Canvas 2D getImageData must perturb at least one RGB byte');
+
+    const encoded1 = vm.runInContext('new HTMLCanvasElement().toDataURL()', first.sandbox);
+    const encoded2 = vm.runInContext('new HTMLCanvasElement().toDataURL()', first.sandbox);
+    assert.strictEqual(encoded1, encoded2);
+    assert.deepStrictEqual(first.encodedSnapshots[0], read1);
+    assert.deepStrictEqual(Array.from(first.backing), Array.from(first.original), 'canvas backing buffer must be restored after encoding');
+
+    const second = makeCanvasSandbox([8, 7, 6, 5, 4, 3, 2, 1]);
+    const otherRead = vm.runInContext('Array.from(new HTMLCanvasElement().getContext("2d").getImageData(0, 0, 64, 1).data)', second.sandbox);
+    assert.notDeepStrictEqual(read1, otherRead);
   });
 });

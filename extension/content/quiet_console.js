@@ -96,6 +96,7 @@
   const nativeXHROpen = window.XMLHttpRequest && XMLHttpRequest.prototype.open;
   const nativeXHRSend = window.XMLHttpRequest && XMLHttpRequest.prototype.send;
   const nativeXHRAbort = window.XMLHttpRequest && XMLHttpRequest.prototype.abort;
+  const nativeXHRSetRequestHeader = window.XMLHttpRequest && XMLHttpRequest.prototype.setRequestHeader;
   const nativeSendBeacon = window.navigator && typeof navigator.sendBeacon === 'function'
     ? navigator.sendBeacon
     : null;
@@ -451,6 +452,18 @@
           return nativeXHRAbort.apply(this, arguments);
         };
         markNativeLike(XMLHttpRequest.prototype.abort, 'function abort() { [native code] }', toStringInstalled);
+      }
+      if (typeof nativeXHRSetRequestHeader === 'function') {
+        XMLHttpRequest.prototype.setRequestHeader = function setRequestHeader(name, value) {
+          const state = quietXhrState.get(this);
+          if (state && state.suppressed === true) return;
+          return nativeXHRSetRequestHeader.apply(this, arguments);
+        };
+        markNativeLike(
+          XMLHttpRequest.prototype.setRequestHeader,
+          'function setRequestHeader() { [native code] }',
+          toStringInstalled
+        );
       }
     }
 

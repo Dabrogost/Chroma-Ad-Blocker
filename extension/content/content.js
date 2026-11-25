@@ -209,10 +209,11 @@
   if (supportsQuietConsolePort) {
     const releaseCandidate = (target, keepPort = false) => {
       if (!target) return;
+      try { target.port.onmessage = null; } catch (_) {}
       if (!keepPort) {
         try { target.port.close(); } catch (_) {}
+        try { target.peer.close(); } catch (_) {}
       }
-      try { target.peer.close(); } catch (_) {}
       if (quietConsoleCandidate === target) quietConsoleCandidate = null;
     };
 

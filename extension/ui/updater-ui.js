@@ -1258,17 +1258,23 @@ const ChromaUpdaterUI = (() => {
 
   async function rollbackInstall(rootHandle, backupHandle, backupPaths, addedPaths, progress) {
     progress?.('Rolling back partial update...');
+    const failedPaths = [];
     for (const path of addedPaths.slice().reverse()) {
       try {
         await removeFilePath(rootHandle, path);
-      } catch {}
+      } catch (err) {
+        if (err?.name !== 'NotFoundError') failedPaths.push(path);
+      }
     }
     for (const path of backupPaths) {
       try {
         const bytes = await readFileBytes(backupHandle, path);
         await writeFileBytes(rootHandle, path, bytes);
-      } catch {}
+      } catch {
+        failedPaths.push(path);
+      }
     }
+    return { ok: failedPaths.length === 0, failedPaths };
   }
 
   async function performInstall(plan, packageFiles, progress) {
@@ -1321,7 +1327,16 @@ const ChromaUpdaterUI = (() => {
       return { ok: true };
     } catch (error) {
       if (actualChangesStarted) {
-        await rollbackInstall(installDirectoryHandle, backup.handle, backupPaths, addedPaths, progress);
+        const rollback = await rollbackInstall(installDirectoryHandle, backup.handle, backupPaths, addedPaths, progress);
+        if (!rollback.ok) {
+          return {
+            ok: false,
+            rollbackIncomplete: true,
+            backupName: backup.name,
+            failedRollbackPaths: rollback.failedPaths,
+            reason: `Install failed and rollback was incomplete (${rollback.failedPaths.length} file(s) could not be restored). Backup kept in ${backup.name}: ${error?.message || 'Unknown error'}`
+          };
+        }
       }
       await cleanupBackupDirectory(installDirectoryHandle, backup.name);
       return {
@@ -1377,8 +1392,18 @@ const ChromaUpdaterUI = (() => {
       const result = await performInstall(latestInstallPlan, packageFiles, text => setResult(text, 'neutral'));
       if (!result.ok) {
         setStepState('updaterStepInstall', 'error');
-        setText('updaterStatusTitle', 'Install Rolled Back');
-        setText('updaterStatusDesc', 'The updater attempted to restore the previous files after a failed install.');
+        if (result.rollbackIncomplete) {
+          setText('updaterStatusTitle', 'Install Rollback Incomplete');
+          setText(
+            'updaterStatusDesc',
+            result.backupName
+              ? `Some files could not be restored automatically. Your backup was kept in ${result.backupName}.`
+              : 'Some files could not be restored automatically.'
+          );
+        } else {
+          setText('updaterStatusTitle', 'Install Rolled Back');
+          setText('updaterStatusDesc', 'The updater attempted to restore the previous files after a failed install.');
+        }
         setResult(result.reason, 'error');
         return result;
       }

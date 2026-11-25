@@ -684,4 +684,152 @@ test('Quiet Console shared page layer', async (t) => {
     assert.strictEqual(spyCalls, 1, 'forged event must not have installed hooks');
     assert.strictEqual(nativeCalls, 0);
   });
+
+  await t.test('keeps authenticated MessagePort open across async storage init and live config updates', async () => {
+    const contentCode = fs.readFileSync(path.join(__dirname, '..', 'extension', 'content', 'content.js'), 'utf8');
+    const { webcrypto } = require('crypto');
+    const { MessageChannel, MessageEvent } = globalThis;
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html></html>', { url: 'https://example.com/' });
+    const { window } = dom;
+    const createdPorts = [];
+    class TrackedMessageChannel extends MessageChannel {
+      constructor() {
+        super();
+        createdPorts.push(this.port1, this.port2);
+      }
+    }
+
+    let nativeFetchCalls = 0;
+    window.fetch = function fetch() {
+      nativeFetchCalls++;
+      return Promise.resolve({ ok: true, status: 299 });
+    };
+
+    const sharedBase = {
+      console,
+      window,
+      document: window.document,
+      location: window.location,
+      navigator: { sendBeacon: () => true },
+      XMLHttpRequest: window.XMLHttpRequest,
+      CustomEvent: window.CustomEvent,
+      Event: window.Event,
+      ProgressEvent: window.ProgressEvent,
+      MutationObserver: window.MutationObserver,
+      MessageChannel: TrackedMessageChannel,
+      MessageEvent,
+      crypto: webcrypto,
+      URL,
+      Response: class { constructor(b, init = {}) { this.status = init.status || 200; } },
+      Node: window.Node,
+      CSSStyleSheet: class { replaceSync() {} },
+      setTimeout,
+      clearTimeout,
+      requestAnimationFrame: fn => setTimeout(fn, 0)
+    };
+
+    let resolveStorage;
+    const storagePromise = new Promise(resolve => { resolveStorage = resolve; });
+    const messageListeners = [];
+    const isoSandbox = {
+      ...sharedBase,
+      chrome: {
+        storage: { local: { get: () => storagePromise }, onChanged: { addListener() {} } },
+        runtime: {
+          onMessage: { addListener: fn => messageListeners.push(fn) },
+          sendMessage: async () => {}
+        }
+      }
+    };
+    isoSandbox.globalThis = isoSandbox;
+    const mainSandbox = { ...sharedBase };
+    mainSandbox.globalThis = mainSandbox;
+
+    try {
+      vm.createContext(isoSandbox);
+      vm.createContext(mainSandbox);
+      vm.runInContext(contentCode, isoSandbox);
+      vm.runInContext(quietConsoleCode, mainSandbox);
+
+      // Let CHROMA_QC_PORT_READY complete before async storage resolves.
+      await new Promise(resolve => setTimeout(resolve, 25));
+      resolveStorage({ config: { enabled: true, quietConsole: true }, whitelist: [] });
+      await new Promise(resolve => setTimeout(resolve, 25));
+
+      const blockedRes = await window.fetch('https://googleads.g.doubleclick.net/pagead/id');
+      assert.strictEqual(blockedRes.status, 200);
+      assert.strictEqual(nativeFetchCalls, 0);
+
+      for (const listener of messageListeners) {
+        listener({ type: 'CONFIG_UPDATE', config: { enabled: true, quietConsole: false } });
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+
+      const allowedRes = await window.fetch('https://googleads.g.doubleclick.net/pagead/id');
+      assert.strictEqual(allowedRes.status, 299);
+      assert.strictEqual(nativeFetchCalls, 1);
+    } finally {
+      for (const port of createdPorts) {
+        try { port.close(); } catch (_) {}
+      }
+      dom.window.close();
+    }
+  });
+
+  await t.test('suppresses setRequestHeader on quieted XHRs without InvalidStateError and preserves normal reuse', () => {
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM('<!doctype html><html></html>', { url: 'https://www.youtube.com/' });
+    const { window } = dom;
+    const forwardedHeaders = [];
+    const origSetHeader = window.XMLHttpRequest.prototype.setRequestHeader;
+    window.XMLHttpRequest.prototype.setRequestHeader = function setRequestHeader(name, value) {
+      forwardedHeaders.push([name, value]);
+      return origSetHeader.apply(this, arguments);
+    };
+
+    const sandbox = {
+      console,
+      window,
+      document: window.document,
+      navigator: { sendBeacon: () => true },
+      XMLHttpRequest: window.XMLHttpRequest,
+      Event: window.Event,
+      ProgressEvent: window.ProgressEvent,
+      CustomEvent: window.CustomEvent,
+      setTimeout: (fn) => { fn(); return 1; },
+      clearTimeout: () => {},
+      URL
+    };
+    sandbox.location = window.location;
+    sandbox.globalThis = sandbox;
+
+    try {
+      vm.createContext(sandbox);
+      vm.runInContext(quietConsoleCode, sandbox);
+      window.document.dispatchEvent(new window.CustomEvent('__CHROMA_QUIET_CONSOLE_CONFIG__', {
+        detail: { enabled: true, quietConsole: true }
+      }));
+
+      const xhr = new window.XMLHttpRequest();
+      xhr.open('POST', 'https://www.youtube.com/youtubei/v1/log_event');
+      assert.doesNotThrow(() => xhr.setRequestHeader('Content-Type', 'application/json'));
+      xhr.send('{}');
+
+      assert.strictEqual(xhr.status, 200);
+      assert.strictEqual(xhr.responseText, '{}');
+      assert.deepStrictEqual(forwardedHeaders, []);
+      assert.strictEqual(
+        vm.runInContext('Function.prototype.toString.call(XMLHttpRequest.prototype.setRequestHeader)', sandbox),
+        'function setRequestHeader() { [native code] }'
+      );
+
+      // Reuse the same XHR for a non-quieted URL and verify setRequestHeader forwards normally.
+      xhr.open('POST', 'https://www.youtube.com/api/ok');
+      assert.doesNotThrow(() => xhr.setRequestHeader('X-Allowed', '1'));
+      assert.deepStrictEqual(forwardedHeaders, [['X-Allowed', '1']]);
+    } finally {
+      dom.window.close();
+    }
+  });
 });

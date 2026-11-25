@@ -2005,7 +2005,7 @@ export function cookieRemover(args) {
   const regexParts = parseRegexLiteral(pattern);
   if (regexParts) {
     try {
-      re = new RegExp(regexParts[0], regexParts[1]);
+      re = new RegExp(regexParts[0], regexParts[1].replace(/[gy]/g, ''));
     } catch (e) { return; }
   }
   const matches = (name) => re ? re.test(name) : name === pattern || name.includes(pattern);

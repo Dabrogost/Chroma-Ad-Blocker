@@ -1409,6 +1409,89 @@ test('settings page proxy and zapper management safety', async (t) => {
     assert.match(doc.querySelector('#updaterResult').textContent, /rollback was attempted/i);
   });
 
+  await t.test('updater preserves backup directory and reports incomplete rollback when restore fails', async () => {
+    const zipEntries = [
+      { name: 'manifest.json', content: JSON.stringify({ manifest_version: 3, name: 'Chroma Ad-Blocker', version: '1.0.2' }), method: 0 },
+      { name: 'background/background.js', content: 'new background', method: 0 },
+      { name: 'ui/popup.html', content: '<!doctype html>new', method: 0 }
+    ];
+    const zip = makeZip(zipEntries);
+    const packageFiles = zipEntries.map(entry => ({
+      path: entry.name,
+      size: Buffer.byteLength(entry.content)
+    }));
+    const hash = await sha256Hex(zip);
+    const harness = createSettingsHarness({
+      fetch: async url => ({
+        ok: true,
+        arrayBuffer: async () => exactArrayBuffer(zip),
+        headers: { get: () => String(zip.byteLength) },
+        url
+      }),
+      responses: {
+        UPDATE_PACKAGE_INSPECT: {
+          ok: true,
+          updateAvailable: true,
+          latestVersion: '1.0.2',
+          asset: {
+            name: 'chroma-ad-blocker-v1.0.2.zip',
+            downloadUrl: 'https://github.com/Dabrogost/Chroma-Ad-Blocker/releases/download/v1.0.2/chroma-ad-blocker-v1.0.2.zip'
+          },
+          package: {
+            version: '1.0.2',
+            entryCount: packageFiles.length,
+            downloadBytes: zip.byteLength,
+            sha256: hash,
+            verifiedBy: 'signed-updates.json',
+            files: packageFiles
+          }
+        }
+      }
+    });
+    const directory = createMockInstallDirectory(
+      { manifest_version: 3, name: 'Chroma Ad-Blocker', version: '1.0.1' },
+      {
+        failWritesFor: ['ui/popup.html'],
+        files: [
+          { path: 'background/background.js', content: 'old background' }
+        ]
+      }
+    );
+    const bgDir = await directory.getDirectoryHandle('background');
+    const bgFile = await bgDir.getFileHandle('background.js');
+    const origCreateWritable = bgFile.createWritable.bind(bgFile);
+    let bgWrites = 0;
+    bgFile.createWritable = async () => {
+      bgWrites += 1;
+      if (bgWrites >= 2) throw new Error('restore locked: background/background.js');
+      return origCreateWritable();
+    };
+    harness.sandbox.showDirectoryPicker = async () => directory;
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    harness.sandbox.ChromaUpdaterUI.initUpdaterPanel();
+    await settleDomAsyncWork();
+
+    const doc = harness.dom.window.document;
+    doc.querySelector('#chooseInstallFolderBtn').click();
+    await settleDomAsyncWork(60);
+    doc.querySelector('#buildInstallPlanBtn').click();
+    await settleDomAsyncWork(80);
+    doc.querySelector('#runFolderProbeBtn').click();
+    await settleDomAsyncWork(60);
+    doc.querySelector('#installUpdateBtn').click();
+    await settleDomTimerWork(8);
+
+    const backupNames = [...directory._children.keys()].filter(name => name.startsWith('.chroma-update-backup-'));
+    assert.strictEqual(backupNames.length, 1);
+    assert.strictEqual(directory._readText('background/background.js'), 'new background');
+    assert.strictEqual(directory._readText(`${backupNames[0]}/background/background.js`), 'old background');
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Rollback Incomplete/i);
+    assert.match(doc.querySelector('#updaterStatusDesc').textContent, new RegExp(backupNames[0]));
+    assert.match(doc.querySelector('#updaterResult').textContent, /rollback was incomplete/i);
+    assert.match(doc.querySelector('#updaterResult').textContent, new RegExp(backupNames[0]));
+  });
+
   await t.test('updater validates Chroma folder and runs write probe', async () => {
     const harness = createSettingsHarness();
     const directory = createMockInstallDirectory({

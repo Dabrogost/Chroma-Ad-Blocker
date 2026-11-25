@@ -31,6 +31,7 @@
     const _Reflect = Reflect;
     const _WeakSet = WeakSet;
     const _WeakMap = WeakMap;
+    const _Set = Set;
     const _defineProperty = Object.defineProperty;
     const _getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
     const _fnToString = Function.prototype.toString;
@@ -185,9 +186,9 @@
           s = Math.imul(s ^ (s >>> 16), 0x85EBCA6B) >>> 0;
           if ((s & 15) !== 0) continue;
           const off = i << 2;
-          data[off]     ^= (s & 1);
-          data[off + 1] ^= ((s >>> 1) & 1);
-          data[off + 2] ^= ((s >>> 2) & 1);
+          data[off]     ^= ((s >>> 4) & 1);
+          data[off + 1] ^= ((s >>> 5) & 1);
+          data[off + 2] ^= ((s >>> 6) & 1);
         }
       }
 
@@ -330,6 +331,7 @@
       }
 
       const farbledAudioChannels = new _WeakSet();
+      const farbledAudioBuffers = new _WeakMap();
 
       if (AudioBuf) {
         replaceProtoMethod(AudioBuf.prototype, 'getChannelData', function (orig) {
@@ -340,6 +342,15 @@
                 farbledAudioChannels.add(r);
                 farbleAudio(r);
               }
+              if (r && thisArg && typeof thisArg === 'object') {
+                const chIdx = Number(args[0]) | 0;
+                let channels = farbledAudioBuffers.get(thisArg);
+                if (!channels) {
+                  channels = new _Set();
+                  farbledAudioBuffers.set(thisArg, channels);
+                }
+                channels.add(chIdx);
+              }
             } catch (e) {}
             return r;
           });
@@ -347,7 +358,13 @@
         replaceProtoMethod(AudioBuf.prototype, 'copyFromChannel', function (orig) {
           return wrap(orig, function (t, thisArg, args) {
             const r = _Reflect.apply(t, thisArg, args);
-            try { farbleAudio(args[0]); } catch (e) {}
+            try {
+              const chIdx = Number(args[1]) | 0;
+              const channels = thisArg && typeof thisArg === 'object' ? farbledAudioBuffers.get(thisArg) : null;
+              if (!channels || !channels.has(chIdx)) {
+                farbleAudio(args[0]);
+              }
+            } catch (e) {}
             return r;
           });
         });
