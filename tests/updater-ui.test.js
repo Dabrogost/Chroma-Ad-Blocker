@@ -143,4 +143,47 @@ test('updater UI install safety helpers', async (t) => {
     assert.strictEqual(unsafeInstallPath.ok, false);
     assert.match(unsafeInstallPath.reason, /cannot safely plan/);
   });
+
+  await t.test('rejects missing-version, unavailable, router errors, and malformed update check payloads', () => {
+    const currentManifest = { version: '1.11.2' };
+
+    const missingVersion = api.validateReleaseMetadata({
+      updateAvailable: false,
+      latestVersion: null,
+      assetStatus: 'missing-version'
+    }, currentManifest);
+    assert.strictEqual(missingVersion.ok, false);
+    assert.match(missingVersion.reason, /could not be reached/i);
+
+    const unavailable = api.validateReleaseMetadata({
+      updateAvailable: false,
+      latestVersion: null,
+      assetStatus: 'unavailable'
+    }, currentManifest);
+    assert.strictEqual(unavailable.ok, false);
+    assert.match(unavailable.reason, /could not be reached/i);
+
+    const routerError = api.validateReleaseMetadata({
+      ok: false,
+      code: 'handler_error',
+      error: 'Message handler failed'
+    }, currentManifest);
+    assert.strictEqual(routerError.ok, false);
+    assert.strictEqual(routerError.reason, 'Message handler failed');
+
+    const malformed = api.validateReleaseMetadata({}, currentManifest);
+    assert.strictEqual(malformed.ok, false);
+    assert.match(malformed.reason, /did not return release metadata/i);
+
+    const validNone = api.validateReleaseMetadata({
+      updateAvailable: false,
+      assetStatus: 'none'
+    }, currentManifest);
+    assert.strictEqual(validNone.ok, true);
+    assert.match(validNone.reason, /already on v1\.11\.2/);
+
+    const validMinimal = api.validateReleaseMetadata({ updateAvailable: false }, currentManifest);
+    assert.strictEqual(validMinimal.ok, true);
+    assert.match(validMinimal.reason, /already on v1\.11\.2/);
+  });
 });

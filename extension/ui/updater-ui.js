@@ -483,11 +483,18 @@ const ChromaUpdaterUI = (() => {
   }
 
   function validateReleaseMetadata(result, currentManifest = {}) {
-    if (!result || typeof result !== 'object') {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
       return { ok: false, reason: 'Update check did not return release metadata.' };
     }
-    if (result.assetStatus === 'unavailable') {
+    if (result.ok === false) {
+      const errorText = typeof result.error === 'string' ? result.error.trim() : '';
+      return { ok: false, reason: errorText || 'Latest release metadata could not be reached.' };
+    }
+    if (result.assetStatus === 'unavailable' || result.assetStatus === 'missing-version') {
       return { ok: false, reason: 'Latest release metadata could not be reached.' };
+    }
+    if (typeof result.updateAvailable !== 'boolean') {
+      return { ok: false, reason: 'Update check did not return release metadata.' };
     }
     if (!result.updateAvailable) {
       const currentVersion = normalizeVersion(currentManifest.version);

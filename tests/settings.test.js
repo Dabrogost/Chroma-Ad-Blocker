@@ -739,6 +739,58 @@ test('settings page proxy and zapper management safety', async (t) => {
     assertNextUpdaterAction(doc, null);
   });
 
+  await t.test('updater surfaces errors instead of current-version state on missing-version or router failure', async () => {
+    const harness = createSettingsHarness({
+      responses: {
+        UPDATE_CHECK: {
+          updateAvailable: false,
+          latestVersion: null,
+          release: null,
+          asset: null,
+          assetStatus: 'missing-version',
+          updateManifestAsset: null,
+          updateManifestStatus: 'none'
+        }
+      }
+    });
+
+    await harness.sandbox.ChromaApp.initSharedUI();
+    harness.sandbox.ChromaUpdaterUI.initUpdaterPanel();
+    await settleDomAsyncWork(80);
+
+    const doc = harness.dom.window.document;
+    assert.strictEqual(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'), false);
+    assert.doesNotMatch(doc.querySelector('#updaterStatusTitle').textContent, /Chroma Is Current/);
+
+    doc.querySelector('#checkLatestReleaseBtn').click();
+    await settleDomAsyncWork(60);
+
+    assert.strictEqual(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'), false);
+    assert.ok(doc.querySelector('#updaterStepRelease').classList.contains('updater-step--error'));
+    assert.strictEqual(doc.querySelector('#updaterStepRelease').classList.contains('updater-step--ok'), false);
+    assert.ok(doc.querySelector('#updaterResult').classList.contains('updater-result--error'));
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Release Assets Not Verified/);
+    assert.match(doc.querySelector('#updaterResult').textContent, /could not be reached/i);
+
+    harness.sandbox.notifyBackground = async msg => {
+      harness.messages.push(msg);
+      if (msg.type === 'UPDATE_CHECK') {
+        return { ok: false, code: 'handler_error', error: 'Message handler failed' };
+      }
+      return null;
+    };
+
+    doc.querySelector('#checkLatestReleaseBtn').click();
+    await settleDomAsyncWork(60);
+
+    assert.strictEqual(doc.querySelector('#updaterPanel').classList.contains('updater-panel--current'), false);
+    assert.ok(doc.querySelector('#updaterStepRelease').classList.contains('updater-step--error'));
+    assert.strictEqual(doc.querySelector('#updaterStepRelease').classList.contains('updater-step--ok'), false);
+    assert.ok(doc.querySelector('#updaterResult').classList.contains('updater-result--error'));
+    assert.match(doc.querySelector('#updaterStatusTitle').textContent, /Release Assets Not Verified/);
+    assert.strictEqual(doc.querySelector('#updaterResult').textContent, 'Message handler failed');
+  });
+
   await t.test('updater rejects latest release metadata without expected ZIP asset', async () => {
     const harness = createSettingsHarness({
       responses: {
