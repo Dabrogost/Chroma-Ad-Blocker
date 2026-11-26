@@ -4683,4 +4683,267 @@ test('settings page proxy and zapper management safety', async (t) => {
       console.error = origError;
     }
   });
+
+  await t.test('CONFIG_GET router error envelopes fail settings hydration and prevent config pollution on refresh', async () => {
+    const handlerError = { ok: false, code: 'handler_error', error: 'Message handler failed' };
+
+    const initErrorHarness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: handlerError
+      }
+    });
+    await initErrorHarness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const initDoc = initErrorHarness.dom.window.document;
+    assert.strictEqual(initDoc.getElementById('toggleEnabled').disabled, true);
+    assert.strictEqual(initDoc.getElementById('toggleNetwork').disabled, true);
+    assert.strictEqual(initDoc.getElementById('protectionStatusText').textContent, 'Protection unavailable');
+    assert.match(initDoc.querySelector('.hydration-error--inline')?.textContent || '', /Settings are unavailable/);
+    assert.strictEqual(initErrorHarness.messages.some(message => message.type === 'STATS_GET'), false);
+
+    for (const postImportResponse of [handlerError, null]) {
+      let configGetCalls = 0;
+      const importRefreshHarness = createSettingsHarness({
+        responses: {
+          CONFIG_GET: () => {
+            configGetCalls += 1;
+            return configGetCalls === 1
+              ? { enabled: true, networkBlocking: false, cosmetic: false, acceleration: false }
+              : postImportResponse;
+          },
+          CONFIG_IMPORT: { ok: true, imported: { configKeys: 1 } }
+        }
+      });
+      await importRefreshHarness.sandbox.ChromaApp.initSharedUI();
+      await settleDomAsyncWork();
+
+      const importDoc = importRefreshHarness.dom.window.document;
+      assert.strictEqual(importDoc.getElementById('toggleNetwork').checked, false);
+      assert.strictEqual(importDoc.getElementById('toggleCosmetic').checked, false);
+
+      const fileInput = importDoc.getElementById('importConfigFile');
+      const payload = JSON.stringify({ schema: 'chroma-settings', version: 1, config: { enabled: true } });
+      Object.defineProperty(fileInput, 'files', {
+        value: [{ size: payload.length, text: async () => payload }],
+        configurable: true
+      });
+      fileInput.dispatchEvent(new importRefreshHarness.dom.window.Event('change', { bubbles: true }));
+      await settleDomAsyncWork(40);
+
+      assert.strictEqual(importDoc.getElementById('settingsBackupStatus').textContent, 'Settings imported. Reopen settings to refresh.');
+      assert.strictEqual(importDoc.getElementById('toggleNetwork').checked, false);
+      assert.strictEqual(importDoc.getElementById('toggleCosmetic').checked, false);
+    }
+
+    let masterConfigCalls = 0;
+    const masterHarness = createSettingsHarness({
+      responses: {
+        CONFIG_GET: () => {
+          masterConfigCalls += 1;
+          return masterConfigCalls === 1
+            ? { enabled: false, cosmetic: false, networkBlocking: true }
+            : handlerError;
+        },
+        CONFIG_SET: { ok: true }
+      }
+    });
+    await masterHarness.sandbox.ChromaApp.initSharedUI();
+    await settleDomAsyncWork();
+
+    const masterDoc = masterHarness.dom.window.document;
+    const masterToggle = masterDoc.getElementById('toggleEnabled');
+    assert.strictEqual(masterToggle.checked, false);
+    assert.strictEqual(masterDoc.getElementById('toggleCosmetic').checked, false);
+
+    masterToggle.checked = true;
+    masterToggle.dispatchEvent(new masterHarness.dom.window.Event('change', { bubbles: true }));
+    await settleDomAsyncWork(30);
+
+    assert.strictEqual(masterToggle.checked, true);
+    assert.strictEqual(masterDoc.getElementById('toggleCosmetic').checked, false);
+  });
+
+  await t.test('LOG_GET null and error envelopes render unavailable state in both summary and opened drawer', async () => {
+    const handlerError = { ok: false, code: 'handler_error', error: 'Message handler failed' };
+    for (const logResponse of [null, handlerError]) {
+      const harness = createSettingsHarness({
+        responses: {
+          LOG_GET: logResponse
+        }
+      });
+      await harness.sandbox.ChromaApp.initSharedUI();
+      await settleDomAsyncWork();
+
+      const doc = harness.dom.window.document;
+      assert.strictEqual(doc.getElementById('logHeaderDesc').textContent, 'Request log unavailable.');
+      assert.strictEqual(doc.getElementById('logStreamState').textContent, 'Unavailable');
+
+      doc.getElementById('logToggleRow').click();
+      await settleDomAsyncWork();
+
+      assert.strictEqual(doc.getElementById('logHeaderDesc').textContent, 'Request log unavailable.');
+      assert.strictEqual(doc.getElementById('logStreamState').textContent, 'Unavailable');
+      assert.strictEqual(doc.querySelector('#logEntries .log-empty')?.textContent, 'Request log unavailable.');
+      assert.doesNotMatch(doc.getElementById('logEntries').textContent, /No entries yet\./);
+    }
+  });
+
+  await t.test('health panel reports failed disabled WebRTC release via reconciliationError as Release incomplete', async () => {
+    for (const webrtcState of [
+      {
+        available: true,
+        mode: 'off',
+        requestedMode: 'off',
+        requested: false,
+        enabled: false,
+        controlledByThisExtension: false,
+        levelOfControl: 'controlled_by_other_extensions',
+        reconciliationError: 'WebRTC reconciliation failed'
+      },
+      {
+        available: true,
+        mode: 'strict',
+        requestedMode: 'strict',
+        requested: true,
+        enabled: false,
+        controlledByThisExtension: false,
+        levelOfControl: 'controlled_by_other_extensions',
+        reconciliationError: 'WebRTC reconciliation failed'
+      }
+    ]) {
+      const harness = createSettingsHarness({
+        responses: {
+          HEALTH_GET: {
+            manifest: { version: '1.11.2', minimumChromeVersion: '122' },
+            master: { enabled: webrtcState.requested ? false : true, networkBlocking: true },
+            dnr: { enabledStaticRulesets: [], expectedStaticRulesets: [], staticRulesetsOk: true, appliedNetworkRuleCount: 0, whitelistRuleCount: 0 },
+            subscriptions: { total: 0, enabled: 0, withErrors: 0, appliedNetwork: 0, cosmetic: 0, scriptlet: 0 },
+            scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 0 },
+            fpr: { enabled: false },
+            cosmetic: {},
+            whitelist: { fprDomainCount: 0 },
+            proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, requestedRouting: false, effectiveRouting: false },
+            webrtc: webrtcState,
+            browserPrivacy: { requested: false, enabled: false, available: true, settings: [] },
+            geolocation: { requested: false, enabled: false, available: true },
+            requestLog: { available: true, entryCount: 0, maxEntries: 500 },
+            overall: {
+              status: 'degraded',
+              issues: [{ severity: 'warning', area: 'webrtc', message: 'WebRTC leak protection could not release its Chrome privacy setting.' }]
+            }
+          }
+        }
+      });
+
+      await harness.sandbox.ChromaApp.initSharedUI();
+      await settleDomAsyncWork();
+
+      const doc = harness.dom.window.document;
+      const webrtcMetric = [...doc.querySelectorAll('#healthPanelBody .health-metric')]
+        .find(row => row.querySelector('.health-metric__label')?.textContent === 'WebRTC leak protection');
+      assert.ok(webrtcMetric, 'expected WebRTC leak protection metric row');
+      const valueEl = webrtcMetric.querySelector('.health-metric__value');
+      assert.strictEqual(valueEl.textContent, 'Release incomplete');
+      assert.ok(valueEl.classList.contains('health-metric__value--warning'));
+    }
+  });
+
+  await t.test('health panel reports unavailable Privacy Sandbox APIs as Unavailable instead of Not applied', async () => {
+    const summaryChip = (doc, label) => {
+      const chip = [...doc.querySelectorAll('.health-summary-chip')]
+        .find(candidate => candidate.querySelector('.health-summary-chip__label')?.textContent === label);
+      assert.ok(chip, label);
+      return chip;
+    };
+    const metricValue = (doc, label) => {
+      const row = [...doc.querySelectorAll('#healthPanelBody .health-metric')]
+        .find(candidate => candidate.querySelector('.health-metric__label')?.textContent === label);
+      assert.ok(row, label);
+      return row.querySelector('.health-metric__value');
+    };
+    const buildSetting = (key, available) => ({
+      key,
+      available,
+      levelOfControl: available ? 'controlled_by_this_extension' : 'not_controllable',
+      controllable: available,
+      controlledByThisExtension: available,
+      effective: available,
+      hardened: available,
+      error: available ? null : 'Privacy API setting unavailable'
+    });
+
+    for (const unavailableKeys of [
+      ['adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled'],
+      ['fledgeEnabled']
+    ]) {
+      const settingKeys = [
+        'thirdPartyCookiesAllowed',
+        'doNotTrackEnabled',
+        'adMeasurementEnabled',
+        'topicsEnabled',
+        'fledgeEnabled'
+      ];
+      const settings = settingKeys.map(key => buildSetting(key, !unavailableKeys.includes(key)));
+      const availableCount = settings.filter(setting => setting.available).length;
+      const harness = createSettingsHarness({
+        responses: {
+          HEALTH_GET: {
+            manifest: { version: '1.11.2', minimumChromeVersion: '122' },
+            master: { enabled: true, networkBlocking: true },
+            dnr: { enabledStaticRulesets: [], expectedStaticRulesets: [], staticRulesetsOk: true, appliedNetworkRuleCount: 0, whitelistRuleCount: 0 },
+            subscriptions: { total: 0, enabled: 0, withErrors: 0, appliedNetwork: 0, cosmetic: 0, scriptlet: 0 },
+            scriptlets: { apiAvailable: true, registeredUserScriptCount: 0, storedRuleCount: 0 },
+            fpr: { enabled: false },
+            cosmetic: {},
+            whitelist: { fprDomainCount: 0 },
+            proxy: { configuredCount: 0, acceptedCount: 0, routedDomainCount: 0, requestedRouting: false, effectiveRouting: false },
+            webrtc: { available: true, mode: 'off', requestedMode: 'off', requested: false, enabled: false, controlledByThisExtension: false },
+            browserPrivacy: {
+              requested: true,
+              enabled: true,
+              available: false,
+              controlled: true,
+              active: true,
+              effective: true,
+              hardenedCount: availableCount,
+              controlledCount: availableCount,
+              totalCount: settings.length,
+              settings
+            },
+            geolocation: { requested: false, enabled: false, available: true },
+            requestLog: { available: true, entryCount: 0, maxEntries: 500 },
+            overall: {
+              status: 'degraded',
+              issues: [{ severity: 'warning', area: 'browserPrivacy', message: 'One or more browser privacy APIs are unavailable.' }]
+            }
+          }
+        }
+      });
+
+      await harness.sandbox.ChromaApp.initSharedUI();
+      await settleDomAsyncWork();
+
+      const doc = harness.dom.window.document;
+      const summary = summaryChip(doc, 'Chrome privacy hardening');
+      assert.strictEqual(summary.querySelector('.health-summary-chip__value').textContent, 'Unavailable');
+      assert.ok(summary.classList.contains('health-summary-chip--warning'));
+
+      const overallMetric = metricValue(doc, 'Chrome Privacy Hardening');
+      assert.strictEqual(overallMetric.textContent, 'Unavailable');
+      assert.ok(overallMetric.classList.contains('health-metric__value--warning'));
+
+      const cookiesMetric = metricValue(doc, 'Third-party cookies');
+      assert.strictEqual(cookiesMetric.textContent, 'Hardened');
+      assert.ok(cookiesMetric.classList.contains('health-metric__value--ok'));
+
+      const dntMetric = metricValue(doc, 'Do Not Track');
+      assert.strictEqual(dntMetric.textContent, 'Hardened');
+      assert.ok(dntMetric.classList.contains('health-metric__value--ok'));
+
+      const sandboxMetric = metricValue(doc, 'Privacy Sandbox ads');
+      assert.strictEqual(sandboxMetric.textContent, 'Unavailable');
+      assert.ok(sandboxMetric.classList.contains('health-metric__value--warning'));
+    }
+  });
 });

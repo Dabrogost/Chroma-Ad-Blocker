@@ -760,3 +760,210 @@ test('handleConfigImport reconciles proxy routes and rolls back on conflict or s
   assert.strictEqual(success.seenWebRtcConfigs[0].globalProxyEnabled, false);
   assert.strictEqual(success.seenWebRtcConfigs[0].globalProxyId, null);
 });
+
+test('handleConfigImport succeeds when disabled privacy/geolocation/WebRTC APIs are absent and rolls back cleanly when enabled', async () => {
+  const wrapModule = (relPath, exportsList) => {
+    const src = fs.readFileSync(path.join(__dirname, '..', ...relPath), 'utf8')
+      .replace(/^import[\s\S]*?from\s+['"][^'"]+['"];\r?\n/gm, '')
+      .replace(/^export\s+/gm, '');
+    return `(() => {\n${src}\nObject.assign(globalThis, { ${exportsList.join(', ')} });\n})();`;
+  };
+
+  function makeChromeSetting(initialValue = true) {
+    let value = initialValue;
+    let levelOfControl = 'controllable_by_this_extension';
+    return {
+      get: (_details, callback) => callback({ value, levelOfControl }),
+      set: (details, callback) => {
+        value = details.value;
+        levelOfControl = 'controlled_by_this_extension';
+        callback();
+      },
+      clear: (_details, callback) => {
+        value = initialValue;
+        levelOfControl = 'controllable_by_this_extension';
+        callback();
+      },
+      onChange: { addListener: () => {} },
+      readState: () => ({ value, levelOfControl })
+    };
+  }
+
+  const storage = {
+    config: {
+      enabled: true,
+      browserPrivacyHardening: false,
+      geolocationProtection: false,
+      webRtcLeakProtection: 'off'
+    },
+    whitelist: ['prior.example'],
+    fprWhitelist: [],
+    proxyConfigs: [],
+    subscriptions: [],
+    sub_network_rules: {},
+    sub_cosmetic_rules: {},
+    sub_scriptlet_rules: {},
+    subscriptionCosmeticRules: [],
+    subscriptionScriptletRules: [],
+    userScriptletSources: [],
+    userScriptletResources: {},
+    userScriptletRuleText: '',
+    userScriptletRules: []
+  };
+
+  const cookiesSetting = makeChromeSetting(true);
+  const dntSetting = makeChromeSetting(true);
+
+  const chrome = {
+    runtime: {},
+    storage: {
+      local: {
+        get: async keys => {
+          if (typeof keys === 'string') return { [keys]: structuredClone(storage[keys]) };
+          if (Array.isArray(keys)) {
+            return Object.fromEntries(keys.map(k => [k, structuredClone(storage[k])]));
+          }
+          return structuredClone(storage);
+        },
+        set: async values => Object.assign(storage, structuredClone(values)),
+        remove: async keys => {
+          for (const k of (Array.isArray(keys) ? keys : [keys])) delete storage[k];
+        }
+      },
+      onChanged: { addListener: () => {} }
+    },
+    privacy: {
+      websites: {
+        thirdPartyCookiesAllowed: cookiesSetting,
+        doNotTrackEnabled: dntSetting
+        // adMeasurementEnabled, topicsEnabled, fledgeEnabled intentionally absent
+      },
+      network: {}
+    },
+    contentSettings: {}
+  };
+
+  const sandbox = {
+    chrome,
+    console,
+    Promise,
+    Set,
+    Map,
+    Math,
+    Number,
+    Object,
+    Array,
+    URL,
+    String,
+    Boolean,
+    Error,
+    Date,
+    JSON,
+    setTimeout,
+    clearTimeout,
+    MSG: { CONFIG_UPDATE: 'CONFIG_UPDATE' },
+    decryptAuth: async () => null,
+    encryptAuth: async () => null,
+    getSubscriptions: async () => [],
+    stageCustomSubscriptions: () => ({
+      ok: true,
+      importedCount: 0,
+      storage: {
+        subscriptions: [],
+        sub_network_rules: {},
+        sub_cosmetic_rules: {},
+        sub_scriptlet_rules: {},
+        subscriptionCosmeticRules: [],
+        subscriptionScriptletRules: []
+      }
+    }),
+    reconcileSubscriptionRuntimeState: async () => ({ ok: true }),
+    exportUserScriptletSettings: async () => ({ sources: [], ruleText: '' }),
+    stageUserScriptletSettings: () => ({
+      ok: true,
+      importedSources: 0,
+      importedRules: 0,
+      storage: {
+        userScriptletSources: [],
+        userScriptletResources: {},
+        userScriptletRuleText: '',
+        userScriptletRules: []
+      }
+    }),
+    syncUserScripts: async () => ({ ok: true }),
+    updateDNRState: async () => ({ ok: true }),
+    syncProxyState: async () => ({
+      requested: { active: false },
+      effective: { active: false },
+      controlledByThisExtension: false,
+      mode: 'system',
+      error: null,
+      conflict: false
+    }),
+    isValidSubscriptionId: () => true,
+    validateCustomSubscriptionInput: () => ({ ok: true }),
+    notifyConfigChanged: async () => {},
+    runProxyTest: async () => ({ ok: true })
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+
+  vm.runInContext([
+    wrapModule(['extension', 'background', 'configCoordinator.js'], ['serializeConfigMutation', 'allowNestedConfigMutations', 'mutateStoredConfig']),
+    wrapModule(['extension', 'background', 'configState.js'], ['CONFIG_KEYS', 'validateConfig']),
+    wrapModule(['extension', 'background', 'handlers', 'domainValidation.js'], ['isValidHostname', 'normalizeDomain', 'domainMatches']),
+    wrapModule(['extension', 'background', 'handlers', 'whitelistHandlers.js'], ['sanitizeDomainList']),
+    wrapModule(['extension', 'background', 'handlers', 'proxyHandlers.js'], ['validateProxyConfigsForStorage']),
+    wrapModule(['extension', 'background', 'webrtc.js'], ['syncWebRtcLeakProtection']),
+    wrapModule(['extension', 'background', 'browserPrivacy.js'], ['syncBrowserPrivacyHardening', 'syncGeolocationProtection']),
+    wrapModule(['extension', 'background', 'handlers', 'settingsTransferHandlers.js'], ['handleConfigImport'])
+  ].join('\n'), sandbox);
+
+  const disabledImport = await sandbox.handleConfigImport({
+    settings: {
+      schema: 'chroma-settings',
+      version: 1,
+      config: {
+        enabled: true,
+        browserPrivacyHardening: false,
+        geolocationProtection: false,
+        webRtcLeakProtection: 'off'
+      },
+      whitelist: ['imported.example'],
+      fprWhitelist: [],
+      proxyConfigs: [],
+      subscriptions: [],
+      userScriptlets: { sources: [], ruleText: '' }
+    }
+  });
+
+  assert.strictEqual(disabledImport.ok, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(storage.whitelist)), ['imported.example']);
+
+  const enabledImport = await sandbox.handleConfigImport({
+    settings: {
+      schema: 'chroma-settings',
+      version: 1,
+      config: {
+        enabled: true,
+        browserPrivacyHardening: true,
+        geolocationProtection: false,
+        webRtcLeakProtection: 'off'
+      },
+      whitelist: ['should-rollback.example'],
+      fprWhitelist: [],
+      proxyConfigs: [],
+      subscriptions: [],
+      userScriptlets: { sources: [], ruleText: '' }
+    }
+  });
+
+  assert.strictEqual(enabledImport.ok, false);
+  assert.strictEqual(enabledImport.phase, 'reconciliation');
+  assert.strictEqual(enabledImport.step, 'browser-privacy');
+  assert.strictEqual(enabledImport.rollback?.succeeded, true);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(storage.whitelist)), ['imported.example']);
+  assert.strictEqual(storage.config.browserPrivacyHardening, false);
+  assert.deepStrictEqual(cookiesSetting.readState(), { value: true, levelOfControl: 'controllable_by_this_extension' });
+  assert.deepStrictEqual(dntSetting.readState(), { value: true, levelOfControl: 'controllable_by_this_extension' });
+});

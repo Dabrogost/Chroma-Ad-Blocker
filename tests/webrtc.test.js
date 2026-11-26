@@ -266,6 +266,22 @@ test('WebRTC privacy setting sync', async (t) => {
     assert.strictEqual(result.available, false);
   });
 
+  await t.test('missing chrome privacy API succeeds when WebRTC protection is disabled', async () => {
+    const harness = createWebRtcSandbox({ hasPrivacyApi: false });
+
+    for (const config of [
+      { enabled: true, webRtcLeakProtection: 'off' },
+      { enabled: true, webRtcLeakProtection: 'auto', globalProxyEnabled: false },
+      { enabled: false, webRtcLeakProtection: 'strict' }
+    ]) {
+      const result = await harness.syncWebRtcLeakProtection(config, []);
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(result.available, false);
+      assert.strictEqual(result.released, true);
+      assert.strictEqual(result.error, null);
+    }
+  });
+
   await t.test('controlled_by_other_extensions does not call set or clear', async () => {
     const harness = createWebRtcSandbox({ levelOfControl: 'controlled_by_other_extensions' });
     const result = await harness.syncWebRtcLeakProtection({ webRtcLeakProtection: 'strict' }, []);

@@ -605,6 +605,10 @@ const ChromaApp = (() => {
     let pendingProtectionMutations = 0;
     let refreshRequestLogUI = null;
 
+    function isValidConfigResponse(value) {
+      return Boolean(value && typeof value === 'object' && !Array.isArray(value) && value.ok !== false);
+    }
+
     function hasPendingProtectionControls() {
       if (pendingProtectionMutations > 0) return true;
       if ($('toggleEnabled')?.classList?.contains?.('control-pending')) return true;
@@ -805,11 +809,12 @@ const ChromaApp = (() => {
 
     try {
       const configResponse = await notifyBackground({ type: MSG.CONFIG_GET });
-      if (!configResponse && settingsMode) {
+      const validConfig = isValidConfigResponse(configResponse);
+      if (!validConfig && settingsMode) {
         failSettingsHydration('Settings are unavailable until the extension background responds.');
         return;
       }
-      config = configResponse || {};
+      config = validConfig ? configResponse : {};
     } catch (error) {
       console.error('Chroma config failed to load:', error);
       if (settingsMode) {
@@ -956,7 +961,7 @@ const ChromaApp = (() => {
           }
         } else {
           const activeConfig = await notifyBackground({ type: MSG.CONFIG_GET });
-          if (activeConfig) {
+          if (isValidConfigResponse(activeConfig)) {
             const mergedConfig = { ...config };
             for (const [k, v] of Object.entries(activeConfig)) {
               if ((lastControlMutationSeq.get(k) || 0) <= seq) {
@@ -1096,15 +1101,16 @@ const ChromaApp = (() => {
         setText('settingsBackupStatus', 'Settings imported. Refreshing UI...');
         try {
           const nextConfig = await notifyBackground({ type: MSG.CONFIG_GET });
-          if (nextConfig) {
-            config = nextConfig;
-            const enabled = config.enabled !== false;
-            const masterToggle = $('toggleEnabled');
-            if (masterToggle) masterToggle.checked = enabled;
-            updateStatusDot(enabled);
-            syncUI(config, enabled);
-            syncSpeedUI(config.accelerationSpeed ?? 8, enabled && !!config.acceleration);
+          if (!isValidConfigResponse(nextConfig)) {
+            throw new Error(nextConfig?.error || 'Could not reload settings');
           }
+          config = nextConfig;
+          const enabled = config.enabled !== false;
+          const masterToggle = $('toggleEnabled');
+          if (masterToggle) masterToggle.checked = enabled;
+          updateStatusDot(enabled);
+          syncUI(config, enabled);
+          syncSpeedUI(config.accelerationSpeed ?? 8, enabled && !!config.acceleration);
           await Promise.all([
             loadSubscriptionUI(),
             loadUserScriptletUI(),
@@ -2105,7 +2111,6 @@ const ChromaApp = (() => {
       async function getLogEntries() {
         try {
           const response = await notifyBackground({ type: MSG.LOG_GET });
-          if (!response) return [];
           if (!Array.isArray(response)) return null;
           return response;
         } catch (error) {
@@ -2120,7 +2125,7 @@ const ChromaApp = (() => {
         if (!log) {
           setText('logHeaderDesc', 'Request log unavailable.');
           setText('logStreamState', 'Unavailable');
-          return [];
+          return null;
         }
         updateLogSummary(log);
         return log;
@@ -2130,8 +2135,12 @@ const ChromaApp = (() => {
         if (isFrozen && !force) return;
         const seq = ++logLoadSeq;
         const log = await refreshLogSummary(seq);
-        if (!log || seq !== logLoadSeq || (isFrozen && !force)) return;
+        if (seq !== logLoadSeq || (isFrozen && !force)) return;
         clearElement(entries);
+        if (!log) {
+          appendElement(entries, 'div', 'log-empty', 'Request log unavailable.');
+          return;
+        }
         if (log.length === 0) {
           appendElement(entries, 'div', 'log-empty', 'No entries yet.');
           return;

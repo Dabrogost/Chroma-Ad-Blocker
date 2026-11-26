@@ -250,6 +250,25 @@ async function syncWebRtcLeakProtectionImpl(config, proxyConfigs, generation) {
   const requested = requestedPolicy.action === 'set';
   const enabled = desired.action === 'set';
 
+  if (!setting && desired.action === 'clear') {
+    return {
+      ok: true,
+      stale: false,
+      available: false,
+      controllable: false,
+      controlledByThisExtension: false,
+      requested,
+      enabled,
+      mode: desired.mode,
+      action: 'clear',
+      value: null,
+      levelOfControl: null,
+      effective: false,
+      released: true,
+      error: null
+    };
+  }
+
   if (!setting || typeof setting.get !== 'function') {
     return {
       ok: false,

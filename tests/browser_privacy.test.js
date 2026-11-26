@@ -84,16 +84,24 @@ function createContentSetting({ setting = 'ask', getError = null } = {}) {
 }
 
 function loadSandbox(overrides = {}) {
-  const settings = {
-    thirdPartyCookiesAllowed: createChromeSetting(overrides.thirdPartyCookiesAllowed),
-    doNotTrackEnabled: createChromeSetting(overrides.doNotTrackEnabled),
-    adMeasurementEnabled: createChromeSetting(overrides.adMeasurementEnabled),
-    topicsEnabled: createChromeSetting(overrides.topicsEnabled),
-    fledgeEnabled: createChromeSetting(overrides.fledgeEnabled)
-  };
-  const contentSettings = {
-    location: createContentSetting(overrides.location)
-  };
+  const omitSettings = new Set(overrides.omitSettings || []);
+  const settings = {};
+  for (const key of [
+    'thirdPartyCookiesAllowed',
+    'doNotTrackEnabled',
+    'adMeasurementEnabled',
+    'topicsEnabled',
+    'fledgeEnabled'
+  ]) {
+    if (!omitSettings.has(key)) {
+      settings[key] = createChromeSetting(overrides[key]);
+    }
+  }
+  const contentSettings = overrides.omitLocation
+    ? {}
+    : {
+        location: createContentSetting(overrides.location)
+      };
   const storage = {
     config: overrides.config
   };
@@ -546,5 +554,69 @@ test('browser privacy hardening', async (t) => {
       assert.strictEqual(setting.readLevel(), 'controllable_by_this_extension');
       assert.ok(setting.calls.filter(c => c.method === 'clear').length >= 2);
     }
+  });
+
+  await t.test('missing optional privacy and geolocation APIs succeed when disabled and fail when enabled', async () => {
+    const controlled = { value: false, levelOfControl: 'controlled_by_this_extension' };
+    const harness = loadSandbox({
+      omitSettings: ['adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled'],
+      omitLocation: true,
+      thirdPartyCookiesAllowed: controlled,
+      doNotTrackEnabled: controlled
+    });
+
+    const disabledPrivacy = await harness.sandbox.syncBrowserPrivacyHardening({
+      enabled: true,
+      browserPrivacyHardening: false
+    });
+    assert.strictEqual(disabledPrivacy.ok, true);
+    assert.strictEqual(harness.settings.thirdPartyCookiesAllowed.readLevel(), 'controllable_by_this_extension');
+    assert.strictEqual(harness.settings.doNotTrackEnabled.readLevel(), 'controllable_by_this_extension');
+    for (const key of ['adMeasurementEnabled', 'topicsEnabled', 'fledgeEnabled']) {
+      const entry = disabledPrivacy.results.find(item => item.key === key);
+      assert.strictEqual(entry.available, false);
+      assert.strictEqual(entry.ok, true);
+      assert.strictEqual(entry.error, null);
+    }
+
+    const pausedPrivacy = await harness.sandbox.syncBrowserPrivacyHardening({
+      enabled: false,
+      browserPrivacyHardening: true
+    });
+    assert.strictEqual(pausedPrivacy.ok, true);
+
+    const enabledPrivacy = await harness.sandbox.syncBrowserPrivacyHardening({
+      enabled: true,
+      browserPrivacyHardening: true
+    });
+    assert.strictEqual(enabledPrivacy.ok, false);
+    assert.strictEqual(
+      enabledPrivacy.results.find(item => item.key === 'topicsEnabled').error,
+      'Chrome privacy setting unavailable'
+    );
+
+    const disabledGeo = await harness.sandbox.syncGeolocationProtection({
+      enabled: true,
+      geolocationProtection: false
+    });
+    assert.strictEqual(disabledGeo.ok, true);
+    assert.strictEqual(disabledGeo.available, false);
+    assert.strictEqual(disabledGeo.error, null);
+
+    const pausedGeo = await harness.sandbox.syncGeolocationProtection({
+      enabled: false,
+      geolocationProtection: true
+    });
+    assert.strictEqual(pausedGeo.ok, true);
+    assert.strictEqual(pausedGeo.available, false);
+    assert.strictEqual(pausedGeo.error, null);
+
+    const enabledGeo = await harness.sandbox.syncGeolocationProtection({
+      enabled: true,
+      geolocationProtection: true
+    });
+    assert.strictEqual(enabledGeo.ok, false);
+    assert.strictEqual(enabledGeo.available, false);
+    assert.strictEqual(enabledGeo.error, 'Chrome geolocation content setting unavailable');
   });
 });

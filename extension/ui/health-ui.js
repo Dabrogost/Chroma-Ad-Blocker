@@ -200,7 +200,7 @@ const ChromaHealthUI = (() => {
       const webrtc = health.webrtc || {};
       const mode = String(webrtc.requestedMode || webrtc.mode || 'auto');
       const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
-      if (!webrtc.enabled && webrtc.controlledByThisExtension) {
+      if (!webrtc.enabled && (webrtc.controlledByThisExtension || webrtc.reconciliationError)) {
         return ['WebRTC leak protection', 'Release incomplete', 'warning'];
       }
       if (webrtc.requested && !webrtc.enabled) {
@@ -270,7 +270,7 @@ const ChromaHealthUI = (() => {
       }
       if (!health.browserPrivacy?.requested) return 'Disabled';
       if (!health.browserPrivacy?.enabled) return 'Paused';
-      if (settings.length === 0) return 'Unavailable';
+      if (settings.length === 0 || settings.some(setting => !setting.available)) return 'Unavailable';
       if (settings.some(isBrowserPrivacySettingExternallyControlled)) return 'Controlled elsewhere';
       if (settings.some(setting => !setting.controlledByThisExtension || setting.error)) return 'Not applied';
       const hardened = settings.filter(setting => setting.effective).length;
@@ -283,7 +283,7 @@ const ChromaHealthUI = (() => {
         return 'warning';
       }
       if (!health.browserPrivacy?.requested || !health.browserPrivacy?.enabled) return 'disabled';
-      if (settings.length === 0) return 'warning';
+      if (settings.length === 0 || settings.some(setting => !setting.available)) return 'warning';
       return settings.every(setting => setting.controlledByThisExtension && setting.effective) ? 'ok' : 'warning';
     }
 

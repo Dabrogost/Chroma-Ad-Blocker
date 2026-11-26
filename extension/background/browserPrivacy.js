@@ -294,7 +294,11 @@ async function syncBrowserPrivacyHardeningImpl(config, generation) {
     };
 
     if (!setting) {
-      result.error = 'Chrome privacy setting unavailable';
+      if (!enabled) {
+        result.ok = true;
+      } else {
+        result.error = 'Chrome privacy setting unavailable';
+      }
       results.push(result);
       continue;
     }
@@ -489,6 +493,10 @@ async function syncGeolocationProtectionImpl(config, generation) {
   };
 
   if (!setting || typeof setting.set !== 'function' || typeof setting.clear !== 'function') {
+    if (!enabled && !setting) {
+      result.ok = true;
+      return result;
+    }
     result.error = 'Chrome geolocation content setting unavailable';
     return result;
   }
